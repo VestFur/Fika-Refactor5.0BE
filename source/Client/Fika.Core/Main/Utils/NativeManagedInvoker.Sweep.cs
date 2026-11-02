@@ -15,42 +15,42 @@ using Il2CppInterop.Runtime.Runtime.VersionSpecific.MethodInfo;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// The sweep: every injected method info has to be on the shim, not just the ones the registration time
-/// postfix saw.
+/// 清扫：每一个注入的方法 info 都必须落在 shim 上，而不只是注册时
+/// 后缀所看到的那些。
 ///
-/// Why the registration time postfix is not enough (analysis/managed-invoker/REPORT-sweep.md): the
-/// postfix lives on the Harmony instance of <see cref="NativeInjectionScope"/>, and that instance
-/// unpatchs its targets when its scope is disposed (<c>NativeInjectionScope.Dispose</c>). Fika's own
-/// registration finishes long before the game starts, so from that moment on the injector converts
-/// methods with the stock - calli shaped, JIT rejected - invoker again:
+/// 为什么注册时后缀不够（analysis/managed-invoker/REPORT-sweep.md）：该
+/// 后缀依附在 <see cref="NativeInjectionScope"/> 的 Harmony 实例上，而那个实例
+/// 会在其作用域被释放时撤销对目标的打补丁（<c>NativeInjectionScope.Dispose</c>）。Fika 自己的
+/// 注册早在游戏启动之前就已结束，因此从那一刻起注入器又会用原版的那种
+/// invoker（calli 形状、会被 JIT 拒绝）来转换方法：
 ///
-///   * an *in-scope* type another plugin registers later (BepInEx's <c>Il2CppManagedEnumerator</c> is
-///     registered lazily on the first <c>WrapToIl2Cpp()</c>, which is exactly <c>Fika.Core</c>'s coroutine
-///     helper, and it is in scope as a port-reached compatibility type),
-///   * an *in-scope* type registered before this class was installed (Fika's own <c>FikaPluginBehaviour</c>),
-///   * out-of-scope types (the interop's own delegate holder, ConfigurationManager, SPTushonka) are
-///     enumerated and named once by <see cref="ReportOutOfScope"/>, but never rewritten - the scope
-///     region in NativeManagedInvoker.cs is the rule, and it is checked before any method info is touched,
-///   * a generic instantiation the engine asks for at runtime
-///     (<c>Hooks.GenericMethod_GetMethod_Hook</c> / <c>..._Unity6_Hook</c> call
-///     <c>ClassInjector.ConvertMethodInfo</c> directly, from native code, at any time).
+///   * 另一个插件稍后注册的*作用域内*类型（BepInEx 的 <c>Il2CppManagedEnumerator</c> 会在第一次
+///     <c>WrapToIl2Cpp()</c> 时惰性注册，而它正是 <c>Fika.Core</c> 的协程
+///     辅助类，并且作为本移植版触及的兼容类型它处于作用域内），
+///   * 在本类安装之前注册的*作用域内*类型（Fika 自己的 <c>FikaPluginBehaviour</c>），
+///   * 作用域外的类型（interop 自己的 delegate holder、ConfigurationManager、SPTushonka）会被
+///     <see cref="ReportOutOfScope"/> 枚举并命名一次，但从不被改写——NativeManagedInvoker.cs 中的
+///     作用域规则就是那条规矩，它在触碰任何方法 info 之前都会被检查，
+///   * 引擎在运行时索要的一个泛型实例化
+///     （<c>Hooks.GenericMethod_GetMethod_Hook</c> / <c>..._Unity6_Hook</c> 会
+///     直接从原生代码中随时调用 <c>ClassInjector.ConvertMethodInfo</c>）。
 ///
-/// Three independent nets close that, in the order the engine meets them:
+/// 三张相互独立的网按引擎遇到它们的顺序把这个缺口堵住：
 ///
-///   1. <b>registration hook</b> (postfix on <c>ClassInjector.RegisterTypeInIl2CppInternal</c>, on this
-///      class's own Harmony instance): a type that is registered after the port's scope is swept while
-///      its registration returns;
-///   2. <b>sweep</b> (<see cref="Sweep"/>): every injected class known to the injector is enumerated
-///      through <c>il2cpp_class_get_methods</c> and every method info with a stock invoker is adopted;
-///      it runs at install, after Fika's own registration, and once when the engine first reaches a
-///      method info the shim does not know;
-///   3. <b>runtime guard</b> (prefix on <c>IL2CPP.il2cpp_runtime_invoke</c>, see
-///      <see cref="EnsureAdopted"/>): the last moment before the native side dereferences
-///      <c>InvokerMethod</c> - an unknown method info is adopted there, and the original invoke runs
-///      unchanged either way.
+///   1. <b>注册钩子</b>（<c>ClassInjector.RegisterTypeInIl2CppInternal</c> 上的 postfix，挂在本类
+///      自己的 Harmony 实例上）：在移植版作用域之后注册的类型会在
+///      其注册返回时被清扫；
+///   2. <b>清扫</b>（<see cref="Sweep"/>）：注入器已知的每个注入类都会通过
+///      <c>il2cpp_class_get_methods</c> 被枚举，每个仍使用原版 invoker 的方法 info 都会被收养；
+///      它在安装时运行（在 Fika 自己的注册之后），并在引擎首次遇到一个
+///      shim 不认识的方法 info 时再运行一次；
+///   3. <b>运行时守卫</b>（<c>IL2CPP.il2cpp_runtime_invoke</c> 上的 prefix，见
+///      <see cref="EnsureAdopted"/>）：原生侧解引用 <c>InvokerMethod</c> 之前的最后
+///      时刻——未知的方法 info 会在那里被收养，而无论哪种情况，原版 invoke 都会
+///      照常运行，不做改动。
 ///
-/// Nothing here throws and nothing here changes a call's meaning: it either replaces an entry the
-/// engine has not entered yet, or it writes one diagnostic line.
+/// 这里什么都不抛，也什么都不改变一次调用的含义：它要么替换一个引擎
+/// 尚未进入的入口，要么写下一行诊断。
 /// </summary>
 internal static unsafe partial class NativeManagedInvoker
 {
@@ -60,13 +60,13 @@ internal static unsafe partial class NativeManagedInvoker
         internal nint Pointer;
     }
 
-    /// <summary>Injected types this class has seen, from the registration hook, the sweep or Fika itself.</summary>
+    /// <summary>本类见过的注入类型，来自注册钩子、清扫或 Fika 自身。</summary>
     private static readonly ConcurrentDictionary<Type, byte> KnownTypes = new();
 
-    /// <summary>Native class pointer to the managed type it was registered from.</summary>
+    /// <summary>原生类指针到它被注册时所用的那个托管类型。</summary>
     private static readonly ConcurrentDictionary<nint, Type> TypesByClass = new();
 
-    /// <summary>Full name to managed type, for the injector's own registry (which stores names only).</summary>
+    /// <summary>全名到托管类型，供注入器自己的注册表使用（后者只存名字）。</summary>
     private static readonly ConcurrentDictionary<string, Type> TypesByName = new();
 
     private static int _sweepRewritten;
@@ -85,15 +85,15 @@ internal static unsafe partial class NativeManagedInvoker
     private static int _scopeForeignTypes;
 
     /// <summary>
-    /// Re-entrancy guard for the thread that is sweeping. Diagnostics write a frame number, which is an
-    /// il2cpp callout, which reaches the runtime guard, which would otherwise start a second sweep from
-    /// inside the first one. One sweep at a time per thread is enough: the inner one would enumerate the
-    /// same classes.
+    /// 供正在清扫的线程使用的重入守卫。诊断会写一个帧号，而它是一次
+    /// il2cpp 回调，会到达运行时守卫，否则守卫就会在第一次清扫
+    /// 内部启动第二次清扫。每个线程一次只做一次清扫就够了：内层那次会枚举
+    /// 相同的类。
     /// </summary>
     [ThreadStatic]
     private static bool _sweeping;
 
-    /// <summary>Remembers an injected type. Called from the registration hook, before the type is swept.</summary>
+    /// <summary>记住一个注入类型。由注册钩子在类型被清扫之前调用。</summary>
     internal static void RememberType(Type type)
     {
         if (type == null) return;
@@ -107,9 +107,9 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// Sweeps every injected class: enumerates its method infos, adopts the ones still on the stock
-    /// invoker, and reports what the vtable slots hold. <paramref name="explicitTypes"/> are swept even
-    /// if the injector's registry cannot be read.
+    /// 清扫每一个注入类：枚举它的方法 info，收养仍停留在原版
+    /// invoker 上的那些，并报告 vtable 槽位里装的是什么。即使注入器的注册表
+    /// 无法读取，<paramref name="explicitTypes"/> 也会被清扫。
     /// </summary>
     internal static void Sweep(Type[] explicitTypes, string reason)
     {
@@ -148,8 +148,8 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// Sweeps the injected types of one type. Called right after a registration, so a type that appears
-    /// while the port's own registration scope is long gone is covered in the same instant it appears.
+    /// 清扫某一个类型下的注入类型。在一次注册之后立即调用，因此当移植版自己的
+    /// 注册作用域早已消失时出现的类型，会在它出现的那一刻就被覆盖。
     /// </summary>
     internal static void SweepType(Type type, string reason)
     {
@@ -189,22 +189,22 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// The whole sweep, once, the first time the engine reaches a method info the shim does not know.
-    /// Bounded by design: after the first call this does nothing.
+    /// 完整清扫一次，在引擎首次遇到 shim 不认识的方法 info 时执行。
+    /// 按设计是有界的：第一次调用之后它什么也不做。
     /// </summary>
     internal static void SweepOnce(string reason)
     {
-        // Not while a sweep is already running on this thread, and not twice: the token is only spent
-        // when the sweep is really attempted.
+        // 本线程已在清扫时不执行，也不执行两次：令牌只在真正
+        // 尝试清扫时才会被消耗。
         if (_sweeping) return;
         if (Interlocked.Exchange(ref _runtimeSweep, 1) != 0) return;
         Sweep(null, reason);
     }
 
     /// <summary>
-    /// Adopts a method info the shim has never seen: resolves the managed method from the method info
-    /// itself (its declaring class and name) and builds a plan for it. Returns true when the method info
-    /// is now served by the shim - whether it already was, or was adopted just now.
+    /// 收养一个 shim 从未见过的方法 info：从方法 info 本身（它所属的声明类和
+    /// 名字）解析出托管方法，并为它构建一个计划。当该方法 info 现在
+    /// 由 shim 提供服务时返回 true——无论它本来就已如此，还是刚刚才被收养。
     /// </summary>
     internal static bool EnsureAdopted(Il2CppMethodInfo* info, string origin, string detail)
     {
@@ -218,15 +218,15 @@ internal static unsafe partial class NativeManagedInvoker
             if (wrapper == null) return false;
             if (!IsInjectedMethodInfo(wrapper))
             {
-                // The engine's own method infos are never ours to touch; remember that so the guard
-                // stays a dictionary lookup on every later invoke.
+                // 引擎自己的方法 info 永远不归我们碰；把这一点记住，好让守卫
+                // 在之后每次 invoke 时仍然只是一次字典查找。
                 NotOurs[key] = 0;
                 return false;
             }
 
             if (wrapper.InvokerMethod == 0)
             {
-                // Abstract methods and generic definitions: the injector binds no invoker at all.
+                // 抽象方法与泛型定义：注入器根本不会绑定 invoker。
                 NotOurs[key] = 0;
                 return false;
             }
@@ -234,9 +234,9 @@ internal static unsafe partial class NativeManagedInvoker
             var declaringType = TypeOfClass(wrapper);
             if (declaringType != null && !IsShimScope(declaringType))
             {
-                // The runtime guard's own scope gate: this method info belongs to another plugin, so the
-                // injector's invoker stays. Memoized like every other "not ours" verdict, so the guard
-                // remains a dictionary lookup on the invoke path.
+                // 运行时守卫自己的作用域闸门：该方法 info 属于另一个插件，所以
+                // 注入器的 invoker 保持不变。与其它所有"不是我们的"结论一样被记忆，好让守卫
+                // 在 invoke 路径上仍然只是一次字典查找。
                 NotOurs[key] = 0;
                 ReportOutOfScope(declaringType, origin);
                 return false;
@@ -275,7 +275,7 @@ internal static unsafe partial class NativeManagedInvoker
         }
     }
 
-    // ------------------------------------------------------------------ enumeration
+    // ------------------------------------------------------------------ 枚举
 
     private static List<ClassEntry> CollectClasses(Type[] explicitTypes, out int unresolved)
     {
@@ -342,9 +342,9 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// The injector's own registry of registered type names. It is the only source that also holds the
-    /// types registered before this class was installed, and the only one that names them without a
-    /// native call.
+    /// 注入器自己的已注册类型名注册表。它是唯一也持有本类安装之前所注册
+    /// 类型的来源，也是唯一能在不做原生调用的情况下把它们的名字给出来的
+    /// 来源。
     /// </summary>
     private static string[] InjectorTypeNames()
     {
@@ -353,8 +353,8 @@ internal static unsafe partial class NativeManagedInvoker
             var field = AccessTools.Field(typeof(ClassInjector), "InjectedTypes");
             if (field?.GetValue(null) is not IEnumerable<string> names) return Array.Empty<string>();
             var copy = new List<string>();
-            // The set belongs to the injector and is not thread safe: a registration running in parallel
-            // can make this enumeration throw, which is why it is bounded and caught.
+            // 该集合属于注入器且非线程安全：一次并行进行的注册可能让这次枚举
+            // 抛出异常，这就是它既有界又被捕获的原因。
             var enumerator = names.GetEnumerator();
             while (true)
             {
@@ -382,9 +382,9 @@ internal static unsafe partial class NativeManagedInvoker
     private static void SweepClass(Type type, nint pointer, string reason, ref int enumerated, ref int rewritten, ref int kept,
         ref int noInvoker, ref int already)
     {
-        // The scope gate (NativeManagedInvoker, "scope of the shim"): a class that is not Fika's own is
-        // left exactly as the injector built it - its method infos *and* its vtable slots, because the
-        // scan below repoints slots, which is a change to another plugin's call path as well.
+        // 作用域闸门（NativeManagedInvoker，"shim 的作用域"）：不属于 Fika 的类会
+        // 完全保持注入器构建时的样子——包括它的方法 info *和* 它的 vtable 槽位，因为
+        // 下面的扫描会重定向槽位，那同样是对另一个插件调用路径的改动。
         if (!IsShimScope(type))
         {
             if (ReportOutOfScope(type, reason)) Interlocked.Increment(ref _scopeForeignTypes);
@@ -420,10 +420,10 @@ internal static unsafe partial class NativeManagedInvoker
 
                 if (info.InvokerMethod == 0)
                 {
-                    // Abstract methods and generic definitions: the injector binds no invoker, so there
-                    // is no stock entry to replace. An *inflated* generic method is a different method
-                    // info, created by the injector's own hook, and reaches the shim through the
-                    // registration hook and the runtime guard.
+                    // 抽象方法与泛型定义：注入器不绑定 invoker，所以没有
+                    // 可替换的原版条目。*已膨胀*的泛型方法是另一个不同的方法
+                    // info，由注入器自己的钩子创建，并通过注册钩子和
+                    // 运行时守卫到达 shim。
                     noInvoker++;
                     continue;
                 }
@@ -431,9 +431,9 @@ internal static unsafe partial class NativeManagedInvoker
                 var name = Marshal.PtrToStringUTF8(info.Name);
                 if (string.Equals(name, "Finalize", StringComparison.Ordinal) && info.InvokerMethod != shim)
                 {
-                    // The engine runs finalizers on the native side and there is no managed method to invoke
-                    // (a C# finalizer is a destructor), so adopting it only produced one
-                    // "Handle is not initialized" per collection. It keeps the injector's invoker.
+                    // 引擎在原生侧运行终结器，而没有可调用的托管方法
+                    // （C# 的终结器就是析构函数），所以收养它只会每次垃圾回收产生一条
+                    // "Handle is not initialized"。它保留注入器的 invoker。
                     kept++;
                     
                     continue;
@@ -461,10 +461,10 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// Reports what the class's vtable holds. A slot holds a *method info* plus the entry a direct call
-    /// uses, so replacing the invoker of that method info is what repairs the slot; a slot that holds
-    /// the invoker itself - the reflection ABI, five arguments - is repointed at the method's own
-    /// trampoline, which is the pointer the injector writes there during registration.
+    /// 报告该类的 vtable 里装的是什么。一个槽位装着*方法 info* 加上直接调用所用的
+    /// 入口，所以替换该方法 info 的 invoker 才是修复槽位的办法；而装着
+    /// invoker 本身的槽位——反射 ABI，五个参数——会被重定向到该方法自己的
+    /// trampoline，也就是注入器在注册期间写入那里的那个指针。
     /// </summary>
     private static void ScanVTable(Type type, nint pointer, ref int enumerated, ref int rewritten, ref int kept)
     {
@@ -515,7 +515,7 @@ internal static unsafe partial class NativeManagedInvoker
         }
     }
 
-    // ------------------------------------------------------------------ resolution
+    // ------------------------------------------------------------------ 解析
 
     private static nint ClassPointerOf(Type type)
     {
@@ -556,9 +556,9 @@ internal static unsafe partial class NativeManagedInvoker
             var type = ResolveTypeByName(fullName);
             if (type == null)
             {
-                // The injector writes only the simple name and the namespace of an injected type
-                // (ClassInjector.decompiled.cs:439-440), so a nested type reads as if it were top
-                // level here. Match that shape against the types this class does know.
+                // 注入器只写入注入类型的简单名和命名空间
+                // （ClassInjector.decompiled.cs:439-440），所以嵌套类型在这里读起来就像
+                // 顶级类型。用这个形状去匹配本类确实知道的那些类型。
                 type = ResolveTypeByFlattenedName(fullName);
             }
 
@@ -697,8 +697,8 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// Compares one candidate's parameter list with the native signature of the method info, the same
-    /// way <c>ClassInjector.FindOverrideByName</c> disambiguates an override.
+    /// 把一个候选的参数列表与方法 info 的原生签名作比较，做法与
+    /// <c>ClassInjector.FindOverrideByName</c> 区分重写的方式相同。
     /// </summary>
     private static bool ParametersMatchNative(MethodInfo method, INativeMethodInfoStruct info)
     {

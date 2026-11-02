@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace Fika.Core.Main.Utils;
 
-/// <summary>Managed producers never need to enter IL2CPP to schedule Unity work.</summary>
+/// <summary>托管生产者无需进入 IL2CPP 即可调度 Unity 工作。</summary>
 internal static class MainThreadDispatcher
 {
     private static readonly ConcurrentQueue<(Action Action, CancellationToken Token)> Pending = new();
@@ -25,13 +25,13 @@ internal static class MainThreadDispatcher
     }
 
     /// <summary>
-    /// Whether the caller runs on the managed thread that pumps the queue.
+    /// 调用方是否运行在泵送该队列的那个托管线程上。
     /// <para>
-    /// Native reverse P/Invoke callbacks (Unity UI button delegates, UnityEvent
-    /// listeners) can be delivered with a different managed thread identity than
-    /// the one captured in <see cref="Initialize"/>, so this is a question, never
-    /// an assumption. Callers that need Unity must go through
-    /// <see cref="RunAsync(Func{Task})"/>, which marshals instead of failing.
+    /// 原生反向 P/Invoke 回调（Unity UI 按钮委托、UnityEvent
+    /// 监听器）投递时带来的托管线程标识可能与
+    /// <see cref="Initialize"/> 中捕获的不同，
+    /// 因此这是一个待查询的问题，而绝非假设。需要 Unity 的调用方
+    /// 必须走 <see cref="RunAsync(Func{Task})"/>，它会进行编组而不是直接失败。
     /// </para>
     /// </summary>
     public static bool IsOnMainThread => _threadId != 0 && Environment.CurrentManagedThreadId == _threadId;
@@ -42,8 +42,8 @@ internal static class MainThreadDispatcher
         if (!token.IsCancellationRequested) Pending.Enqueue((action, token));
     }
 
-    // Only Fika operations opt into this context. Do not replace Unity's or
-    // another plugin's context globally. Nested awaits inherit it naturally.
+    // 只有 Fika 的操作会选用此上下文。不要全局替换 Unity 或
+    // 其他插件的上下文。嵌套的 await 会自然继承它。
     public static Task RunAsync(Func<Task> operation)
     {
         ArgumentNullException.ThrowIfNull(operation);
@@ -75,11 +75,11 @@ internal static class MainThreadDispatcher
     }
 
     /// <summary>
-    /// Runs an operation on the pumping thread when the caller is a different
-    /// managed thread. The body still executes on Unity's main thread (inside the
-    /// queue drain), so this only defers the work by a frame instead of aborting
-    /// the caller - a UI button that cannot dispatch would otherwise silently do
-    /// nothing.
+    /// 当调用方位于另一个托管线程时，在泵送线程上运行该操作。
+    /// 方法体仍在 Unity 主线程上执行（在队列排空过程中），
+    /// 因此这只是把工作推迟一帧，而不是中止调用方——
+    /// 否则一个无法派发的 UI 按钮会静默地
+    /// 什么都不做。
     /// </summary>
     private static Task MarshalAsync(Func<Task> operation)
     {
@@ -141,14 +141,14 @@ internal static class MainThreadDispatcher
     }
 
     /// <summary>
-    /// (analysis/stutter-frame-skip) A single queued action longer than this is named by its own line: the
-    /// 2026-10-13 20:01 raid measured dispatcherDrain=2045.91ms max=1883.05ms in one window and 4138.66ms
-    /// max=3934.25ms in another, i.e. one action of this queue held several frames, and the slot alone could
-    /// not say which continuation it was.
+    /// (analysis/stutter-frame-skip) 超过该值的单个排队操作会单独输出一行日志：
+    /// 2026-10-13 20:01 的战局在一个窗口测到 dispatcherDrain=2045.91ms max=1883.05ms，
+    /// 在另一个窗口测到 4138.66ms max=3934.25ms，即该队列中的某个操作占住了数帧，
+    /// 而仅凭时隙无法说明是哪一个续体。
     /// </summary>
     private const double SlowActionMillis = 25d;
 
-    /// <summary>Upper bound of the slow-action lines inside one second.</summary>
+    /// <summary>一秒内慢操作日志行的上限。</summary>
     private const int MaxSlowLinesPerSecond = 8;
 
     private static int _slowLines;
@@ -158,8 +158,8 @@ internal static class MainThreadDispatcher
     {
         VerifyThread();
 
-        // A continuation posted while draining (including Task.Yield) belongs
-        // to the next frame, rather than spinning repeatedly in this Update.
+        // 在排空过程中投递的续体（包括 Task.Yield）属于
+        // 下一帧，而不是在本 Update 中反复空转。
         var budget = Math.Min(Pending.Count, 256);
         for (var count = 0; count < budget && Pending.TryDequeue(out var work); count++)
         {
@@ -203,10 +203,10 @@ internal static class MainThreadDispatcher
 
         if (Environment.CurrentManagedThreadId == _threadId) return;
 
-        // The queue is only pumped from the plugin's Unity Update. If that pump
-        // reports a different identity, follow the pump: otherwise every queued
-        // main-thread action (including the ones just marshalled above) would be
-        // stuck behind a guard that no longer describes reality.
+        // 队列只从插件的 Unity Update 中泵送。如果该泵报告了
+        // 不同的标识，就跟随该泵：否则所有已排队的主线程操作
+        // （包括上面刚编组过来的那些）都会被一道不再符合
+        // 实际情况的守卫挡住。
         if (Interlocked.Exchange(ref _threadIdConflicts, 1) == 0)
         {
             FikaGlobals.LogWarning($"MainThreadDispatcher: the queue is now pumped by managed thread " +
@@ -231,8 +231,8 @@ internal static class MainThreadDispatcher
                 return;
             }
 
-            // The runtime wants a synchronous continuation on Unity's thread.
-            // Hand it to the pump and wait instead of failing the caller.
+            // 运行时需要在 Unity 线程上同步续体。
+            // 把它交给泵并等待，而不是让调用方失败。
             using var completed = new ManualResetEventSlim(false);
             Exception error = null;
             MainThreadDispatcher.Post(() =>

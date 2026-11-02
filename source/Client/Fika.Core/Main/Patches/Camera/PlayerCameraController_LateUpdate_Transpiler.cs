@@ -6,10 +6,10 @@ using SPTushonka.Reflection.Patching;
 
 namespace Fika.Core.Main.Patches.Camera;
 
-// Keep SPT 5's native camera LateUpdate for normal first-person gameplay.
-// Fika's old patch replaced the entire method with ManualLateUpdate; on SPT 5
-// that leaves the FPS camera at the deployment position.  Only suppress the
-// native update while the explicit Fika free camera is active.
+// 对正常的第一人称玩法，保留 SPT 5 的原生摄像机 LateUpdate。
+// Fika 旧的 patch 用 ManualLateUpdate 替换了整个方法；在 SPT 5 上
+// 这会让 FPS 摄像机停留在部署位置。仅在显式的 Fika 自由摄像机
+// 处于激活状态时抑制原生更新。
 public class PlayerCameraController_LateUpdate_Transpiler : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(PlayerCameraController), nameof(PlayerCameraController.LateUpdate));
@@ -25,8 +25,8 @@ public class PlayerCameraController_LateUpdate_Transpiler : ModulePatch
             return false;
         }
 
-        // Let the IL2CPP native implementation update and bind the FPS camera
-        // to the local player's head/weapon each LateUpdate.
+        // 让 IL2CPP 原生实现每次 LateUpdate 更新 FPS 摄像机
+        // 并将其绑定到本地玩家的头部/武器上。
         return true;
     }
 }

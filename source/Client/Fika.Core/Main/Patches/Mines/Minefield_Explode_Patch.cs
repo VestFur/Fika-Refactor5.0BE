@@ -14,7 +14,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.Mines;
 
 /// <summary>
-/// This patch prevents a null exception when an <see cref="ObservedPlayer"/> is hit by a mine explosion
+/// 此补丁用于在 <see cref="ObservedPlayer"/> 被地雷爆炸波及时防止空引用异常
 /// </summary>
 internal class Minefield_Explode_Patch : ModulePatch
 {

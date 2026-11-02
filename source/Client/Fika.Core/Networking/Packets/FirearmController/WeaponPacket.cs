@@ -19,8 +19,8 @@ public sealed class WeaponPacket : INetReusable
         NetId = reader.GetInt();
         Type = reader.GetEnum<EFirearmSubPacketType>();
         SubPacket = FirearmSubPacketPoolManager.Instance.GetPacket<IPoolSubPacket>(Type);
-        // (2026-10-26 W24) Unknown sub-packet type (peer on a different build): the pool reports it and returns
-        // null. Skipping the body leaves this packet inert instead of throwing inside the network poll loop.
+        // (2026-10-26 W24) 未知的子包类型（对端构建版本不同）：对象池会报告它并返回
+        // null。跳过正文可让该包保持惰性，而不是在网络轮询循环内部抛出异常。
         if (SubPacket == null)
         {
             reader.SkipBytes(reader.AvailableBytes);

@@ -8,7 +8,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.DebugPatches;
 
 /// <summary>
-/// Removes the need for a Lab Keycard on debug builds
+/// 在调试构建中取消对实验室门禁卡的需求
 /// </summary>
 [DebugPatch]
 internal class LabsKeycardDebugPatch : ModulePatch

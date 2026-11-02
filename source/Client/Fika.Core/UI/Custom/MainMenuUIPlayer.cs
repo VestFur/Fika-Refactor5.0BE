@@ -21,11 +21,11 @@ public class MainMenuUIPlayer : MonoBehaviour
     public Il2CppInterop.Runtime.InteropTypes.Fields.Il2CppReferenceField<Button> JoinButton;
 
     /// <summary>
-    /// Engine callbacks on a component the engine created from the bundle. They are written to
-    /// the stable diagnostics file so the order in which the engine starts and destroys these
-    /// injected instances survives the run: the crash this build chases happens while the
-    /// engine releases a scripting object, so "engine called OnDestroy" being the last line is
-    /// what identifies that object as the one under release.
+    /// 由引擎在我们从资源包创建的组件上触发的回调。它们被写入
+    /// 稳定的诊断文件，好让引擎启动和销毁这些注入实例的顺序
+    /// 在整次运行之后仍然留存：此构建追查的崩溃发生在
+    /// 引擎释放某个脚本对象的过程中，因此“引擎调用了 OnDestroy”成为最后一行，
+    /// 正是把它认定为正在被释放对象的依据。
     /// </summary>
     private void Awake()
     {
@@ -40,14 +40,14 @@ public class MainMenuUIPlayer : MonoBehaviour
     private bool _wiringReported;
 
     /// <summary>
-    /// Fills one roster row. Every field comes from the player template inside the bundle, so
-    /// each one is proven before it is written to: a readable page, a readable il2cpp class
-    /// name and the expected base class. A field that holds something which is not an object
-    /// at all (the dumps show 0x0A) or an object of the wrong type would otherwise turn this
-    /// row into a native access violation or corrupt an unrelated object.
+    /// 填充一行名册数据。每个字段都来自包内的玩家模板，所以
+    /// 每个字段在写入之前都会先被验证：可读的页面、可读的 il2cpp 类
+    /// 名，以及预期的基类。否则，一个持有根本不是对象的东西
+    /// （dump 显示 0x0A）的字段，或者一个类型错误的对象，都会把这
+    /// 一行变成原生访问违规，或者破坏一个无关对象。
     ///
-    /// Returns false when at least one field had to be skipped, so the caller can count
-    /// partially wired rows.
+    /// 当至少有一个字段不得不被跳过时返回 false，这样调用方就能统计
+    /// 只被部分接线的行。
     /// </summary>
     public bool SetActivity(string nickname, int level, EFikaPlayerPresence presence)
     {

@@ -4,9 +4,9 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.Overrides;
 
 /// <summary>
-/// SPT disables hardware telemetry at HWEcho_Json, but this IL2CPP build's
-/// GetMetrics contains the P/Invoke directly and bypasses that detour.
-/// Apply SPT's offline behavior at the caller before resolving hwecho.dll.
+/// SPT 在 HWEcho_Json 处禁用了硬件遥测，但本 IL2CPP 构建的
+/// GetMetrics 直接内联了 P/Invoke，绕过了那个 detour。
+/// 因此在解析 hwecho.dll 之前，先在调用方套用 SPT 的离线行为。
 /// </summary>
 internal sealed class HWEcho_GetMetrics_Patch : ModulePatch
 {

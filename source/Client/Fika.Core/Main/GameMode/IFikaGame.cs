@@ -5,7 +5,7 @@ using EFT;
 namespace Fika.Core.Main.GameMode;
 
 /// <summary>
-/// Interface for the <see cref="CoopGame"/>
+/// <see cref="CoopGame"/> 的接口
 /// </summary>
 public interface IFikaGame
 {
@@ -23,16 +23,16 @@ public interface IFikaGame
 
     public BaseGameController GameController { get; set; }
 
-    /// <summary>Restores the local first-person hands after the IL2CPP deployment path.</summary>
+    /// <summary>在走完 IL2CPP 的部署路径之后恢复本机第一人称的手部显示。</summary>
     public void RepairLocalHands(bool force = false);
 
 
-    /// <summary>Releases a pickup/loot state that the native animation never left.</summary>
+    /// <summary>解除原生动画始终没有退出的拾取/战利品状态。</summary>
     public void RepairLocalInteractionState();
 
     /// <summary>
-    /// Releases an inventory gate that stayed closed even though nothing holds
-    /// it, so that item moves and weapon switches work again.
+    /// 解除一个明明无人持锁却一直关着的背包闸门，
+    /// 使物品移动与武器切换重新可用。
     /// </summary>
     public void RepairLocalInventoryState();
 }

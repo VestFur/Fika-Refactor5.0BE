@@ -6,9 +6,9 @@ using EFT.Quests;
 namespace Fika.Core.Main.ObservedClasses;
 
 /// <summary>
-/// Dialog controller used by observed players.  Keeping it separate from the
-/// local player's ClientDialogController prevents remote quest/dialog state
-/// from writing into the local backend controller.
+/// 供 observed player 使用的对话控制器。将其与本地玩家的
+/// ClientDialogController 分开，可防止远程任务/对话状态
+/// 写入本地后端控制器。
 /// </summary>
 public sealed class ObservedDialogController : BaseTraderDialogController
 {

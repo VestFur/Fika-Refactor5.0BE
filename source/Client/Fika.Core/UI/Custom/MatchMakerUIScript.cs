@@ -160,7 +160,7 @@ public class MatchMakerUIScript : MonoBehaviour
             _fikaMatchMakerUi.DediSelection.Value.SetActive(false);
         }
 
-        // Ensure the IsSpectator field is reset every time the matchmaker UI is created
+        // 确保每次创建 matchmaker UI 时都重置 IsSpectator 字段
         FikaBackendUtils.IsSpectator = false;
 
         _fikaMatchMakerUi.SpectatorToggle.Value.isOn = false;
@@ -203,7 +203,7 @@ public class MatchMakerUIScript : MonoBehaviour
 
             List<TMP_Dropdown.OptionData> optionDatas = [];
 
-            // Sort availableHeadlesses alphabetically by Alias
+            // 按 Alias 的字母顺序排序 availableHeadlesses
             Array.Sort(availableHeadlesses,
                 (x, y) => string.Compare(x.Alias, y.Alias, StringComparison.OrdinalIgnoreCase));
             for (var i = 0; i < availableHeadlesses.Length; i++)
@@ -250,11 +250,11 @@ public class MatchMakerUIScript : MonoBehaviour
         {
             ToggleLoading(true);
 
-            // A scav raid never opens the offline raid settings screen, so its
-            // TimeAndWeatherSettings stay at the struct default - hour 0, which
-            // CoopGame treats as a real custom hour and starts every scav raid at
-            // midnight. -1 means "keep the world clock" (a joining player still
-            // receives the host's own choice from the server instead).
+            // scav raid 从不打开离线 raid 设置界面，因此它的
+            // TimeAndWeatherSettings 保持结构体默认值——小时 0，而
+            // CoopGame 会把它当作真实的定制小时，从而让每个 scav raid 都在
+            // 午夜开始。-1 表示 "保持世界时钟"（加入的玩家仍会
+            // 从服务器收到主机自己的选择）。
             if (RaidSettings.IsScav && RaidSettings.TimeAndWeatherSettings.HourOfDay == 0)
             {
                 var scavTimeAndWeather = RaidSettings.TimeAndWeatherSettings;
@@ -263,18 +263,18 @@ public class MatchMakerUIScript : MonoBehaviour
                 FikaGlobals.LogInfo("Scav raid: no raid time was configured, following the world clock");
             }
 
-            // The application is only needed for the headless path below. It used
-            // to be fetched here with a hard cast, which throws
-            // "Unable to cast ... to TarkovApplication" while the game is between
-            // screens and aborted the whole lobby action - the Fika match was then
-            // never created and the raid could not start.
+            // 该 application 只在下面的 headless 路径中需要。它过去
+            // 在这里用强制转换获取，而强制转换会在游戏处于
+            // 界面切换期间时抛出 "Unable to cast ... to TarkovApplication"，并
+            // 中止了整个大厅操作——Fika 对局随后
+            // 从未被创建，raid 也无法开始。
             Singleton<GUISounds>.Instance.PlayUISound(EUISoundType.ButtonClick);
 
             if (!_fikaMatchMakerUi.DedicatedToggle.Value.isOn)
             {
                 if (FikaPlugin.Instance.Settings.ForceIP.Value != "")
                 {
-                    // We need to handle DNS entries as well
+                    // 我们还需要处理 DNS 条目
                     var ip = FikaPlugin.Instance.Settings.ForceIP.Value;
                     try
                     {
@@ -468,9 +468,9 @@ public class MatchMakerUIScript : MonoBehaviour
         JoinMatchCore(profileId, serverId, button, false, cancellationToken);
 
     /// <summary>
-    /// Join implementation. <paramref name="scavLateJoin"/> marks a player scav
-    /// entering a raid that already started: it uses its own connection key, is
-    /// spawned as a scav and stays outside the host's group.
+    /// 加入实现。<paramref name="scavLateJoin"/> 标记一个玩家 scav
+    /// 进入已经开始的 raid：它使用自己的连接键，
+    /// 以 scav 身份生成，并留在主机的小组之外。
     /// </summary>
     public static async Task<bool> JoinMatchCore(string profileId, string serverId, Button button, bool scavLateJoin,
         CancellationToken cancellationToken)
@@ -481,8 +481,8 @@ public class MatchMakerUIScript : MonoBehaviour
             button.enabled = false;
         }
 
-        // A new attempt starts clean; the previous attempt's failure is reported (and logged) here
-        // instead of aborting this one at the raid start with a stale reason.
+        // 新的尝试从干净状态开始；上一次尝试的失败在此处报告（并记录日志），
+        // 而不是在 raid 开始时用一个过期的原因中止本次尝试。
         FikaBackendUtils.ClearLeftoverJoinFailure();
 
         FikaBackendUtils.IsScavLateJoin = scavLateJoin;
@@ -495,9 +495,9 @@ public class MatchMakerUIScript : MonoBehaviour
         {
             FikaGlobals.LogInfo("Attempting to connect to host session...");
             var knockMessage = FikaBackendUtils.ServerGuid.ToString();
-            // A player scav entering a running raid is allowed through, so the
-            // host must answer the "you may connect" reply instead of the
-            // "raid already started" one.
+            // 玩家 scav 进入正在运行的 raid 是被允许的，因此
+            // 主机必须给出 "你可以连接" 的应答，而不是
+            // "raid 已经开始" 的应答。
             var success = await pingingClient.AttemptToPingHost(knockMessage, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -517,9 +517,9 @@ public class MatchMakerUIScript : MonoBehaviour
         }
         else
         {
-            // Two different failures used to share the "could not start the FikaPinger" text. A server
-            // that answered without a host record is the host's side (their raid was never published),
-            // a transport failure is ours; the trailing detail line says which one it was.
+            // 过去两种不同的失败共用 "could not start the FikaPinger" 这段文本。应答时
+            // 没有主机记录的服务器属于主机侧问题（他们的 raid 从未发布），
+            // 传输失败则属于我们；末尾的细节行会说明是哪一种。
             Singleton<PreloaderUI>.Instance.ShowCriticalErrorScreen(
                 LocaleUtils.UI_ERROR_CONNECTING.Localized(),
                 (pingingClient.HostAddressMissing
@@ -548,9 +548,9 @@ public class MatchMakerUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Appends the concrete reason a ping could not be started to the dialog body, so the player does
-    /// not have to open the log to tell "the host never published an address" from "we cannot reach
-    /// the server". Empty when there is no extra detail.
+    /// 把 ping 无法启动的具体原因追加到对话框正文，这样玩家不必
+    /// 打开日志就能区分 "主机从未发布地址" 与 "我们无法访问
+    /// 服务器"。没有额外细节时为空。
     /// </summary>
     private static string PingingFailureDetail(FikaPingingClient pingingClient) =>
         string.IsNullOrEmpty(pingingClient?.FailureReason) ? string.Empty : "\n\n" + pingingClient.FailureReason;
@@ -559,20 +559,20 @@ public class MatchMakerUIScript : MonoBehaviour
     {
         if (_matches == null)
         {
-            // not initialized
+            // 未初始化
             return;
         }
 
         if (_matchesListObjects != null)
         {
-            // cleanup old objects
+            // 清理旧对象
             foreach (var match in _matchesListObjects)
             {
                 Destroy(match);
             }
         }
 
-        // create lobby listings
+        // 创建大厅列表
         for (var i = 0; i < _matches.Length; ++i)
         {
             var entry = _matches[i];
@@ -582,31 +582,31 @@ public class MatchMakerUIScript : MonoBehaviour
                 continue;
             }
 
-            // server object
+            // 服务器对象
             var server = Instantiate(_fikaMatchMakerUi.RaidGroupDefaultToClone.Value, _fikaMatchMakerUi.RaidGroupDefaultToClone.Value.transform.parent);
             server.SetActive(true);
             _matchesListObjects.Add(server);
 
             server.name = entry.ServerId;
 
-            // A player scav may walk into a PMC raid that is already running.
-            // Such a join adopts the host's location and world clock on the fly
-            // and is spawned as a scav, so it is never part of the host's group.
+            // 玩家 scav 可能走进一个已经在运行的 PMC raid。
+            // 这种加入会在运行过程中采用主机的位置和世界时钟，
+            // 并以 scav 身份生成，因此它从不属于主机的小组。
             var scavLateJoin = RaidSettings.Side == ESideType.Savage && entry.Side == ESideType.Pmc;
 
-            // player label
+            // 玩家标签
             var playerLabel = GameObject.Find("PlayerLabel");
             playerLabel.name = "PlayerLabel" + i;
             var sessionName = entry.HostUsername;
             playerLabel.GetComponentInChildren<TextMeshProUGUI>().SetText(sessionName);
 
-            // players count label
+            // 玩家数量标签
             var playerCountLabel = GameObject.Find("PlayerCountLabel");
             playerCountLabel.name = "PlayerCountLabel" + i;
             var playerCount = entry.IsHeadless ? entry.PlayerCount - 1 : entry.PlayerCount;
             playerCountLabel.GetComponentInChildren<TextMeshProUGUI>().SetFormattedText("{0}", playerCount);
 
-            // player join button
+            // 玩家加入按钮
             var joinButton = GameObject.Find("JoinButton");
             joinButton.name = "JoinButton" + i;
             var button = joinButton.GetComponent<Button>();
@@ -708,16 +708,16 @@ public class MatchMakerUIScript : MonoBehaviour
                 case LobbyEntry.ELobbyStatus.IN_GAME:
                     if (scavLateJoin)
                     {
-                        // Player scavs join a running raid by design.
+                        // 玩家 scav 按设计可以加入正在运行的 raid。
                         tooltipArea = joinButton.GetOrAddComponent<HoverTooltipArea>();
                         tooltipArea.enabled = true;
                         tooltipArea.SetMessageText(LocaleUtils.UI_JOIN_RAID.Localized());
                         break;
                     }
 
-                    // A raid that already runs cannot be entered again: the character this client
-                    // left behind stays with the host, exactly as the vanilla disconnect handling
-                    // leaves it. Rejoining it was the removed disconnect-reconnect feature.
+                    // 已经在运行的 raid 无法再次进入：本客户端
+                    // 留下的角色会留在主机处，与原生断线处理所做的
+                    // 完全一致。重新加入它属于已被移除的断线重连功能。
                     button.enabled = false;
                     if (image != null)
                     {

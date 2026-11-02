@@ -5,42 +5,42 @@ using Fika.Core.Modding.Events;
 namespace Fika.Core.Modding;
 
 /// <summary>
-/// Provides a static event dispatcher for Fika events, allowing subscription and dispatching of events.
+/// 为 Fika 事件提供静态事件分发器，支持事件的订阅与分发。
 /// </summary>
 public static class FikaEventDispatcher
 {
     /// <summary>
-    /// Represents a handler for Fika events.
+    /// 表示 Fika 事件的处理程序。
     /// </summary>
-    /// <param name="e">The event instance.</param>
+    /// <param name="e">事件实例。</param>
     public delegate void FikaEventHandler(FikaEvent e);
 
     /// <summary>
-    /// Occurs when any Fika event is dispatched.
+    /// 在分发任何 Fika 事件时发生。
     /// </summary>
-    /// <remarks>Consumers are encouraged to subscribe to individual events instead.</remarks>
+    /// <remarks>建议消费方改为订阅具体事件。</remarks>
     public static event FikaEventHandler OnFikaEvent;
 
     /// <summary>
-    /// Maps a composite key of (Callback, EventType) to the generated wrapper delegate for unsubscription matching.
+    /// 将 (Callback, EventType) 复合键映射到生成的包装委托，用于匹配取消订阅。
     /// </summary>
     private static readonly Dictionary<(Delegate Callback, Type EventType), FikaEventHandler> _delegateMap = [];
 
     /// <summary>
-    /// Dispatches a Fika event to all registered handlers.
+    /// 将 Fika 事件分发给所有已注册的处理程序。
     /// </summary>
-    /// <typeparam name="TEvent">The type of the event, derived from <see cref="FikaEvent"/>.</typeparam>
-    /// <param name="e">The event instance to dispatch.</param>
+    /// <typeparam name="TEvent">事件的类型，派生自 <see cref="FikaEvent"/>。</typeparam>
+    /// <param name="e">要分发的事件实例。</param>
     public static void DispatchEvent<TEvent>(TEvent e) where TEvent : FikaEvent
     {
         OnFikaEvent?.Invoke(e);
     }
 
     /// <summary>
-    /// Subscribes a callback to a specific type of Fika event.
+    /// 将回调订阅到特定类型的 Fika 事件。
     /// </summary>
-    /// <typeparam name="TEvent">The type of the event to subscribe to.</typeparam>
-    /// <param name="callback">The callback to invoke when the event is dispatched.</param>
+    /// <typeparam name="TEvent">要订阅的事件类型。</typeparam>
+    /// <param name="callback">事件分发时要调用的回调。</param>
     public static void SubscribeEvent<TEvent>(Action<TEvent> callback) where TEvent : FikaEvent
     {
         if (callback == null)
@@ -61,10 +61,10 @@ public static class FikaEventDispatcher
     }
 
     /// <summary>
-    /// Unsubscribes a callback from a specific type of Fika event.
+    /// 从特定类型的 Fika 事件取消订阅回调。
     /// </summary>
-    /// <typeparam name="TEvent">The type of the event to unsubscribe from.</typeparam>
-    /// <param name="callback">The callback to remove from the event subscription.</param>
+    /// <typeparam name="TEvent">要取消订阅的事件类型。</typeparam>
+    /// <param name="callback">要从事件订阅中移除的回调。</param>
     public static void UnsubscribeEvent<TEvent>(Action<TEvent> callback) where TEvent : FikaEvent
     {
         if (callback == null)

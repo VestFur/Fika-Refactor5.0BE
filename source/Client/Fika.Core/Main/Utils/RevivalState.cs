@@ -2,14 +2,14 @@ using System;
 
 namespace Fika.Core.Main.Utils;
 
-/// <summary>Raid-local revival state. Durations, never process-local clock values, cross the wire.</summary>
+/// <summary>战局内的复活状态。通过网络传输的是时长，绝不是进程内时钟的读数。</summary>
 public struct RevivalState : INetSerializable
 {
     public bool IsAlive;
     public bool Downed;
     public bool BledOut;
     public int Revives;
-    // Negative means timed bleedout is disabled; zero means it has expired.
+    // 负数表示定时流血死亡被禁用；零表示已经到期。
     public float BleedoutRemaining;
     public float RevivePauseRemaining;
     public string ReviverNickname;
@@ -40,7 +40,7 @@ public struct RevivalState : INetSerializable
     }
 }
 
-/// <summary>Also advances on the host while a player's process is disconnected or loading.</summary>
+/// <summary>当玩家进程断开或正在加载时，它也会在主机上推进。</summary>
 internal sealed class RevivalStateClock
 {
     private RevivalState _state = new() { IsAlive = true, BleedoutRemaining = -1f };
@@ -83,7 +83,7 @@ internal sealed class RevivalStateClock
     {
         var state = Capture();
         if (!state.Downed) return;
-        // A disconnected rescuer cannot leave the timer paused indefinitely.
+        // 断线的施救者不能把这个计时器无限期地留在暂停状态。
         state.RevivePauseRemaining = reviving ? Math.Max(0, duration) : 0;
         state.ReviverNickname = reviving ? nickname : string.Empty;
         Restore(state);

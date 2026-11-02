@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 
 namespace Fika.Core.Networking.Serialization;
 
-/// <summary>Managed DTO serialization with Fika's existing DataContract wire names.</summary>
+/// <summary>托管 DTO 序列化，沿用 Fika 既有的 DataContract 线缆名称。</summary>
 internal static class ManagedJson
 {
     public static JsonSerializerOptions CreateOptions()
@@ -45,8 +45,8 @@ internal static class ManagedJson
             var seen = new bool[Members.Length];
             foreach (var property in document.RootElement.EnumerateObject())
             {
-                // Newtonsoft's contract resolver first matches exact names, then
-                // falls back to case-insensitive matching. Preserve that behavior.
+                // Newtonsoft 的契约解析器先按精确名称匹配，
+                // 再回退到不区分大小写的匹配。保留这一行为。
                 var index = Array.FindIndex(Members, m => m.Name == property.Name);
                 if (index < 0 && options.PropertyNameCaseInsensitive)
                     index = Array.FindIndex(Members, m => string.Equals(m.Name, property.Name, StringComparison.OrdinalIgnoreCase));
@@ -100,8 +100,8 @@ internal static class ManagedJson
         }
     }
 
-    // Newtonsoft accepts both names and numbers, but writes numbers without
-    // StringEnumConverter. JsonStringEnumConverter would change Fika's protocol.
+    // Newtonsoft 既接受名称也接受数字，但在没有
+    // StringEnumConverter 的情况下写出的是数字。JsonStringEnumConverter 会改变 Fika 的协议。
     private sealed class NumericEnumConverterFactory : JsonConverterFactory
     {
         public override bool CanConvert(Type type) => type.IsEnum;

@@ -11,8 +11,8 @@ internal class DataPrepareOperation_ReloadBackendLocale_Patch : ModulePatch
 
     protected override MethodBase GetTargetMethod()
     {
-        // SPT 5's startup prefetch calls the shared loader directly, bypassing
-        // ClientBackendSession.LoadLocale. Observe the actual locale task.
+        // SPT 5 的启动预取会直接调用共享加载器，绕过
+        // ClientBackendSession.LoadLocale。改为观察实际的语言包任务。
         return typeof(LocalizationLoader)
             .GetMethod(nameof(LocalizationLoader.LoadLocale));
     }

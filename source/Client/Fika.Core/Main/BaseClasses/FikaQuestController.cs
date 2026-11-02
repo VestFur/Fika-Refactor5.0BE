@@ -8,9 +8,9 @@ using Fika.Core.Main.Utils;
 namespace Fika.Core.Main.BaseClasses;
 
 /// <summary>
-/// Owns the game's sealed local quest controller. Native callers keep the actual
-/// controller, including its local-game connectors, auto-start quests and rewards.
-/// Fika state is resolved by native pointer rather than managed wrapper identity.
+/// 持有游戏密封的本地任务控制器。原生调用方保留实际的
+/// 控制器，包括它的本地游戏连接器、自动开始的任务和奖励。
+/// Fika 状态按原生指针解析，而不是按托管包装器身份解析。
 /// </summary>
 public abstract class FikaQuestController : IDisposable
 {
@@ -19,9 +19,9 @@ public abstract class FikaQuestController : IDisposable
     protected bool IsDisposed => _disposed;
 
     /// <summary>
-    /// One registered controller plus the world generation it belongs to (analysis/transit-crash-unload).
-    /// A quest controller is created per raid with its local game; without the epoch a lookup keyed only by
-    /// the native pointer can hand the controller of a released raid to the native object of the next one.
+    /// 一个已注册的控制器，外加它所属的世界世代（analysis/transit-crash-unload）。
+    /// 一个任务控制器随其本地游戏每局突袭创建一次；没有世代号时，仅以
+    /// 原生指针为键的查找就可能把一个已释放突袭的控制器交给下一局的原生对象。
     /// </summary>
     private readonly struct Entry(FikaQuestController controller, int epoch)
     {
@@ -68,9 +68,9 @@ public abstract class FikaQuestController : IDisposable
     }
 
     /// <summary>
-    /// Drops every controller at a world teardown (analysis/transit-crash-unload). Like
-    /// <see cref="FikaWorldControllers.ClearForWorldTeardown"/> this deliberately does not call Dispose:
-    /// the native quest controller of that world is already gone, and disposing would enter it.
+    /// 在世界拆除时丢弃所有控制器（analysis/transit-crash-unload）。与
+    /// <see cref="FikaWorldControllers.ClearForWorldTeardown"/> 一样，这里有意不调用 Dispose：
+    /// 那个世界的原生任务控制器已经消失，而 Dispose 会进入它。
     /// </summary>
     internal static int ClearForWorldTeardown()
     {

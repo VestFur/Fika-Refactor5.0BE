@@ -7,7 +7,7 @@ public class RequestPacket : INetSerializable
 {
     public ERequestSubPacketType Type;
     /// <summary>
-    /// Do not assign manually, this is handled by the packet during <see cref="Serialize(NetDataWriter)"/>
+    /// 不要手动赋值，这由数据包在 <see cref="Serialize(NetDataWriter)"/> 期间处理
     /// </summary>
     private bool _hasSubPacket;
     public IRequestPacket RequestSubPacket;

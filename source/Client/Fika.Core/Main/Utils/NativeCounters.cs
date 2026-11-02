@@ -7,7 +7,7 @@ namespace Fika.Core;
 
 internal static class NativeCounters
 {
-    // Counter keys contain native boxed enums, not CLR boxed enum values.
+    // 计数器键包含 native 装箱的枚举，而不是 CLR 装箱的枚举值。
     public static Il2CppReferenceArray<Il2CppSystem.Object> ExperienceTags() =>
         new(new Il2CppSystem.Object[]
         {

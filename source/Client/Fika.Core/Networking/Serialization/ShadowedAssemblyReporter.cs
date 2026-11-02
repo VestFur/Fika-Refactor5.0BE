@@ -7,28 +7,28 @@ using Fika.Core.Main.Utils;
 namespace Fika.Core.Networking.Serialization;
 
 /// <summary>
-/// Recognises and names the managed plugin assemblies that shadow an IL2CPP
-/// interop proxy by assembly name.
+/// 识别并命名那些按程序集名称遮蔽了 IL2CPP
+/// interop 代理的托管插件程序集。
 /// <para>
-/// BepInEx resolves a plugin's references by simple assembly name, so a managed
-/// <c>Newtonsoft.Json.dll</c> dropped into BepInEx/plugins wins over the
-/// <c>BepInEx/interop</c> proxy Fika is compiled against. Every call site that
-/// needs one of the proxy's IL2CPP overloads then dies with
-/// <see cref="MissingMethodException"/> <b>while that call site's own method is
-/// compiled</b>. The failure is therefore raised in the caller's frame, before
-/// the first statement of the failing method runs, which is why a try/catch
-/// inside that method can never observe it - the enclosing method has to be a
-/// different frame.
+/// BepInEx 按简单程序集名称解析插件的引用，因此一个被放入
+/// BepInEx/plugins 的托管 <c>Newtonsoft.Json.dll</c> 会胜过 Fika 编译时所
+/// 针对的 <c>BepInEx/interop</c> 代理。此后每个需要用到该代理某个
+/// IL2CPP 重载的调用点都会因
+/// <see cref="MissingMethodException"/> 而失败，<b>而且是在该调用点自身的方法
+/// 被编译时</b>。因此失败是在调用方的帧中抛出的，在
+/// 失败方法的第一条语句执行之前，这就是为什么该方法内部的 try/catch
+/// 永远无法观察到它——外围方法必须处于
+/// 另一个帧中。
 /// </para>
 /// <para>
-/// This class is the single place that detects the condition, reports it with
-/// the file that actually won name resolution, and is safe to call from a
-/// preflight before anything depends on those overloads.
+/// 这个类是检测该状况的唯一场所，报告它时带上
+/// 实际赢得名称解析的那个文件，并且可以从
+/// 预检中安全调用，且是在任何东西依赖这些重载之前。
 /// </para>
 /// </summary>
 public static class ShadowedAssemblyReporter
 {
-    /// <summary>Simple name of the assembly whose IL2CPP overloads Fika depends on.</summary>
+    /// <summary>Fika 所依赖其 IL2CPP 重载的程序集的简单名称。</summary>
     public const string NewtonsoftJsonAssembly = "Newtonsoft.Json";
 
     private static readonly object Gate = new();
@@ -39,8 +39,8 @@ public static class ShadowedAssemblyReporter
     private static int _reportedIfShadowed;
 
     /// <summary>
-    /// True while <c>Newtonsoft.Json</c> still resolves to the IL2CPP interop
-    /// proxy. The probe only asks which assembly won; it never calls into it.
+    /// 当 <c>Newtonsoft.Json</c> 仍解析到 IL2CPP interop
+    /// 代理时为 true。该探测只询问哪个程序集胜出；它从不调用它。
     /// </summary>
     public static bool NewtonsoftInteropAvailable
     {
@@ -52,8 +52,8 @@ public static class ShadowedAssemblyReporter
     }
 
     /// <summary>
-    /// Names the assembly file that won <c>Newtonsoft.Json</c> name resolution,
-    /// as <c>folder/file (state)</c> so a log line never leaks an install path.
+    /// 命名赢得 <c>Newtonsoft.Json</c> 名称解析的那个程序集文件，
+    /// 形式为 <c>folder/file (state)</c>，以便日志行永远不会泄漏安装路径。
     /// </summary>
     public static string NewtonsoftDescription
     {
@@ -65,8 +65,8 @@ public static class ShadowedAssemblyReporter
     }
 
     /// <summary>
-    /// The standard, existing shadow report. Kept under this method name so
-    /// <see cref="FikaGlobals"/> still tags the line <c>[ReportShadowed]</c>.
+    /// 标准的、既有的遮蔽报告。保留在此方法名下，以便
+    /// <see cref="FikaGlobals"/> 仍能给该行打上 <c>[ReportShadowed]</c> 标记。
     /// </summary>
     public static void ReportShadowed(Exception exception)
     {
@@ -76,10 +76,10 @@ public static class ShadowedAssemblyReporter
     }
 
     /// <summary>
-    /// Logs once per process when the IL2CPP overloads are unavailable, so the
-    /// condition is visible from the start path instead of only from whichever
-    /// call happens to fail first. Pass the caller's log prefix
-    /// (for example <c>"[Headless]"</c>) so the line can be found by grep.
+    /// 当 IL2CPP 重载不可用时，每个进程记录一次，以便
+    /// 该状况从启动路径即可见，而不只是从恰好第一个
+    /// 失败的调用处可见。传入调用方的日志前缀
+    /// （例如 <c>"[Headless]"</c>），以便该行可以用 grep 找到。
     /// </summary>
     public static void ReportIfShadowed(string source)
     {
@@ -101,8 +101,8 @@ public static class ShadowedAssemblyReporter
     }
 
     /// <summary>
-    /// True for the exceptions a shadowed interop proxy produces. Callers use it
-    /// as a <c>when</c> filter around a call into the proxy.
+    /// 对于被遮蔽的 interop 代理所产生的异常返回 true。调用方把它用作
+    /// 包裹代理调用的 <c>when</c> 过滤器。
     /// </summary>
     public static bool IsShadowedInterop(Exception exception) =>
         exception is MissingMethodException or MissingFieldException or TypeLoadException
@@ -122,9 +122,9 @@ public static class ShadowedAssemblyReporter
 
             try
             {
-                // typeof() reports which assembly won name resolution and never
-                // executes code in it. The shadowing managed assembly is not an
-                // Il2CppObjectBase, which is what makes the check possible.
+                // typeof() 报告哪个程序集赢得了名称解析，且从不
+                // 在其中执行代码。进行遮蔽的托管程序集不是
+                // Il2CppObjectBase，这正是该检查得以成立的原因。
                 _newtonsoftInteropAvailable =
                     typeof(Il2CppObjectBase).IsAssignableFrom(typeof(Newtonsoft.Json.JsonConverter));
             }

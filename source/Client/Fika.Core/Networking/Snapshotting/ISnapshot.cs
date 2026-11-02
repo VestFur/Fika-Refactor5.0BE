@@ -1,12 +1,12 @@
 ﻿namespace Fika.Core.Networking.Snapshotting;
 
 /// <summary>
-/// Defines the minimum data required for a synchronized network snapshot.
+/// 定义同步网络快照所需的最小数据。
 /// </summary>
 public interface ISnapshot
 {
-    /// <summary> The server's timestamp when this state was captured. </summary>
+    /// <summary> 捕获该状态时服务器的时间戳。 </summary>
     double RemoteTime { get; }
-    /// <summary> The local system time when this packet was received. </summary>
+    /// <summary> 收到该数据包时的本地系统时间。 </summary>
     double LocalTime { get; }
 }

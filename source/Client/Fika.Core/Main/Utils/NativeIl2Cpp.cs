@@ -5,15 +5,15 @@ using Il2CppInterop.Runtime;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Minimal IL2CPP reflection for calls whose signatures mention a type that can
-/// be shadowed by a managed assembly.
+/// 为签名中提到可能被托管程序集遮蔽的类型的调用
+/// 提供的最小 IL2CPP 反射。
 /// <para>
-/// A managed <c>Newtonsoft.Json.dll</c> in BepInEx/plugins wins name resolution
-/// over the IL2CPP interop proxy, so managed metadata can no longer express
-/// signatures such as <c>ToUnparsedData(Il2CppReferenceArray&lt;JsonConverter&gt;)</c>
-/// or a <c>JToken</c> return value. Resolving the classes through IL2CPP by name
-/// and invoking them with raw pointers sidesteps managed type resolution
-/// entirely.
+/// BepInEx/plugins 下的托管 <c>Newtonsoft.Json.dll</c> 会在名称解析中
+/// 压过 IL2CPP interop 代理，因此托管元数据再也无法表达
+/// 诸如 <c>ToUnparsedData(Il2CppReferenceArray&lt;JsonConverter&gt;)</c>
+/// 或 <c>JToken</c> 返回值这样的签名。按名字通过 IL2CPP
+/// 解析这些类并用裸指针调用它们，可以完全绕开
+/// 托管类型解析。
 /// </para>
 /// </summary>
 internal static unsafe class NativeIl2Cpp
@@ -41,11 +41,11 @@ internal static unsafe class NativeIl2Cpp
 
     internal static IntPtr FindMethod(IntPtr type, string name, int parameterCount, string firstParameterType = null)
     {
-        // Inherited methods are not part of the derived class's own method list,
-        // so the whole hierarchy has to be walked. Without this a runtime type
-        // that inherits the target (for example the backend session used from the
-        // menu) yields "could not resolve ... through IL2CPP" and the caller's
-        // managed fallback then fails against the shadowing Newtonsoft.Json.
+        // 继承来的方法不属于派生类自身的方法列表，
+        // 因此必须遍历整个层次结构。否则一个继承了目标方法的
+        // 运行时类型（例如从菜单使用的后端会话）会报出
+        // "could not resolve ... through IL2CPP"，调用方的
+        // 托管回退随后又会被遮蔽的 Newtonsoft.Json 打败。
         var owner = type;
         while (owner != IntPtr.Zero)
         {
@@ -93,8 +93,8 @@ internal static unsafe class NativeIl2Cpp
                     if (getter != IntPtr.Zero) return getter;
                 }
 
-                // The name-based lookup misses inherited properties on some
-                // runtimes, so walk the property list as well.
+                // 基于名字的查找在某些运行时上会漏掉继承来的属性，
+                // 因此也要遍历属性列表。
                 var iterator = IntPtr.Zero;
                 while (true)
                 {
@@ -117,9 +117,9 @@ internal static unsafe class NativeIl2Cpp
     }
 
     /// <summary>
-    /// Finds a method by name across every class in an assembly. Extension
-    /// methods are compiled into static helper classes whose names are not part
-    /// of the call site, so the declaring type cannot be named up front.
+    /// 按名字在程序集中的每个类里查找方法。扩展方法
+    /// 会被编译进静态辅助类，这些类的名字并不出现在
+    /// 调用点，因此无法事先指明声明类型。
     /// </summary>
     internal static IntPtr FindMethodInAssembly(string assemblyName, string methodName, int parameterCount,
         out string declaringType, string firstParameterType = null)
@@ -130,9 +130,9 @@ internal static unsafe class NativeIl2Cpp
         var image = IL2CPP.il2cpp_assembly_get_image(assembly);
         if (image == IntPtr.Zero) return IntPtr.Zero;
 
-        // The reported type name of a parameter can be unavailable, so an exact
-        // name match is a preference, not a requirement: a lone method with the
-        // requested name and parameter count is unambiguous on its own.
+        // 参数的类型名可能无法获得，因此精确的名字匹配只是
+        // 偏好而非要求：唯一一个具有所请求的名字和参数个数的方法
+        // 本身就已经没有歧义。
         var fallback = IntPtr.Zero;
         var fallbackType = (string)null;
         var matches = 0;
@@ -177,7 +177,7 @@ internal static unsafe class NativeIl2Cpp
         return fallback;
     }
 
-    /// <summary>Describes every method with this name, for diagnosing a failed lookup.</summary>
+    /// <summary>描述所有使用此名字的方法，用于诊断失败的查找。</summary>
     internal static string Describe(string assemblyName, string methodName)
     {
         var assembly = OpenAssembly(assemblyName);
@@ -216,7 +216,7 @@ internal static unsafe class NativeIl2Cpp
         return builder.Length == 0 ? "no method named " + methodName : builder.ToString();
     }
 
-    /// <summary>Reads a member that may be either a property or a field.</summary>
+    /// <summary>读取一个可能是属性也可能是字段的成员。</summary>
     internal static IntPtr ReadMember(IntPtr instance, string memberName)
     {
         if (instance == IntPtr.Zero) return IntPtr.Zero;
@@ -233,7 +233,7 @@ internal static unsafe class NativeIl2Cpp
         return field == IntPtr.Zero ? IntPtr.Zero : IL2CPP.il2cpp_field_get_value_object(field, instance);
     }
 
-    /// <summary>Lists the members of an object's class, for diagnosing a failed lookup.</summary>
+    /// <summary>列出对象所属类的成员，用于诊断失败的查找。</summary>
     internal static string DescribeMembers(IntPtr instance)
     {
         if (instance == IntPtr.Zero) return "no instance";

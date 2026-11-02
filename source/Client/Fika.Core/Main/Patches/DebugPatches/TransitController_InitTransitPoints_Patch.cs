@@ -5,7 +5,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.DebugPatches;
 
 /// <summary>
-/// Used to speed up debugging
+/// 用于加快调试
 /// </summary>
 [DebugPatch]
 public class TransitController_InitTransitPoints_Patch : ModulePatch

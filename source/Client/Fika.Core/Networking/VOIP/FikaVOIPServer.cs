@@ -5,7 +5,7 @@ using Fika.Core.Main.Utils;
 
 namespace Fika.Core.Networking.VOIP;
 
-/// <summary>Maps stable native voice connection identities to Fika peers.</summary>
+/// <summary>把稳定的原生语音连接身份映射到 Fika 对等端。</summary>
 public sealed class FikaVOIPServer(FikaCommsNetwork network, MirrorIgnoranceServer native) : IDisposable
 {
     private readonly Dictionary<NetPeer, MirrorConn> _remote = new();
@@ -50,9 +50,9 @@ public sealed class FikaVOIPServer(FikaCommsNetwork network, MirrorIgnoranceServ
         if (_disposed || !network.IsActive || packet.Count == 0) return;
         if (connection?.Connection == null || !_peers.TryGetValue(connection.Connection.Pointer, out var peer))
         {
-            // A connection may be removed while Dissonance is finishing a voice
-            // update. Like upstream Fika, drop that stale send instead of
-            // aborting the native voice loop.
+            // Dissonance 正在完成一次语音更新时，连接可能已被移除。
+            // 与上游 Fika 一样，丢弃这次过期的发送，而不是
+            // 中止原生的语音循环。
             FikaGlobals.LogError("FikaVOIPServer: no peer for this connection");
             return;
         }

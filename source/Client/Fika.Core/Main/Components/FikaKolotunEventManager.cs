@@ -26,8 +26,8 @@ internal class FikaKolotunEventManager : MonoBehaviour
         Il2CppSystem.Action<KolotunStateEvent> native = managed;
         _unsubscribe = GlobalEventsController.Instance.SubscribeOnEvent<KolotunStateEvent>(native);
 
-        // The native controller can publish its initial state during construction,
-        // before this component subscribes. Give already-connected peers a snapshot.
+        // 原生控制器可能在构造期间就发布其初始状态，
+        // 早于本组件完成订阅。因此要给已连接的对端发一份快照。
         var controller = Singleton<GameWorld>.Instance?.KolotunController;
         if (controller != null)
         {

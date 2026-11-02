@@ -10,7 +10,7 @@ public class MapLoadingPatch : ModulePatch
 {
     protected override MethodBase GetTargetMethod()
     {
-        // The display class ordinal changed with the build (216 on the ported build, 237 on 47888).
+        // 显示类的序号随构建版本变化（移植构建为 216，47888 上为 237）。
         return LoadMapAndDataTargets.Resolve("_LoadMapAndData_b__1");
     }
 
@@ -18,7 +18,7 @@ public class MapLoadingPatch : ModulePatch
     public static void Postfix(float pr)
     {
         if (FikaBackendUtils.ClientType == EClientType.None) return;
-        var progress = 0f + (pr * (FikaBackendUtils.IsHeadless ? 50f : 25f)); // headless doesn't cache culling
+        var progress = 0f + (pr * (FikaBackendUtils.IsHeadless ? 50f : 25f)); // 无头端不缓存剔除
         LoadingScreenUI.Instance.UpdateAndBroadcast(progress);
     }
 }

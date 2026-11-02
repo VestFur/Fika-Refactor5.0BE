@@ -58,8 +58,8 @@ public static class FikaNativeTypes
                              i != typeof(IIl2CppObjectBase) && typeof(IIl2CppObjectBase).IsAssignableFrom(i)))
                     InitializeNativeClass(contract);
                 logger.LogDebug($"Native hierarchy ready: {type.FullName}");
-                // Keep the runtime's declared-interface resolver: passing an
-                // empty list would discard game contracts such as IBotGame.
+                // 保留运行时声明接口的解析器：传入空列表
+                // 会丢弃 IBotGame 这类游戏契约。
                 ClassInjector.RegisterTypeInIl2Cpp(type);
                 if (Il2CppClassPointerStore.GetNativeClassPointer(type) == IntPtr.Zero)
                     throw new InvalidOperationException("Registration returned a null native class");
@@ -78,13 +78,13 @@ public static class FikaNativeTypes
                 + "so the descriptor was dropped and conservative reference tracing was enabled instead: "
                 + string.Join(", ", inheritedDescriptors));
         logger.LogInfo($"Registered {types.Length} Fika native types from {assembly.GetName().Name}.");
-        // The invoker of every injected method has to be the managed shim, not only the methods the
-        // registration time postfix happened to see: sweep the types once the registration is complete
-        // (analysis/managed-invoker/REPORT-sweep.md). Runs before the entry points are validated, so a
-        // method the sweep rewrote is validated in its final shape.
+        // 每个注入方法的 invoker 都必须是托管 shim，而不只是注册时的 postfix 恰好
+        // 看到的那些方法：在注册完成后扫描一遍这些类型
+        // （analysis/managed-invoker/REPORT-sweep.md）。该扫描在入口点被校验之前运行，因此被
+        // 扫描改写过的方法会以其最终形态接受校验。
         NativeManagedInvoker.Sweep(types, "Fika registration complete");
-        // JIT validate the generated native entry points while a rejection is still catchable
-        // (analysis/adjust-shot-vectors/REPORT.md).
+        // 在拒绝仍可捕获的时候对生成的原生入口点做 JIT 校验
+        // （analysis/adjust-shot-vectors/REPORT.md）。
         NativeEntryWarmup.WarmAll(types, logger);
     }
 
@@ -100,14 +100,14 @@ public static class FikaNativeTypes
     {
         var pointer = Il2CppClassPointerStore.GetNativeClassPointer(type);
         if (pointer == IntPtr.Zero) throw new InvalidOperationException($"Native base is unavailable: {type}");
-        // IsAssignableFrom on distinct classes calls vm::Class::Init, which
-        // materializes vtables/interface offsets without running game ctors.
-        // runtime_class_init only runs the managed static constructor.
+        // 对不同类调用 IsAssignableFrom 会触发 vm::Class::Init，它会
+        // 实体化 vtable/接口偏移，但不运行游戏构造函数。
+        // runtime_class_init 只运行托管静态构造函数。
         var objectClass = Il2CppClassPointerStore<Il2CppSystem.Object>.NativeClassPtr;
         if (pointer != objectClass)
             _ = IL2CPP.il2cpp_class_is_assignable_from(objectClass, pointer);
-        // Native class_init does not necessarily materialize each ancestor's
-        // lazy method table; the injector walks these tables directly.
+        // 原生 class_init 不一定会实体化每个祖先的
+        // 惰性方法表；注入器会直接遍历这些表。
         var iterator = IntPtr.Zero;
         while (IL2CPP.il2cpp_class_get_methods(pointer, ref iterator) != IntPtr.Zero) { }
         iterator = IntPtr.Zero;
@@ -132,11 +132,11 @@ public static class FikaNativeTypes
             {
                 if (map.TargetMethods[index].DeclaringType?.IsInterface != true) continue;
                 var member = map.InterfaceMethods[index];
-                // Only the interop's native slots exist in the game metadata and
-                // need a managed implementation for the injector to bind. The
-                // *_Managed conveniences and the private, final bridges to BCL
-                // interface members are default-implemented by the contract
-                // itself, so they are recorded, not fatal.
+                // 只有 interop 的原生槽位存在于游戏元数据中，并且
+                // 需要托管实现供注入器绑定。*_Managed 便捷方法
+                // 以及指向 BCL 接口成员的私有 final 桥接
+                // 都由契约自身默认实现，因此它们只被记录，
+                // 并不致命。
                 if (IsNativeSlot(contract, member))
                     throw new MissingMethodException($"{type.FullName} does not implement {contract.FullName}.{member}");
                 defaultImplemented.Add($"{contract.Name}.{member.Name}");
@@ -145,10 +145,10 @@ public static class FikaNativeTypes
     }
 
     /// <summary>
-    /// A native slot is a public virtual newslot the generator backed with a
-    /// NativeMethodInfoPtr field. Managed convenience accessors and the
-    /// explicit bridges to the BCL interfaces have no such pointer and no
-    /// native counterpart in the game.
+    /// 原生槽位是生成器用 NativeMethodInfoPtr 字段支撑的
+    /// public virtual newslot。托管便捷访问器以及指向 BCL 接口的
+    /// 显式桥接没有这样的指针，在游戏中也没有
+    /// 对应的原生实现。
     /// </summary>
     private static bool IsNativeSlot(Type contract, MethodInfo member)
     {

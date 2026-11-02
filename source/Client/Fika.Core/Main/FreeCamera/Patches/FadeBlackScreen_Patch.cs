@@ -37,10 +37,10 @@ internal class StartBlackScreenShow_Patch : ModulePatch
     }
 
     [PatchPostfix]
-    // PreloaderUI.StartBlackScreenShow(Single, Single, Action, Boolean) declares the il2cpp
-    // delegate, so the postfix parameter must too. This patch is [IgnoreAutoPatch] and is not
-    // enabled today, but the CLR type would be the same "reads it as the wrong type" landmine
-    // as soon as it was turned on.
+    // PreloaderUI.StartBlackScreenShow(Single, Single, Action, Boolean) 声明的是 il2cpp
+    // 委托，因此 postfix 的参数也必须如此。这个补丁带 [IgnoreAutoPatch]，目前
+    // 并未启用，但那个 CLR 类型会是同一颗“按错误类型读取”的地雷，
+    // 一旦启用就会踩到。
     public static void Postfix(Il2CppSystem.Action callback)
     {
         callback?.Invoke();

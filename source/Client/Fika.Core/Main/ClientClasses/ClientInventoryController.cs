@@ -29,16 +29,16 @@ public sealed class ClientInventoryController : BaseInventoryController
 
 
     /// <summary>
-    /// How long a client waits for the host to acknowledge a sent inventory
-    /// operation before failing it locally.
+    /// 客户端在本地判定一次已发送的库存操作失败之前，
+    /// 等待主机确认的时长。
     /// </summary>
     private const int OperationAcknowledgementTimeoutMs = 30000;
 
     /// <summary>
-    /// The acknowledgement only means "the host received the operation". A
-    /// missing terminal status afterwards keeps the operation in progress,
-    /// which locks the requesting player in the interaction state (ground loot
-    /// pickup) until the raid ends, so the same watchdog releases it locally.
+    /// 确认只意味着 "主机收到了这次操作"。
+    /// 此后若没有最终状态到达，操作就一直处于进行中，
+    /// 从而把发起请求的玩家锁在交互状态（地面拾取）
+    /// 里直到突袭结束，所以同一个看门狗会在本地释放它。
     /// </summary>
     private const int OperationCompletionTimeoutMs = 20000;
 
@@ -56,11 +56,11 @@ public sealed class ClientInventoryController : BaseInventoryController
     private readonly System.Collections.Generic.Dictionary<ushort, ClientInventoryOperationHandler> _activeOperationHandlers = [];
 
     /// <summary>
-    /// Paid exfiltration point ("car extract") payments this client dispatched
-    /// and whose operation has not finished yet, keyed by exfil point name.
-    /// The native interaction keeps offering the handover until the point
-    /// reports the player as queued, so without this every extra click would
-    /// queue another payment.
+    /// 本客户端已派发、且操作尚未完成的付费撤离点（"car
+    /// extract"）付款，以撤离点名称为键。
+    /// 原生交互在该点报告玩家已入队之前会一直提供交接机会，
+    /// 所以没有这张表，
+    /// 每多一次点击都会再排入一笔付款。
     /// </summary>
     private readonly System.Collections.Generic.Dictionary<string, ushort> _carExtractPayments = [];
 
@@ -127,37 +127,37 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// Gets an inventory handler
+    /// 获取一个库存处理器
     /// </summary>
-    /// <returns>A pooled handler</returns>
+    /// <returns>一个池化的处理器</returns>
     public ClientInventoryOperationHandler GetHandler()
     {
         return _clientInventoryOperationHandlerPool.Get();
     }
 
     /// <summary>
-    /// Returns a handler
+    /// 归还一个处理器
     /// </summary>
-    /// <param name="handler">The handler to return</param>
+    /// <param name="handler">要归还的处理器</param>
     public void ReturnHandler(ClientInventoryOperationHandler handler)
     {
-        // A late completion from an earlier operation must not remove the
-        // current handler when the native ushort operation ID wraps around.
+        // 当原生的 ushort 操作 ID 回绕时，
+        // 来自更早操作的迟到完成不得移除当前处理器。
         if (_activeOperationHandlers.TryGetValue(handler.CallbackId, out var current) &&
             ReferenceEquals(current, handler))
         {
             _activeOperationHandlers.Remove(handler.CallbackId);
-            // The server callback registration has to leave with its handler. It
-            // is normally removed by FikaPlayer.HandleCallbackFromServer when a
-            // terminal status arrives, but every FailLocally path (30 s
-            // acknowledgement watchdog, 50 s completion watchdog, resync decode
-            // failure, "still in progress after the server reported X") ends the
-            // operation WITHOUT an answer, and its registration stayed in
-            // FikaPlayer.OperationCallbacks for the rest of the raid.
-            // FikaPlayer.WaitingForCallback reads that dictionary and the client
-            // firearm/grenade controllers return false from CanPressTrigger and
-            // CanStartReload while it is non-empty, so one failed operation kept
-            // the local player unable to shoot.
+            // 服务器回调注册必须随它的处理器一起离开。正常情况下，
+            // 当最终状态到达时它由 FikaPlayer.HandleCallbackFromServer
+            // 移除，但每一条 FailLocally 路径（30
+            // 秒确认看门狗、50 秒完成看门狗、重同步解码失败、"服务器报告
+            // X 之后仍在进行中"）都在没有应答的情况下结束了操作，
+            // 而它的注册就留在 FikaPlayer.OperationCallbacks
+            // 里直到突袭结束。FikaPlayer.WaitingForCallback
+            // 会读取那个字典，而客户端枪械/手雷控制器在该字典非空时会从
+            // CanPressTrigger 和
+            // CanStartReload 返回 false，
+            // 因此一次失败的操作就让本地玩家无法开枪。
             FikaPlayer.OperationCallbacks.Remove(handler.CallbackId);
         }
         _clientInventoryOperationHandlerPool.ReturnHandler(handler);
@@ -167,16 +167,16 @@ public sealed class ClientInventoryController : BaseInventoryController
     {
         if (_activeOperationHandlers.TryGetValue(packet.CallbackId, out var handler))
         {
-            // Decoding the authoritative snapshot must never abort the packet
-            // handler: the pending operation would then wait for a callback that
-            // can no longer arrive, leaving the player stuck in the interaction
-            // state the rejection was supposed to release.
+            // 解码权威快照绝不能使数据包处理器中止：
+            // 待处理的操作随后会等待
+            // 一个再也不会到来的回调，
+            // 把玩家卡在本次拒绝本应释放的交互状态里。
             try
             {
-                // A descriptor that decodes to nothing must never reach
-                // ReplaceInventory: replacing the tree with null empties the whole
-                // inventory for the rest of the raid. Fail the operation instead
-                // so its watchdog releases the caller.
+                // 解码结果为空的东西绝不能进入
+                // ReplaceInventory：用 null
+                // 替换整棵树会让整个库存清空直到突袭结束。
+                // 改为让该操作失败，好让它的看门狗释放调用方。
                 var authoritative = packet.Descriptor.ToInventory();
                 if (authoritative == null)
                 {
@@ -186,7 +186,7 @@ public sealed class ClientInventoryController : BaseInventoryController
                 }
                 else
                 {
-                    // [SyncDiag] Count at the decode site: this is the tree that replaces the local one.
+                    // [SyncDiag] 在解码处计数：这就是替换本地那棵树的新树。
                     FikaGlobals.LogInfo($"[SyncDiag] op={packet.CallbackId} resync-descriptor " +
                         $"items={CountSnapshotItems(authoritative)}");
                     handler.ReceiveAuthoritativeInventory(authoritative);
@@ -206,9 +206,9 @@ public sealed class ClientInventoryController : BaseInventoryController
                 }
             }
         }
-        // A snapshot without its operation can be a late duplicate after a
-        // successful newer operation. Replacing the entire inventory here
-        // would roll back that newer state.
+        // 没有对应操作的快照，
+        // 可能是某次成功的新操作之后的迟到重复包。
+        // 在这里替换整个库存会回滚那更新的状态。
     }
 
     private void RunClientOperation(EFT.InventoryLogic.Operations.AbstractOperation operation, Callback callback)
@@ -227,14 +227,14 @@ public sealed class ClientInventoryController : BaseInventoryController
                 FikaGlobals.LogError($"{ID} - Failed to describe the rejected operation: {diagnosticException}");
             }
 
-            // CanExecute is the native gate (PlayerInventoryController delegates
-            // it to the hands controller, and CheckItemAction refuses everything
-            // while ItemController.Locked is set). A refusal is the evidence the
-            // inventory watchdog needs, and the operation may never have started,
-            // so no callback of ours will ever release the interaction state.
-            // [LootDiag] (analysis/pickup-stuck-again): a take whose operation never left this
-            // client. With the pickup-request line next to it, this is the "refused here, not
-            // lost on the wire" evidence.
+            // CanExecute 是原生的闸门（PlayerInventoryController
+            // 把它委托给手部控制器，而 CheckItemAction 在
+            // ItemController.Locked 置位时拒绝一切）。
+            // 拒绝正是库存看门狗所需的证据，而这次操作可能从未开始过，
+            // 所以我们不会有任何回调来释放该交互状态。
+            // [LootDiag]（analysis/pickup-stuck-again）：
+            // 一次操作从未离开本客户端的拿取。配合它旁边那行拾取请求记录来看，
+            // 这就是 "在这里被拒绝，而不是在链路上丢失" 的证据。
             var refusedItemId = "n/a";
             try
             {
@@ -245,7 +245,7 @@ public sealed class ClientInventoryController : BaseInventoryController
             }
             catch
             {
-                // Reporting a refused operation must never fail on its own item lookup.
+                // 报告一次被拒绝的操作，绝不能在自己查找物品时失败。
             }
                         NoteGateRefusal($"operation {operation.Id} ({operation.GetIl2CppType().Name}) refused by CanExecute");
             NativeInteractionRelease.Release(FikaPlayer, "local-operation-refused");
@@ -255,10 +255,10 @@ public sealed class ClientInventoryController : BaseInventoryController
             }
             catch (Exception disposeException)
             {
-                // Disposing an operation that is still "Started" raises the
-                // terminal event and can throw; when it does, the Begin events it
-                // registered stay in ItemController.ActiveEvents and keep the item
-                // busy (PlayerIsBusyError) for the rest of the raid.
+                // 处置一个仍处于 "Started" 的操作会抛出最终事件，
+                // 而且可能抛异常；一旦如此，它注册的 Begin 事件会留在
+                // ItemController.ActiveEvents 里，
+                // 让该物品在余下的突袭时间里一直忙碌（PlayerIsBusyError）。
                 FikaGlobals.LogError($"[InventoryRepair] {ID} - disposing the refused operation {operation.Id} threw, " +
                     $"its item events may stay registered: {disposeException}");
             }
@@ -266,19 +266,19 @@ public sealed class ClientInventoryController : BaseInventoryController
             return;
         }
 
-        // Quest transactions are authoritative locally; their committed inventory
-        // effects are sent by the quest-operation hooks, after successful execution.
+        // 任务交易在本地即具权威性；
+        // 它们提交的库存效果由任务操作钩子在成功执行之后发送。
         if (operation.TryCast<BaseQuestOperation>() != null)
         {
             global::Fika.Core.Main.Utils.NativeBaseCalls.Call3(this, operation, callback);
             return;
         }
 
-        // Quest reading (note, chapter conditions, condition, note link) and tape
-        // study are not BaseQuestOperation subclasses, but they change nothing but
-        // the local player's own quest and item data - the profile this machine
-        // owns and uploads when the raid ends. They run here and are never
-        // relayed; see QuestOperations for why.
+        // 任务阅读（笔记、章节条件、条件、笔记链接）与磁带研读并不是
+        // BaseQuestOperation 的子类，
+        // 但它们改变的只是本地玩家自己的任务与物品数据——也就是本机拥有、
+        // 并在突袭结束时上传的档案。它们在这里运行，
+        // 且从不中继；原因见 QuestOperations。
         if (QuestOperations.IsLocalOnly(operation, out var questDetail))
         {
             FikaGlobals.LogInfo($"[QuestOp] {operation.GetIl2CppType().Name} executed locally ({questDetail}); " +
@@ -287,7 +287,7 @@ public sealed class ClientInventoryController : BaseInventoryController
             return;
         }
 
-        // Do not replicate picking up quest items, throws an error on the other clients            
+        // 不要复制拾取任务物品，这会在其他客户端上抛错
         if (operation.TryCast<MoveOperation>() is { } moveOperation)
         {
             var lootedItem = moveOperation.Item;
@@ -298,14 +298,14 @@ public sealed class ClientInventoryController : BaseInventoryController
             }
         }
 
-        // Do not replicate stashing quest items
+        // 不要复制存放任务物品
         if (operation.TryCast<RemoveOperation>() is { } discardOperation && discardOperation.Item.QuestItem)
         {
             global::Fika.Core.Main.Utils.NativeBaseCalls.Call3(this, operation, callback);
             return;
         }
 
-        // Search and dialog progress require local dialog state.
+        // 搜索与对话进度需要本地对话状态。
         if (operation.TryCast<SinglePlayerSearchContentOperation>() != null
             || operation.TryCast<SetDialogProgressOperation>() != null)
         {
@@ -313,12 +313,12 @@ public sealed class ClientInventoryController : BaseInventoryController
             return;
         }
 
-        // [CarExtract] A paid exfiltration point hands its cash over through
-        // EFT.InventoryLogic.Operations.TransferExfiltrationPaymentOperation. The
-        // native interaction tells the player the money was transferred as soon
-        // as TransferExitItem returns, so a second click while the first payment
-        // is still unanswered must be refused here instead of queuing another
-        // handover the host would happily apply a second time.
+        // [CarExtract] 付费撤离点通过
+        // EFT.InventoryLogic.Operations.TransferExfiltrationPaymentOperation
+        // 交出现金。原生交互在 TransferExitItem
+        // 返回的瞬间就告诉玩家钱已转移，因此当第一笔付款仍未获应答时，
+        // 第二次点击必须在这里被拒绝，
+        // 而不是再排一次交接——主机会乐于第二次照样执行。
         var carExtractPoint = GetCarExtractPointName(operation);
         if (carExtractPoint != null
             && _carExtractPayments.TryGetValue(carExtractPoint, out var pendingPayment)
@@ -346,11 +346,11 @@ public sealed class ClientInventoryController : BaseInventoryController
         try
         {
             handler.Set(this, operation, callback);
-            // Registration, the active table and the watchdog are all inside the
-            // guarded block: a throw from any of them used to leave the caller's
-            // callback uninvoked and the operation without a watchdog, which locks
-            // the player in the native pickup interaction state for the rest of the
-            // raid.
+            // 注册、活动表和看门狗全都在这个受保护块里：
+            // 以前其中任何一步抛出都会
+            // 让调用方的回调不被调用、
+            // 操作没有看门狗，
+            // 从而把玩家锁在原生的拾取交互状态里直到突袭结束。
             operationNum = AddOperationCallback(operation, handler.ServerStatusDelegate);
             _activeOperationHandlers[operationNum] = handler;
             if (carExtractPoint != null)
@@ -360,8 +360,8 @@ public sealed class ClientInventoryController : BaseInventoryController
             WatchOperationAcknowledgement(handler, operationNum);
 
             var packet = InventoryPacket.FromValue(FikaPlayer.NetId, operation);
-            // Defensive: every quest operation takes the local branch above, so this
-            // only fires if one ever reaches the relay again.
+            // 防御性措施：每个任务操作都会走上方的本地分支，
+            // 所以只有当真有一个再次到达中继时这里才会触发。
             if (QuestOperations.TryDescribe(packet.Descriptor, out var relayedQuestDetail))
             {
                 FikaGlobals.LogInfo($"[QuestOp] relaying {operation.GetIl2CppType().Name} to the host ({relayedQuestDetail})");
@@ -380,8 +380,8 @@ public sealed class ClientInventoryController : BaseInventoryController
                 }
                 else
                 {
-                    // Drops (and every other non-move operation) were invisible in the
-                    // log, which made "the dropped backpack vanished" untraceable.
+                    // 丢弃（以及其它所有非移动操作）此前在日志中不可见，
+                    // 这使得 "被丢弃的背包消失了" 无从追查。
                     FikaGlobals.LogInfo($"Sending inventory operation {operation.Id} " +
                         $"({operation.GetIl2CppType().Name}) descriptor: {packet.Descriptor}");
                 }
@@ -398,8 +398,8 @@ public sealed class ClientInventoryController : BaseInventoryController
             FikaGlobals.LogError($"{ID} - Failed to dispatch inventory operation {operationNum}: {dispatchException}");
             if (carExtractPoint != null)
             {
-                // The native interaction already reported the handover as done, so
-                // the player has to be told that the host never received it.
+                // 原生交互已经把交接报告为完成，
+                // 所以必须告诉玩家主机从未收到它。
                 FikaGlobals.LogError($"[CarExtract] the payment for '{carExtractPoint}' (operation {operationNum}) " +
                     $"never reached the host: {dispatchException.Message}");
                 FikaNotifications.DisplayMessageNotification(
@@ -415,8 +415,8 @@ public sealed class ClientInventoryController : BaseInventoryController
                 FikaGlobals.LogError($"{ID} - Failed to remove the callback of operation {operationNum}: {removeException}");
             }
             ReturnHandler(handler);
-            // The native pickup flow waits for this callback; without it the player
-            // stays locked in the PickUpState and the interaction queue.
+            // 原生拾取流程在等这个回调；没有它，玩家会一直锁在
+            // PickUpState 和交互队列里。
             global::Fika.Core.Main.Utils.NativeInteractionRelease.Release(FikaPlayer, "dispatch-failed");
             try
             {
@@ -442,10 +442,10 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// Returns the exfil point name of a paid exfiltration point ("car extract")
-    /// payment operation, or null when the operation is not a payment. Reading
-    /// the name is purely diagnostic and must never stop a payment from being
-    /// dispatched, so every failure is swallowed and reported as "not a payment".
+    /// 返回一笔付费撤离点（"car extract"）
+    /// 付款操作的撤离点名称，当该操作不是付款时返回
+    /// null。读取名称纯粹是诊断用途，绝不能阻止一笔付款被派发，
+    /// 因此任何失败都被吞掉并报告为 "不是付款"。
     /// </summary>
     private static string GetCarExtractPointName(EFT.InventoryLogic.Operations.AbstractOperation operation)
     {
@@ -467,10 +467,10 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// The host acknowledges an inventory operation before executing it. If that
-    /// acknowledgement never arrives, the operation is failed locally so the
-    /// requesting player is released instead of being stuck in the interaction
-    /// state waiting for a callback that can no longer come.
+    /// 主机在执行库存操作之前先确认它。
+    /// 如果该确认始终不来，操作就在本地失败，
+    /// 好让发起请求的玩家被释放，
+    /// 而不是卡在交互状态里等一个再也不会到来的回调。
     /// </summary>
     private async void WatchOperationAcknowledgement(ClientInventoryOperationHandler handler, ushort operationNum)
     {
@@ -525,21 +525,21 @@ public sealed class ClientInventoryController : BaseInventoryController
         return id;
     }
 
-    /// <summary>Operations the port dispatched whose handler is still registered.</summary>
+    /// <summary>端口已派发、且处理器仍处于注册中的操作。</summary>
     internal override int PendingOperationCount => _activeOperationHandlers.Count;
 
-    /// <summary>Server callback registrations without a handler behind them.</summary>
+    /// <summary>背后没有处理器的服务器回调注册。</summary>
     internal override int ReleaseStaleServerCallbacks(string reason) => ReleaseStaleOperationCallbacks(reason);
 
     /// <inheritdoc/>
     internal override int CountStaleServerCallbacks() => CountStaleOperationCallbacks();
 
     /// <summary>
-    /// Server callback registrations without a handler behind them. They are the
-    /// leftovers of an operation that failed locally, and
-    /// <see cref="FikaPlayer.WaitingForCallback"/> counts them: while there is
-    /// one, the client hands controllers refuse to press the trigger or start a
-    /// reload.
+    /// 背后没有处理器的服务器回调注册。
+    /// 它们是在本地失败的那次操作留下的残余，而
+    /// <see cref="FikaPlayer.WaitingForCallback"/>
+    /// 会把它们计入：只要存在一个，
+    /// 客户端手部控制器就拒绝扣动扳机或开始换弹。
     /// </summary>
     internal int CountStaleOperationCallbacks()
     {
@@ -555,8 +555,8 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// Drops every server callback registration that no registered handler owns.
-    /// A live operation always owns one, so this can only remove leftovers.
+    /// 丢弃每一条没有任何已注册处理器持有的服务器回调注册。
+    /// 活动中的操作总会持有一个，因此这只可能移除残余。
     /// </summary>
     internal int ReleaseStaleOperationCallbacks(string reason)
     {
@@ -586,17 +586,17 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// Recovery for a client inventory pipeline that stopped answering. Only
-    /// called by the conservative watchdog in <c>CoopGame</c>, which requires a
-    /// player attempt (open inventory or a refused operation) AND a gate that
-    /// stayed closed while the player was idle.
+    /// 针对停止应答的客户端库存流水线的恢复。只由
+    /// <c>CoopGame</c> 里的保守看门狗调用，
+    /// 它要求有玩家的尝试（打开库存或一次被拒绝的操作）
+    /// 且闸门在玩家空闲期间一直关闭。
     /// <para>
-    /// It clears the port's own bookkeeping first (handlers that are registered
-    /// although they are no longer active, callback registrations without a
-    /// handler), then the native gate, and finally releases the native
-    /// interaction state. <paramref name="escalate"/> additionally drops the item
-    /// events the native runtime itself reports as outdated, which is what keeps
-    /// a single item unmovable after an aborted operation.
+    /// 它先清除端口自己的簿记（仍然注册但已不再活动的处理器、
+    /// 背后没有处理器的回调注册），然后是原生闸门，
+    /// 最后释放原生交互状态。
+    /// <paramref name="escalate"/>
+    /// 还会额外丢弃原生运行时自己报告为过期的物品事件，
+    /// 正是这一点让某个物品在一次中止的操作之后不再无法移动。
     /// </para>
     /// </summary>
     internal override void RepairBlockedInventory(string reason, bool escalate)
@@ -615,9 +615,9 @@ public sealed class ClientInventoryController : BaseInventoryController
         {
             foreach (var key in deadKeys)
             {
-                // Only the table entry is dropped: an inactive handler was already
-                // returned to the pool once, and returning it again would hand the
-                // same instance to two operations.
+                // 只丢弃表项：
+                // 一个已不活动的处理器已经归还过一次池，
+                // 再次归还会把同一个实例交给两个操作。
                 _activeOperationHandlers.Remove(key);
                 FikaPlayer.OperationCallbacks.Remove(key);
                 deadHandlers++;
@@ -650,18 +650,18 @@ public sealed class ClientInventoryController : BaseInventoryController
             FikaPlayer.OperationCallbacks.Remove(callbackId);
         _activeOperationHandlers.Clear();
         _clientInventoryOperationHandlerPool.Dispose();
-        // [InvDiag] (2026-10-27, T4) The bookkeeping report budget is static and was never reset, so after 40 relayed
-        // operations in one game process the "known=a->b" line that the item acceptance is read from stopped
-        // appearing - a later raid could not prove anything about it. ClearPool runs once per raid teardown.
+        // [InvDiag]（2026-10-27，T4）簿记报告预算原本是静态的、从不重置，
+        // 于是在一个游戏进程里中继 40 次操作之后，物品验收所依据的那行 "known=a->b"
+        // 就不再出现——之后的突袭无法对它做任何证明。ClearPool 每次突袭清理时运行一次。
         ClientInventoryOperationHandler.ResetBookkeepingReport();
     }
 
     /// <summary>
-    /// (2026-10-17) The local half of a relayed operation runs through Operation.ExecuteWithoutDispose, which
-    /// bypasses the native InventoryController.Execute wrapper. That wrapper is what registers every item a
-    /// move touched as known at its new address in the player search controller; without it an item shows as
-    /// unsearched the moment it lands in a container (the reported magazine after 'unload magazine'). The same
-    /// bookkeeping is repeated here: one dictionary entry per item, no item field and no profile field changes.
+    /// （2026-10-17）一次中继操作的本地那一半经由 Operation.ExecuteWithoutDispose
+    /// 运行，它绕过了原生的 InventoryController.Execute 包装。
+    /// 那个包装正是把移动所触及的每个物品在其新地址登记为玩家搜索控制器中的已知项；没有它，
+    /// 物品一落进容器就显示为未搜索（报告中 'unload magazine' 之后的那只弹匣）。
+    /// 这里重复同样的簿记：每个物品一个字典条目，不改任何物品字段、也不改任何档案字段。
     /// </summary>
     internal void MarkOperationItemsKnown(EFT.InventoryLogic.Operations.AbstractOperation operation)
     {
@@ -682,18 +682,18 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// [InvDiag] (2026-10-27, T4) Recursive half of <see cref="MarkOperationItemsKnown(EFT.InventoryLogic.Operations.AbstractOperation)"/>.
+    /// [InvDiag]（2026-10-27，T4）<see cref="MarkOperationItemsKnown(EFT.InventoryLogic.Operations.AbstractOperation)"/> 的递归那一半。
     /// <para>
-    /// The wrapper shape is why this exists. <c>LoadMagOperation</c> and <c>UnloadMagOperation</c> derive from
-    /// <c>AbstractMagOperation&lt;TDescriptor&gt;</c> and are constructed with the inner operation (their own
-    /// constructor is <c>(ushort id, ItemController controller, AbstractOperation internalOperation)</c>), so the
-    /// magazine, the ammo stack and the split that actually move are reachable only through
-    /// <c>IParentOperation.InternalOperation</c>. The flat version read the wrapper's own accessors, found nothing and
-    /// returned, which left exactly those items unexamined while an ordinary move was fine. This machine dispatches
-    /// one such wrapper per unload batch: <c>BaseInventoryController.CustomAmmoUnloader.DoUnloadLoopAsync</c> builds an
-    /// <c>UnloadMagOperation</c> and calls <c>Execute</c> with it.
-    /// <see cref="MarkOperationItemsSearched"/> and <see cref="CaptureResyncItems"/> already walked the tree; this is
-    /// the same walk for the known half.
+    /// 包装的形状正是这里需要它的原因。<c>LoadMagOperation</c> 与 <c>UnloadMagOperation</c>
+    /// 派生自 <c>AbstractMagOperation&lt;TDescriptor&gt;</c>，
+    /// 并用内层操作为参数构造（它们自己的构造函数是 <c>(ushort id, ItemController
+    /// controller, AbstractOperation internalOperation)</c>），
+    /// 所以真正移动的弹匣、弹药堆和拆分只能通过 <c>IParentOperation.InternalOperation</c>
+    /// 抵达。扁平版本读取的是包装自己的访问器，什么也没找到就返回了，于是恰好这些物品未被检查，而普通移动却没问题。
+    /// 本机每卸载一批就派发一个这样的包装：<c>BaseInventoryController.CustomAmmoUnloader.DoUnloadLoopAsync</c>
+    /// 构造一个 <c>UnloadMagOperation</c> 并用它调用 <c>Execute</c>。
+    /// <see cref="MarkOperationItemsSearched"/> 与
+    /// <see cref="CaptureResyncItems"/> 已经遍历过这棵树；这里是对已知那一半的同样遍历。
     /// </para>
     /// </summary>
     private void MarkOperationItemsKnown(IPlayerSearchController search,
@@ -704,21 +704,21 @@ public sealed class ClientInventoryController : BaseInventoryController
             return;
         }
 
-        // A wrapper is only a shell around the operation that really touches the items, and the operation that is
-        // relayed IS the wrapper (see RunClientOperation).
+        // 包装只是真正触及这些物品的那次操作的外壳，而被中继的那次操作
+        // 本身就是这个包装（见 RunClientOperation）。
         if (operation.TryCast<IParentOperation>() is { } parent && parent.InternalOperation != null)
         {
             MarkOperationItemsKnown(search, parent.InternalOperation, depth + 1);
         }
 
-        // One broken accessor of a single operation must not stop the marking of the others.
+        // 一次操作中一个坏掉的访问器，绝不能阻止其它操作的登记。
         try
         {
             MarkOperationOwnItemsKnown(search, operation);
 
-            // Every operation that carries items implements IOneItemOperation (the item it moves) and the
-            // two-item ones add ITwoItemOperation (the second item of a swap or transfer). Both are marked
-            // with their whole subtree: the magazine that lands in a backpack grid and everything inside it.
+            // 每个携带物品的操作都实现 IOneItemOperation（它所移动的那个物品），
+            // 而涉及两个物品的操作还会加上 ITwoItemOperation（交换或转移的第二个物品）。
+            // 两者都连同其整棵子树一起登记：落进背包格子的弹匣，以及它内部的一切。
             if (operation.TryCast<IOneItemOperation>() is { } one)
             {
                 MarkKnownTree(search, one.Item1);
@@ -729,16 +729,16 @@ public sealed class ClientInventoryController : BaseInventoryController
                 MarkKnownTree(search, two.Item2);
             }
 
-            // A split produces one more item instance than the accessors above expose: SplitOperation keeps it in
-            // _splitItem. Only the stack reachable through Item1 was registered, so the other one rendered as
-            // unexamined. Registering both is idempotent (one dictionary entry per item instance).
+            // 一次拆分产生的物品实例比上面这些访问器所暴露的要多一个：SplitOperation
+            // 把它保存在 _splitItem 里。此前只登记了通过 Item1 可达的那一堆，
+            // 所以另一个渲染成未检查。两个都登记是幂等的（每个物品实例一个字典条目）。
             if (operation.TryCast<SplitOperation>() is { } split)
             {
                 MarkKnownTree(search, split._splitItem);
             }
 
-            // Second half of the same native bookkeeping: the containers this operation produced, moved or filled
-            // inside the player's own inventory. See MarkOperationItemsSearched.
+            // 同一套原生簿记的后一半：这次操作在玩家自己的库存内部产出、
+            // 移动或填充的容器。见 MarkOperationItemsSearched。
         }
         catch (Exception exception)
         {
@@ -747,13 +747,13 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// [InvDiag] (2026-10-27, T4) Registers the operation's own item collection
-    /// (<c>AbstractOperation.Items</c> plus <c>IMultipleItemsOperation.Items</c>) as known. That collection is the only
-    /// place some operation types keep their items, and the flat accessor read never looked at it.
+    /// [InvDiag]（2026-10-27，T4）把操作自己的物品集合（<c>AbstractOperation.Items</c>
+    /// 加上 <c>IMultipleItemsOperation.Items</c>）
+    /// 登记为已知。某些操作类型只在这个集合里保存它们的物品，而扁平访问器读法从未看过它。
     /// <para>
-    /// Only the item itself is registered here, never its subtree: a container that still holds loot the player has
-    /// not seen must not be revealed by this bookkeeping. The items behind <c>IOneItemOperation</c> keep the subtree
-    /// registration that the success path always had.
+    /// 这里只登记物品本身，绝不登记它的子树：一个仍装着玩家未见战利品的容器，
+    /// 不得因这次簿记而被揭示。位于 <c>IOneItemOperation</c>
+    /// 背后的物品保留成功路径一贯有的子树登记。
     /// </para>
     /// </summary>
     private void MarkOperationOwnItemsKnown(IPlayerSearchController search,
@@ -790,8 +790,8 @@ public sealed class ClientInventoryController : BaseInventoryController
 
         try
         {
-            // raiseEvents: false - the same reason MarkKnownTree uses it: an address entry is what the views read,
-            // a "found item" event for something the player only moved would be a visible side effect.
+            // raiseEvents: false —— 与 MarkKnownTree 使用它的原因相同：
+            // 视图读取的是地址条目，为玩家只是挪动了一下位置的东西发一个 "found item" 事件会成为可见的副作用。
             search.SetItemAsKnown(item, false);
         }
         catch (Exception exception)
@@ -801,19 +801,19 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// (2026-10-21) THE REAL APPLICATION PATH of a relayed client operation, in one call: the native
-    /// <c>InventoryController.Execute</c> wrapper - the one <see cref="Execute"/> replaces - is what registers
-    /// every item a move touched as known and every container it touched as searched. A relayed operation runs
-    /// through <c>Operation.ExecuteWithoutDispose</c>, so none of that bookkeeping happened, and the items a
-    /// successful operation produced came back as "unexamined / unsearched" the next time the inventory was
-    /// opened. Both halves are replayed here and the result is reported per operation, before and after, so the
-    /// log answers "did the registration reach the item the player saw" without a second run.
+    /// （2026-10-21）一次中继的客户端操作的真正应用路径，只需一次调用：
+    /// 原生的 <c>InventoryController.Execute</c>
+    /// 包装——也就是 <see cref="Execute"/> 所替换的那个——才是把
+    /// 移动触及的每个物品登记为已知、把触及的每个容器登记为已搜索的地方。中继的操作经由
+    /// <c>Operation.ExecuteWithoutDispose</c> 运行，所以这些簿记一件都没发生，
+    /// 而一次成功操作产出的物品在下次打开库存时回来变成了 "未检查 / 未搜索"。两半都在这里重放，
+    /// 并按操作报告前后结果，因此日志无需再跑一次就能回答 "登记是否到达了玩家看到的那件物品"。
     /// <para>
-    /// Nothing is relaxed by the report: a container whose content is still unknown stays unsearched
-    /// (<see cref="MarkContainerSearched"/>), which is what keeps the looting mechanic intact.
+    /// 这份报告没有放宽任何东西：内容仍然未知的容器保持未搜索（
+    /// <see cref="MarkContainerSearched"/>），正是这一点保住了搜刮机制。
     /// </para>
     /// </summary>
-    /// <returns>A one-line description of the operation and both counts, for the caller's log line.</returns>
+    /// <returns>操作及其两个计数的一行描述，供调用方的日志行使用。</returns>
     internal string ApplyRelayedOperationBookkeeping(EFT.InventoryLogic.Operations.AbstractOperation operation)
     {
         var name = operation == null ? "null" : operation.GetIl2CppType().Name;
@@ -835,14 +835,14 @@ public sealed class ClientInventoryController : BaseInventoryController
             var knownAfter = CountKnown(search, items);
             var searchedAfter = CountSearched(search, items);
 
-            // [InvDiag] (T4) `wrapped` names the shape the flat accessor read could not see: a wrapper operation
-            // (load/unload magazine) keeps the items that really move in IParentOperation.InternalOperation.
-            // "op=UnloadMagOperation wrapped=True items=4 known=4->4" is therefore readable as "the wrapper was
-            // walked and its inner items were registered"; wrapped=False on an operation that still reports
-            // known=0 sends the search somewhere else (host rejection / resync) instead of back into this method.
+            // [InvDiag]（T4）`wrapped` 指的是扁平访问器读法看不见的那种形状：一个包装操作（装/卸弹匣）
+            // 把真正移动的物品保存在 IParentOperation.InternalOperation 里。
+            // 因此 "op=UnloadMagOperation wrapped=True items=4
+            // known=4->4" 可以读作 "包装被遍历了，其内层物品已登记"；而在仍然报告 known=0
+            // 的操作上 wrapped=False 会把排查引向别处（主机拒绝 / 重同步），而不是回到这个方法。
             var wrapped = operation.TryCast<IParentOperation>() is { } parent && parent.InternalOperation != null;
-            // The counts of a wrapper cover only the wrapper's own accessors (scope=outer-only): the items that
-            // really move sit one level deeper, so for it the numbers are a floor, not a verdict.
+            // 包装的计数只覆盖包装自己的访问器（scope=outer-only）：
+            // 真正移动的物品在更深一层，所以对它来说这些数字是下限，不是结论。
             return $"op={name} id={operation.Id} items={items.Count} wrapped={wrapped}" +
                 $"{(wrapped ? " scope=outer-only" : string.Empty)} " +
                 $"known={knownBefore}->{knownAfter} containers={searchedBefore}->{searchedAfter}";
@@ -853,7 +853,7 @@ public sealed class ClientInventoryController : BaseInventoryController
         }
     }
 
-    /// <summary>The items an operation touches, as one flat list of the whole subtree of each accessor.</summary>
+    /// <summary>一次操作所触及的物品，以每个访问器整棵子树合并成的一个扁平列表呈现。</summary>
     private static System.Collections.Generic.List<Item> CollectOperationItems(
         EFT.InventoryLogic.Operations.AbstractOperation operation)
     {
@@ -937,41 +937,41 @@ public sealed class ClientInventoryController : BaseInventoryController
         {
             if (candidate != null)
             {
-                // raiseEvents: false - the address entry is what the UI reads; a 'found item' event for
-                // an item the player is only moving would be a visible side effect of this bookkeeping.
+                // raiseEvents: false —— UI 读取的是地址条目；
+                // 为玩家只是挪动位置的物品发一个 'found item' 事件会成为这次簿记的可见副作用。
                 search.SetItemAsKnown(candidate, false);
             }
         }
     }
 
     /// <summary>
-    /// Registers the containers of a relayed operation as searched in the client search controller.
+    /// 在客户端搜索控制器中，把一次中继操作的容器登记为已搜索。
     /// <para>
-    /// The client builds its controller with <c>new ActiveSearchController(profile, this)</c> (constructor above),
-    /// and the native <c>PlayerSearchController</c> constructor only uncovers the containers that exist inside
-    /// <c>profile.Inventory.Equipment</c> at that moment. Every container the player later produces or moves -
-    /// the backpack a weapon is stored in, the rig a reloaded magazine lands in, a vest picked back up - is
-    /// therefore missing from the controller's searched set, and the native
-    /// <c>ISearchController.IsSearched</c> that the inventory views and
-    /// <c>Player.InventoryController.GetAcceptableItemsNonAlloc</c> read reports it as unsearched. The native
-    /// <c>InventoryController.Execute</c> wrapper maintains that set; a relayed operation runs through
-    /// <c>ExecuteWithoutDispose</c> and bypasses it, so the bookkeeping is repeated here.
+    /// 客户端用 <c>new ActiveSearchController(profile, this)</c>
+    /// （上面的构造函数）构建自己的控制器，而原生的 <c>PlayerSearchController</c>
+    /// 构造函数只揭示那一刻存在于 <c>profile.Inventory.Equipment</c>
+    /// 内的容器。因此玩家之后产出或移动的每个容器——存放武器的背包、
+    /// 重新装填的弹匣落进的挂具、重新捡起的护甲——在控制器的已搜索集合里都缺失，而库存视图和
+    /// <c>Player.InventoryController.GetAcceptableItemsNonAlloc</c>
+    /// 所读取的原生 <c>ISearchController.IsSearched</c> 会把它们报告为未搜索。
+    /// 原生的 <c>InventoryController.Execute</c> 包装维护那个集合；中继的操作经由
+    /// <c>ExecuteWithoutDispose</c> 运行并绕过它，所以簿记在这里重复一遍。
     /// </para>
     /// <para>
-    /// Only containers can be registered: the native entry point is
-    /// <c>SetItemAsSearched&lt;TItem&gt;(TItem) where TItem : SearchableItem</c>, and in 1.2.0.47965 only
-    /// Backpack/Vest/Pockets/LootContainer/MobContainer derive from <c>SearchableItem</c> (magazines, weapons and
-    /// mods do not, they are covered by the knowledge registration in <see cref="MarkOperationItemsKnown"/>).
+    /// 只能登记容器：原生的入口是 <c>SetItemAsSearched&lt;TItem&gt;(TItem)
+    /// where TItem : SearchableItem</c>，而在 1.2.0.47965 中只有
+    /// Backpack/Vest/Pockets/LootContainer/MobContainer 派生自 <c>SearchableItem</c>（弹匣、
+    /// 武器和配件不是，它们由 <see cref="MarkOperationItemsKnown"/> 里的已知登记覆盖）。
     /// </para>
     /// </summary>
 
     /// <summary>
-    /// Recursive half of <see cref="MarkOperationItemsSearched(AbstractOperation)"/>.
+    /// <see cref="MarkOperationItemsSearched(AbstractOperation)"/> 的递归那一半。
     /// <para>
-    /// A load/unload magazine operation is only a wrapper: <c>IParentOperation.InternalOperation</c> holds the move
-    /// and split operations that actually touch items, and those are the ones the accessors below can read. Every
-    /// level is therefore visited, and <c>AbstractOperation.Items</c> - the operation's own item collection - is read
-    /// instead of guessing which accessor a given operation type implements.
+    /// 装/卸弹匣操作只是一个包装：<c>IParentOperation.InternalOperation</c>
+    /// 持有真正触及物品的移动与拆分操作，而下面的访问器能读到的正是它们。因此每一层都会被访问，
+    /// 并且读取的是 <c>AbstractOperation.Items</c>
+    /// ——操作自己的物品集合——而不是去猜某种操作类型实现了哪个访问器。
     /// </para>
     /// </summary>
     private void MarkOperationItemsSearched(IPlayerSearchController search,
@@ -987,22 +987,22 @@ public sealed class ClientInventoryController : BaseInventoryController
             MarkOperationItemsSearched(search, parent.InternalOperation, depth + 1);
         }
 
-        // One broken accessor of a single operation must not stop the marking of the others.
+        // 一次操作中一个坏掉的访问器，绝不能阻止其它操作的标记。
         try
         {
             MarkOperationContainersSearched(search, operation);
 
             if (operation.TryCast<IOneItemOperation>() is { } one)
             {
-                // The item itself, when the operation produced or moved a container that was already ours.
+                // 当操作产出或移动的是本来就属于我们的容器时，物品本身。
                 if (IsOwnItemAddress(one.From1))
                 {
                     MarkSearchedTree(search, one.Item1);
                 }
 
-                // The container that received the item. This is the entry that matters for a magazine, a weapon or
-                // a split-off stack: they are not containers themselves, but the rig/backpack they landed in is,
-                // and its searched state is what the inventory views gate the content display on.
+                // 接收该物品的容器。对弹匣、武器或拆分出来的弹药堆来说，
+                // 这才是关键的那个条目：它们本身不是容器，但它们落进的挂具/背包是，
+                // 而库存视图正是依据它的已搜索状态来决定是否显示内容。
                 MarkReceivingContainerSearched(search, one.To1);
             }
 
@@ -1022,7 +1022,7 @@ public sealed class ClientInventoryController : BaseInventoryController
         }
     }
 
-    /// <summary>Marks every container of the operation's own item collection that belongs to this player's inventory.</summary>
+    /// <summary>把操作自己的物品集合中属于该玩家库存的每个容器都标记出来。</summary>
     private void MarkOperationContainersSearched(IPlayerSearchController search,
         EFT.InventoryLogic.Operations.AbstractOperation operation)
     {
@@ -1049,9 +1049,9 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// Marks one item of an operation as searched when it is a container that currently sits inside this player's
-    /// own inventory. The content check in <see cref="MarkContainerSearched"/> keeps a container that still holds
-    /// unseen items - the loot the player has to search first - untouched.
+    /// 把操作中的一个物品标记为已搜索，前提是它是一个当前位于该玩家自己库存内的容器。
+    /// <see cref="MarkContainerSearched"/>
+    /// 里的内容检查会让仍装有未见物品（也就是玩家必须先搜的战利品）的容器保持原样。
     /// </summary>
     private void MarkOwnContainerSearched(IPlayerSearchController search, Item item)
     {
@@ -1077,9 +1077,9 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// Registers a container of the player's own inventory as searched, after making sure it does not still hold
-    /// items the player has never seen. That guard is what keeps the looting mechanic intact: a container that
-    /// still has unknown content is the loot container the player has to search first, and it is left untouched.
+    /// 在确认某容器不再装有玩家从未见过的物品之后，
+    /// 把该玩家自己库存中的这个容器登记为已搜索。正是这道守卫保住了搜刮机制：
+    /// 仍含未知内容的容器就是玩家必须先搜的战利品容器，它被保持原样。
     /// </summary>
     private void MarkReceivingContainerSearched(IPlayerSearchController search, ItemAddress destination)
     {
@@ -1116,7 +1116,7 @@ public sealed class ClientInventoryController : BaseInventoryController
 
         try
         {
-            // A container whose content is not fully known yet must stay unsearched, whatever produced it.
+            // 内容尚未完全已知的容器必须保持未搜索，无论它是被什么产出的。
             if (search.ContainsUnknownItems(container))
             {
                 return;
@@ -1131,8 +1131,8 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// Whether the address belongs to this player's own inventory (equipment, stash, quest items, sorting table)
-    /// instead of a ground, loot or corpse container. Items coming from outside must keep their unexamined state.
+    /// 该地址归属于本玩家自己的库存（装备、仓库、任务物品、整理台），
+    /// 而不是地面、战利品或尸体容器。来自外部的物品必须保持未检查状态。
     /// </summary>
     private bool IsOwnItemAddress(ItemAddress address)
     {
@@ -1140,9 +1140,9 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// Walks the address chain upwards until it reaches one of this player's inventory roots. Returns false - and
-    /// no container - for anything that is not part of the player's own tree. The walk is bounded because a broken
-    /// address chain must never spin the main thread.
+    /// 沿地址链向上走，直到抵达本玩家库存的某个根。
+    /// 对任何不属于玩家自己这棵树的东西返回 false，且不返回容器。
+    /// 这个遍历是有界的，因为一条断裂的地址链绝不能把主线程转死。
     /// </summary>
     private bool TryFindOwnSearchableContainer(ItemAddress address, out SearchableItem container)
     {
@@ -1208,15 +1208,15 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     // ---------------------------------------------------------------------------------------------------------------
-    // Authoritative resync: the host rejected the operation and sent its own inventory back as a descriptor. The
-    // client rebuilds every Item from that descriptor, so the search controller entries (instance and address based)
-    // do not survive the rebuild. Everything below captures the rejected operation's items before the rebuild, decides
-    // whether the local instances can be kept at all, and re-registers the bookkeeping afterwards.
+    // 权威重同步：主机拒绝了该操作，并把它自己的库存作为描述符发了回来。
+    // 客户端据此重建每一个 Item，所以搜索控制器里的条目（基于实例和基于地址的）
+    // 都无法在重建后存活。下面的一切在重建之前捕获被拒操作的物品、
+    // 决定本地实例究竟能否保留，并在之后重新登记簿记。
     // ---------------------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// One item of the rejected operation, captured before the authoritative snapshot replaces the local item graph.
-    /// The instance itself is gone after a rebuild, so only its id and the two search flags survive.
+    /// 被拒操作的一个物品，在权威快照替换本地物品图之前被捕获。
+    /// 重建之后实例本身就没有了，因此只有它的 id 和两个搜索标志能存活。
     /// </summary>
     internal readonly struct ResyncItemSnapshot
     {
@@ -1234,7 +1234,7 @@ public sealed class ClientInventoryController : BaseInventoryController
         }
     }
 
-    /// <summary>Collects the items the rejected operation touched, before <c>Operation.Dispose()</c> and the rebuild.</summary>
+    /// <summary>在 <c>Operation.Dispose()</c> 与重建之前，收集被拒操作所触及的物品。</summary>
     internal System.Collections.Generic.List<ResyncItemSnapshot> CaptureResyncItems(
         EFT.InventoryLogic.Operations.AbstractOperation operation)
     {
@@ -1348,13 +1348,13 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// Decides whether the authoritative snapshot may be ignored in favour of the local item graph.
+    /// 决定是否可以忽略权威快照、改用本地的物品图。
     /// <para>
-    /// Keeping the instances preserves the controller's per-instance search entries and the open inventory views, but
-    /// it is only safe when the snapshot is provably identical to the local tree (same item ids, same address hash -
-    /// <c>ItemAddress.GetHashSum</c> covers grid position and slot - and the same stack count) <b>and</b> the rejected
-    /// operation can only have changed placement and counts. Anything else rebuilds, because a difference this
-    /// comparison cannot see (durability, installed mods, ...) would otherwise stay divergent.
+    /// 保留实例可以保住控制器的按实例搜索条目和已打开的库存视图，
+    /// 但只有在快照可证与本地树完全一致时才是安全的（相同的物品 id、
+    /// 相同的地址哈希——<c>ItemAddress.GetHashSum</c>
+    /// 覆盖格子位置与槽位——以及相同的堆叠数量）<b>且</b>被拒操作只可能改动位置与数量。
+    /// 其它任何情况都会重建，因为这个比较看不见的差异（耐久、已装配件……）否则会一直偏差下去。
     /// </para>
     /// </summary>
     internal bool TryKeepLocalInstances(Inventory snapshot,
@@ -1404,8 +1404,8 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// Whether the operation only moves items around or changes stack counts. Those are the only changes the
-    /// fingerprint in <see cref="FingerprintsEqual"/> can see, so only they may keep the local instances.
+    /// 该操作是只挪动物品位置，还是还会改动堆叠数量。它们是 <see cref="FingerprintsEqual"/>
+    /// 里的指纹唯一能看到的改动，所以只有它们才允许保留本地实例。
     /// </summary>
     private static bool IsPlacementOnlyOperation(EFT.InventoryLogic.Operations.AbstractOperation operation, int depth)
     {
@@ -1430,7 +1430,7 @@ public sealed class ClientInventoryController : BaseInventoryController
             || operation.TryCast<UnloadMagOperation>() != null;
     }
 
-    /// <summary>Item id to "address hash:stack count:template" for the whole player inventory of one tree.</summary>
+    /// <summary>把整棵玩家库存映射为 "物品 id → 地址哈希:堆叠数量:模板"。</summary>
     private static System.Collections.Generic.Dictionary<string, string> BuildInventoryFingerprint(Inventory inventory)
     {
         var fingerprint = new System.Collections.Generic.Dictionary<string, string>();
@@ -1477,10 +1477,10 @@ public sealed class ClientInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// Re-registers the captured operation items in the (possibly rebuilt) inventory: each item is marked known at
-    /// its current address, and a container that was searched before the resync is marked searched again. Contents
-    /// are deliberately not touched (see the comment at the call). Writes one <c>[SyncDiag]</c> line per item so a
-    /// raid log shows whether the ids survived the rebuild.
+    /// 在被捕获操作物品所对应的（可能已重建的）库存中重新登记它们：
+    /// 每个物品在其当前地址被标记为已知，而在重同步之前就已搜索过的容器会被再次标记为已搜索。
+    /// 内容被刻意不碰（见调用处的注释）。每个物品写一行 <c>[SyncDiag]</c>，
+    /// 这样一份突袭日志就能显示这些 id 是否在重建中存活。
     /// </summary>
     internal void RestoreOperationItemsAfterResync(System.Collections.Generic.List<ResyncItemSnapshot> captured,
         bool keptLocalInstances, ushort operationId)
@@ -1521,20 +1521,20 @@ public sealed class ClientInventoryController : BaseInventoryController
                 {
                     try
                     {
-                        // Only the item itself is registered: its contents were either restored by
-                        // ReplaceInventoryFromNetwork (everything that was known before) or must stay unknown -
-                        // descending into a freshly picked up container here would reveal loot that the player
-                        // has not searched yet.
+                        // 只登记物品本身：它的内容要么已由
+                        // ReplaceInventoryFromNetwork
+                        // 恢复（此前已知的一切），要么必须保持未知——在这
+                        // 里深入一个刚捡起的容器会揭示玩家尚未搜索的战利品。
                         search.SetItemAsKnown(item, false);
-                        // [InvDiag] (2026-10-27, T4) The reject path restored the searched flag only when the
-                        // container had been searched BEFORE the resync. CaptureResyncItems runs after the local
-                        // execution but before any marking (that only happens on the success path), so for a
-                        // container this operation just moved inside the player's own inventory SearchedBefore is
-                        // structurally always false - the rebuilt tree then showed it "unsearched" while the very
-                        // same operation through the success path comes back searched. A container that sits in the
-                        // player's own inventory is therefore marked exactly like the success path marks it;
-                        // MarkContainerSearched still refuses one that holds contents the player has not seen, so
-                        // the looting mechanic is untouched.
+                        // [InvDiag]（2026-10-27，T4）
+                        // 拒绝路径只在容器于重同步之前就已搜索过时才恢复已搜索标志。
+                        // CaptureResyncItems 在本地执行之后、
+                        // 任何标记之前运行（标记只发生在成功路径上），
+                        // 所以对一个刚被这次操作移进玩家自己库存的容器来说，SearchedBefore
+                        // 在结构上永远是 false——重建后的树于是显示它 "未搜索"，
+                        // 而同样一次操作走成功路径却回来是已搜索。因此位于玩家自己库存内的容器，
+                        // 其标记方式与成功路径完全一致；MarkContainerSearched
+                        // 仍会拒绝装有玩家未见内容的容器，所以搜刮机制未被改动。
                         if (item.TryCast<SearchableItem>() is { } searchable
                             && (snapshot.SearchedBefore || IsOwnItemAddress(item.CurrentAddress)))
                         {
@@ -1562,7 +1562,7 @@ public sealed class ClientInventoryController : BaseInventoryController
         }
     }
 
-    /// <summary>Item count of a decoded snapshot, for the resync diagnostic at the rebuild site.</summary>
+    /// <summary>一个已解码快照的物品数量，供重建处的重同步诊断使用。</summary>
     internal static int CountSnapshotItems(Inventory inventory)
     {
         try

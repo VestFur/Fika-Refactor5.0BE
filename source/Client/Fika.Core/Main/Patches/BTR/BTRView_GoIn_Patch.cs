@@ -31,8 +31,8 @@ public class BTRView_GoIn_Patch : ModulePatch
         if (player.TryCast<ObservedPlayer>() is { } observedPlayer)
         {
             var network = FikaSingleton<IFikaNetworkManager>.Instance;
-            // Suspend ordinary movement updates before starting the async task.
-            // A fast or failed task can finish synchronously before its first await.
+            // 在启动异步任务之前先暂停常规的移动更新。
+            // 执行很快或失败的任务可能在第一次 await 之前就同步结束。
             network?.ObservedPlayers.RemoveAll(current => current?.Pointer == observedPlayer.Pointer);
             __result = NativeTask.FromManaged(ObservedGoIn(__instance, observedPlayer, side, placeId, fast, network));
             return false;
@@ -107,9 +107,9 @@ public class BTRView_GoIn_Patch : ModulePatch
         }
         finally
         {
-            // An interrupted approach or animation never reaches GoOut, which
-            // normally re-adds this player. Do not leave their snapshot updates
-            // disabled for the rest of the raid. GoOut owns its own transition.
+            // 被中断的接近过程或动画永远不会走到 GoOut，而 GoOut 通常
+            // 会把该玩家重新加回来。不要在战局余下的时间里让他的快照更新
+            // 一直处于禁用状态。GoOut 自己负责它那段状态切换。
             if (observedPlayer.BtrState != EPlayerBtrState.Inside &&
                 observedPlayer.BtrState != EPlayerBtrState.GoOut &&
                 observedPlayer.BtrState != EPlayerBtrState.Outside)

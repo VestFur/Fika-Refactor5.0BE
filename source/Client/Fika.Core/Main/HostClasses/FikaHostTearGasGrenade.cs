@@ -2,7 +2,7 @@ using EFT;
 
 namespace Fika.Core.Main.HostClasses;
 
-/// <summary>Host-side tear-gas grenade that emits Fika snapshots.</summary>
+/// <summary>主机侧的催泪瓦斯手雷，会发出 Fika 快照。</summary>
 public sealed class FikaHostTearGasGrenade : TearGasGrenade
 {
     public FikaHostTearGasGrenade(System.IntPtr pointer) : base(pointer)

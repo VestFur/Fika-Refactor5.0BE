@@ -17,111 +17,111 @@ using System.Collections.Generic;
 namespace Fika.Core.Main.Components;
 
 /// <summary>
-/// Activation of the green ("ExitActivate") flare exfiltration points, carried over the wire
-/// together with the shooter.
+/// 绿色（"ExitActivate"）信号弹撤离点的激活信息，与发射者一同
+/// 经由网络传输。
 /// <para>
-/// Native model (verified against the 47888 interop member dump, see
-/// analysis/flare-exfil-verification): a green flare is <c>FlareEventType.ExitActivate</c>; its
-/// success raises <c>FlareSuccessEvent</c> locally, and every
-/// <see cref="FlareShootDetectorZone"/> the shooter stands in records the firing player's
-/// profile id in <c>_shotPlayerProfiles</c>. The point then answers per player through
-/// <c>ExfiltrationRequirement.Met(Player, ExfiltrationPoint)</c>. Vanilla also has a squad
-/// channel for the same bookkeeping (<c>EZoneEventType.PlayerByPartyAddedInShotList</c>), which
-/// is the default here.
+/// 原生模型（已对照 47888 interop 成员导出验证，见
+/// analysis/flare-exfil-verification）：绿色信号弹即 <c>FlareEventType.ExitActivate</c>；其
+/// 成功会在本地触发 <c>FlareSuccessEvent</c>，而发射者所处的每一个
+/// <see cref="FlareShootDetectorZone"/> 都会把发射玩家的
+/// profile id 记录到 <c>_shotPlayerProfiles</c> 中。随后该撤离点会针对每个玩家通过
+/// <c>ExfiltrationRequirement.Met(Player, ExfiltrationPoint)</c> 给出判定。原版还有一条小队
+/// 通道用于同样的记录（<c>EZoneEventType.PlayerByPartyAddedInShotList</c>），这也
+/// 就是此处的默认行为。
 /// </para>
 /// <para>
-/// What Fika was missing: a client's flare never replayed that local work on the host, so the
-/// client's flare activated nothing, while the point-level state Fika did replicate made the
-/// point usable for peers that never fired. This class carries the activation with the shooter
-/// (and, by default, the squad), keeps the host authoritative allow list and refuses extraction
-/// for every player the grant does not cover.
+/// Fika 原先缺失的环节：客户端的信号弹从未在主机上重放那部分本地逻辑，因此
+/// 客户端的信号弹没有激活任何东西，而 Fika 确实复制了的撤离点级状态又使
+/// 该撤离点对从未发射过的对等端可用。此类让激活随发射者一起传递
+/// （默认情况下还包括小队），维护由主机权威决定的允许列表，并对
+/// 授权未覆盖的每个玩家拒绝撤离。
 /// </para>
 /// <para>
-/// A green flare has two vanilla jobs and they are kept apart here: opening an exit
-/// ("exit-gate", the Customs flare exits) and disabling the map sniper ("immunity", Ground Zero's
-/// <c>Sniper_exit</c>, whose exit carries <c>PassageRequirement: None</c> and whose whole
-/// <c>/EXITS/FlareFireCollector_zone</c> area is blocked by sniper fire instead). An immunity zone
-/// never touches the exit status: the covered players' raid ids go into the native
-/// <c>PlayersWithImmuneToSniperFire</c> set on every machine, which is the set the sniper zones
-/// read through <c>IsPlayerImmuneForFire(Int32)</c>.
+/// 绿色信号弹在原版中有两项职责，这里将它们分开处理：开启一个出口
+/// （"exit-gate"，即海关的信号弹出口）与禁用地图狙击手（"immunity"，Ground Zero 的
+/// <c>Sniper_exit</c>，其出口带有 <c>PassageRequirement: None</c>，而整个
+/// <c>/EXITS/FlareFireCollector_zone</c> 区域反而是被狙击火力封锁的）。免疫区域
+/// 从不触碰出口状态：被覆盖玩家的战局 id 会写入每台机器上的原生
+/// <c>PlayersWithImmuneToSniperFire</c> 集合，而狙击区域正是通过
+/// <c>IsPlayerImmuneForFire(Int32)</c> 读取该集合。
 /// </para>
 /// <para>
-/// Switch: <c>Flare Extract: Squad Shares Activation</c> (default on = vanilla party channel).
-/// Off binds the activation to the shooter only.
+/// 开关：<c>Flare Extract: Squad Shares Activation</c>（默认开启 = 原版小队通道）。
+/// 关闭时激活只绑定到发射者本人。
 /// </para>
 /// </summary>
 public static class FikaFlareExfil
 {
-    /// <summary>Farther than this from the reported flare position the host does not accept the point.</summary>
+    /// <summary>与上报的信号弹位置相距超过此值时，主机不接受该撤离点。</summary>
     private const float PointRange = 120f;
 
-    /// <summary>Without a collider on the detector zone the flare position is compared to its origin.</summary>
+    /// <summary>当检测区上没有碰撞体时，信号弹位置将与其原点进行比较。</summary>
     private const float ZoneRange = 150f;
 
-    /// <summary>Late joiners and lost packets pick the current grants up on the next tick.</summary>
+    /// <summary>中途加入的玩家与丢失的数据包会在下一个 tick 补上当前的授权。</summary>
     private const float RepublishInterval = 10f;
 
-    /// <summary>Signature written with every status change this class makes, so the native side can attribute it.</summary>
+    /// <summary>此类所做的每次状态变更都会写入该签名，以便原生侧能够归属来源。</summary>
     private const string NativeSignature = "FikaFlareExfil";
 
     private static readonly object Sync = new();
 
-    /// <summary>Point name -&gt; profiles allowed to use it. Written on the host, mirrored on clients from grants.</summary>
+    /// <summary>撤离点名 -&gt; 允许使用它的 profile。在主机上写入，在客户端由授权镜像而来。</summary>
     private static readonly Dictionary<string, HashSet<string>> AllowedProfilesByPoint = new(StringComparer.Ordinal);
 
-    /// <summary>Points that received at least one flare activation in this raid. Only those are gated.</summary>
+    /// <summary>本次战局中至少收到一次信号弹激活的撤离点。只有这些才会被门禁限制。</summary>
     private static readonly HashSet<string> GatedPoints = new(StringComparer.Ordinal);
 
-    /// <summary>Grants as the host issued them, kept for republication.</summary>
+    /// <summary>主机签发授权时的原样记录，用于重新发布。</summary>
     private static readonly List<GrantRecord> Grants = [];
 
-    /// <summary>Per-line diagnostics dedup: one line per player, point and event.</summary>
+    /// <summary>逐行诊断去重：每个玩家、撤离点与事件的组合只输出一行。</summary>
     private static readonly HashSet<string> LoggedLines = new(StringComparer.Ordinal);
 
-    /// <summary>Status of every point when the raid bound it, before any Fika replication ran.</summary>
+    /// <summary>战局绑定各撤离点时的状态，此时尚未运行任何 Fika 复制。</summary>
     private static readonly Dictionary<string, EExfiltrationStatus> InitialStatuses = new(StringComparer.Ordinal);
 
-    /// <summary>Points that a green flare detector zone covers and that start out awaiting manual activation.</summary>
+    /// <summary>被绿色信号弹检测区覆盖、且初始需要手动激活的撤离点。</summary>
     private static readonly HashSet<string> ClassifiedGated = new(StringComparer.Ordinal);
 
-    /// <summary>Exit name -> the green flare (ExitActivate) detector zone that activates it.</summary>
+    /// <summary>出口名 -> 激活它的绿色信号弹（ExitActivate）检测区。</summary>
     private static readonly Dictionary<string, string> FlareZoneByPoint = new(StringComparer.Ordinal);
 
-    /// <summary>Green flare detector zone id -> the exit it activates, resolved when the raid binds the exits.</summary>
+    /// <summary>绿色信号弹检测区 id -> 它所激活的出口，在战局绑定出口时解析。</summary>
     private static readonly Dictionary<string, string> PointByFlareZone = new(StringComparer.Ordinal);
 
-    /// <summary>Exit name -> distance to its green flare detector zone, for the once per raid table.</summary>
+    /// <summary>出口名 -> 到其绿色信号弹检测区的距离，用于每战局只构建一次的表格。</summary>
     private static readonly Dictionary<string, float> FlareZoneDistanceByPoint = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Green flare detector zone id -> the work its flare does (open an exit or disable the sniper).
-    /// Filled once per raid by the classification pass, so the grant path does not have to re-derive
-    /// the verdict from the scene.
+    /// 绿色信号弹检测区 id -> 该区信号弹所执行的工作（开启出口或禁用狙击手）。
+    /// 由分类流程每战局填充一次，因此授权路径不必再从场景中
+    /// 重新推导结论。
     /// </summary>
     private static readonly Dictionary<string, ZoneKind> ZoneKinds = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Per key state of a failure, so that its start and its end are both reported.
+    /// 每个键的失败状态，以便失败的开始与结束都能被上报。
     /// <para>
-    /// <see cref="LogOnce"/> is right for a one-shot hint but it would swallow "failed first, then
-    /// recovered": the raid would keep showing the old line and nobody could tell whether the next
-    /// attempt worked. Every failure path that can heal goes through <see cref="LogFailure"/> instead.
+    /// <see cref="LogOnce"/> 适合一次性的提示，但它会掩盖“先失败、随后
+    /// 恢复”这类情形：战局会一直显示旧的那一行，没人能判断下一次
+    /// 尝试是否成功。因此每个可以自愈的失败路径都改走 <see cref="LogFailure"/>。
     /// </para>
     /// </summary>
     private static readonly Dictionary<string, bool> Failing = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Zone id + profile id pairs the success feedback was already shown for in this raid. A grant is
-    /// republished every <see cref="RepublishInterval"/> seconds, so without this the notification
-    /// would pop again on every republication.
+    /// 本次战局中成功反馈已展示过的“区域 id + profile id”组合。授权每
+    /// <see cref="RepublishInterval"/> 秒重新发布一次，因此若没有这条记录，通知
+    /// 会在每次重新发布时再次弹出。
     /// </summary>
     private static readonly HashSet<string> FeedbackShown = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Seconds a success popup stays on screen before this class takes it down again. Read live from
-    /// the switch 'Flare Extract: Feedback Seconds', so a change in the config manager applies to the
-    /// next popup without a restart. 0 or less turns the automatic take-down off and leaves the banner
-    /// on screen, which is how every build before this one behaved.
+    /// 成功弹窗在屏幕上停留的秒数，之后由此类将其撤下。该值实时读取自
+    /// 开关 'Flare Extract: Feedback Seconds'，因此在配置管理器中修改后无需重启即可
+    /// 对下一个弹窗生效。为 0 或更小时关闭自动撤下，横幅会留在
+    /// 屏幕上，此前所有构建都是这种行为。
     /// </summary>
     internal static float FeedbackSeconds
     {
@@ -140,18 +140,18 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Popups this class put on screen and still has to take off again, each with the game time it
-    /// goes away at.
+    /// 由此类显示到屏幕上、且仍需再次撤下的弹窗，每项都带有其
+    /// 消失时的游戏时间。
     /// <para>
-    /// A list rather than a single slot: a second activation can pop a banner while the first one is
-    /// still up, and the older popup must neither be left on screen by the newer one nor cut short by
-    /// the newer one's deadline. Every entry carries its own notification object, so taking one down
-    /// can never touch another.
+    /// 用列表而非单个槽位：第二次激活可能在第一个横幅仍然显示时弹出新横幅，
+    /// 较早的弹窗既不能被较新的弹窗留在屏幕上，也不能被
+    /// 较新弹窗的到期时间提前关闭。每一项都携带自己的通知对象，因此撤下一个
+    /// 永远不会影响另一个。
     /// </para>
     /// </summary>
     private static readonly List<FeedbackPopup> FeedbackPopups = new();
 
-    /// <summary>Display time used when the switch cannot be read (missing entry, no plugin instance).</summary>
+    /// <summary>无法读取开关时使用的显示时间（缺少配置项、没有插件实例）。</summary>
     private const float DefaultFeedbackSeconds = 5f;
 
     private static bool _classificationLogged;
@@ -160,10 +160,10 @@ public static class FikaFlareExfil
     private static float _nextRepublish;
 
     /// <summary>
-    /// Vanilla party channel switch. On (the default) one flare opens the point for the whole
-    /// squad of the shooter, which is what <c>EZoneEventType.PlayerByPartyAddedInShotList</c>
-    /// describes. Off binds the activation to the shooter alone, so every player has to fire
-    /// their own flare.
+    /// 原版小队通道开关。开启（默认）时，一发信号弹会为发射者的整个小队
+    /// 打开该撤离点，这正是 <c>EZoneEventType.PlayerByPartyAddedInShotList</c>
+    /// 所描述的行为。关闭时激活只绑定到发射者本人，因此每个玩家都必须
+    /// 自己发射信号弹。
     /// </summary>
     internal static bool SquadSharesActivation
     {
@@ -183,9 +183,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Called by the shooter's own firearm controller right after it fired a flare. Detects
-    /// ExitActivate (green) flares, resolves the detector zone and the point, and either sends
-    /// the report (client) or grants locally (host).
+    /// 由发射者自己的枪械控制器在发射信号弹之后立即调用。识别
+    /// ExitActivate（绿色）信号弹，解析检测区与撤离点，然后或者发送
+    /// 上报（客户端），或者在本地授权（主机）。
     /// </summary>
     internal static void OnLocalFlareShot(Ammo flareItem, Vector3 shotPosition)
     {
@@ -242,8 +242,8 @@ public static class FikaFlareExfil
                     FlarePosition = shotPosition
                 };
                 client.SendData(ref packet, DeliveryMethod.ReliableOrdered);
-                // The machine that fired the shot already ran the native scene chain when the flare burned;
-                // this only covers the case where it did not (the flare burned before our postfix ran).
+                // 发射该枪的机器在信号弹燃烧时已经跑过原生场景链路；
+                // 这里只覆盖它没有跑过的情况（信号弹在我们 postfix 运行之前就已燃烧）。
                 QueueLocalVisual(flareItem, pointName, profileId, shotPosition);
                 FikaGlobals.LogWarning($"[FlareExfil] fired zone={zoneId} profile={profileId} -> report sent");
                 return;
@@ -251,8 +251,8 @@ public static class FikaFlareExfil
 
             QueueLocalVisual(flareItem, pointName, profileId, shotPosition);
 
-            // Host: the local flare is authoritative right away, and every peer still has to be
-            // told who it was for - the point must not open for players outside the grant.
+            // 主机：本地信号弹立即生效，同时仍必须告知每个对等端
+            // 它是为谁触发的——撤离点不得对授权之外的玩家开放。
             GrantForShooter(profileId, pointName, zoneId, exitZone, "host local flare", shotPosition);
         }
         catch (Exception exception)
@@ -262,8 +262,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Host side of a client report. The sending peer decides which profile the packet may
-    /// speak for; every other field is validated against this raid before a grant is issued.
+    /// 客户端上报的主机侧处理。由发送方对等端决定该数据包可以代表
+    /// 哪个 profile；其余每个字段都会在签发授权前按本次战局校验。
     /// </summary>
     internal static void HostHandleReport(FlareExfilActivationPacket packet, NetPeer peer)
     {
@@ -314,9 +314,9 @@ public static class FikaFlareExfil
                 return;
             }
 
-            // The scene-trigger reports carry no zone id: that map has no detector zone by construction, so the
-            // host accepts the point when it is the exit the reported position lies at and that exit carries the
-            // manual activation evidence a green flare satisfies.
+            // 场景触发器上报不携带区域 id：那张地图按构造就没有检测区，因此
+            // 只要上报位置所在的出口正是该撤离点、且该出口带有绿色信号弹能够满足的
+            // 手动激活证据，主机就接受该撤离点。
             if (string.IsNullOrEmpty(packet.ZoneId))
             {
                 var sceneDistance = float.MaxValue;
@@ -326,7 +326,7 @@ public static class FikaFlareExfil
                 }
                 catch (Exception)
                 {
-                    // Reported as out of range below.
+                    // 下面按超出范围处理。
                 }
 
                 if (sceneDistance > PointRange)
@@ -339,8 +339,8 @@ public static class FikaFlareExfil
                 return;
             }
 
-            // The host does not take the client's word for which zone it flared in: the reported
-            // position has to be inside the detector zone the report names.
+            // 主机不会仅凭客户端所说就相信它是在哪个区域发射的：上报的
+            // 位置必须落在上报所指的检测区之内。
             if (!TryFindZone(packet.FlarePosition, out var reportedZone, out var reportedExitZone)
                 || !string.Equals(ZoneName(reportedZone), packet.ZoneId, StringComparison.Ordinal))
             {
@@ -354,8 +354,8 @@ public static class FikaFlareExfil
                     $"[FlareExfil] report zone='{packet.ZoneId}' flareType={DescribeFlareType(reportedZone)} is not a green flare (ExitActivate) zone, so no exit can be opened by it");
             }
 
-            // And it derives the exit from that zone itself, so a report can only name the exit the
-            // zone activates, not any exit within reach.
+            // 并且出口是由该区域自行推导出来的，因此上报只能命名该
+            // 区域所激活的出口，而不能是附近任意一个出口。
             var derivedPointName = ResolvePointForZone(packet.ZoneId) ?? FindNearestPointName(packet.FlarePosition);
             if (string.IsNullOrEmpty(derivedPointName))
             {
@@ -369,8 +369,8 @@ public static class FikaFlareExfil
                 return;
             }
 
-            // The exit point itself has to be the one that waits for a manual activation, or one a pass
-            // already classified: otherwise a report built by hand could open an ordinary exit.
+            // 出口点本身必须是等待手动激活的那一个，或者已被某一轮
+            // 流程分类过的那一个：否则手工构造的上报就能打开普通出口。
             if (HasManualActivationEvidence(packet.PointName, point) == null && !IsGatedPoint(packet.PointName))
             {
                 Reject(packet.ProfileId, $"the exit '{packet.PointName}' does not wait for a manual activation, so a flare does not open it");
@@ -392,8 +392,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Client side of a host grant. The shooter and - with the squad switch on - its squad
-    /// members apply it; any other squad records the point as gated and logs the ignored line.
+    /// 主机授权的客户端侧处理。由发射者以及（小队开关开启时）其小队
+    /// 成员应用；其他小队则把该撤离点记为受限，并输出被忽略的那一行日志。
     /// </summary>
     internal static void ClientHandlePacket(FlareExfilActivationPacket packet)
     {
@@ -408,8 +408,8 @@ public static class FikaFlareExfil
             var ownProfileId = localPlayer?.ProfileId;
             if (string.IsNullOrEmpty(ownProfileId))
             {
-                // Dropping the grant here is invisible: this machine writes no immunity, gates nothing
-                // and prints no ignored line - while the host believes the grant arrived.
+                // 在这里丢弃授权是无声的：本机不写免疫、不做任何门禁
+                // 也不打印被忽略的那一行——而主机却认为授权已送达。
                 LogFailure("client-no-profile", true,
                     $"[FlareExfil] grant dropped: the local profile id is unknown on this machine " +
                     $"(world={(Singleton<GameWorld>.Instance == null ? "missing" : "present")}, " +
@@ -422,17 +422,17 @@ public static class FikaFlareExfil
             LogFailure("client-no-profile", false, string.Empty,
                 $"[FlareExfil] grant handling resumed: the local profile id is '{ownProfileId}' again");
 
-            // The host decides who the grant covers, but what it does is decided from this machine's
-            // scene: only a green flare zone (or an exit this raid already classified as gated) gates
-            // anything here, and a zone that feeds the native sniper immunity registry grants
-            // immunity instead - on every machine, because every machine simulates its own sniper.
+            // 主机决定授权覆盖谁，但授权实际做什么由本机的
+            // 场景决定：只有绿色信号弹区域（或本战局已分类为受限的出口）才会在此
+            // 产生门禁，而接入原生狙击免疫注册表的区域改为授予
+            // 免疫——在每台机器上都如此，因为每台机器都模拟自己的狙击手。
             var exitZone = IsExitZoneById(packet.ZoneId);
             var kind = KindOf(packet.ZoneId, exitZone, packet.PointName);
             if (kind == ZoneKind.Other && !exitZone && !IsGatedPoint(packet.PointName) && CountImmunityRegistries() > 0)
             {
-                // This machine has no detector zone with that id (or it was never classified), the
-                // grant gates nothing here and the raid does have the native registry: the host
-                // resolved an immunity zone, so honour the immunity instead of dropping the grant.
+                // 本机没有该 id 的检测区（或者它从未被分类），
+                // 该授权在此不产生任何门禁，而本战局确实存在原生注册表：主机
+                // 解析出的是免疫区域，因此遵从免疫，而不是丢弃该授权。
                 kind = ZoneKind.Immunity;
                 LogOnce("immunity-inferred:" + packet.ZoneId,
                     $"[FlareExfil] immunity zone='{packet.ZoneId}' is not in this scene, treating the grant as immunity " +
@@ -445,12 +445,12 @@ public static class FikaFlareExfil
 
             if (kind == ZoneKind.Immunity)
             {
-                // Every peer writes the covered raid ids, not only the covered players: a peer that
-                // is not covered still runs a sniper zone that can fire at them.
+                // 每个对等端都会写入被覆盖的战局 id，而不仅仅是被覆盖的玩家：未被
+                // 覆盖的对等端同样运行着可能向他们开火的狙击区域。
                 ApplyImmunity(packet.ZoneId, CoveredProfiles(packet, ownProfileId, mine || squadWide),
                     $"grant from host (fired by {packet.ProfileId})");
-                // The exit animation is not part of the immunity path, but the flare that was fired here is a
-                // scene event every machine has to play to see what happened - covered or not.
+                // 出口动画不属于免疫路径，但在此发射的信号弹是一个
+                // 每台机器都必须播放的场景事件，才能看到发生了什么——无论是否被覆盖。
                 QueueFlareVisual(packet);
                 LogOnce($"visual-immunity:{packet.ZoneId}:{packet.ProfileId}",
                     $"[FlareExfil] heli: point='{packet.PointName}' open=n/a visual=broadcast kind=immunity " +
@@ -467,9 +467,9 @@ public static class FikaFlareExfil
                 AddGatedPoint(packet.PointName);
             }
 
-            // Before the covered/not-covered decision below: the exit animation of a flare exit belongs to
-            // every machine in the raid, whether or not the grant covers this player, because the native
-            // chain that plays it is started by the flare event and not by the exit opening.
+            // 放在下面的“是否被覆盖”判定之前：信号弹出口的出口动画属于
+            // 战局中的每台机器，无论该授权是否覆盖此玩家，因为播放它的原生
+            // 链路是由信号弹事件而不是出口开启来启动的。
             QueueFlareVisual(packet);
 
             if (!mine && !squadWide)
@@ -510,17 +510,17 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Records the status each point has when the raid binds it. The flare exits are the points
-    /// that (a) start out awaiting manual activation and (b) sit in a green flare detector zone;
-    /// both facts come from the native raid setup, not from a name list.
+    /// 记录战局绑定各撤离点时的状态。信号弹出口是满足以下条件的那些撤离点：
+    /// （a）初始时等待手动激活，且（b）位于绿色信号弹检测区内；
+    /// 这两个事实都来自原生战局设置，而不是来自名称列表。
     /// </summary>
     internal static void CaptureInitialStatus(ExfiltrationPoint[] regular, SecretExfiltrationPoint[] secret)
     {
         try
         {
-            // Drop the previous raid's tables before this one is recorded. The reporting below runs
-            // through LogOnce, whose world change branch clears the same tables, and a late clear
-            // would wipe the classification this raid just produced.
+            // 在记录本战局之前先丢弃上一战局的表格。下面的上报会走
+            // LogOnce，其世界切换分支会清理同一批表格，而一次过晚的清理
+            // 会抹掉本战局刚刚得出的分类结果。
             SyncRaidState();
 
             lock (Sync)
@@ -569,23 +569,23 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Marks the exits that need a green flare before any player fires one, so a raid where nobody
-    /// fires cannot use them, and prints the evidence the verdict rests on: every detector zone with
-    /// its flare type and the exit closest to it, and every exit with its status, its requirements
-    /// and the zone that was associated with it.
+    /// 在任何玩家发射之前，先标记出需要绿色信号弹的出口，这样无人发射的战局
+    /// 就无法使用它们；同时打印结论所依据的证据：每个检测区及其
+    /// 信号弹类型和距离最近的出口，以及每个出口的状态、需求
+    /// 和与之关联的检测区。
     /// <para>
-    /// Two things have to hold before an exit is gated: a green flare
-    /// (<see cref="FlareEventType.ExitActivate"/>) detector zone must be associated with it, and it
-    /// must carry manual activation evidence - either the status it had when the raid bound it, the
-    /// live status, or an <see cref="AwaitsManualActivationRequirement"/> in its own requirement
-    /// list. The status snapshot alone is not trusted, because the raid setup, the server side exit
-    /// settings and a status the point already received can all leave it at something other than
-    /// <see cref="EExfiltrationStatus.AwaitsManualActivation"/>.
+    /// 一个出口要被纳入门禁，必须同时满足两点：必须有一个绿色信号弹
+    /// （<see cref="FlareEventType.ExitActivate"/>）检测区与它关联，并且它
+    /// 必须带有手动激活证据——无论是战局绑定它时的状态、当前实时
+    /// 状态，还是它自身需求列表中的 <see cref="AwaitsManualActivationRequirement"/>。
+    /// 单凭状态快照并不可信，因为战局设置、服务器侧出口
+    /// 设置以及该撤离点已经收到的状态都可能让它停在
+    /// <see cref="EExfiltrationStatus.AwaitsManualActivation"/> 之外的其他值上。
     /// </para>
     /// <para>
-    /// An exit that carries a requirement a green flare cannot satisfy (a paid exit, a cooperation
-    /// exit, a world event exit) is never gated: gating one would lock an ordinary exit for every
-    /// player that never fires a flare.
+    /// 带有绿色信号弹无法满足的需求的出口（付费出口、合作
+    /// 出口、世界事件出口）永远不会被纳入门禁：否则会把普通出口对每个
+    /// 从不发射信号弹的玩家锁死。
     /// </para>
     /// </summary>
     private static void ClassifyDetectorPoints()
@@ -601,8 +601,8 @@ public static class FikaFlareExfil
             return;
         }
 
-        // A destroyed entry would otherwise vanish without a trace: the zone table would simply be
-        // one line shorter than the scene has zones.
+        // 一个已销毁的条目否则会无声消失：区域表就会比
+        // 会比场景实际拥有的区域少一行。
         var destroyedZones = CountDestroyed(zones);
         if (destroyedZones > 0)
         {
@@ -619,9 +619,9 @@ public static class FikaFlareExfil
         var controller = ExfiltrationController.Instance;
         if (controller == null)
         {
-            // Without the controller nothing can be classified: no gated table, no immunity table and
-            // no "flare gated points" line. Reporting it is what keeps an empty classification from
-            // reading as "this map has no flare exit".
+            // 没有该控制器就什么都无法分类：没有受限表、没有免疫表，
+            // 也没有“flare gated points”这一行。把它报告出来，才能让空的分类结果不至于
+            // 被误读为“这张地图没有信号弹出口”。
             LogFailure("classify-nocontroller", true,
                 "[FlareExfil] classification skipped: ExfiltrationController is not available on this machine, " +
                 "so no exit is gated and no immunity zone is named (a fired flare is still granted from the scene alone)",
@@ -632,13 +632,13 @@ public static class FikaFlareExfil
         LogFailure("classify-nocontroller", false, string.Empty,
             "[FlareExfil] classification resumed: ExfiltrationController is available again");
 
-        // Secret exits are deliberately not classified: theirs is the group/team shared discovery
-        // path (SecretExfiltrationPointFoundShareEvent), and a misclassification would skip their
-        // status sync for the whole squad.
+        // 秘密出口被有意排除在分类之外：它们走的是小队/团队共享发现
+        // 路径（SecretExfiltrationPointFoundShareEvent），一旦误分类，就会跳过它们
+        // 对整个小队的状态同步。
         var points = controller.ExfiltrationPoints;
 
-        // Same for exits: a point without settings is neither gated nor listed below, and a table
-        // that came out empty must say whether that is the map or a torn down scene.
+        // 出口同理：没有设置项的撤离点既不会被纳入门禁，也不会在下面列出，而一个
+        // 最终为空的表格必须说明这是地图本身如此，还是场景已被拆除。
         var skippedPoints = DescribeSkippedPoints(points);
         if (skippedPoints != null)
         {
@@ -647,8 +647,8 @@ public static class FikaFlareExfil
                 "they are neither gated nor listed in the point table");
         }
 
-        // The zone pass resolves what each flare opens, the exit pass decides which exits are gated,
-        // and only then can a zone be named: an immunity verdict needs the exit verdict.
+        // 区域遍历解析每个信号弹开启什么，出口遍历决定哪些出口被纳入门禁，
+        // 只有之后才能给区域定性：免疫结论需要先有出口结论。
         var infos = CollectDetectorZones(zones, points);
         ClassifyPoints(points);
         ReportZoneKinds(infos);
@@ -656,9 +656,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Collects every detector zone of this raid, resolves the exit a green flare zone activates and
-    /// returns the snapshot the reporting pass prints. Nothing is logged here: what a zone is needs
-    /// the exit verdict, which <see cref="ClassifyPoints"/> produces afterwards.
+    /// 收集本次战局的每个检测区，解析绿色信号弹区域所激活的出口，
+    /// 并返回上报流程要打印的快照。这里不做任何日志输出：区域的定性需要
+    /// 出口结论，而出口结论由 <see cref="ClassifyPoints"/> 稍后产生。
     /// </summary>
     private static List<ZoneInfo> CollectDetectorZones(FlareShootDetectorZone[] zones, ExfiltrationPoint[] points)
     {
@@ -681,15 +681,15 @@ public static class FikaFlareExfil
             }
             catch (Exception)
             {
-                // Reported with the placeholders of the zone line.
+                // 使用区域那一行的占位符上报。
             }
 
             var inside = PointInsideZone(zone, points, out var insideName);
 
-            // The zone is bound to an exit only when it physically contains one, or when the closest
-            // exit is inside the accepted range. Binding a far away exit would attach the gate to a
-            // point the flare has nothing to do with. Only a green flare (ExitActivate) zone opens an
-            // exit, so only those are bound.
+            // 只有当区域在物理上包含某个出口，或者最近的出口落在可接受
+            // 范围内时，区域才会与该出口绑定。绑定一个很远的出口会把门禁关联到
+            // 与信号弹毫无关系的撤离点上。只有绿色信号弹（ExitActivate）区域才会开启
+            // 出口，因此只绑定这些区域。
             var associated = inside
                 ? insideName
                 : (nearestName != null && nearestDistance >= 0f && nearestDistance <= PointRange ? nearestName : null);
@@ -722,14 +722,14 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// One line per detector zone: the flare type it handles, the exit closest to it, the exit inside
-    /// its collider and the class of work its flare does.
+    /// 每个检测区一行：它处理的信号弹类型、距离它最近的出口、位于其
+    /// 碰撞体内部的出口，以及其信号弹所做工作的类别。
     /// <para>
-    /// <c>kind=exit-gate</c> is a green (<c>ExitActivate</c>) zone, so the flare activates the exit it
-    /// is associated with; whether that exit is actually gated is the verdict of the exit line below.
-    /// <c>kind=immunity</c> is a zone that feeds the native sniper immunity registry instead; the
-    /// evidence for that verdict is printed after <c>immune=</c>. <c>kind=other</c> is an airdrop,
-    /// quest or sniper fire zone that no exfiltration logic may touch.
+    /// <c>kind=exit-gate</c> 是绿色（<c>ExitActivate</c>）区域，因此信号弹会激活与之
+    /// 关联的出口；该出口是否真的被纳入门禁，则由下面出口那一行的结论说明。
+    /// <c>kind=immunity</c> 则是接入原生狙击免疫注册表的区域；该结论的
+    /// 证据打印在 <c>immune=</c> 之后。<c>kind=other</c> 是空投、
+    /// 任务或狙击火力区域，任何撤离逻辑都不得触碰。
     /// </para>
     /// </summary>
     private static void ReportZoneKinds(List<ZoneInfo> infos)
@@ -742,10 +742,10 @@ public static class FikaFlareExfil
 
             if (kind == ZoneKind.Immunity && exitGated)
             {
-                // The one boundary where the two classes overlap: a green flare zone that both feeds
-                // the immunity registry and sits over an exit that waits for manual activation.
-                // Immunity wins (an immunity zone must never touch an exit status), so the gate it
-                // would have opened is lost - flag it instead of deciding silently.
+                // 两类重叠的唯一边界情形：某个绿色信号弹区域既接入
+                // 免疫注册表，又位于一个等待手动激活的出口之上。
+                // 免疫优先（免疫区域绝不能触碰出口状态），因此它原本
+                // 会打开的门禁就丢失了——把它标记出来，而不是默默决定。
                 LogFailure("kind-conflict:" + info.ZoneId, true,
                     $"[FlareExfil] zone '{info.ZoneId}' matches BOTH immunity and exit-gate (associatedExit='{info.AssociatedName}' " +
                     $"exitGated=True immune=[{evidence}]) - treated as immunity, so that exit is not gated: confirm this zone by hand",
@@ -777,10 +777,10 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// The work a zone's flare does on this machine. Immunity wins over the gate: a zone that feeds
-    /// the sniper immunity registry is never allowed to touch an exit status, because the exit of
-    /// such a map (Ground Zero's <c>Sniper_exit</c>) is open by requirement and only the sniper
-    /// blocks it.
+    /// 本机上某区域信号弹所做的工作。免疫优先于门禁：接入
+    /// 狙击免疫注册表的区域绝不允许触碰出口状态，因为这类地图的出口
+    /// （Ground Zero 的 <c>Sniper_exit</c>）本身按需求就是开启的，只是被狙击手
+    /// 封锁而已。
     /// </summary>
     private static ZoneKind ClassifyKind(ZoneInfo info, bool exitGated, out string evidence)
     {
@@ -810,8 +810,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// One line per exit with the verdict of the gate, so a raid can be read back without a debugger:
-    /// status, recorded initial status, exit type, requirements, associated zone, distance.
+    /// 每个出口一行，附带门禁结论，这样不用调试器也能回溯一次战局：
+    /// 状态、记录的初始状态、出口类型、需求、关联区域、距离。
     /// </summary>
     private static void ClassifyPoints(ExfiltrationPoint[] points)
     {
@@ -836,7 +836,7 @@ public static class FikaFlareExfil
             }
             catch (Exception)
             {
-                // Kept as unreadable.
+                // 保持为不可读取。
             }
 
             var initial = "unrecorded";
@@ -901,7 +901,7 @@ public static class FikaFlareExfil
         }
     }
 
-    /// <summary>True for a detector zone that activates an exit: only a green flare does that.</summary>
+    /// <summary>若检测区会激活某个出口则为 true：只有绿色信号弹才会这样。</summary>
     private static bool IsExitZone(FlareShootDetectorZone zone)
     {
         try
@@ -968,8 +968,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// The native type name of a requirement. The runtime type is read from the IL2CPP type, because
-    /// the declared element type of the requirement array is always the base class.
+    /// 需求项的原生类型名。运行时类型从 IL2CPP 类型读取，因为
+    /// 需求数组声明的元素类型始终是基类。
     /// </summary>
     private static string RequirementTypeName(ExfiltrationRequirement requirement)
     {
@@ -983,7 +983,7 @@ public static class FikaFlareExfil
         }
         catch (Exception)
         {
-            // Falls back to the managed proxy type below.
+            // 下面回退到托管代理类型。
         }
 
         try
@@ -1040,8 +1040,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Names the first requirement a green flare cannot satisfy, or null when the exit only carries
-    /// the manual activation requirement and empty requirement slots.
+    /// 给出绿色信号弹无法满足的第一个需求项；若该出口只带有
+    /// 手动激活需求项和空的需求槽位，则返回 null。
     /// </summary>
     private static string DescribeBlockingRequirement(ExfiltrationPoint point)
     {
@@ -1099,9 +1099,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Manual activation evidence for an exit: the status recorded when the raid bound it, the live
-    /// status, or the exit's own <c>AwaitsManualActivationRequirement</c>. Returns the evidence text
-    /// or null when none of them applies.
+    /// 出口的手动激活证据：战局绑定它时记录的状态、实时状态，
+    /// 或者该出口自身的 <c>AwaitsManualActivationRequirement</c>。返回证据文本，
+    /// 若三者都不适用则返回 null。
     /// </summary>
     private static string HasManualActivationEvidence(string name, ExfiltrationPoint point)
     {
@@ -1122,7 +1122,7 @@ public static class FikaFlareExfil
         }
         catch (Exception)
         {
-            // Falls through to the requirement check.
+            // 继续落到需求项检查。
         }
 
         try
@@ -1143,7 +1143,7 @@ public static class FikaFlareExfil
         }
         catch (Exception)
         {
-            // No requirement evidence.
+            // 没有需求项证据。
         }
 
         return null;
@@ -1193,7 +1193,7 @@ public static class FikaFlareExfil
         return bestName;
     }
 
-    /// <summary>The exit whose trigger sits inside the zone, if any.</summary>
+    /// <summary>触发器位于该区域内的出口（如果有）。</summary>
     private static bool PointInsideZone(FlareShootDetectorZone zone, ExfiltrationPoint[] points, out string name)
     {
         name = null;
@@ -1238,14 +1238,14 @@ public static class FikaFlareExfil
         return !string.IsNullOrEmpty(name);
     }
 
-    /// <summary>True when the named zone exists locally and handles exit activation.</summary>
+    /// <summary>若指定名称的区域在本地存在且处理出口激活，则为 true。</summary>
     private static bool IsExitZoneById(string zoneId)
     {
         var zone = FindZoneById(zoneId);
         return zone != null && IsExitZone(zone);
     }
 
-    /// <summary>The detector zone with this id on this machine, or null when this scene has none.</summary>
+    /// <summary>本机上具有该 id 的检测区；若此场景没有则为 null。</summary>
     private static FlareShootDetectorZone FindZoneById(string zoneId)
     {
         if (string.IsNullOrEmpty(zoneId))
@@ -1295,9 +1295,9 @@ public static class FikaFlareExfil
             }
         }
 
-        // The scene-trigger chain is the second, detector-zone-free flavour of a flare exit (the icebreaker
-        // helicopter exit): a map that has one but no detector zone cannot be classified by geometry, so the
-        // count is what tells the two flavours apart in a single log line.
+        // 场景触发链路是信号弹出口的第二种形态，不依赖检测区（破冰船
+        // 直升机出口）：一张地图若有它却没有检测区，就无法按几何关系分类，因此
+        // 计数正是在单行日志中区分这两种形态的依据。
         var triggers = CountSceneFlareTriggers();
 
         if (names.Count == 0)
@@ -1311,8 +1311,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// True when this player may use the point. Points that never saw a flare activation keep
-    /// their vanilla behaviour, so nothing but the flare exits is affected.
+    /// 当该玩家可以使用此撤离点时为 true。从未发生过信号弹激活的撤离点
+    /// 保持其原版行为，因此只有信号弹出口会受影响。
     /// </summary>
     public static bool MayExtract(string profileId, string pointName)
     {
@@ -1348,7 +1348,7 @@ public static class FikaFlareExfil
         }
     }
 
-    /// <summary>True once any player activated this point with a flare in this raid.</summary>
+    /// <summary>本战局中只要有玩家用信号弹激活过此撤离点即为 true。</summary>
     public static bool IsGatedPoint(string pointName)
     {
         if (string.IsNullOrEmpty(pointName))
@@ -1362,7 +1362,7 @@ public static class FikaFlareExfil
         }
     }
 
-    /// <summary>True when the local player is on the allow list of the point.</summary>
+    /// <summary>当本地玩家在该撤离点的允许列表中时为 true。</summary>
     public static bool LocalPlayerAllowed(string pointName)
     {
         var profileId = Singleton<GameWorld>.Instance?.MainPlayer?.ProfileId;
@@ -1378,9 +1378,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// True when a received point status must not be written locally: the point is flare gated
-    /// and this player is not on the allow list, so the point-level state of the sender says
-    /// nothing about this player.
+    /// 当收到的撤离点状态不得写入本地时为 true：该撤离点受信号弹门禁限制
+    /// 而此玩家不在允许列表中，因此发送方给出的撤离点级状态
+    /// 与此玩家无关。
     /// </summary>
     public static bool ShouldSkipPointStatus(string pointName)
     {
@@ -1388,8 +1388,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Host: hands the current grants to the peers again. Runs on a timer so a late joining
-    /// squad member sees an activation that happened before it connected.
+    /// 主机侧：再次把当前授权交给各对等端。由定时器驱动，以便后加入的
+    /// 小队成员也能看到在其连接之前已经发生的激活。
     /// </summary>
     internal static void HostTick()
     {
@@ -1430,8 +1430,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Logged when a gated point refuses to replicate its point level countdown: the activation
-    /// travels as a per-player grant, never as an identity-less broadcast.
+    /// 当受门禁限制的撤离点拒绝复制其撤离点级倒计时时记录：激活是
+    /// 以按玩家的授权形式传递的，绝不会以无身份的广播形式发送。
     /// </summary>
     public static void LogCountdownSuppressed(string pointName)
     {
@@ -1439,11 +1439,11 @@ public static class FikaFlareExfil
             $"[FlareExfil] point {pointName} countdown not broadcast (flare gated, activation travels per player)");
     }
 
-    /// <summary>Drops the raid state. Called when a new world is seen and safe to call at any time.</summary>
+    /// <summary>丢弃战局状态。在发现新世界时调用，且任何时候调用都是安全的。</summary>
     /// <summary>
-    /// Kept as the explicit entry point for callers that want to drop the raid tables (the world
-    /// change branch of <see cref="LogOnce"/> clears the same tables on its own, so nothing depends
-    /// on this being called; it exists so a future hook does not have to reach into the tables).
+    /// 保留为显式入口，供希望丢弃战局表格的调用方使用（<see cref="LogOnce"/> 的
+    /// 世界切换分支会自行清理同一批表格，因此没有任何东西依赖它被调用；
+    /// 它的存在只是为了让将来的钩子不必直接操作这些表格）。
     /// </summary>
     internal static void ResetRaidState()
     {
@@ -1454,9 +1454,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Clears every per-raid table. Called on a world change (a new raid, a transit that reloads
-    /// the level) and by <see cref="ResetRaidState"/>; the lock is reentrant, so callers may hold
-    /// it already.
+    /// 清理所有按战局划分的表格。在世界切换（新战局、重新加载关卡的
+    /// 转运）时调用，也由 <see cref="ResetRaidState"/> 调用；该锁是可重入的，因此调用方
+    /// 可以已经持有它。
     /// </summary>
     private static void ClearRaidStateLocked()
     {
@@ -1480,9 +1480,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Drops the raid tables when the world pointer changed since the last call. Every entry point
-    /// runs it before reading state, so a late world change cannot wipe a table that was just filled
-    /// and a new raid can never read the previous raid's activation.
+    /// 当世界指针自上次调用以来发生变化时丢弃战局表格。每个入口
+    /// 都会在读取状态前运行它，因此迟到的世界切换既不会抹掉刚刚填好的表格，
+    /// 新战局也永远不会读到上一战局的激活信息。
     /// </summary>
     private static void SyncRaidState()
     {
@@ -1492,7 +1492,7 @@ public static class FikaFlareExfil
             var worldPointer = world == null ? System.IntPtr.Zero : world.Pointer;
             if (worldPointer != _stateWorld)
             {
-                // New world: a fresh raid, or a transit that reloaded the level.
+                // 新世界：一次全新的战局，或者是重新加载了关卡的转运。
                 _stateWorld = worldPointer;
                 ClearRaidStateLocked();
             }
@@ -1500,19 +1500,19 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Issues the activation the shooter's flare earned: the covered profiles are written to the allow list,
-    /// the point is opened, and the grant travels to every peer. <paramref name="flarePosition"/> is the spot
-    /// the flare burned at and travels with the grant so each peer can run the same exit chain the shooter's
-    /// machine ran; <see cref="Vector3.zero"/> means no visual is carried.
+    /// 签发发射者的信号弹所换来的激活：被覆盖的 profile 写入允许列表，
+    /// 撤离点被打开，授权随后发往每个对等端。<paramref name="flarePosition"/> 是信号弹
+    /// 燃烧的位置，随授权一起传递，以便每个对等端都能运行发射者机器所跑的同一套出口
+    /// 链路；<see cref="Vector3.zero"/> 表示不携带任何视觉表现。
     /// </summary>
     private static void GrantForShooter(string profileId, string pointName, string zoneId, bool exitZone, string source, Vector3 flarePosition)
     {
-        // What the flare does here decides everything below. A grant only gates an exit that is a
-        // green flare exit: the flare zone has to be an exit activation zone, or the exit has to be
-        // one this raid already classified as gated. A flare that resolved to an ordinary exit must
-        // not lock that exit for everyone outside the grant, and a flare fired in an immunity zone
-        // (the Ground Zero sniper area) must not touch the exit at all: there it only disables the
-        // sniper, for exactly the players the grant covers.
+        // 信号弹在此处的作用决定下面的一切。授权只会对属于绿色信号弹出口的出口
+        // 施加门禁：信号弹区域必须是出口激活区域，或者该出口必须是
+        // 本战局已分类为受限的出口。解析到普通出口的信号弹不得
+        // 为授权之外的玩家锁死该出口；而在免疫区域
+        // （Ground Zero 的狙击区）发射的信号弹完全不得触碰出口：
+        // 在那里它只会对授权覆盖的玩家禁用狙击手。
         var kind = KindOf(zoneId, exitZone, pointName);
         var gate = kind == ZoneKind.ExitGate;
 
@@ -1550,8 +1550,8 @@ public static class FikaFlareExfil
         string native;
         if (kind == ZoneKind.Immunity)
         {
-            // The exit of an immunity zone keeps the status the server gave it; the flare writes the
-            // native sniper immunity set for the covered players on this machine instead.
+            // 免疫区域的出口保持服务器赋予它的状态；信号弹改为在本机为
+            // 被覆盖的玩家写入原生狙击免疫集合。
             ApplyImmunity(zoneId, granted, source);
             transition = "point-status-untouched (immunity zone)";
             native = "immunity";
@@ -1571,8 +1571,8 @@ public static class FikaFlareExfil
                     GatedPoints.Add(pointName);
                 }
 
-                // Immunity grants are republished as well: a peer that connects later still has to
-                // write the raid ids into its own registry.
+                // 免疫授权同样会被重新发布：稍后才连接的对等端仍然需要
+                // 把这些战局 id 写入自己的注册表。
                 Grants.RemoveAll(grant => string.Equals(grant.PointName, pointName, StringComparison.Ordinal)
                     && string.Equals(grant.ProfileId, profileId, StringComparison.Ordinal));
                 Grants.Add(record);
@@ -1617,8 +1617,8 @@ public static class FikaFlareExfil
     {
         if (FikaBackendUtils.IsClient)
         {
-            // Only the host hands out grants; reaching this on a client means the grant is never
-            // announced to anybody.
+            // 只有主机才会签发授权；在客户端走到这里意味着该授权永远不会
+            // 被通知给任何人。
             LogFailure("broadcast:client", true,
                 $"[FlareExfil] grant not broadcast: this machine is a client, so no peer learns about " +
                 $"zone='{grant.ZoneId}' point='{grant.PointName}' firedBy='{grant.ProfileId}'",
@@ -1631,8 +1631,8 @@ public static class FikaFlareExfil
 
         if (FikaSingleton<IFikaNetworkManager>.Instance is not FikaServer server)
         {
-            // The classic "the host thinks it sent it": the grant was decided locally and every peer
-            // stays without the immunity or the gate it carries.
+            // 典型的“主机以为已经发出去了”：授权只在本地做出决定，而每个对等端
+            // 都得不到它携带的免疫或门禁。
             LogFailure("broadcast:no-server", true,
                 $"[FlareExfil] grant not broadcast: the local manager is not a FikaServer " +
                 $"(manager='{FikaSingleton<IFikaNetworkManager>.Instance?.GetType().Name ?? "none"}'), " +
@@ -1652,14 +1652,14 @@ public static class FikaFlareExfil
             ZoneId = grant.ZoneId,
             SquadId = grant.SquadId,
             FlarePosition = default,
-            // The spot the flare burned at. It is what the peers need to run the same exit chain the
-            // shooter's machine ran (the icebreaker helicopter animation); Vector3.zero means the grant
-            // carries no visual, which is the case only for a grant built without a flare position.
+            // 信号弹燃烧的位置。对等端正是需要它来运行发射者机器所跑的同一套出口
+            // 链路（破冰船直升机动画）；Vector3.zero 表示该授权
+            // 不携带视觉表现，这种情况只出现在未带信号弹位置而构建的授权中。
             FlareDirection = grant.FlarePosition
         };
 
-        // One packet per grant, sent to every peer: they decide from ProfileId/SquadId whether it
-        // covers them, and the ones it does not cover still learn that the point is gated.
+        // 每个授权一个数据包，发送给每个对等端：它们依据 ProfileId/SquadId 判断该授权
+        // 是否覆盖自己，而未被覆盖的对等端仍然会得知该撤离点受门禁限制。
         server.SendData(ref packet, DeliveryMethod.ReliableOrdered);
     }
 
@@ -1701,11 +1701,11 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Mirrors what the native side does on the firing machine for every profile the grant covers:
-    /// the exit leaves the manual activation state and the native per player records are written.
-    /// The exit object exists on every machine, and this only runs on the machines the grant covers.
-    /// <paramref name="transition"/> and <paramref name="native"/> carry the observable outcome for
-    /// the acceptance line of the caller.
+    /// 对授权覆盖的每个 profile，镜像原生侧在发射机器上所做的处理：
+    /// 出口离开手动激活状态，并写入原生的按玩家记录。
+    /// 出口对象在每台机器上都存在，而这段逻辑只在授权覆盖的机器上运行。
+    /// <paramref name="transition"/> 与 <paramref name="native"/> 携带可供观察的结果，用于
+    /// 调用方的验收日志行。
     /// </summary>
     private static void ApplyGrant(string pointName, string zoneId, List<string> profiles, out string transition, out string native)
     {
@@ -1734,8 +1734,8 @@ public static class FikaFlareExfil
         {
             try
             {
-                // Native activation path: the external setter raises OnStatusChanged, so the exit UI
-                // and every native subscriber follow the flip.
+                // 原生激活路径：外部 setter 会触发 OnStatusChanged，因此出口 UI
+                // 和每个原生订阅者都会跟随这次翻转。
                 point.ExternalSetStatus(EExfiltrationStatus.RegularMode, NativeSignature);
             }
             catch (Exception exception)
@@ -1761,7 +1761,7 @@ public static class FikaFlareExfil
         }
         catch (Exception)
         {
-            // Reported as the old status.
+            // 按旧状态上报。
         }
 
         transition = $"{DescribeStatus(old)}->{DescribeStatus(current)}";
@@ -1789,10 +1789,10 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Writes the profile into the native per profile list the exit evaluates
-    /// (<c>ExfiltrationPoint._playersMetAllRequirements</c>), which is the player level record a
-    /// manual activation requirement reads. A runtime that does not expose the list keeps working:
-    /// the allow list of this class still decides who may extract.
+    /// 把该 profile 写入出口所评估的原生按 profile 列表
+    /// （<c>ExfiltrationPoint._playersMetAllRequirements</c>），这是手动激活需求项所读取的
+    /// 玩家级记录。未暴露该列表的运行时仍可正常工作：
+    /// 本类的允许列表依旧决定谁可以撤离。
     /// </summary>
     private static bool RecordMetRequirement(ExfiltrationPoint point, string profileId)
     {
@@ -1821,10 +1821,10 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Best effort copy of the native per-profile record
-    /// (<c>FlareShootDetectorZone._shotPlayerProfiles</c>), which the per-player requirement of
-    /// the point is built on. A runtime that does not expose the field keeps working: the allow
-    /// list of this class still decides who may extract.
+    /// 尽力复制原生按 profile 的记录
+    /// （<c>FlareShootDetectorZone._shotPlayerProfiles</c>），撤离点的按玩家需求项正是
+    /// 建立在其之上。未暴露该字段的运行时仍可正常工作：
+    /// 本类的允许列表依旧决定谁可以撤离。
     /// </summary>
     private static bool RecordNativeShotProfile(string zoneId, string profileId)
     {
@@ -1875,12 +1875,12 @@ public static class FikaFlareExfil
 
         if (!TryFindZone(shotPosition, out var zone, out exitZone))
         {
-            // Maps whose flare exit is driven by a scene trigger instead of a detector zone have no
-            // FlareShootDetectorZone to resolve against at all. The flare's own template already proved the
-            // shooter fired a green (ExitActivate) flare; the exit is the awaiting-manual-activation point
-            // the flare burned next to, and the activation is still only issued when that point carries
-            // the manual activation evidence or a pass already classified it. Without this branch a flare
-            // on such a map activates nothing at all on this machine - it cannot even be reported.
+            // 信号弹出口由场景触发器而非检测区驱动的地图，根本没有任何
+            // FlareShootDetectorZone 可供解析。信号弹自身的模板已经证明
+            // 发射者发射的是绿色（ExitActivate）信号弹；出口就是信号弹燃烧处
+            // 旁边的等待手动激活撤离点，而激活仍只在该撤离点带有
+            // 手动激活证据、或已被某一轮流程分类过时才会签发。没有这个分支，在此类地图上
+            // 发射的信号弹在本机什么都激活不了——甚至根本无法上报。
             if (!TryResolveSceneTriggerPoint(shotPosition, out pointName, out var evidence))
             {
                 return false;
@@ -1901,8 +1901,8 @@ public static class FikaFlareExfil
             return false;
         }
 
-        // The exit that belongs to the zone wins over the exit that happens to be closest to the
-        // player: the association was resolved from the scene geometry when the raid bound the exits.
+        // 属于该区域的出口优先于恰好距离玩家最近的那个出口：
+        // 该关联是在战局绑定出口时依据场景几何解析出来的。
         var origin = "zone-association";
         pointName = ResolvePointForZone(zoneId);
         if (string.IsNullOrEmpty(pointName))
@@ -1926,7 +1926,7 @@ public static class FikaFlareExfil
         return !string.IsNullOrEmpty(zoneId) && !string.IsNullOrEmpty(pointName);
     }
 
-    /// <summary>The exit the given detector zone activates, when the raid bind resolved one.</summary>
+    /// <summary>给定检测区所激活的出口，前提是战局绑定过程解析出了它。</summary>
     private static string ResolvePointForZone(string zoneId)
     {
         if (string.IsNullOrEmpty(zoneId))
@@ -1978,7 +1978,7 @@ public static class FikaFlareExfil
             }
             catch (Exception)
             {
-                // A zone without a usable collider falls back to the distance check below.
+                // 没有可用碰撞体的区域回退到下面的距离检查。
             }
 
             if (contains)
@@ -2012,8 +2012,8 @@ public static class FikaFlareExfil
             }
         }
 
-        // A green flare (ExitActivate) zone always wins over an airdrop, quest or sniper flare zone
-        // that happens to cover the same patch of ground.
+        // 绿色信号弹（ExitActivate）区域始终优先于恰好覆盖同一片地面的
+        // 空投、任务或狙击信号弹区域。
         zone = containingExit ?? containingAny ?? nearest;
         exitZone = zone != null && IsExitZone(zone);
         return zone != null;
@@ -2055,9 +2055,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Nearest regular exit point to the position, within <see cref="PointRange"/>. The flare
-    /// area of a green flare exit sits at the exit, so the closest point is the one the flare
-    /// belongs to. Secret exits are left out: their activation is not flare driven.
+    /// 距离该位置最近的普通出口点，需在 <see cref="PointRange"/> 之内。绿色信号弹出口的
+    /// 信号弹区域就位于出口处，因此最近的那个撤离点正是该信号弹
+    /// 所属的撤离点。秘密出口被排除在外：它们的激活并非由信号弹驱动。
     /// </summary>
     private static string FindNearestPointName(Vector3 position)
     {
@@ -2151,7 +2151,7 @@ public static class FikaFlareExfil
         return null;
     }
 
-    /// <summary>Profiles of the squad (everyone except the shooter).</summary>
+    /// <summary>小队的 profile（除发射者以外的所有人）。</summary>
     private static List<string> CollectGroupProfiles(string squadId, string shooterProfileId)
     {
         if (string.IsNullOrEmpty(squadId))
@@ -2210,10 +2210,10 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// What a detector zone feeds on this machine: the once per raid table first, the live scene
-    /// second, so a grant that arrives before (or without) the classification still resolves.
-    /// Immunity is sticky; everything else keeps the pre-existing gate rule exactly
-    /// (<c>exitZone || IsGatedPoint</c>), so no zone that used to open an exit loses that.
+    /// 本机上某检测区所接入的工作：先查每战局一次的表格，
+    /// 再查实时场景，因此即使授权在分类之前（或没有分类）到达也仍能解析。
+    /// 免疫是粘性的；其余情况完全保持原有的门禁规则
+    /// （<c>exitZone || IsGatedPoint</c>），因此过去能开启出口的区域不会失去该能力。
     /// </summary>
     private static ZoneKind KindOf(string zoneId, bool exitZone, string pointName)
     {
@@ -2238,24 +2238,24 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Evidence that this zone feeds the native sniper immunity registry instead of an exit, or null
-    /// when it does not.
+    /// 表明该区域接入的是原生狙击免疫注册表而非某个出口的证据；
+    /// 若并非如此则返回 null。
     /// <para>
-    /// Primary criterion, taken from the 47888 interop member list
-    /// (<c>analysis/flare-exfil-verification/interop-47888-full.txt:407404</c> for the class and
-    /// <c>:407423</c> for the collector): the zone object, one of its parents or one of its children
-    /// carries a <c>EFT.Interactive.PlayersWithImmuneToSniperFire</c> component. That class owns
-    /// <c>playersWithImmune : HashSet&lt;Int32&gt;</c> with <c>AddImmunePlayer(Int32)</c> /
-    /// <c>IsPlayerImmuneForFire(Int32)</c>, which is the set the sniper zones read; its
-    /// <c>PlayersWithImmuneToSniperFireFlareCollector</c> subclass adds the firing player's raid id
-    /// when it consumes <c>FlareShootZoneEvent</c> and is the Ground Zero object named
-    /// <c>FlareFireCollector_zone</c>. The collector's own <c>flareTypeForImmune</c> is printed as
-    /// part of the evidence, so the line shows both objects handle the same flare type.
+    /// 主要判据，取自 47888 interop 成员列表
+    /// （类见 <c>analysis/flare-exfil-verification/interop-47888-full.txt:407404</c>，
+    /// 收集器见 <c>:407423</c>）：区域对象本身、其某个父对象或某个子对象
+    /// 带有 <c>EFT.Interactive.PlayersWithImmuneToSniperFire</c> 组件。该类拥有
+    /// <c>playersWithImmune : HashSet&lt;Int32&gt;</c> 以及 <c>AddImmunePlayer(Int32)</c> /
+    /// <c>IsPlayerImmuneForFire(Int32)</c>，而狙击区域读取的正是这个集合；其子类
+    /// <c>PlayersWithImmuneToSniperFireFlareCollector</c> 在消费 <c>FlareShootZoneEvent</c>
+    /// 时会加入发射玩家的战局 id，它也就是 Ground Zero 中名为
+    /// <c>FlareFireCollector_zone</c> 的对象。收集器自身的 <c>flareTypeForImmune</c> 也会作为
+    /// 证据的一部分打印出来，因此该日志行可以显示两个对象处理的是同一种信号弹类型。
     /// </para>
     /// <para>
-    /// Fallback when a scene keeps the collector on a sibling object: a green (<c>ExitActivate</c>)
-    /// zone that gates nothing, in a raid that does have such a registry, and whose object name says
-    /// what it is.
+    /// 当场景把收集器放在兄弟对象上时的回退判据：一个绿色（<c>ExitActivate</c>）
+    /// 区域，它不施加任何门禁，所在战局确实存在此类注册表，并且其对象名称
+    /// 表明了它的身份。
     /// </para>
     /// </summary>
     private static string ImmunityEvidence(FlareShootDetectorZone zone, bool pointGated)
@@ -2315,9 +2315,9 @@ public static class FikaFlareExfil
             var collector = registry.TryCast<PlayersWithImmuneToSniperFireFlareCollector>();
             if (collector == null)
             {
-                // A plain registry (the sniper manager) is evidence enough for the verdict, but the
-                // flare type cannot be read from it. Say so once per type instead of silently
-                // dropping the half of the evidence the verdict often rests on.
+                // 仅有普通注册表（狙击管理器）已足以支撑该结论，但无法从中读出
+                // 信号弹类型。每种类型说明一次，而不是默默丢掉
+                // 结论常常依赖的那一半证据。
                 LogOnce("immuneprobe-cast:" + type,
                     $"[FlareExfil] immunity registry '{type}' is not a PlayersWithImmuneToSniperFireFlareCollector (where={where}), " +
                     "so its flareTypeForImmune is missing from the zone evidence");
@@ -2348,7 +2348,7 @@ public static class FikaFlareExfil
         }
         catch (Exception)
         {
-            // Falls back to the managed proxy type below.
+            // 下面回退到托管代理类型。
         }
 
         try
@@ -2361,7 +2361,7 @@ public static class FikaFlareExfil
         }
     }
 
-    /// <summary>The last path segment of a zone id: <c>Sandbox_Design_Main:/EXITS/FlareFireCollector_zone</c> -&gt; <c>FlareFireCollector_zone</c>.</summary>
+    /// <summary>区域 id 的最后一段路径：<c>Sandbox_Design_Main:/EXITS/FlareFireCollector_zone</c> -&gt; <c>FlareFireCollector_zone</c>。</summary>
     private static string ObjectNameOf(string zoneId)
     {
         if (string.IsNullOrEmpty(zoneId))
@@ -2380,8 +2380,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// The object name Ground Zero gives the sniper immunity zone. Only used as the fallback half of
-    /// <see cref="ImmunityEvidence"/>, never on its own.
+    /// Ground Zero 给狙击免疫区域起的对象名。仅作为
+    /// <see cref="ImmunityEvidence"/> 的回退判据使用，从不单独使用。
     /// </summary>
     private static bool LooksLikeImmunityZone(string zoneId)
     {
@@ -2393,8 +2393,8 @@ public static class FikaFlareExfil
     {
         try
         {
-            // FindObjectsOfType returns the Il2Cpp array wrapper; the managed array keeps the call
-            // sites free of the wrapper's type.
+            // FindObjectsOfType 返回 Il2Cpp 的数组包装类型；改用托管数组可以让
+            // 各调用点不必出现该包装类型。
             PlayersWithImmuneToSniperFire[] registries = UnityEngine.Object.FindObjectsOfType<PlayersWithImmuneToSniperFire>(true);
             return registries ?? [];
         }
@@ -2411,9 +2411,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// The numeric raid id of a profile. It is the key of the native flare bookkeeping
-    /// (<c>FlareShootZoneEvent.PlayerRaidID</c>) and of the sniper immunity set
-    /// (<c>playersWithImmune : HashSet&lt;Int32&gt;</c>).
+    /// 某个 profile 的数值型战局 id。它是原生信号弹记录
+    /// （<c>FlareShootZoneEvent.PlayerRaidID</c>）与狙击免疫集合
+    /// （<c>playersWithImmune : HashSet&lt;Int32&gt;</c>）的键。
     /// </summary>
     private static bool TryResolveRaidId(string profileId, out int raidId, out string reason)
     {
@@ -2451,28 +2451,28 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Writes the native sniper immunity the flare grants, on this machine, for every profile the
-    /// host decided the activation covers: their raid ids go into each
-    /// <c>PlayersWithImmuneToSniperFire</c> registry, which is the set
-    /// (<c>playersWithImmune : HashSet&lt;Int32&gt;</c>) the sniper zones read through
-    /// <c>IsPlayerImmuneForFire(Int32)</c> and which the <c>HasSniperImmunityTriggerRequirement</c>
-    /// game trigger reads as well.
+    /// 在本机写入信号弹所授予的原生狙击免疫，覆盖主机判定为该激活所及的每个
+    /// profile：它们的战局 id 会写入每个
+    /// <c>PlayersWithImmuneToSniperFire</c> 注册表，即狙击区域通过
+    /// <c>IsPlayerImmuneForFire(Int32)</c> 读取、且 <c>HasSniperImmunityTriggerRequirement</c>
+    /// 游戏触发器同样会读取的那个集合
+    /// （<c>playersWithImmune : HashSet&lt;Int32&gt;</c>）。
     /// <para>
-    /// No duration is invented here: the native set has no expiry field and <c>AddImmunePlayer</c>
-    /// is a <c>HashSet.Add</c>, so a repeated flare renews the entry, and the only way out is the
-    /// native <c>RemoveImmunePlayer</c> that the map triggers call. The read back through
-    /// <c>IsPlayerImmuneForFire</c> is what the log line reports.
+    /// 这里不编造任何持续时间：原生集合没有过期字段，而 <c>AddImmunePlayer</c>
+    /// 就是一次 <c>HashSet.Add</c>，因此重复发射信号弹会刷新该条目，唯一的退出途径是
+    /// 地图触发器所调用的原生 <c>RemoveImmunePlayer</c>。日志行所报告的正是通过
+    /// <c>IsPlayerImmuneForFire</c> 回读到的结果。
     /// </para>
     /// <para>
-    /// Every machine writes the ids itself, because the vanilla flare only ever reaches the machine
-    /// that fired it (the zone consumes a local <c>FlareSuccessEvent</c> and raises
-    /// <c>FlareShootZoneEvent</c> locally), while each machine simulates its own sniper zone.
+    /// 每台机器都自行写入这些 id，因为原版信号弹只会到达发射它的那台机器
+    /// （区域消费的是本地的 <c>FlareSuccessEvent</c>，并在本地触发
+    /// <c>FlareShootZoneEvent</c>），而每台机器都模拟自己的狙击区域。
     /// </para>
     /// <para>
-    /// The success path also ends with the player-facing half vanilla shows
-    /// (<see cref="ShowFlareSuccessFeedback"/>): the covered player's own machine pops the same
-    /// <c>SniperFlareZoneDisabledNotification</c> vanilla pops, because nothing in this activation
-    /// ever enters the native event branch that owns that notification.
+    /// 成功路径同样以原版面向玩家的那部分收尾
+    /// （<see cref="ShowFlareSuccessFeedback"/>）：被覆盖玩家自己的机器会弹出与原版相同的
+    /// <c>SniperFlareZoneDisabledNotification</c>，因为这次激活从头到尾都不会进入
+    /// 拥有该通知的原生事件分支。
     /// </para>
     /// </summary>
     private static void ApplyImmunity(string zoneId, List<string> profiles, string source)
@@ -2481,8 +2481,8 @@ public static class FikaFlareExfil
         var registries = FindImmunityRegistries();
         if (registries.Length == 0)
         {
-            // State, not a one-shot line: a registry that appears later has to be visible as the
-            // recovery it is, otherwise the raid keeps reading the first failure as the current truth.
+            // 这是状态而非一次性日志：稍后才出现的注册表必须作为一次恢复被
+            // 看见，否则战局会一直把最初的失败当作当前事实。
             LogFailure("immunity-registry:" + zoneId, true,
                 $"[FlareExfil] immunity zone='{zoneId}' has no PlayersWithImmuneToSniperFire registry on this machine, " +
                 $"so the sniper keeps firing at {total} player(s) (source={source})",
@@ -2494,9 +2494,9 @@ public static class FikaFlareExfil
             $"[FlareExfil] immunity zone='{zoneId}' can be written again: {registries.Length} PlayersWithImmuneToSniperFire " +
             $"registr(ies) are present (source={source})");
 
-        // The feedback below belongs to exactly one player: this machine's own. Both facts it needs
-        // are read before the write, because afterwards a read back cannot tell "this call put it
-        // there" from "the native chain had it already".
+        // 下面的反馈只属于一个玩家：本机自己的玩家。它需要的两个事实
+        // 都在写入之前读取，因为事后再回读无法区分“是这次调用写进去的”
+        // 与“原生链路本来就有”。
         var localProfileId = Singleton<GameWorld>.Instance?.MainPlayer?.ProfileId;
         var localCovered = IsCovered(profiles, localProfileId);
         var localRaidId = 0;
@@ -2574,10 +2574,10 @@ public static class FikaFlareExfil
             $"so the sniper can still fire at them (source={source})",
             $"[FlareExfil] immunity complete again zone='{zoneId}' verified={verified}/{total} (source={source})");
 
-        // Success path only, and only on the machine of a player this grant covers: the read back has
-        // just proved that the native set answers for the local player, which is exactly the state
-        // vanilla reports to that player with "Flare signal received. You can extract safely!".
-        // A rejected report, an unwritable registry or a raid id that did not resolve never gets here.
+        // 仅在成功路径上，且仅在授权覆盖的玩家所在机器上：刚才的回读已经
+        // 证明原生集合对该本地玩家给出肯定答复，这正是
+        // 原版用“Flare signal received. You can extract safely!”告知该玩家的状态。
+        // 被拒绝的上报、无法写入的注册表或未能解析的战局 id 都不会走到这里。
         if (localCovered && localRaidId > 0 && IsImmuneInAnyRegistry(registries, localRaidId))
         {
             ShowFlareSuccessFeedback(zoneId, localProfileId, source, localWasImmune);
@@ -2585,19 +2585,19 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// The player-facing half of a successful activation, and the same notification vanilla shows:
-    /// once a flare put the player into the native sniper immunity set, the game pops
-    /// <see cref="SniperFlareZoneDisabledNotification"/> ("Flare signal received. You can extract
-    /// safely!" / CN "道路已开放"). That popup lives in the native collector's own event branch
-    /// (<c>PlayersWithImmuneToSniperFireFlareCollector._flareExitSucceedNotification</c>), which only
-    /// runs on the machine that consumed its own local <c>FlareSuccessEvent</c> - a replicated flare
-    /// never reaches it, so this shows the very same notification object through the game's own
-    /// notification manager, which is the call the native branch makes as well.
+    /// 成功激活中面向玩家的那部分，也是原版所显示的同一则通知：
+    /// 一旦信号弹把玩家放入原生狙击免疫集合，游戏就会弹出
+    /// <see cref="SniperFlareZoneDisabledNotification"/>（"Flare signal received. You can extract
+    /// safely!" / CN "道路已开放"）。该弹窗位于原生收集器自己的事件分支中
+    /// （<c>PlayersWithImmuneToSniperFireFlareCollector._flareExitSucceedNotification</c>），该分支只在
+    /// 消费了自身本地 <c>FlareSuccessEvent</c> 的机器上运行——被复制过来的信号弹
+    /// 永远到不了那里，因此这里通过游戏自己的通知管理器显示同一个通知对象，
+    /// 这也正是原生分支所做的调用。
     /// <para>
-    /// One line per covered player and zone: only a covered player's own machine gets here with its
-    /// own profile id, so host and clients each pop for themselves, and the 10 s grant republication
-    /// cannot pop it twice. The display is remembered only after it succeeded, so a popup the game
-    /// did not accept is retried on the next grant instead of being lost.
+    /// 每个被覆盖的玩家与区域一行：只有被覆盖玩家自己的机器才会带着自己的
+    /// profile id 走到这里，因此主机与客户端各自为自己弹出，而每 10 秒一次的授权重新发布
+    /// 不会让它弹两次。只有在成功之后才会记录该展示，因此游戏未接受的弹窗
+    /// 会在下次授权时重试，而不会就此丢失。
     /// </para>
     /// </summary>
     private static void ShowFlareSuccessFeedback(string zoneId, string profileId, string source, bool nativeAlreadyImmune)
@@ -2616,10 +2616,10 @@ public static class FikaFlareExfil
             var notification = new SniperFlareZoneDisabledNotification();
             NotificationManager.DisplayNotification(notification);
 
-            // Nothing in the game hides a notification this class displayed: the native collector
-            // owns and manages its own copy (_flareExitSucceedNotification), and no controller owns
-            // ours. The popup is therefore booked here and taken down again by FeedbackTick once its
-            // display time is over.
+            // 游戏里没有任何东西会隐藏本类显示的通知：原生收集器
+            // 自己拥有并管理它自己的那一份（_flareExitSucceedNotification），而我们这一份
+            // 不归任何控制器管理。因此该弹窗在此登记，并在其显示时间结束后
+            // 由 FeedbackTick 撤下。
             var seconds = FeedbackSeconds;
             lock (Sync)
             {
@@ -2653,21 +2653,21 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Takes every displayed success popup off the screen again once its display time is over.
-    /// Driven from the exfil manager's own Update (the boundary that already pumps
-    /// <see cref="HostTick"/> on both machines), so no engine coroutine and no engine -&gt; managed
-    /// callback is involved, which is the shape the crash reports ruled out.
+    /// 在每个已显示的成功弹窗到达显示时间后，将其从屏幕上撤下。
+    /// 由 exfil 管理器自己的 Update 驱动（该边界在两类机器上都已在驱动
+    /// <see cref="HostTick"/>），因此不涉及引擎协程，也不涉及引擎 -&gt; 托管的
+    /// 回调，而这正是崩溃报告所排除的形态。
     /// <para>
-    /// Idempotent by construction: an entry leaves <see cref="FeedbackPopups"/> exactly once, the
-    /// class keeps one notification object per popup, and hiding an object can therefore neither
-    /// repeat for the same popup nor reach a popup that is still within its display time. An empty
-    /// list costs one lock and returns, so a raid without a flare pays nothing per frame.
+    /// 由结构保证幂等：每个条目只会离开 <see cref="FeedbackPopups"/> 一次，
+    /// 本类为每个弹窗保留一个通知对象，因此隐藏某个对象既不会
+    /// 对同一弹窗重复执行，也不会波及仍在显示时间内的弹窗。空
+    /// 列表只需一次加锁便返回，因此没有信号弹的战局每帧没有额外开销。
     /// </para>
     /// </summary>
     internal static void FeedbackTick()
     {
-        // Drives the exit-visual replays as well: a replay waits for the shooter's flare object or for its
-        // deadline, and this is the tick both host and client already run every frame.
+        // 同时也驱动出口视觉重放：重放会等待发射者的信号弹对象或其
+        // 到期时间，而这正是主机与客户端每帧都已在运行的 tick。
         if (HasPendingVisuals())
         {
             try
@@ -2706,9 +2706,9 @@ public static class FikaFlareExfil
                 return;
             }
 
-            // Only a frame that really has work to do reads the raid state: a new world (fresh raid,
-            // transit reload) clears the table, so the popups of the previous raid are dropped here
-            // and no stale notification object is ever touched.
+            // 只有确实有工作要做的帧才读取战局状态：新世界（全新战局、
+            // 转运重载）会清理该表，因此上一战局的弹窗会在此被丢弃，
+            // 也永远不会碰到过期的通知对象。
             SyncRaidState();
 
             for (var i = 0; i < due.Count; i++)
@@ -2717,8 +2717,8 @@ public static class FikaFlareExfil
                 var claimed = false;
                 lock (Sync)
                 {
-                    // Taking the entry out of the table is the claim: it succeeds once, so a popup is
-                    // hidden exactly once and a popup the world change dropped is never hidden at all.
+                    // 把条目从表中取出即为“认领”：它只会成功一次，因此每个弹窗只会
+                    // 被隐藏一次，而因世界切换被丢弃的弹窗根本不会被隐藏。
                     claimed = FeedbackPopups.Remove(popup);
                 }
 
@@ -2743,11 +2743,11 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Removes one displayed popup. <c>Hide()</c> is this notification family's own removal call: it
-    /// is declared by <c>FireFlareForExitNotification</c>, the base of the class shown here, and the
-    /// base notification carries the <c>OnForceHide</c> event that the view host reacts to (the
-    /// notification view hides through its own forced-complete path and the host removes the view).
-    /// The native collector owns a copy of exactly this notification and has the same call available.
+    /// 移除一个已显示的弹窗。<c>Hide()</c> 是该通知家族自身的移除调用：
+    /// 它由此处所显示类的基类 <c>FireFlareForExitNotification</c> 声明，而
+    /// 基类通知携带视图宿主所响应的 <c>OnForceHide</c> 事件（
+    /// 通知视图通过自身的强制完成路径隐藏，宿主随后移除该视图）。
+    /// 原生收集器拥有完全相同的通知副本，因此也有同样的调用可用。
     /// </summary>
     private static void HideFeedbackPopup(FeedbackPopup popup)
     {
@@ -2771,9 +2771,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// The text a notification would show, for the log line only. Every accessor of a native
-    /// notification can throw, so a failed read stays a log detail instead of taking the flare path
-    /// down with it.
+    /// 通知将要显示的文本，仅用于日志行。原生通知的每个访问器
+    /// 都可能抛出异常，因此读取失败只会作为日志细节，而不会连带把信号弹
+    /// 流程拖垮。
     /// </summary>
     private static string DescribeNotification(EFT.Communications.Notification notification)
     {
@@ -2795,8 +2795,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// The native class name of a notification, for the log line only. The proxy type name is the
-    /// fallback, so the line names the notification even when the native type cannot be read.
+    /// 通知的原生类名，仅用于日志行。无法读取时回退到代理类型名，
+    /// 因此即便原生类型读不到，该日志行也能指出是哪个通知。
     /// </summary>
     private static string NotificationTypeName(EFT.Communications.Notification notification)
     {
@@ -2810,7 +2810,7 @@ public static class FikaFlareExfil
         }
         catch (Exception)
         {
-            // Falls back to the managed proxy type below.
+            // 下面回退到托管代理类型。
         }
 
         try
@@ -2824,8 +2824,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// True when the grant covers <paramref name="profileId"/>. Ordinal comparison, like every other
-    /// profile id check in this class.
+    /// 当授权覆盖 <paramref name="profileId"/> 时为 true。使用序数比较，与本类中
+    /// 其他所有 profile id 检查一致。
     /// </summary>
     private static bool IsCovered(List<string> profiles, string profileId)
     {
@@ -2846,8 +2846,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Whether any of this machine's registries answers "immune" for the raid id - the same query the
-    /// sniper zones run, so a true here means the sniper really is standing down for that player.
+    /// 本机的任一注册表是否对该战局 id 给出“免疫”答复——这正是狙击区域
+    /// 所执行的查询，因此此处为 true 意味着狙击手确实对该玩家停火。
     /// </summary>
     private static bool IsImmuneInAnyRegistry(PlayersWithImmuneToSniperFire[] registries, int raidId)
     {
@@ -2862,7 +2862,7 @@ public static class FikaFlareExfil
             }
             catch (Exception)
             {
-                // A registry that cannot answer counts as not immune, exactly as before.
+                // 无法作答的注册表按不免疫处理，与之前完全一致。
             }
         }
 
@@ -2870,10 +2870,10 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// The profiles a grant covers on this machine: the shooter, the shooter's squad while
-    /// <c>Flare Extract: Squad Shares Activation</c> is on, and - when the grant covers the local
-    /// player - the local player, so every machine contributes its own raid id even if its view of
-    /// the squad is incomplete.
+    /// 授权在本机覆盖哪些 profile：发射者、
+    /// <c>Flare Extract: Squad Shares Activation</c> 开启时发射者所在的小队，以及（当授权覆盖本地
+    /// 玩家时）本地玩家本身，这样即使某台机器对小队的视图不完整，
+    /// 它也会贡献自己的战局 id。
     /// </summary>
     private static List<string> CoveredProfiles(FlareExfilActivationPacket packet, string ownProfileId, bool covered)
     {
@@ -2901,11 +2901,11 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Reports a failure when it starts and its recovery when it ends, keyed per failure.
+    /// 在失败开始时上报失败、在其结束时上报恢复，以失败项为键。
     /// <para>
-    /// Unlike <see cref="LogOnce"/> this cannot hide "failed first, then healed": a healthy first
-    /// observation prints nothing (so a normal raid stays quiet), the first failure prints the whole
-    /// failure line, and the transition back prints the recovery line.
+    /// 与 <see cref="LogOnce"/> 不同，它不会掩盖“先失败、之后恢复”：首次
+    /// 观察正常时不打印任何内容（因此正常战局保持安静），首次失败会打印完整的
+    /// 失败行，而回退到正常时则打印恢复行。
     /// </para>
     /// </summary>
     private static void LogFailure(string key, bool failing, string failureLine, string recoveryLine)
@@ -2933,47 +2933,47 @@ public static class FikaFlareExfil
         FikaGlobals.LogWarning(failing ? failureLine : recoveryLine);
     }
 
-    /// <summary>How many entries of an interop array are destroyed references.</summary>
+    /// <summary>interop 数组中有多少个条目是已销毁的引用。</summary>
     // ---------------------------------------------------------------------------------------------------
-    // Exit visual replication: what the shooter's machine plays on its own has to play on every machine.
+    // 出口视觉复制：发射者机器自行播放的内容必须在每台机器上都播放。
     //
-    // The chain a signal flare starts on the machine that fires it is
-    //   Player/FirearmController.InitiateFlare -> <c>FlareSuccessEvent</c> on the local event bus
-    //   -> every scene <c>EFT.GameTriggers.TriggerFlareSuccess</c> whose <c>_flareEventType</c> matches
-    //   -> <c>TriggersEmitter</c> with the trigger's id
-    //   -> the handlers of the map (<c>HandlerAnimator</c>, <c>HandlerGameObjectState</c>,
-    //      <c>HandlerPlayContinousSound</c>, <c>HandlerEffect</c>, <c>HandlerExfiltration</c>, ...),
-    // which is what animates the icebreaker helicopter and makes the exit usable.
+    // 信号弹在发射它的机器上触发的链路是
+    //   Player/FirearmController.InitiateFlare -> 本地事件总线上的 <c>FlareSuccessEvent</c>
+    //   -> 场景中每个 <c>_flareEventType</c> 匹配的 <c>EFT.GameTriggers.TriggerFlareSuccess</c>
+    //   -> 携带该触发器 id 的 <c>TriggersEmitter</c>
+    //   -> 地图的处理程序（<c>HandlerAnimator</c>、<c>HandlerGameObjectState</c>、
+    //      <c>HandlerPlayContinousSound</c>、<c>HandlerEffect</c>、<c>HandlerExfiltration</c> 等），
+    // 正是它驱动破冰船直升机的动画并让出口可用。
     //
-    // Every one of those objects lives in the loaded scene on every machine, so the chain can simply be run
-    // again on each peer. Nothing is invented here: the exact native entry point
-    // (<c>TriggerFlareSuccess.OnFlareSuccess</c>) is called with the same event data the shooter's machine
-    // used, and the map decides what that means.
+    // 上述每个对象都存在于每台机器已加载的场景中，因此这条链路可以简单地在
+    // 每个对等端上再跑一遍。这里没有发明任何东西：调用的正是确切的
+    // 原生入口点（<c>TriggerFlareSuccess.OnFlareSuccess</c>），并传入发射者机器所用的
+    // 同一份事件数据，至于它意味着什么由地图自己决定。
     // ---------------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// Replays waiting for their own local flare event or their deadline, keyed by profile id. A grant can
-    /// arrive before the shooter's flare packet does; applying the visual then would start the scene chain
-    /// without the flare object the map's handlers read.
+    /// 等待自身本地信号弹事件或等待超时的重放，以 profile id 为键。授权可能
+    /// 在发射者的信号弹数据包之前到达；此时就应用视觉会在
+    /// 地图处理程序所读取的信号弹对象尚不存在的情况下启动场景链路。
     /// </summary>
     private static readonly Dictionary<string, PendingVisual> PendingVisuals = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Visuals already applied on this machine, keyed the way <see cref="VisualIdOf"/> builds the key. A grant
-    /// is republished every <see cref="RepublishInterval"/> seconds, and the shooter's own machine sees both
-    /// its local flare and the grant, so without this the animation would start again on every publication.
+    /// 本机已应用过的视觉，键的构造方式与 <see cref="VisualIdOf"/> 一致。授权每
+    /// <see cref="RepublishInterval"/> 秒重新发布一次，而发射者自己的机器既会看到
+    /// 本地信号弹也会收到授权，因此若没有它，动画会在每次发布时重复启动。
     /// </summary>
     private static readonly HashSet<string> AppliedVisuals = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Seconds a pending visual waits for the shooter's local flare event before it is applied anyway. A
-    /// machine that never sees the flare object still shows the exit animation rather than nothing.
+    /// 待处理的视觉在无论如何都会应用之前，等待发射者本地信号弹事件的秒数。
+    /// 从未见到信号弹对象的机器仍会播放出口动画，而不是什么都没有。
     /// </summary>
     private const float VisualWaitSeconds = 1.5f;
 
     /// <summary>
-    /// The switch 'Flare Extract: Replicate Exit Visual'. Read live, so a change in the config manager
-    /// applies to the next flare without a restart.
+    /// 开关 'Flare Extract: Replicate Exit Visual'。实时读取，因此在配置管理器中的修改
+    /// 无需重启即可对下一发信号弹生效。
     /// </summary>
     internal static bool ReplicatesExitVisual
     {
@@ -2992,9 +2992,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Called from the shooter's own firearm controller, right after the shot was created: the native chain
-    /// usually runs on its own here, so the visual only has to be applied when it did not (measured on the
-    /// local flare event, see <see cref="MarkLocalFlareEvent"/>).
+    /// 由发射者自己的枪械控制器在枪响之后立即调用：原生链路在这里通常是
+    /// 自行运行的，因此只有在它没有运行时才需要应用视觉（以本地信号弹
+    /// 事件为判断依据，见 <see cref="MarkLocalFlareEvent"/>）。
     /// </summary>
     private static void QueueLocalVisual(Ammo flareItem, string pointName, string profileId, Vector3 shotPosition)
     {
@@ -3016,9 +3016,9 @@ public static class FikaFlareExfil
             applied = AppliedVisuals.Contains(key);
             if (!applied)
             {
-                // The native chain runs on this machine by itself a moment after the shot, and the wait is what
-                // lets it stop this replay (see MarkLocalFlareEvent). Without the wait this machine would play
-                // the animation twice.
+                // 原生链路会在枪响后片刻自行在本机运行，而这段等待正是让它能够
+                // 停止本次重放的机制（见 MarkLocalFlareEvent）。没有这段等待，本机就会把
+                // 动画播放两次。
                 PendingVisuals[profileId] = new PendingVisual
                 {
                     PointName = pointName ?? string.Empty,
@@ -3035,17 +3035,17 @@ public static class FikaFlareExfil
             return;
         }
 
-        // Only the case where nothing ever runs here reaches the deadline: then this machine plays the chain
-        // itself instead of showing nothing. It is logged now so the next raid can tell the two apart.
+        // 只有此前从未运行过任何东西的情况才会走到超时：此时本机改为自行播放
+        // 该链路，而不是什么都不显示。现在就把这一点记录下来，以便下一次战局能区分两种情况。
         FikaGlobals.LogWarning($"[FlareExfil] heli: point='{pointName}' open={DescribeLocalStatus(pointName)} " +
             $"visual=local-armed firedBy='{profileId}' replayIn={VisualWaitSeconds:F1}s " +
             "unless the native chain runs here first");
     }
 
     /// <summary>
-    /// The local native chain for a green flare ran on this machine: the machine that fired it never needs a
-    /// replay, so the pending visual is satisfied instead of applied. Called once per local flare event, which
-    /// is why the evidence line is printed here rather than from the replay path.
+    /// 绿色信号弹的本地原生链路已在本机运行：发射它的机器永远不需要
+    /// 重放，因此待处理的视觉被标记为已满足而不是被应用。每个本地信号弹事件调用一次，
+    /// 这也是证据行在这里而不是在重放路径中打印的原因。
     /// </summary>
     internal static void MarkLocalFlareEvent(string profileId, FlareEventType flareType, string source)
     {
@@ -3069,8 +3069,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// A peer's flare event was queued for this machine. The holder has to be the object the shooter fired, so
-    /// the queue waits until that object exists here (the flare packet) or its deadline passes.
+    /// 某个对等端的信号弹事件已为本机排入队列。持有者必须是发射者所发射的那个对象，
+    /// 因此队列会等待该对象在此出现（信号弹数据包）或等待其超时。
     /// </summary>
     private static void QueueFlareVisual(FlareExfilActivationPacket packet)
     {
@@ -3081,8 +3081,8 @@ public static class FikaFlareExfil
 
         if (packet.FlareDirection == Vector3.zero)
         {
-            // No position was carried (an older grant, or an immunity grant that never had one): there is
-            // nothing to place, and starting the chain at the world origin would be wrong.
+            // 没有携带位置（较旧的授权，或者本来就没有位置的免疫授权）：没有
+            // 东西可摆放，而把链路从世界原点开始启动也是错的。
             return;
         }
 
@@ -3119,14 +3119,14 @@ public static class FikaFlareExfil
             return;
         }
 
-        // The flare packet may be one frame behind the grant: asking here keeps the animation on the flare
-        // instead of on the packet, and the tick below covers the other order.
+        // 信号弹数据包可能比授权晚一帧到达：在此询问能让动画落在信号弹上
+        // 而不是数据包上，下面的 tick 则覆盖另一种顺序。
         MatchArrivedFlare(packet.ProfileId);
     }
 
     /// <summary>
-    /// One pass over the pending visuals. Called from the host and client tick, so a replay is applied as soon
-    /// as its holder exists and never blocks a frame.
+    /// 对待处理的视觉做一次遍历。由主机与客户端的 tick 调用，因此重放会在其
+    /// 持有者一出现时立即应用，且绝不会阻塞某一帧。
     /// </summary>
     internal static void FlushPendingVisuals()
     {
@@ -3167,9 +3167,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// The holder a replay needs: the flare object the shooter fired, which is the object the map's handlers
-    /// read out of the flare event on the shooter's machine. A grant that arrives before the shooter's flare
-    /// packet leaves the holder unset and the visual waits (see <see cref="VisualWaitSeconds"/>).
+    /// 重放所需的持有者：发射者所发射的信号弹对象，也就是地图处理程序在发射者
+    /// 机器上从信号弹事件中读出的那个对象。若授权在发射者的信号弹数据包之前
+    /// 到达，持有者就仍未设置，视觉会继续等待（见 <see cref="VisualWaitSeconds"/>）。
     /// </summary>
     private static void MatchArrivedFlare(string profileId)
     {
@@ -3197,10 +3197,10 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Finds the flare object the packet carried. The shooter's own machine creates it in the firearm
-    /// controller; on a peer the same code path runs when the flare packet is applied
-    /// (<c>FlareShotPacket.Execute</c> creates the <c>Ammo</c> through <c>ItemFactory</c>), so the object
-    /// exists here too.
+    /// 查找数据包所携带的信号弹对象。发射者自己的机器是在枪械控制器中创建它的；
+    /// 在对等端上，应用信号弹数据包时运行的是同一条代码路径
+    /// （<c>FlareShotPacket.Execute</c> 通过 <c>ItemFactory</c> 创建 <c>Ammo</c>），因此该对象
+    /// 在这里也存在。
     /// </summary>
     private static Ammo FindFlareHolder(string profileId)
     {
@@ -3216,12 +3216,12 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// The last flare recorded on this machine for a profile, kept so a grant that arrives after the flare
-    /// packet can still replay the chain with the same object.
+    /// 本机为某个 profile 记录的最后一次信号弹，保留它是为了让在信号弹数据包
+    /// 之后到达的授权仍能用同一个对象重放链路。
     /// </summary>
     private static readonly Dictionary<string, Ammo> LastFlareByProfile = new(StringComparer.Ordinal);
 
-    /// <summary>Records the flare a peer's packet just created on this machine.</summary>
+    /// <summary>记录对等端的数据包刚刚在本机创建的信号弹。</summary>
     internal static void RememberRemoteFlareShot(string profileId, Ammo flare)
     {
         if (string.IsNullOrEmpty(profileId) || flare == null)
@@ -3246,7 +3246,7 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Applies one pending visual. The caller holds <see cref="Sync"/>.
+    /// 应用一个待处理的视觉。调用方需持有 <see cref="Sync"/>。
     /// </summary>
     private static void ApplyVisualLocked(string profileId)
     {
@@ -3270,10 +3270,10 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Runs the native flare chain for one flare on this machine, exactly as the shooter's own machine ran it:
-    /// the same <c>FlareSuccessEvent</c> data through the same entry points of every
-    /// <c>TriggerFlareSuccess</c> in the scene. Nothing is played directly - the map's own handlers decide
-    /// what the trigger means (helicopter in, lights, sounds, the exit opening).
+    /// 在本机为一发信号弹运行原生信号弹链路，完全按照发射者自己的机器所运行的方式：
+    /// 相同的 <c>FlareSuccessEvent</c> 数据，经过场景中每个
+    /// <c>TriggerFlareSuccess</c> 的相同入口点。不直接播放任何东西——由地图自己的处理程序决定
+    /// 该触发器意味着什么（直升机进场、灯光、音效、出口开启）。
     /// </summary>
     private static void ApplyFlareVisual(string profileId, string pointName, Vector3 position, Ammo holder, out int hops)
     {
@@ -3286,8 +3286,8 @@ public static class FikaFlareExfil
         }
         catch (Exception)
         {
-            // A peer that is already gone cannot be the event's holder; the chain is still worth starting
-            // for the exit itself.
+            // 已经离开的对等端不可能成为该事件的持有者；不过为出口本身
+            // 仍然值得启动该链路。
         }
 
         if (firedPlayer == null)
@@ -3315,8 +3315,8 @@ public static class FikaFlareExfil
 
         if (triggers == null || triggers.Length == 0)
         {
-            // Nothing to start here, so the exit is opened directly: the grant already decided who may leave,
-            // and a map without the scene chain must not lose the activation over a missing animation.
+            // 此处没有可启动的东西，因此直接打开出口：授权已经决定了谁可以离开，
+            // 而没有场景链路的地图也不应因为缺少动画就丢掉这次激活。
             OpenPointForVisual(pointName);
             LogOnce("heli-notriggers:" + pointName,
                 $"[FlareExfil] heli: point='{pointName}' open={DescribeLocalStatus(pointName)} visual=broadcast-noop " +
@@ -3324,10 +3324,10 @@ public static class FikaFlareExfil
             return;
         }
 
-        // The event is filled through its public Invoke: that is the same call the native shot path uses,
-        // and it is the only way to set the data of an il2cpp event (its properties are get-only on the C#
-        // side). The player position is not read by the chain - only the flare position is - so the same
-        // spot is passed for both.
+        // 该事件通过其公开的 Invoke 填充：这正是原生开枪路径所用的调用，
+        // 也是设置 il2cpp 事件数据的唯一方式（其属性在 C#
+        // 侧是只读的）。链路不会读取玩家位置——只读取信号弹位置——因此两处
+        // 传入的是同一个点。
         FlareSuccessEvent flareEvent = new();
         flareEvent.Invoke(firedPlayer?.Cast<IPlayer>(), position, position, holder?.AmmoTemplate);
 
@@ -3352,14 +3352,14 @@ public static class FikaFlareExfil
             }
         }
 
-        // The exit itself is opened by the grant, not by the animation: a map whose handler chain does not
-        // include an exfiltration handler must still let the covered players leave.
+        // 出口本身由授权打开，而不是由动画打开：即使某张地图的处理程序链不
+        // 包含撤离处理程序，也必须让被覆盖的玩家能够离开。
         OpenPointForVisual(pointName);
     }
 
     /// <summary>
-    /// Opens the named exit when it still waits for its manual activation. The grant has already decided that
-    /// this player may leave; without this the animation would play on a machine whose exit stayed shut.
+    /// 在指定出口仍在等待手动激活时将其打开。授权已经判定该
+    /// 玩家可以离开；否则动画会在一台出口仍然关闭的机器上播放。
     /// </summary>
     private static void OpenPointForVisual(string pointName)
     {
@@ -3387,13 +3387,13 @@ public static class FikaFlareExfil
         }
     }
 
-    /// <summary>The key a visual is deduplicated on: point, shooter and the spot the flare burned at.</summary>
+    /// <summary>视觉去重所用的键：撤离点、发射者以及信号弹燃烧的位置。</summary>
     private static string VisualIdOf(string pointName, string profileId, Vector3 position)
     {
         return $"{pointName}|{profileId}|{position.x:F1}|{position.y:F1}|{position.z:F1}";
     }
 
-    /// <summary>The local status of a point, for the one-line evidence of a replay.</summary>
+    /// <summary>某个撤离点的本地状态，用于重放的单行证据。</summary>
     private static string DescribeLocalStatus(string pointName)
     {
         try
@@ -3408,9 +3408,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// True when this scene carries the flare-to-exit chain at all: at least one
-    /// <c>EFT.GameTriggers.TriggerFlareSuccess</c> component. On such a map the flare event itself is the
-    /// evidence for the exit - the map has no detector zone to ask.
+    /// 当此场景确实带有“信号弹到出口”链路时返回 true：至少要存在一个
+    /// <c>EFT.GameTriggers.TriggerFlareSuccess</c> 组件。在此类地图上，信号弹事件本身就是
+    /// 出口的证据——这张地图没有检测区可供查询。
     /// </summary>
     private static int CountSceneFlareTriggers()
     {
@@ -3426,9 +3426,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// The exit a scene-trigger flare belongs to: the awaiting-manual-activation exit closest to the shot
-    /// position, or an exit a pass already classified as flare gated. Every other exit is refused, so a flare
-    /// can never open a plain exit on a map that happens to have a TriggerFlareSuccess somewhere.
+    /// 场景触发器信号弹所属的出口：距离枪响位置最近的等待手动激活
+    /// 出口，或者某一轮流程已分类为受信号弹门禁限制的出口。其他出口一律拒绝，因此
+    /// 信号弹永远无法在只是恰好某处有 TriggerFlareSuccess 的地图上打开一个普通出口。
     /// </summary>
     private static bool TryResolveSceneTriggerPoint(Vector3 shotPosition, out string pointName, out string evidence)
     {
@@ -3488,8 +3488,8 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// Why a flare could open this exit, or null when it could not. The same verdict the zone based
-    /// classification uses, so both paths accept exactly the same exits.
+    /// 信号弹能够打开该出口的依据；若不能则返回 null。与基于区域的
+    /// 分类所使用的结论相同，因此两条路径接受的出口完全一致。
     /// </summary>
     private static string FlarePointEvidence(ExfiltrationPoint point)
     {
@@ -3513,29 +3513,29 @@ public static class FikaFlareExfil
             return null;
         }
 
-        // The scene-trigger chain of the map is the same evidence the native machinery uses here: it exists
-        // only on maps that drive an exit from a flare event.
+        // 地图的场景触发链路正是原生机制在此使用的同一证据：它只存在于
+        // 由信号弹事件驱动出口的地图上。
         return CountSceneFlareTriggers() > 0
             ? "the exit waits for a manual activation and this scene carries a TriggerFlareSuccess chain"
             : null;
     }
 
     /// <summary>
-    /// One waiting replay.
+    /// 一个等待中的重放。
     /// </summary>
     private sealed class PendingVisual
     {
         public string PointName = string.Empty;
         public Vector3 Position;
 
-        /// <summary>The object the map's handlers read out of the flare event; null until it exists here.</summary>
+        /// <summary>地图处理程序从信号弹事件中读出的对象；在它于此出现之前为 null。</summary>
         public Ammo Holder;
 
         public bool HolderArrived;
         public float ReadyAt;
     }
 
-    /// <summary>True when a pending replay is waiting for its holder or its deadline. For the diagnostics.</summary>
+    /// <summary>当某个待处理重放正在等待其持有者或等待超时时为 true。供诊断使用。</summary>
     internal static bool HasPendingVisuals()
     {
         lock (Sync)
@@ -3544,7 +3544,7 @@ public static class FikaFlareExfil
         }
     }
 
-    /// <summary>How many exit-visual replays wait on this machine, for the diagnostics.</summary>
+    /// <summary>本机有多少个出口视觉重放在等待，供诊断使用。</summary>
     internal static int PendingVisualCount()
     {
         lock (Sync)
@@ -3553,15 +3553,15 @@ public static class FikaFlareExfil
         }
     }
 
-    /// <summary>How many scene flare triggers this map carries, for the diagnostics.</summary>
+    /// <summary>这张地图带有多少个场景信号弹触发器，供诊断使用。</summary>
     internal static int SceneFlareTriggerCount()
     {
         return CountSceneFlareTriggers();
     }
 
     /// <summary>
-    /// The exits this machine treats as flare gated (a pass classified them, or a flare opened them), for the
-    /// diagnostics: a map whose flare exit is missing from this list has no gate at all.
+    /// 本机视为受信号弹门禁限制的出口（由某一轮流程分类，或由信号弹打开），供
+    /// 诊断使用：若某张地图的信号弹出口不在此列表中，则它根本没有门禁。
     /// </summary>
     internal static List<string> GatedPointNames()
     {
@@ -3606,9 +3606,9 @@ public static class FikaFlareExfil
     }
 
     /// <summary>
-    /// The exits a pass had to skip because they are destroyed or not initialised, as
-    /// <c>k/n: names</c>, or null when nothing was skipped. Without it an empty classification is
-    /// indistinguishable from a map that has no flare exit at all.
+    /// 某一轮流程因出口已销毁或未初始化而不得不跳过的出口，格式为
+    /// <c>k/n: names</c>；若没有跳过任何出口则为 null。没有它，空的分类结果
+    /// 与根本没有信号弹出口的地图就无法区分。
     /// </summary>
     private static string DescribeSkippedPoints(ExfiltrationPoint[] points)
     {
@@ -3643,10 +3643,10 @@ public static class FikaFlareExfil
         return skipped.Count == 0 ? null : $"{skipped.Count}/{points.Length}: {string.Join(", ", skipped)}";
     }
 
-    /// <summary>One line per key: the callers run per flare, per packet and per frame.</summary>
+    /// <summary>每个键一行：调用方会按每发信号弹、每个数据包和每一帧运行。</summary>
     private static void LogOnce(string key, string line, [System.Runtime.CompilerServices.CallerMemberName] string caller = "")
     {
-        // A new world clears the table, so each raid gets its own set of lines.
+        // 新世界会清理该表，因此每个战局都会得到自己的一套日志行。
         SyncRaidState();
 
         lock (Sync)
@@ -3657,21 +3657,21 @@ public static class FikaFlareExfil
             }
         }
 
-        // The caller name is passed on, so the line keeps naming the method that produced it
-        // instead of this deduplication helper.
+        // 调用方名称会被继续传递，因此日志行始终命名产生它的方法，
+        // 而不是这个去重辅助方法。
         FikaGlobals.LogWarning(line, caller);
     }
 
     /// <summary>
-    /// One banner this class displayed, with everything the take-down needs: the notification object
-    /// itself (hiding it can neither repeat nor reach another popup) and the line it reports.
+    /// 本类显示过的一个横幅，包含撤下它所需的全部信息：通知对象
+    /// 本身（隐藏它既不会重复，也不会波及另一个弹窗）以及它上报的日志行。
     /// </summary>
     private sealed class FeedbackPopup
     {
         /// <summary>
-        /// The exact object that was displayed. Typed as the concrete class on purpose: <c>Hide()</c>
-        /// is declared by <c>FireFlareForExitNotification</c>, the base of this type, and not by the
-        /// abstract <c>Notification</c> - which is also why the entry is per popup rather than per key.
+        /// 实际被显示的那个对象。有意声明为具体类型：<c>Hide()</c>
+        /// 是由此类型的基类 <c>FireFlareForExitNotification</c> 声明的，而不是由
+        /// 抽象类 <c>Notification</c> 声明——这也正是条目按弹窗而非按键组织的原因。
         /// </summary>
         internal SniperFlareZoneDisabledNotification Notification;
         internal string Key;
@@ -3688,15 +3688,15 @@ public static class FikaFlareExfil
         public readonly string SquadId = squadId;
         public readonly string ZoneId = zoneId;
 
-        /// <summary>Where the flare burned. Carried to the peers with the grant so their own exit chain can
-        /// be started at the same spot; <see cref="Vector3.zero"/> when the grant carries no visual.</summary>
+        /// <summary>信号弹燃烧的位置。随授权传给各对等端，以便它们能在同一位置启动
+        /// 自己的出口链路；当授权不携带视觉表现时为 <see cref="Vector3.zero"/>。</summary>
         public readonly Vector3 FlarePosition = flarePosition;
     }
 
     /// <summary>
-    /// What a green flare detector zone feeds. Vanilla has two shapes: a zone that opens an exit
-    /// ("exit-gate") and a zone that puts the firing players into the native sniper immunity set
-    /// ("immunity"). Anything else is an airdrop, quest or sniper fire zone and is left alone.
+    /// 绿色信号弹检测区所接入的东西。原版有两种形态：一种是打开出口的区域
+    /// （"exit-gate"），另一种是把发射玩家放入原生狙击免疫集合的区域
+    /// （"immunity"）。其他任何东西都是空投、任务或狙击火力区域，不予处理。
     /// </summary>
     internal enum ZoneKind
     {
@@ -3705,7 +3705,7 @@ public static class FikaFlareExfil
         Immunity
     }
 
-    /// <summary>Everything the zone table reports about one detector zone of this raid.</summary>
+    /// <summary>区域表就本次战局中某个检测区所报告的全部信息。</summary>
     private sealed class ZoneInfo
     {
         public FlareShootDetectorZone Zone;

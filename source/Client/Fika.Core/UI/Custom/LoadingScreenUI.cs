@@ -22,35 +22,35 @@ public class LoadingScreenUI : MonoBehaviour
     private Dictionary<int, LoadingScreenPlayer> _loadingPlayers;
 
     /// <summary>
-    /// Nickname per net id, learned from every row this screen ever created. Not cleared by
-    /// <see cref="ClearData"/> on purpose: a row that has to be created again later (a re-arm, or a peer
-    /// that re-announces itself) must come back with the nickname the player really has, not a placeholder.
+    /// 每个 net id 对应的昵称，从本界面创建过的每一行中学到。故意不
+    /// 被 <see cref="ClearData"/> 清空：之后必须重新创建的行（一次重新武装，或某个
+    /// 重新自我通告的对等端）必须带回玩家真实的昵称，而不是占位符。
     /// </summary>
     private readonly Dictionary<int, string> _knownNicknames = [];
 
-    // ------------------------------------------------------------------ peer state heartbeat
+    // ------------------------------------------------------------------ 对等端状态心跳
     //
-    // Why (analysis/loading-screen-peer-state, round10 2026-10-11): ReInitAfterTransit drops *every* row,
-    // including the rows of peers that are still connected, and a machine announces its own row exactly
-    // once - at its own re-arm (ReInitAfterTransit -> players packet) and at connect. The two machines of a
-    // transit re-arm at different times (round10: the client at 20:16:06, the host at 20:17:30), so the
-    // later re-arm wipes the row the earlier one had already announced. From that moment on every
-    // LoadingScreenPacket of that peer reached a screen without its row and was dropped inside SetProgress
-    // without a trace: the host's log holds no "progress netId=2" line at all after its re-arm, while the
-    // client's own row climbed to 100 % and the client kept showing the host's row.
+    // 原因（analysis/loading-screen-peer-state，round10 2026-10-11）：ReInitAfterTransit 会丢掉*每一*行，
+    // 包括仍然连接着的对等端的行，而一台机器只会通告自己的行恰好
+    // 一次——在它自己重新武装时（ReInitAfterTransit -> players packet）以及连接时。一次中转的
+    // 两台机器会在不同时刻重新武装（round10：客户端在 20:16:06，主机在 20:17:30），所以
+    // 较晚的重新武装会抹掉较早那台已经通告过的行。从那一刻起，那个对等端的每个
+    // LoadingScreenPacket 都到达了一个没有对应行的界面，并在 SetProgress 内部被丢弃，
+    // 毫无痕迹：主机重新武装之后，它的日志里完全没有 "progress netId=2" 这一行，而
+    // 客户端自己的行却一路爬到 100 %，客户端也一直显示着主机的行。
     //
-    // The heartbeat closes that window without a new channel: while this screen is up it re-publishes the
-    // local row (players packet) and the local progress on the existing packets, so a peer that re-armed
-    // later re-creates the row within a second or two and then receives the current value again. It is
-    // bounded (one progress line per second, one row announcement per two seconds, at most 600 s) and it
-    // stops by itself when the screen is hidden, when the raid is running or when the network manager is
-    // gone - i.e. exactly when the loading phase of this machine is over.
+    // 心跳在不新增通道的前提下关闭了这个窗口：该界面存在期间，它会重新发布
+    // 本地行（players packet）并在既有数据包上重新发布本地进度，于是一个较晚重新武装的
+    // 对等端会在一两秒内重新创建该行，之后便能再次收到当前值。它是有
+    // 边界的（每秒一条进度行、每两秒一次行通告、最长 600 秒），并会在界面被隐藏、战局
+    // 正在运行或网络管理器消失时自行停止——也就是恰好在
+    // 本机的加载阶段结束时。
 
-    /// <summary>How often the heartbeat re-publishes the local progress while the screen is up.</summary>
+    /// <summary>界面存在期间，心跳重新发布本地进度的间隔。</summary>
     private const float HeartbeatProgressInterval = 1f;
-    /// <summary>How often the heartbeat re-publishes the local row (players packet).</summary>
+    /// <summary>心跳重新发布本地行（players packet）的间隔。</summary>
     private const float HeartbeatRowInterval = 2f;
-    /// <summary>Hard bound of the heartbeat: it never runs longer than this after it was armed.</summary>
+    /// <summary>心跳的硬边界：自它被武装之后，运行时间绝不会超过这个值。</summary>
     private const float HeartbeatMaxSeconds = 600f;
 
     private bool _heartbeatArmed;
@@ -71,10 +71,10 @@ public class LoadingScreenUI : MonoBehaviour
         var netId = FikaSingleton<IFikaNetworkManager>.Instance.NetId;
         var pmcName = FikaBackendUtils.IsHeadless ? "Headless" : FikaBackendUtils.PMCName;
 
-        // (analysis/transit-reload-oom) This screen survives the transit, so its rows did too: the rows of
-        // the raid that was just replaced were kept (and their stale progress with them). They are dropped
-        // here and re-created when a peer announces itself again after the swap - which is exactly what the
-        // [LoadSync] line at the end of this method describes.
+        // （analysis/transit-reload-oom）本界面会在中转后继续存在，所以它的行也一样：刚被
+        // 替换掉的那场战局的行被保留了下来（连同它们过期的进度）。它们会在
+        // 这里被丢弃，并在对等端于切换后重新自我通告时被重新创建——这正是本方法末尾
+        // 那行 [LoadSync] 所描述的内容。
         var replacedRows = _loadingPlayers.Count;
         ClearData();
 
@@ -88,12 +88,12 @@ public class LoadingScreenUI : MonoBehaviour
 
         FikaSingleton<IFikaNetworkManager>.Instance.SendData(ref loadingPacket, DeliveryMethod.ReliableUnordered, true);
 
-        // Judgement line (analysis/loading-screen-sync): after a transit the screen is re-armed with the
-        // local player only, and the peers are expected to re-announce themselves. Without this line a
-        // reader cannot tell whether the peer's row survived the world swap or was never re-created.
+        // 判定行（analysis/loading-screen-sync）：一次中转之后，界面只会带着本地
+        // 玩家重新武装，而对等端预期会重新自我通告。没有这一行，
+        // 读者就无法判断对等端的行是熬过了世界切换，还是从未被重新创建。
 
-        // (analysis/loading-screen-peer-state) The re-arm of the other machine happens at its own time and
-        // takes every row with it, so this machine has to keep announcing until the loading phase is over.
+        // （analysis/loading-screen-peer-state）另一台机器的重新武装在它自己的时刻发生，并
+        // 会带走每一行，因此本机必须持续通告，直到加载阶段结束。
         ArmPeerStateHeartbeat("LoadingScreenUI.ReInitAfterTransit");
     }
 
@@ -147,8 +147,8 @@ public class LoadingScreenUI : MonoBehaviour
         FikaSingleton<IFikaNetworkManager>.Instance.SendData(ref loadingPacket, DeliveryMethod.Unreliable, true);
         SetProgress(netId, progress);
 
-        // The local value is the one the heartbeat keeps re-publishing, so remember it here: the heartbeat
-        // must not send an older value than the engine progress already reported.
+        // 本地值就是心跳会持续重新发布的那一个，所以在这里记住它：心跳
+        // 不得发送比引擎进度已经报告过的更旧的值。
         _lastHeartbeatValue = progress;
     }
 
@@ -158,11 +158,11 @@ public class LoadingScreenUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Applies one progress value to a row.
+    /// 把一个进度值应用到某一行。
     /// </summary>
-    /// <param name="netId">The row's net id.</param>
-    /// <param name="progress">The value in percent (0-100), as the progress packets carry it.</param>
-    /// <param name="source">Where the value came from ("local", "peer#0", "host"), for the diagnostics.</param>
+    /// <param name="netId">该行的 net id。</param>
+    /// <param name="progress">以百分比表示的值（0-100），即进度包所携带的形式。</param>
+    /// <param name="source">该值的来源（"local"、"peer#0"、"host"），用于诊断。</param>
     public void SetProgress(int netId, float progress, string source)
     {
         if (_loadingPlayers.TryGetValue(netId, out var player))
@@ -172,24 +172,24 @@ public class LoadingScreenUI : MonoBehaviour
             return;
         }
 
-        // Never drop a value silently (the round10 gap): reaching this line means the screen lost a row it
-        // should hold, and a reader must see which row, which value and from whom.
+        // 绝不静默丢弃一个值（round10 的缺口）：能跑到这一行说明界面丢掉了一个它本应
+        // 持有的行，而读者必须看清是哪一行、哪个值、来自谁。
         Diag("progress for unknown netId=" + netId + " from " + source + " (" + Fmt(progress)
             + "%) was dropped, this screen holds " + DescribeRows());
     }
 
     /// <summary>
-    /// Applies the progress another machine reported, creating its row when this screen does not hold one.
+    /// 应用另一台机器报告的进度；当本界面没有对应行时就创建它。
     ///
-    /// Why (analysis/loading-screen-peer-state): after a transit the two screens are re-armed at different
-    /// times, so a peer's progress packets legitimately arrive while its row is gone. Re-creating the row
-    /// from the packet is what makes the peer's loading state visible again instead of losing every value
-    /// to <see cref="SetProgress"/>'s row lookup.
+    /// 原因（analysis/loading-screen-peer-state）：一次中转之后，两个界面会在不同时刻重新
+    /// 武装，因此对等端的进度包会在它的行已经消失时合法地到达。从数据包
+    /// 重建该行，正是让对等端的加载状态重新可见的关键，而不是让每一个值都
+    /// 丢在 <see cref="SetProgress"/> 的行查找里。
     /// </summary>
-    /// <param name="netId">The peer's net id, as the packet carries it.</param>
-    /// <param name="progress">The reported value in percent.</param>
-    /// <param name="source">Who sent it, for the diagnostics ("peer#0", "host").</param>
-    /// <returns><see langword="true"/> when the row had to be created for this packet.</returns>
+    /// <param name="netId">对等端的 net id，即数据包所携带的形式。</param>
+    /// <param name="progress">所报告的百分比值。</param>
+    /// <param name="source">谁发送的，用于诊断（"peer#0"、"host"）。</param>
+    /// <returns>当必须为该数据包创建行时为 <see langword="true"/>。</returns>
     public bool ApplyPeerProgress(int netId, float progress, string source)
     {
         var created = EnsureRow(netId);
@@ -205,12 +205,12 @@ public class LoadingScreenUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Creates the row of a net id this screen does not know yet, reusing the nickname of an earlier row for
-    /// that id. Returns true when a row was created here.
+    /// 创建本界面尚不认识的一个 net id 的行，并为该 id 复用更早那一行的
+    /// 昵称。此处创建了行时返回 true。
     /// </summary>
     /// <param name="nickname">
-    /// The nickname the caller knows for this net id (a peer's own announcement). When it is empty or null
-    /// the nickname of an earlier row for that id is reused.
+    /// 调用方为该 net id 所知道的昵称（对等端自己的通告）。当它为空或 null
+    /// 时，会复用该 id 更早那一行的昵称。
     /// </param>
     public bool EnsureRow(int netId, string nickname = null)
     {
@@ -229,11 +229,11 @@ public class LoadingScreenUI : MonoBehaviour
         return true;
     }
 
-    // ------------------------------------------------------------------ heartbeat implementation
+    // ------------------------------------------------------------------ 心跳实现
 
     /// <summary>
-    /// Starts the bounded re-announcement of this machine's row and progress. Called after a transit re-arm
-    /// on both roles; a second call only moves the window forward.
+    /// 启动对本机行与进度的有界重新通告。在两种角色上都会于一次中转重新武装之后
+    /// 调用；第二次调用只会把时间窗口往后推。
     /// </summary>
     public void ArmPeerStateHeartbeat(string site)
     {
@@ -255,9 +255,9 @@ public class LoadingScreenUI : MonoBehaviour
     }
 
     /// <summary>
-    /// The per-frame pump of the heartbeat. Driven by the network managers' Update
-    /// (FikaServer.Update / FikaClient.Update), because the engine only enters this injected component's
-    /// Awake/OnDestroy - a MonoBehaviour.Update on this type is not guaranteed to run.
+    /// 心跳的逐帧泵。由网络管理器的 Update 驱动
+    /// （FikaServer.Update / FikaClient.Update），因为引擎只会进入这个注入组件的
+    /// Awake/OnDestroy——不能保证本类型上的 MonoBehaviour.Update 会被执行。
     /// </summary>
     public static void TickPeerStateHeartbeat()
     {
@@ -370,16 +370,16 @@ public class LoadingScreenUI : MonoBehaviour
     }
 
     /// <summary>
-    /// The last progress value written to the log per row, so the per-value trace stays at one line
-    /// per 10 percent step per row instead of one line per packet.
+    /// 每行最后写入日志的进度值，使逐值追踪保持为每行每 10 个百分点
+    /// 一行，而不是每个数据包一行。
     /// </summary>
     private readonly Dictionary<int, float> _reportedProgress = [];
 
     /// <summary>
-    /// Writes the progress of one row into the diagnostics when it crosses a 10 percent step. Used for
-    /// both the local row (UpdateAndBroadcast) and the rows of the peers (SetProgress), which is what
-    /// makes "the bars are not in sync" a readable claim in the next run: the line names the row, the
-    /// value and whether it was applied locally or received from the network.
+    /// 当某行的进度跨过一个 10 个百分点台阶时，把该进度写入诊断。本地行
+    /// （UpdateAndBroadcast）与对等端的行（SetProgress）都会用到它，正是它让
+    /// "进度条不同步"在下次运行中成为一条可读的论断：这行会点明是哪一行、哪个
+    /// 值，以及它是被本地应用还是从网络收到的。
     /// </summary>
     private void ReportProgress(int netId, float progress, string source)
     {
@@ -392,14 +392,14 @@ public class LoadingScreenUI : MonoBehaviour
         var line = "progress netId=" + netId + " " + Fmt(progress)
             + "% (" + DescribeRows() + ") source=" + source;
 
-        // (analysis/loading-screen-peer-state) The same line in the game log, one per 10 percent step and
-        // per row, so both machines can be compared without opening the diagnostics file.
+        // （analysis/loading-screen-peer-state）游戏日志中的同一行，每 10 个百分点一步、每行
+        // 一条，这样无需打开诊断文件就能比较两台机器。
         Diag(line);
     }
 
     /// <summary>
-    /// Writes one diagnostic line that survives the quiet diagnostics mode (the scope is on the
-    /// "LoadingScreen" prefix allow list) and is greppable in both logs.
+    /// 写入一行能穿过安静诊断模式的诊断行（本作用域在
+    /// "LoadingScreen" 前缀允许列表内），并且在两份日志中都可被 grep 到。
     /// </summary>
     public static void Diag(string message)
     {
@@ -413,13 +413,13 @@ public class LoadingScreenUI : MonoBehaviour
         }
     }
 
-    /// <summary>Last write per throttle key (see <see cref="DiagThrottled"/>).</summary>
+    /// <summary>每个节流键的最后写入时间（见 <see cref="DiagThrottled"/>）。</summary>
     private static readonly Dictionary<string, float> _diagThrottle = [];
 
     /// <summary>
-    /// Writes a diagnostic line at most once per <paramref name="seconds"/> for one key. For the high
-    /// frequency paths only: a rejected or unrecognised packet can arrive several times per second and
-    /// must still leave one readable line without flooding the game log.
+    /// 对一个键每个 <paramref name="seconds"/> 至多写入一行诊断。仅用于高
+    /// 频路径：一个被拒绝或无法识别的数据包每秒可能到达多次，但
+    /// 仍必须留下一条可读的行，同时不淹没游戏日志。
     /// </summary>
     public static void DiagThrottled(string key, float seconds, string message)
     {
@@ -440,22 +440,22 @@ public class LoadingScreenUI : MonoBehaviour
         Diag(message);
     }
 
-    /// <summary>The percent value as it appears in the logs ("42.5" instead of a locale dependent form).</summary>
+    /// <summary>出现在日志中的百分比值（"42.5"，而不是依赖区域设置的形式）。</summary>
     private static string Fmt(float value)
     {
         return value.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>
-    /// The rows this screen holds as one line: "1 row(s) [2(harbin)=92.5]". Used by every
-    /// [LoadSync] judgement line, so a tester can see which players the screen knows and how far
-    /// each of them is - locally driven rows and rows received from the host in the same list.
-    /// Never throws: a screen without Awake (or a destroyed one) is reported as such.
+    /// 本界面所持有的行，汇成一行："1 row(s) [2(harbin)=92.5]"。每一行
+    /// [LoadSync] 判定行都会用到它，这样测试者能看出界面认识哪些玩家、各自
+    /// 进展到何处——本地驱动的行与从主机收到的行出现在同一个列表里。
+    /// 从不抛出：没有执行 Awake 的界面（或已被销毁的界面）会被如实报告。
     /// </summary>
     /// <summary>
-    /// The progress this machine has published for itself, as "local=92.5" (or "local=absent" when the
-    /// screen holds no row for the local net id). Every client-side [LoadSync] line carries it, so a
-    /// reader can compare the local progress against the peer's from one line.
+    /// 本机为自己发布的进度，形如 "local=92.5"（当界面没有为本地 net id
+    /// 持有任何行时为 "local=absent"）。客户端侧的每条 [LoadSync] 行都携带它，因此
+    /// 读者可以从一行中把本地进度与对等端的进度作比较。
     /// </summary>
     public string DescribeLocalRow()
     {
@@ -532,8 +532,8 @@ public class LoadingScreenUI : MonoBehaviour
             return;
         }
 
-        // Remembered before the row exists, so a row that has to be created again later cannot lose the
-        // nickname (ClearData does not touch this map).
+        // 在行存在之前就记住它，这样之后必须重新创建的行不会丢掉
+        // 昵称（ClearData 不会触碰这个映射）。
         _knownNicknames[netId] = nickname;
 
         var go = GameObject.Instantiate(LoadingPlayerPrefab.Value, Stack.Value);
@@ -542,8 +542,8 @@ public class LoadingScreenUI : MonoBehaviour
         _loadingPlayers.Add(netId, lsp);
         go.SetActive(true);
 
-        // One line per row: this is the only evidence that the prefab's LoadingScreenPlayer row was
-        // really created for that player (a missing row is a peer whose progress can never be shown).
+        // 每行一行日志：这是预置体的 LoadingScreenPlayer 行确实为该玩家
+        // 创建过的唯一证据（缺失的行意味着某个对等端的进度永远无法显示）。
     }
 
     public void DeletePlayer(int netId)

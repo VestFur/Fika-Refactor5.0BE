@@ -6,15 +6,15 @@ using Il2CppInterop.Runtime.InteropTypes;
 namespace Fika.Core.Networking.Serialization;
 
 /// <summary>
-/// Reaches the game's own Newtonsoft.Json through the IL2CPP runtime instead of
-/// through the managed interop proxy.
+/// 通过 IL2CPP 运行时抵达游戏自身的 Newtonsoft.Json，而不是
+/// 通过托管互操作代理。
 /// <para>
-/// Fika is compiled against the IL2CPP proxy, whose signatures use IL2CPP types
-/// (for example <c>DeserializeObject(String, Il2CppSystem.Type)</c>). An install
-/// that also keeps the managed <c>Newtonsoft.Json.dll</c> in BepInEx/plugins
-/// shadows that proxy by assembly name, those overloads stop resolving and the
-/// plugin dies while loading with a MissingMethodException. Resolving
-/// <c>JsonConvert</c> through IL2CPP cannot be shadowed by a managed assembly.
+/// Fika 是针对 IL2CPP 代理编译的，其签名使用 IL2CPP 类型
+/// （例如 <c>DeserializeObject(String, Il2CppSystem.Type)</c>）。某个安装若同时
+/// 把托管的 <c>Newtonsoft.Json.dll</c> 放在 BepInEx/plugins 中，就会按程序集名
+/// 遮蔽那个代理，那些重载便不再能解析，插件在加载时
+/// 就以 MissingMethodException 死掉。通过 IL2CPP 解析
+/// <c>JsonConvert</c> 则无法被托管程序集遮蔽。
 /// </para>
 /// </summary>
 internal static unsafe class NativeNewtonsoftJson
@@ -98,7 +98,7 @@ internal static unsafe class NativeNewtonsoftJson
             }
 
             IL2CPP.il2cpp_runtime_class_init(type);
-            // DeserializeObject(String, Type) - not the JsonSerializerSettings overload.
+            // DeserializeObject(String, Type)——而不是 JsonSerializerSettings 重载。
             _deserializeObject = FindMethod(type, "DeserializeObject", 2, "System.Type");
             // SerializeObject(Object)
             _serializeObject = FindMethod(type, "SerializeObject", 1, "System.Object");

@@ -6,34 +6,34 @@ using UnityEngine;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Drive guards for the game HUD panels Fika touches.
+/// Fika 所触及的游戏 HUD 面板的驱动守卫。
 ///
-/// The game panels start their own UI coroutines (slide-in, colour blend, countdown) from inside
-/// the very methods callers invoke - for example <c>EFT.UI.ExtractionTimersPanel</c> owns
-/// _panelCoroutine/_timerCoroutine/_timerColorCoroutine and the matching Co_PullUpPanel,
-/// Co_MovePivot and ChangeColor enumerators, and <c>EFT.UI.BattleUITimerPanel</c> owns
-/// Co_Countdown through ShowPanel/ShowCountdownPanel. Unity refuses to start a coroutine on a
-/// component whose GameObject is inactive and writes one error per attempt:
+/// 游戏面板会从调用方所调用的那些方法内部，启动它们自己的 UI 协程（滑入、颜色混合、倒计时）——
+/// 例如 <c>EFT.UI.ExtractionTimersPanel</c> 拥有
+/// _panelCoroutine/_timerCoroutine/_timerColorCoroutine 以及对应的 Co_PullUpPanel、
+/// Co_MovePivot 和 ChangeColor 枚举器，而 <c>EFT.UI.BattleUITimerPanel</c> 通过
+/// ShowPanel/ShowCountdownPanel 拥有 Co_Countdown。Unity 拒绝在一个其 GameObject 处于非激活状态的
+/// 组件上启动协程，并为每次尝试写一条错误：
 ///
 /// [Error : Unity] Coroutine couldn't be started because the the game object 'TimerPanel' is inactive!
 ///
-/// Closing a panel (extract, death, raid stop) leaves the component alive but its GameObject
-/// inactive, so a later drive from our side can only produce that error - the panel is not visible
-/// and cannot animate. Skipping the call keeps the functional outcome (nothing was shown before
-/// either) and removes the noise; the first skip per site is still reported once at Info level so
-/// the evidence for the decision is not lost.
+/// 关闭一个面板（撤离、死亡、停止 raid）会让组件仍然存活，但其 GameObject
+/// 变为非激活，因此我们这边之后的驱动只能产出那条错误 —— 面板既不可见
+/// 也无法播放动画。跳过该调用保持了功能结果（之前本来什么也没显示），
+/// 并去掉了噪音；每个位点的首次跳过仍会以 Info 级报告一次，
+/// 这样这个决定的证据就不会丢失。
 /// </summary>
 internal static class FikaUiPanels
 {
-    /// <summary>Sites already reported; one line per site and session, never one per frame.</summary>
+    /// <summary>已报告过的位点；每个位点每会话一行，绝不每帧一行。</summary>
     private static readonly HashSet<string> Reported = [];
 
     /// <summary>
-    /// True when <paramref name="panel"/> is a usable il2cpp reference whose GameObject is active,
-    /// i.e. when the game may legally start the panel coroutines for it.
+    /// 当 <paramref name="panel"/> 是一个可用的 il2cpp 引用且其 GameObject 处于激活状态时为 true，
+    /// 即游戏可以合法地为它启动面板协程时。
     /// </summary>
-    /// <param name="panel">The game panel that would be driven.</param>
-    /// <param name="site">Stable caller name used for the one-time report.</param>
+    /// <param name="panel">将被驱动的游戏面板。</param>
+    /// <param name="site">用于一次性报告的稳定调用方名称。</param>
     internal static bool CanDrive(Component panel, string site, string detail = null)
     {
         if (panel is null || !NativeRefGuard.IsUsable(panel))
@@ -61,31 +61,31 @@ internal static class FikaUiPanels
     }
 
     /// <summary>
-    /// Brings a panel of this game online and answers whether the engine may now start that panel's
-    /// coroutines on it.
+    /// 让本游戏的一个面板上线，并回答引擎现在是否可以在它上面启动该面板的
+    /// 协程。
     ///
-    /// Why this exists (analysis/terminal-transit-mechanism): <c>SetActive(true)</c> on the arcade UI
-    /// root is the only statement of the game that switches the in-raid HUD on, and this port skips it
-    /// (the 'Skip Countdown Body' master switch) and restores it later from
-    /// <c>BaseGameController.RestoreInRaidHudRoutine</c>. Every HUD panel that is *not* covered by that
-    /// restore - <c>EFT.UI.LocationTransitTimerPanel</c>, whose GameObject is 'LocationTransitTimerPanel'
-    /// and which shows the transit countdown - therefore stays inactive. Its native applier ends in
-    /// <c>Display()</c> + <c>Show(seconds)</c>, and both methods start the panel's own coroutines, so the
-    /// countdown is refused exactly like the extraction panel's drive is: the gate is passed, the
-    /// coroutine is refused, and the machine that asked for the countdown shows nothing. The
-    /// 2026-10-13 rounds prove the shape for the sibling panel
+    /// 为什么需要它 (analysis/terminal-transit-mechanism)：在街机 UI 根上调用 <c>SetActive(true)</c>
+    /// 是游戏里唯一打开 raid 内 HUD 的语句，而本移植跳过了它
+    /// （'Skip Countdown Body' 总开关），之后又从
+    /// <c>BaseGameController.RestoreInRaidHudRoutine</c> 恢复它。每一个*不*被那次
+    /// 恢复覆盖的 HUD 面板 —— <c>EFT.UI.LocationTransitTimerPanel</c>，其 GameObject 名为 'LocationTransitTimerPanel'
+    /// 且负责显示中转倒计时 —— 因此保持非激活。它的原生应用逻辑以
+    /// <c>Display()</c> + <c>Show(seconds)</c> 结尾，而这两个方法都会启动该面板自己的协程，所以
+    /// 倒计时被拒的方式与撤离面板的驱动完全一样：门禁通过了，
+    /// 协程被拒了，而请求倒计时的机器什么也显示不出来。
+    /// 2026-10-13 的几轮验证证明了兄弟面板同样如此
     /// (<c>[PanelGuard] skipped ClientGameController.Spawn.TimerPanel.SetTime because the panel object
     /// is inactive</c> and <c>raw: [PanelGuard] refused a coroutine start on the inactive game object
     /// 'TimerPanel': host=EFT.UI.ExtractionTimersPanel</c>).
     ///
-    /// The call is deliberately limited: only the panel's own GameObject is switched on, and only while
-    /// its ancestors (the HUD root, the canvas it lives on) are active - switching a child on under an
-    /// inactive parent changes nothing in Unity, so that case is reported instead of forced. A UI element
-    /// that is inactive exactly because the HUD hierarchy never came up is the case this exists for.
+    /// 这次调用是刻意受限的：只打开面板自身的 GameObject，并且只在其
+    /// 祖先（HUD 根、它所在的 canvas）处于激活状态时 —— 在非激活父级下打开子级
+    /// 在 Unity 里不会带来任何改变，所以那种情况只会上报而不会被强行处理。一个 UI 元素
+    /// 恰好因为 HUD 层级从未建立而处于非激活状态，正是本方法存在的场景。
     /// </summary>
-    /// <param name="panel">The game panel that should carry a countdown.</param>
-    /// <param name="site">Stable caller name used for the one-time report.</param>
-    /// <returns>True when the panel may be driven right now.</returns>
+    /// <param name="panel">应当承载倒计时的游戏面板。</param>
+    /// <param name="site">用于一次性报告的稳定调用方名称。</param>
+    /// <returns>面板此刻可以被驱动时为 true。</returns>
     internal static bool TryActivateForDrive(Component panel, string site)
     {
         if (panel is null || !NativeRefGuard.IsUsable(panel))
@@ -110,8 +110,8 @@ internal static class FikaUiPanels
 
             if (panelObject.activeSelf)
             {
-                // The element is on, so the reason is above it: a disabled canvas or HUD root. Nothing here
-                // activates an ancestor - that would fight whatever switched it off.
+                // 元素已开启，所以原因在它之上：一个被禁用的 canvas 或 HUD 根。这里不
+                // 激活任何祖先 —— 那会与被关掉它的东西对抗。
                 Report(site, "the panel is inactive inside an inert HUD hierarchy (" + DescribeChain(panelObject) +
                     "); the panel is not forced on");
                 return false;
@@ -138,9 +138,9 @@ internal static class FikaUiPanels
     }
 
     /// <summary>
-    /// The activation chain of an object, from the object itself up to the scene root: <c>name(self)/name(activeInHierarchy) &lt;- ...</c>.
-    /// This is what names *where* an inactive panel sits - the fact the [PanelGuard] line alone cannot show.
-    /// Read-only, never throws, and bounded so one odd hierarchy cannot spin here.
+    /// 一个对象的激活链，从对象自身一直到场景根：<c>name(self)/name(activeInHierarchy) &lt;- ...</c>。
+    /// 它指明的正是非激活面板*位于何处* —— 这是单凭 [PanelGuard] 一行无法展现的事实。
+    /// 只读、永不抛出异常，并做了限界，使某个怪异的层级无法在此空转。
     /// </summary>
     internal static string DescribeChain(Component panel, string fallback = "unreadable")
     {
@@ -155,7 +155,7 @@ internal static class FikaUiPanels
         }
     }
 
-    /// <summary>Activation chain of a GameObject, see <see cref="DescribeChain(Component, string)"/>.</summary>
+    /// <summary>一个 GameObject 的激活链，见 <see cref="DescribeChain(Component, string)"/>。</summary>
     internal static string DescribeChain(GameObject start)
     {
         try
@@ -216,19 +216,19 @@ internal static class FikaUiPanels
 
     private static string Suffix(string detail) => string.IsNullOrEmpty(detail) ? string.Empty : "; " + detail;
 
-    /// <summary>Drivers already reported by <see cref="ReportRefusedEngineStart"/>, one line each.</summary>
+    /// <summary><see cref="ReportRefusedEngineStart"/> 已报告过的驱动，各占一行。</summary>
     private static readonly HashSet<string> ReportedRefusals = [];
 
-    /// <summary>Upper bound of the refusal report; more distinct drivers than this stay silent.</summary>
+    /// <summary>拒绝报告的上界；超过此数的不同驱动将保持静默。</summary>
     private const int MaxReportedRefusals = 64;
 
     /// <summary>
-    /// Called by <c>MonoBehaviour_StartCoroutine_Patch</c> for a start the engine itself would refuse: the
-    /// component's GameObject is inactive, so Unity writes
-    /// <c>Coroutine couldn't be started because the the game object 'X' is inactive!</c> and starts nothing.
-    /// The patch starts nothing as well - the caller still receives null, exactly as before - and this line
-    /// names the driver (component type, coroutine type, object) once, because that red line names only the
-    /// object and the 2026-10-10 21:35 raid (BHERKP) left five of them unattributed.
+    /// 由 <c>MonoBehaviour_StartCoroutine_Patch</c> 调用，针对引擎自身会拒绝的一次启动：
+    /// 组件的 GameObject 处于非激活状态，于是 Unity 写出
+    /// <c>Coroutine couldn't be started because the the game object 'X' is inactive!</c> 并且什么都不启动。
+    /// 补丁同样什么都不启动 —— 调用方仍然收到 null，与之前完全一样 —— 而这一行
+    /// 会一次性点名驱动（组件类型、协程类型、对象），因为那条红色错误只点名了
+    /// 对象，而 2026-10-10 21:35 的 raid (BHERKP) 留下了五条无法归因的记录。
     /// </summary>
     internal static void ReportRefusedEngineStart(Component host, object routine)
     {
@@ -264,15 +264,15 @@ internal static class FikaUiPanels
         }
         catch (Exception)
         {
-            // A report must never break the call it reports about.
+            // 报告绝不能破坏它所报告的那次调用。
         }
     }
 
     /// <summary>
-    /// Names a coroutine handed to the engine. The il2cpp class name is preferred - the runtime names an
-    /// iterator's state machine after its method (<c>EFT.UI.ExtractionTimersPanel+&lt;Co_MovePivot&gt;d__NN</c>),
-    /// which is the part Unity's own error message withholds - and the managed type is the fallback for a
-    /// value whose reference cannot be read.
+    /// 为一个交给引擎的协程命名。优先使用 il2cpp 类名 —— 运行时会用方法名来命名
+    /// 迭代器的状态机（<c>EFT.UI.ExtractionTimersPanel+&lt;Co_MovePivot&gt;d__NN</c>），
+    /// 而这正是 Unity 自己的错误消息所隐瞒的部分 —— 对于无法读取引用的值，
+    /// 则回退到托管类型。
     /// </summary>
     private static string DescribeCoroutine(object routine)
     {
@@ -307,9 +307,9 @@ internal static class FikaUiPanels
     }
 
     /// <summary>
-    /// Names a panel for a journal line: its GameObject name when it can be read, <paramref name="fallback"/>
-    /// when the reference is null or its name cannot be read. Never throws - it is used while building a
-    /// diagnostic line (analysis/inraid-ui).
+    /// 为日志行命名一个面板：可读取时给出其 GameObject 名称，<paramref name="fallback"/>
+    /// 在引用为 null 或其名称不可读时给出。永不抛出异常 —— 它在构造
+    /// 诊断行时被使用 (analysis/inraid-ui)。
     /// </summary>
     internal static string DescribeObject(Component panel, string fallback)
     {

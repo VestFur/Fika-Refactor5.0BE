@@ -104,10 +104,10 @@ public sealed class FikaVoiceServerDisconnectPatch : ModulePatch
     }
 }
 
-// In this SPT 5 build both ReadMessages overrides are already native no-ops.
-// They share a RET body with unrelated constructors. Detouring that body would
-// intercept those constructors with a Dissonance ABI and corrupt native memory.
-// Keep the native no-ops; Fika's UDP receiver feeds NetworkReceivedPacket.
+// 在这个 SPT 5 构建中，两个 ReadMessages 重写已经是原生的空操作。
+// 它们与不相关的构造函数共用一个 RET 函数体。对该函数体做 detour 会
+// 以 Dissonance 的 ABI 拦截那些构造函数，并破坏原生内存。
+// 保留原生空操作；Fika 的 UDP 接收器负责喂入 NetworkReceivedPacket。
 
 public sealed class FikaVoiceServerAddClientPatch : ModulePatch
 {
@@ -116,9 +116,9 @@ public sealed class FikaVoiceServerAddClientPatch : ModulePatch
     public static bool Prefix(MirrorIgnoranceServer __instance, NativeClientInfo client)
     {
         if (FikaCommsNetwork.Find(__instance._network) == null) return true;
-        // AddClient is virtual and the generated wrapper would redispatch to
-        // this patch. Invoke the closed AOT base implementation directly so
-        // Dissonance creates its client/room/handshake state.
+        // AddClient 是虚方法，生成的包装器会重新分派回
+        // 这个 patch。直接调用封闭的 AOT 基类实现，
+        // 以便 Dissonance 建立它的 client/room/handshake 状态。
         NativeMethod.InvokeVoid(__instance, typeof(NativeServer).GetMethod(nameof(NativeServer.AddClient), [typeof(NativeClientInfo)]), client);
         return false;
     }

@@ -9,42 +9,42 @@ using UnityEngine;
 namespace Fika.Core.Main.Components;
 
 /// <summary>
-/// BT (analysis/terminal-hostility-graph): the OTHER systems of the terminal / RAUF area that decide to fire.
+/// BT（analysis/terminal-hostility-graph）：终端 / RAUF 区域中其他那些会决定开火的系统。
 ///
-/// <para>The card check of the transfer point is ONE fact, but this build makes more than one system fire on
-/// the player of that area. Read together with <see cref="FikaSentryAccess"/> (the sentry rule and its group
-/// mirror), the complete set is:</para>
+/// <para>传送点的刷卡检查只是同一个事实，但在本构建中，有不止一个系统会对
+/// 该区域的玩家开火。结合 <see cref="FikaSentryAccess"/> 一起看（哨兵规则及其队伍
+/// 镜像），完整集合是：</para>
 ///
 /// <list type="number">
-/// <item>SENTRY - the sentry boss rule: <c>SentryBossLogic</c> (state <c>_accessedPlayerIds</c>, written by
-/// the native entry <c>OnTerminalAccessGained</c>, read by <c>BossSentryHostilityRule</c> through
-/// <c>IAccessBossLogic.HaveAccess</c>). Delivered by <see cref="FikaSentryAccess"/> on every machine.</item>
-/// <item>GROUP - the hostility tables of every bot group of the area (<c>BotGroupHostility</c>, one container
-/// per rule inside <c>BotGroupInnerHostilityData</c>). The sentry access has its own container there
-/// (<c>AlliesBySentryAcces</c>), which is the second landing of <see cref="FikaSentryAccess"/>. The other
-/// containers (<c>EnemiesByHit</c>, <c>NeutralsByVsRF</c>, <c>EnemiesByAiPlaceAllEnemy</c>, ...) are the
-/// product of the other rules and are NOT written by this component - they are only reported, because the
-/// brief forbids clearing enemy tables.</item>
-/// <item>ZONE - the CODE-DRIVEN shooters of the scene, which fire no bot at all: <c>BorderZone</c> and its
-/// subclasses <c>SniperFiringZone</c> (an imitating sniper: shot frequency, hit probabilities, lethal after
-/// N shots) and <c>Minefield</c>. They ask <c>PlayersWithImmuneToSniperFire</c>
-/// (<c>playersWithImmune : HashSet&lt;Int32&gt;</c>) through <c>IsPlayerCanBeDamaged</c>; the map trigger
-/// <c>HandlerSniperZoneImmunity</c> is the native writer of that container. The shot itself is computed by
-/// the authority (Fika delivers it with <c>BorderZoneEvent</c> /
-/// <c>BorderZone.ProcessIncomingPacket</c>), so the container that matters is the one of the AUTHORITY -
-/// which is why this component writes it on every machine that learns the fact.</item>
-/// <item>GUARDED - <c>GuardedZone</c>, which keeps its own profile-id list (<c>_guardedPlayerIds</c>) of the
-/// players its <c>SniperFireTargetManager</c> does not treat as aggressors. Read only here: the list means
-/// 「the player the zone protects」 (its hit fires <c>_onGuardedPlayerHitTriggerId</c>), not 「the player who
-/// passed the check」, so it is not a landing of the card.</item>
+/// <item>SENTRY——哨兵 boss 规则：<c>SentryBossLogic</c>（状态 <c>_accessedPlayerIds</c>，由
+/// 原生入口 <c>OnTerminalAccessGained</c> 写入，由 <c>BossSentryHostilityRule</c> 通过
+/// <c>IAccessBossLogic.HaveAccess</c> 读取）。由 <see cref="FikaSentryAccess"/> 在每台机器上落地。</item>
+/// <item>GROUP——该区域每个 bot 队伍的敌意表（<c>BotGroupHostility</c>，每条规则在
+/// <c>BotGroupInnerHostilityData</c> 内对应一个容器）。哨兵准入在那里有自己的容器
+/// （<c>AlliesBySentryAcces</c>），那是 <see cref="FikaSentryAccess"/> 的第二个落点。其他
+/// 容器（<c>EnemiesByHit</c>、<c>NeutralsByVsRF</c>、<c>EnemiesByAiPlaceAllEnemy</c> 等）是
+/// 其他规则的产物，本组件不会写入它们——它们只被上报，因为
+/// 任务书禁止清除敌意表。</item>
+/// <item>ZONE——场景中代码驱动的射手，它们完全不会派出 bot：<c>BorderZone</c> 及其
+/// 子类 <c>SniperFiringZone</c>（一个模拟狙击手：射击频率、命中概率，
+/// N 发后致命）以及 <c>Minefield</c>。它们会查询 <c>PlayersWithImmuneToSniperFire</c>
+/// （<c>playersWithImmune : HashSet&lt;Int32&gt;</c>），经由 <c>IsPlayerCanBeDamaged</c>；地图触发器
+/// <c>HandlerSniperZoneImmunity</c> 就是该容器的原生写入方。射击本身由
+/// 权威机计算（Fika 用 <c>BorderZoneEvent</c> /
+/// <c>BorderZone.ProcessIncomingPacket</c> 交付），因此真正要紧的容器是权威机的那个——
+/// 这就是为什么本组件会在每一台获知该事实的机器上写入它。</item>
+/// <item>GUARDED——<c>GuardedZone</c>，它维护自己的一份 profile id 列表（<c>_guardedPlayerIds</c>），记录
+/// 其 <c>SniperFireTargetManager</c> 不视为挑事者的玩家。此处仅作读取：该列表的含义是
+/// 「该区域所保护的玩家」（该玩家被命中会触发 <c>_onGuardedPlayerHitTriggerId</c>），而不是「通过
+/// 该检查的玩家」，因此它不是刷卡事实的落点。</item>
 /// </list>
 ///
-/// <para>WHAT THIS COMPONENT DOES: it hands the fact to system 3 through the native container and the native
-/// method (<c>AddImmunePlayer(Int32)</c>), and writes the verdict of systems 2, 3 and 4 for that player into
-/// the log of the machine that owns them - so 「which system still refuses this player」 is a fact of the log
-/// and not an impression. Nothing else is touched: no rule, no threshold, no enemy table.</para>
+/// <para>本组件做什么：它通过原生容器与原生
+/// 方法（<c>AddImmunePlayer(Int32)</c>）把该事实交给系统 3，并把该玩家在系统 2、3、4 上的判定写入
+/// 拥有这些系统的机器的日志——于是「哪个系统仍然拒绝这个玩家」成为日志里的事实，
+/// 而不是一种印象。其他什么都不动：不改规则、不改阈值、不清敌意表。</para>
 ///
-/// <para>DIAGNOSIS (one grep, the lines this component adds):</para>
+/// <para>诊断（一次 grep，即本组件添加的这些行）：</para>
 /// <code>
 /// [SentryDiag] card=swiped sys=immunity state=applied applied=yes side=host source=packet-from-client via=native-immunity-registry registries=2 immune=yes:2/no:0 raidId=2 profile=6acdcb85 -> result=the code-driven zones of this machine now treat the player as immune
 /// [SentryDiag] card=swiped sys=zone state=verify applied=yes side=host zones=2 sniper=1 minefield=0 targeted=0 immune=1/1 guarded=1 guardedMine=0 -> result=no code-driven zone of this machine fires at the player
@@ -52,29 +52,29 @@ namespace Fika.Core.Main.Components;
 /// [SentryDiag] card=swiped sys=damage state=verify side=client type=Sniper source=none hits=3 profile=6acdcb85 -> result=a code-driven zone fired at this player (no bot fired)
 /// [SentryDiag] card=swiped sys=immunity state=verify applied=no side=host raidId=2 -> result=the native chain of this machine wrote the immunity container (not this component)
 /// </code>
-/// <para>One switch reverts each half (<see cref="Enabled"/>, <see cref="ImmunityEnabled"/>,
-/// <see cref="CensusEnabled"/>, <see cref="HitProbeEnabled"/>), see the report for the one-line rollback.</para>
+/// <para>每一半都各有一个开关可回退（<see cref="Enabled"/>、<see cref="ImmunityEnabled"/>、
+/// <see cref="CensusEnabled"/>、<see cref="HitProbeEnabled"/>），一行式回退见报告。</para>
 /// </summary>
 internal static class FikaTerminalHostility
 {
     /// <summary>
-    /// Master switch of the fan-out. OFF (now the default) = the other firing systems are left exactly as the
-    /// native chain of this machine left them.
+    /// 扇出总开关。OFF（现在是默认）＝其他开火系统完全保持
+    /// 本机原生链给它们留下的状态。
     /// </summary>
     /// <remarks>
-    /// (hotfix 2026-10-14) OFF by default after the first live test: the client took no damage at all and the
-    /// host process died the moment its own player took fall damage. Both symptoms sit on exactly this half of
-    /// the round, so it stays off until the scope of the write is settled (the authority only, and only what the
-    /// native trigger of that map writes), and until the damage-path observation patches can be installed behind
-    /// a startup switch instead of always (see <c>TerminalHostilityPatches</c>).
+    /// (hotfix 2026-10-14) 首次实机测试后默认关闭：客户端完全不吃伤害，而
+    /// 主机进程在它自己的玩家受到坠落伤害的瞬间崩溃。两个症状恰好都落在这
+    /// 一轮的这一半上，因此在写入范围确定之前保持关闭（只限权威机，且只限
+    /// 那张地图的原生触发器所写入的内容），并且要等到伤害路径的观测补丁能够装到
+    /// 一个启动开关之后，而不是始终安装（见 <c>TerminalHostilityPatches</c>）。
     /// </remarks>
     internal static bool Enabled = false;
 
     /// <summary>
-    /// Landing 3 of the same fact: the native immunity container of the code-driven zones. OFF (now the default)
-    /// = the container is never written from here; the refusal is still reported as a line.
+    /// 同一事实的落点 3：代码驱动区域的原生免疫容器。OFF（现在是默认）
+    /// ＝ 容器不会从这里被写入；拒绝仍会作为一行日志上报。
     /// </summary>
-    /// <remarks>(hotfix 2026-10-14) OFF by default: this is the write that makes a player untouchable.</remarks>
+    /// <remarks>(hotfix 2026-10-14) 默认关闭：正是这次写入让玩家变得无法被伤害。</remarks>
     internal static bool ImmunityEnabled = false;
 
     /// <summary>
@@ -85,20 +85,20 @@ internal static class FikaTerminalHostility
     /// </summary>
     internal static bool ImmunityAuthoritativeOnly = true;
 
-    /// <summary>The read-only verdicts of the systems of this machine (the evidence half).</summary>
+    /// <summary>本机各系统的只读判定（证据那一半）。</summary>
     internal static bool CensusEnabled = true;
 
-    /// <summary>The damage provenance line: what actually hit this machine's player.</summary>
+    /// <summary>伤害来源行：究竟是什么打中了本机的玩家。</summary>
     /// <remarks>
-    /// (hotfix 2026-10-14) OFF by default together with the observation patches of the damage path; without them
-    /// installed this line has no trigger.
+    /// (hotfix 2026-10-14) 与伤害路径的观测补丁一同默认关闭；
+    /// 在这些补丁未安装的情况下，该行没有任何触发点。
     /// </remarks>
     internal static bool HitProbeEnabled = false;
 
-    /// <summary>The landing a line names: the native immunity container (<c>AddImmunePlayer</c>).</summary>
+    /// <summary>某行所指的落点：原生免疫容器（<c>AddImmunePlayer</c>）。</summary>
     internal const string ViaImmunityRegistry = "native-immunity-registry";
 
-    /// <summary>No landing of this component reached the system of the line.</summary>
+    /// <summary>本组件没有任何落点到达该行所指的系统。</summary>
     internal const string ViaNone = "none";
 
     private const int MaxZoneLines = 6;
@@ -111,7 +111,7 @@ internal static class FikaTerminalHostility
     private static readonly Dictionary<string, int> ImmuneVerified = new(StringComparer.Ordinal);
     private static int _censusRuns;
 
-    /// <summary>True while this component itself writes the immunity container (the native patch tells them apart).</summary>
+    /// <summary>当本组件自己正在写入免疫容器时为 true（原生补丁用以区分二者）。</summary>
     private static bool _writingImmunity;
 
     internal static void Reset()
@@ -127,9 +127,9 @@ internal static class FikaTerminalHostility
     }
 
     /// <summary>
-    /// The fan-out: one call per (player, access fact) on the machine that owns the answer. Called from
-    /// <see cref="FikaSentryAccess.Apply"/> (every machine that applies the fact, the authority included)
-    /// and from <c>FikaSentryAccess.NoteNativeEmission</c> (the machine that ran the interaction itself).
+    /// 扇出：在拥有答案的机器上，每（玩家, 准入事实）组合调用一次。调用方是
+    /// <see cref="FikaSentryAccess.Apply"/>（每台落地该事实的机器，包括权威机）
+    /// 以及 <c>FikaSentryAccess.NoteNativeEmission</c>（自己运行了该交互的机器）。
     /// </summary>
     internal static void Deliver(Player player, string source, bool granted)
     {
@@ -142,10 +142,10 @@ internal static class FikaTerminalHostility
 
             var profileId = player.ProfileId;
 
-            // (2026-10-26 W35) The authority-only immunity half is decided before the fan-out switch: a host that
-            // keeps the fan-out off can still tell its own code-driven zones that this player passed the card,
-            // while a client never writes its own immunity (that write is what made the client untouchable in the
-            // 2026-10-14 hotfix).
+            // (2026-10-26 W35) 仅限权威机的免疫那一半在扇出开关之前就决定了：一台
+            // 保持扇出关闭的主机，仍然可以告诉自己的代码驱动区域该玩家已刷卡通过，
+            // 而客户端永远不会写自己的免疫（正是那次写入让客户端在
+            // 2026-10-14 的热修中变得无法被伤害）。
             var immunityWanted = granted && ImmunityEnabled && (!ImmunityAuthoritativeOnly || Fika.Core.Main.Utils.FikaBackendUtils.IsServer);
             if (!Enabled)
             {
@@ -179,14 +179,14 @@ internal static class FikaTerminalHostility
     }
 
     /// <summary>
-    /// Landing 3: the native container the code-driven zones read. The write goes through the native method
-    /// of the container itself (<c>AddImmunePlayer(Int32)</c>, the same entry point the flare collector and
-    /// the map trigger <c>HandlerSniperZoneImmunity</c> use) and the answer is read back with the native
-    /// question the zones ask (<c>IsPlayerImmuneForFire(Int32)</c>).
+    /// 落点 3：代码驱动区域所读取的原生容器。写入经由容器自身的原生
+    /// 方法（<c>AddImmunePlayer(Int32)</c>，与信号弹收集器和
+    /// 地图触发器 <c>HandlerSniperZoneImmunity</c> 所使用的入口点相同），并用区域所提出的原生
+    /// 问题（<c>IsPlayerImmuneForFire(Int32)</c>）读回答案。
     ///
-    /// <para>The containers of this build are <c>PlayersWithImmuneToSniperFire</c> and its subclass
-    /// <c>SniperFireTargetManager</c> (which overrides both members). A raid without any of them has no
-    /// code-driven zone at all, and the line says so.</para>
+    /// <para>本构建中的容器是 <c>PlayersWithImmuneToSniperFire</c> 及其子类
+    /// <c>SniperFireTargetManager</c>（它重写了这两个成员）。若一场战局一个都没有，就
+    /// 根本不存在代码驱动区域，日志行会说明这一点。</para>
     /// </summary>
     internal static void ApplyImmunity(Player player, string source)
     {
@@ -286,9 +286,9 @@ internal static class FikaTerminalHostility
     }
 
     /// <summary>
-    /// The read-only verdict of every firing system of this machine for one player: the code-driven zones
-    /// (3), the group hostility tables of the bots of this machine (2) and the guarded zone (4). Written at
-    /// the moment the fact lands and at the moment the player is hit, so the two can be aligned.
+    /// 本机每个开火系统对某个玩家的只读判定：代码驱动区域
+    /// (3)、本机 bot 的队伍敌意表 (2) 以及受保护区 (4)。写入时机是
+    /// 事实落地的瞬间以及玩家被击中的瞬间，这样两者可以对齐。
     /// </summary>
     internal static void Census(Player player, string source)
     {
@@ -435,10 +435,10 @@ internal static class FikaTerminalHostility
     }
 
     /// <summary>
-    /// The provenance of one hit on this machine's player: which damage type arrived and whether a player of
-    /// this raid caused it. This is the line that tells a bot volley (a source) from the code-driven systems
-    /// (no source: <c>Sniper</c> for the zones of the map border and of the guarded area, <c>Explosion</c> or
-    /// <c>Landmine</c> for a minefield, shelling or a script handler).
+    /// 本机玩家受到的一次命中的来源：到达的是什么伤害类型，以及是否由本
+    /// 战局的某个玩家造成。这一行用于区分 bot 的一轮齐射（有来源）与代码驱动系统
+    /// （无来源：地图边界和受保护区的区域是 <c>Sniper</c>，雷区、炮击或脚本处理器则是 <c>Explosion</c> 或
+    /// <c>Landmine</c>）。
     /// </summary>
     internal static void NoteDamage(Player victim, DamageInfo info)
     {
@@ -458,8 +458,8 @@ internal static class FikaTerminalHostility
 
             var type = info.DamageType;
 
-            // A code-driven source of the scene carries no shooter at all; a bot or a player carries both a
-            // source object and its id. Both readings are taken defensively: this probe is a diagnostic.
+            // 场景中的代码驱动来源完全不携带射手；而 bot 或玩家既携带
+            // 来源对象又携带其 id。两种读取都做了防御处理：这个探针本就是诊断用的。
             var hasSource = false;
             try
             {
@@ -511,8 +511,8 @@ internal static class FikaTerminalHostility
 
             if (count == 1)
             {
-                // The moment the player is hit is the moment every verdict has to be read at: the fact that
-                // the swipe landed and the fact that a system still fires have to be comparable line by line.
+                // 玩家被击中的瞬间就是所有判定都必须读取的时刻：
+                // 刷卡已生效这一事实与某个系统仍在开火这一事实，必须能够逐行比较。
                 Census(victim, "hit");
             }
         }
@@ -522,10 +522,10 @@ internal static class FikaTerminalHostility
     }
 
     /// <summary>
-    /// The shot of a code-driven zone ARRIVED FROM THE AUTHORITY on this machine
-    /// (<c>BorderZone.ProcessIncomingPacket</c> is what the Fika <c>BorderZoneEvent</c> calls). A line here
-    /// names the zone and proves that the machine that decided to fire is the authority - and that its
-    /// immunity container did not hold this player.
+    /// 代码驱动区域的一次射击在这台机器上是来自权威机的
+    /// （Fika 的 <c>BorderZoneEvent</c> 调用的正是 <c>BorderZone.ProcessIncomingPacket</c>）。此处的一行
+    /// 会指出该区域，并证明决定开火的机器就是权威机——以及它的
+    /// 免疫容器里并没有这个玩家。
     /// </summary>
     internal static void NoteZonePacket(BorderZone zone, IObserverToPlayerBridge bridge)
     {
@@ -573,8 +573,8 @@ internal static class FikaTerminalHostility
     }
 
     /// <summary>
-    /// The verdict of the code-driven sniper of this machine for one player, read through the native question
-    /// (<c>SniperFiringZone.IsPlayerCanBeDamaged(IPlayer)</c>). One line per (zone, player, verdict).
+    /// 本机代码驱动狙击手对某个玩家的判定，通过原生问题
+    /// （<c>SniperFiringZone.IsPlayerCanBeDamaged(IPlayer)</c>）读取。每（区域, 玩家, 判定）一行。
     /// </summary>
     internal static void NoteZoneVerdict(SniperFiringZone zone, IPlayer player, bool canBeDamaged)
     {
@@ -609,9 +609,9 @@ internal static class FikaTerminalHostility
     }
 
     /// <summary>
-    /// The native container was written BY THE NATIVE CHAIN of this machine (the flare collector or the map
-    /// trigger <c>HandlerSniperZoneImmunity</c>), not by this component. This is the evidence that answers
-    /// 「does the native chain of this map grant the immunity at all, and on which machine」.
+    /// 原生容器是由本机的原生链写入的（信号弹收集器或地图
+    /// 触发器 <c>HandlerSniperZoneImmunity</c>），而不是本组件。这是回答
+    /// 「这张地图的原生链到底给不给免疫，且是在哪台机器上给」的证据。
     /// </summary>
     internal static void NoteNativeImmunityWrite(PlayersWithImmuneToSniperFire registry, int raidId, bool added)
     {
@@ -638,8 +638,8 @@ internal static class FikaTerminalHostility
     }
 
     /// <summary>
-    /// The guarded area marked a player as an aggressor of its sniper target manager: the code-driven system
-    /// of this machine decided to shoot him, with no bot involved at all.
+    /// 受保护区把某个玩家标记为其狙击目标管理器的挑事者：本机的
+    /// 代码驱动系统决定向他射击，完全没有 bot 参与。
     /// </summary>
     internal static void NoteAggressorMark(SniperFireTargetManager manager, int raidId)
     {
@@ -668,9 +668,9 @@ internal static class FikaTerminalHostility
     }
 
     /// <summary>
-    /// The enemy table of one group of this machine received a player. The container the group keeps him in
-    /// names the rule that decided it, which is what the report reads when a group of the authority still
-    /// fires after the fact landed.
+    /// 本机某个队伍的敌意表接收了一个玩家。该队伍把他放进哪个容器，
+    /// 就指明了做出该决定的规则，而这正是事实落地后权威机的某个队伍仍在
+    /// 开火时报告所读取的内容。
     /// </summary>
     internal static void NoteGroupEnemy(BotsGroup group, IPlayer player)
     {
@@ -701,10 +701,10 @@ internal static class FikaTerminalHostility
     }
 
     /// <summary>
-    /// The verdict of one group of this machine for one player, read from the native state itself: the four
-    /// tables of <c>BotGroupHostility</c> and every per-rule container of <c>BotGroupInnerHostilityData</c>
-    /// that speaks about a player id (the same id space as <c>Player.RaidId</c>). The container that holds
-    /// the player names the system that still refuses him.
+    /// 本机某个队伍对某个玩家的判定，直接从原生状态读取：
+    /// <c>BotGroupHostility</c> 的四张表，以及 <c>BotGroupInnerHostilityData</c> 中每个按规则划分的容器
+    /// 里涉及某玩家 id 的那些（与 <c>Player.RaidId</c> 相同的 id 空间）。持有
+    /// 该玩家的容器就指明了仍在拒绝他的系统。
     /// </summary>
     private static string GroupVerdict(BotsGroup group, int raidId)
     {
@@ -764,9 +764,9 @@ internal static class FikaTerminalHostility
     }
 
     /// <summary>
-    /// One container of the native state answers about a player id. The read is a lambda because the il2cpp
-    /// wrappers of the containers are not a CLR collection type this file could name; a throw (a missing
-    /// container) is reported as such instead of being read as a no.
+    /// 原生状态的某个容器回答关于某玩家 id 的问题。读取写成 lambda，是因为这些容器的 il2cpp
+    /// 包装器并不是本文件能够指名的 CLR 集合类型；抛出异常（容器缺失）会
+    /// 按异常上报，而不是被读作"否"。
     /// </summary>
     private static string Flag(Func<bool> read)
     {
@@ -780,7 +780,7 @@ internal static class FikaTerminalHostility
         }
     }
 
-    /// <summary>The number of entries of one native table, or -1 when this machine has none of it.</summary>
+    /// <summary>某张原生表的条目数；本机没有该表时返回 -1。</summary>
     private static int Number(Func<int> read)
     {
         try
@@ -952,8 +952,8 @@ internal static class FikaTerminalHostility
     }
 
     /// <summary>
-    /// The distinct bot groups of this machine (a Fika client owns none: every bot of the raid is an
-    /// observed puppet there, which is what keeps the group half of the census empty on that machine).
+    /// 本机各自不同的 bot 队伍（Fika 客户端一个都不拥有：该战局里的每个 bot 在
+    /// 那里都是被观察的傀儡，这正是那台机器上普查的"队伍"那一半为空的原因）。
     /// </summary>
     private static List<BotsGroup> LocalGroups()
     {
@@ -1005,8 +1005,8 @@ internal static class FikaTerminalHostility
     }
 
     /// <summary>
-    /// The identity of one native group of this machine. <c>BotsGroup</c> is a plain il2cpp object (it is not
-    /// a UnityEngine.Object), so its own pointer is what keeps two groups apart in the log.
+    /// 本机某个原生队伍的身份标识。<c>BotsGroup</c> 是普通的 il2cpp 对象（它不
+    /// 是 UnityEngine.Object），因此在日志中靠它自身的指针来区分两个队伍。
     /// </summary>
     private static int IdOf(BotsGroup group)
     {
@@ -1038,8 +1038,8 @@ internal static class FikaTerminalHostility
         string.IsNullOrEmpty(value) ? "-" : value.Length > 8 ? value.Substring(0, 8) : value;
 
     /// <summary>
-    /// The same bounded, deduplicated writer as the sentry family (<c>[SentryDiag]</c>, dual written into
-    /// LogOutput.log and Fika-diagnostics.log), so one grep reads both families at once.
+    /// 与哨兵系列相同的、有上限且去重的写入器（<c>[SentryDiag]</c>，同时写入
+    /// LogOutput.log 与 Fika-diagnostics.log），因此一次 grep 就能同时读到两个系列。
     /// </summary>
     internal static void Line(string key, string text) => FikaSentryAccess.Line(key, text);
 }

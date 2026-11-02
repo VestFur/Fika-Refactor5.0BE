@@ -40,22 +40,22 @@ public sealed partial class FikaClient
     private SyncTransitControllersPacket? _pendingTransitHistory;
 
     /// <summary>
-    /// Map-state generation of the pending transit history (see <see cref="_mapStateGeneration"/>).
+    /// 待处理 transit 历史的 map-state 代数（见 <see cref="_mapStateGeneration"/>）。
     /// </summary>
     private int _pendingTransitHistoryGeneration;
 
     private readonly Dictionary<(int NetId, string ItemId), float> _pendingEventItems = new();
 
     /// <summary>
-    /// Counts the world generations of this session. It is raised by <see cref="ClearMapState"/>, i.e. once
-    /// per world swap (a transit reload tears the world down long before the next one exists), and it is the
-    /// only thing that decides whether a queued transit event still belongs to the world that is being
-    /// created: entries of generation N-1 are the ones that arrived in the swap window, anything older has
-    /// already survived a whole world without being consumed and is dropped (analysis/transit-reload-sync).
+    /// 统计本会话的世界代数。它由 <see cref="ClearMapState"/> 递增，即
+    /// 每次世界切换一次（transit 重载会在下一个世界存在之前很久就销毁当前世界），而它是
+    /// 唯一决定某个已入队的 transit 事件是否仍属于正在创建的
+    /// 世界的依据：属于第 N-1 代的条目就是那些在切换窗口内到达的，任何更早的条目
+    /// 已经整整存活过一个世界而未被消费，因此会被丢弃（analysis/transit-reload-sync）。
     /// </summary>
     private int _mapStateGeneration;
 
-    /// <summary>Transit events that were queued since the last world swap, and their types.</summary>
+    /// <summary>自上次世界切换以来入队的 transit 事件，以及它们的类型。</summary>
     private int _transitQueueReceivedThisWindow;
     private int _transitQueueDroppedThisWindow;
     private readonly Dictionary<string, int> _transitQueueTypesThisWindow = new();
@@ -92,12 +92,12 @@ public sealed partial class FikaClient
         _pendingRunddansMessages.Clear();
         _pendingKolotunState = null;
         _kolotunStateDeadline = 0f;
-        // A world swap *is* the transit reload window: a transit tears the world down long before the next
-        // one exists, so the transit state that arrived in between belongs to the raid that is being created
-        // now and must survive this reset. Only what is provably older than one generation (it already
-        // survived a whole world without being consumed) is dropped, and the swap reports what it saw
-        // (analysis/transit-reload-sync; the queue used to be cleared here, which threw every event of the
-        // window away - including the host's initialization snapshot of the new raid).
+        // 世界切换*就是* transit 重载窗口：transit 会在下一个世界存在之前很久就销毁当前世界，
+        // 因此其间到达的 transit 状态属于正在被创建的 raid，
+        // 并且必须挺过这次重置。只有可证明比一代更旧的东西（它已经
+        // 整整存活过一个世界而未被消费）才会被丢弃，而切换会报告它所看到的情况
+        // （analysis/transit-reload-sync；该队列过去在这里被清空，从而把窗口内的每个事件都扔掉
+        // ——包括主机对新 raid 的初始化快照）。
         _mapStateGeneration++;
         var droppedAtSwap = DropStaleTransitQueue(_mapStateGeneration);
         if (_pendingTransitHistory != null && _pendingTransitHistoryGeneration < _mapStateGeneration - 1)
@@ -110,10 +110,10 @@ public sealed partial class FikaClient
     }
 
     /// <summary>
-    /// The transit-event half of the world swap: the entries of the window are kept for the new raid's
-    /// transit controller, everything older is dropped and counted.
+    /// 世界切换的 transit 事件那一半：窗口内的条目会为新 raid 的
+    /// transit 控制器保留，更旧的一切都被丢弃并计数。
     /// </summary>
-    /// <returns>The number of entries that were dropped.</returns>
+    /// <returns>被丢弃的条目数量。</returns>
     private int DropStaleTransitQueue(int generation)
     {
         if (_pendingTransitEvents.Count == 0)
@@ -143,26 +143,26 @@ public sealed partial class FikaClient
         return dropped;
     }
 
-    /// <summary>True when an entry of this generation can still belong to the world that is now in place.</summary>
+    /// <summary>当本代的一个条目仍可能属于当前已就位的世界时为 true。</summary>
     private bool IsTransitEventGenerationCurrent(int generation)
     {
         return generation >= _mapStateGeneration - 1;
     }
 
-    /// <summary>Counts one dropped entry and names it in the diagnostics file (the swap line carries the totals).</summary>
+    /// <summary>统计一个被丢弃的条目并在诊断文件中命名它（切换行携带总计）。</summary>
     private void DropStaleTransitEvent(TransitEventPacket packet, int generation, string site)
     {
         _transitQueueDroppedThisWindow++;
     }
 
-    /// <summary>One line per world swap that saw transit traffic: what arrived, what was kept, what was dropped.</summary>
+    /// <summary>每次看到 transit 流量的世界切换写一行：什么到达了、什么被保留、什么被丢弃。</summary>
     private void ReportTransitQueueAtWorldSwap(int generation, int droppedAtSwap)
     {
         var kept = _pendingTransitEvents.Count;
         var history = _pendingTransitHistory == null ? "none" : "kept";
         if (_transitQueueReceivedThisWindow == 0 && kept == 0 && droppedAtSwap == 0 && _pendingTransitHistory == null)
         {
-            // Nothing arrived in the window and nothing is waiting: a normal raid start stays silent.
+            // 窗口内没有任何东西到达，也没有任何东西在等待：正常的 raid 启动保持静默。
             return;
         }
 
@@ -179,7 +179,7 @@ public sealed partial class FikaClient
         _transitQueueTypesThisWindow.Clear();
     }
 
-    /// <summary>Counts one queued transit event for the swap line of the next world.</summary>
+    /// <summary>为下一个世界的切换行统计一个已入队的 transit 事件。</summary>
     internal void NoteTransitEventQueued(TransitEventPacket.ETransitEventType type)
     {
         _transitQueueReceivedThisWindow++;
@@ -199,7 +199,7 @@ public sealed partial class FikaClient
     {
         if (packet.Generation <= _appliedBtrGeneration ||
             (_pendingBtrSpawn != null && packet.Generation < _pendingBtrSpawn.Generation)) return;
-        // Generic packets return to the pool immediately after Execute.
+        // 通用封包在 Execute 之后立即返回池中。
         _pendingBtrSpawn = BtrSpawn.CreateInstance();
         _pendingBtrSpawn.Position = packet.Position;
         _pendingBtrSpawn.Rotation = packet.Rotation;
@@ -215,10 +215,10 @@ public sealed partial class FikaClient
     }
 
     /// <summary>
-    /// (2026-10-26 W28) Shows the BTR view on a client. The native path shows it from its own server-side code, so a
-    /// Fika client receives position, rotation and the sound controller but never the mesh: the vehicle is audible
-    /// and invisible. <c>BTRView._viewVisible</c> and <c>ShowView()</c> exist in the interop surface
-    /// (analysis/_re-btr.txt), so this asks exactly once, and only while the view is still hidden.
+    /// (2026-10-26 W28) 在客户端上显示 BTR 视图。原生路径从其自己的服务器侧代码中显示它，因此
+    /// Fika 客户端能收到位置、旋转和声音控制器，但收不到网格：这辆车有声可闻
+    /// 却不可见。<c>BTRView._viewVisible</c> 和 <c>ShowView()</c> 都存在于 interop 表面中
+    /// （analysis/_re-btr.txt），因此这里恰好请求一次，且只在视图仍然隐藏时请求。
     /// </summary>
     private static void EnsureBtrViewVisible(BTRView view)
     {
@@ -248,8 +248,8 @@ public sealed partial class FikaClient
         _pendingRunddansDateTimes = packet.DateTimeTicks;
         if (_pendingRunddans?.Objects != null)
         {
-            // A state update must not erase an earlier StartedEvent. The host
-            // locks transit for the event even after the generator stops running.
+            // 状态更新不得抹掉更早的 StartedEvent。即使生成器已停止运行，
+            // 主机仍会为该事件锁定 transit。
             foreach (var entry in _pendingRunddans.Objects)
             {
                 if (entry.Value != EventObject.EState.Running) continue;
@@ -316,8 +316,8 @@ public sealed partial class FikaClient
             {
                 if (!IsTransitEventGenerationCurrent(_pendingTransitHistoryGeneration))
                 {
-                    // It was queued before the previous world and never consumed: it cannot describe the
-                    // raid that is running now (analysis/transit-reload-sync).
+                    // 它在上一个世界之前就已入队且从未被消费：它无法描述
+                    // 现在正在运行的 raid（analysis/transit-reload-sync）。
                     LoadSync.Warn("FikaClient.ApplyPendingMapState",
                         "the pending transit history for " + history.ProfileId + " was dropped: it was queued in map-state generation "
                         + _pendingTransitHistoryGeneration + " and this world is generation " + _mapStateGeneration);
@@ -365,10 +365,10 @@ public sealed partial class FikaClient
             {
                 _pendingRunddans.PlayerRaidId = MyPlayer.RaidId;
                 events.Native.State(_pendingRunddans);
-                // State() updates the visible generator state.  Restore the
-                // native durability and absolute game date afterwards so the
-                // first FixedUpdate cannot overwrite a late-join snapshot
-                // with the default values.
+                // State() 会更新可见的生成器状态。之后恢复
+                // 原生耐久度和绝对游戏日期，这样
+                // 第一次 FixedUpdate 就无法用默认值覆盖
+                // 一个迟到加入的快照。
                 if (events.Native.Objects is { } objects)
                 {
                     foreach (var entry in _pendingRunddansDurability ?? new())
@@ -405,9 +405,9 @@ public sealed partial class FikaClient
                     }
                     else if (world.TransitController == null)
                     {
-                        // Transit initialization precedes Runddans initialization.
-                        // A map with Runddans but no transit controller will never
-                        // gain one, so this pending flag must not stay set forever.
+                        // transit 初始化先于 Runddans 初始化。
+                        // 一张有 Runddans 但没有 transit 控制器的地图永远不会
+                        // 获得一个，因此这个待处理标志不能一直保持设置。
                         _pendingRunddansStarted = false;
                     }
                 }
@@ -447,8 +447,8 @@ public sealed partial class FikaClient
             var exists = false;
             foreach (var current in controller._transferContainers)
                 if (current.Id == stash.Id) { exists = true; break; }
-            // A late join can deliver the same snapshot twice; repeated snapshots within this
-            // controller must preserve its live items and owners instead of registering them twice.
+            // 迟到加入可能两次投递同一个快照；在此控制器内重复的快照
+            // 必须保留其存活物品和所有者，而不是把它们注册两次。
             if (!exists) controller.InitTransferContainer(stash, name);
             var grids = new List<Grid>();
             var found = false;

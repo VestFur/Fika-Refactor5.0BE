@@ -7,37 +7,37 @@ using Fika.Core.Main.Utils;
 namespace Fika.Core.Networking.Snapshotting;
 
 /// <summary>
-/// A high-performance, zero-allocation circular buffer designed for <see cref="ISnapshot"/> (<typeparamref name="T"/>) interpolation. <br/>
-/// Utilizes bitwise masking for O(1) insertions and binary search for O(log N) sampling.
+/// 面向 <see cref="ISnapshot"/>（<typeparamref name="T"/>）插值的高性能、零分配环形缓冲区。<br/>
+/// 使用位掩码实现 O(1) 插入，使用二分查找实现 O(log N) 采样。
 /// </summary>
 /// <remarks>
-/// Heavily inspired by the id Tech 3 networking model (used in Quake III Arena) <br/>
-/// Written by <b>Lacyway</b>
+/// 深受 id Tech 3 网络模型（用于 Quake III Arena）启发 <br/>
+/// 作者：<b>Lacyway</b>
 /// </remarks>
 public sealed class PlayerSnapshotter<T> where T : struct, ISnapshot
 {
-    /// <summary> Capacity must be a power of two to allow bitwise wrapping via <see cref="_mask"/>. </summary>
+    /// <summary> 容量必须是 2 的幂，以便通过 <see cref="_mask"/> 做位掩码回绕。 </summary>
     private const int _capacity = 16;
     private const int _mask = _capacity - 1;
 
-    /// <summary> Contiguous memory block of snapshots to maximize CPU L1/L2 cache hits. </summary>
+    /// <summary> 连续的快照内存块，以最大化 CPU L1/L2 缓存命中。 </summary>
     private readonly T[] _buffer = new T[_capacity];
 
-    /// <summary> Clock synchronization manager. </summary>
+    /// <summary> 时钟同步管理器。 </summary>
     private TimeSyncEMA _timeSync;
 
-    /// <summary> Manages the dynamic interpolation delay for this entity. </summary>
+    /// <summary> 管理该实体的动态插值延迟。 </summary>
     private AdaptiveJitterBuffer _adaptiveJitterBuffer;
 
-    /// <summary> Total number of snapshots added over the lifetime of this object. Used to calculate ring indices. </summary>
+    /// <summary> 本对象生命周期内加入的快照总数。用于计算环形索引。 </summary>
     private long _totalAdded;
     private double _lastLocalTime;
     private double _lastRemoteTime;
 
     /// <summary>
-    /// Inserts a new snapshot into the ring buffer and updates the clock synchronization offset.
+    /// 把新的快照插入环形缓冲区，并更新时钟同步偏移。
     /// </summary>
-    /// <param name="snapshot">The state data received from the network. Passed by <see langword="in"/> to avoid copying the big struct.</param>
+    /// <param name="snapshot">从网络收到的状态数据。以 <see langword="in"/> 传入，以避免复制这个大结构体。</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void AddSnapshot(in T snapshot)
     {
@@ -46,25 +46,25 @@ public sealed class PlayerSnapshotter<T> where T : struct, ISnapshot
             var newestIdx = (int)((_totalAdded - 1) & _mask);
             ref readonly var newestSnap = ref _buffer[newestIdx];
 
-            // sequence validation: drop out-of-order or duplicate packets
+            // 序列校验：丢弃乱序或重复的包
             if (snapshot.RemoteTime <= newestSnap.RemoteTime)
             {
                 return;
             }
 
-            // calculate the physical time it took for the packet to arrive versus the expected server interval
+            // 计算该包到达所耗费的实际时间与预期服务器间隔之间的差
             var localDelta = snapshot.LocalTime - _lastLocalTime;
             var remoteDelta = snapshot.RemoteTime - _lastRemoteTime;
 
-            // update the jitter variance
+            // 更新抖动方差
             _adaptiveJitterBuffer.Update(localDelta, remoteDelta);
         }
 
-        // O(1) insertion: direct write to the masked index
+        // O(1) 插入：直接写入被掩码的索引
         _buffer[_totalAdded & _mask] = snapshot;
         _totalAdded++;
 
-        // update the EMA Offset (ServerTime - LocalTime) to synchronize the playback timeline
+        // 更新 EMA 偏移（ServerTime - LocalTime）以同步播放时间线
         _timeSync.Update(snapshot.RemoteTime, snapshot.LocalTime);
 
         _lastLocalTime = snapshot.LocalTime;
@@ -72,14 +72,14 @@ public sealed class PlayerSnapshotter<T> where T : struct, ISnapshot
     }
 
     /// <summary>
-    /// Identifies the two snapshots surrounding the calculated render time. <br/>
-    /// Returns indices instead of struct copies to prioritize CPU speed.
+    /// 定位包围计算出的渲染时间的两个快照。<br/>
+    /// 返回索引而非结构体副本，以优先保证 CPU 速度。
     /// </summary>
-    /// <param name="localTime">Current local system time (usually <see cref="Time.unscaledTimeAsDouble"/>).</param>
-    /// <param name="fromIdx">The index of the snapshot immediately before the render time.</param>
-    /// <param name="toIdx">The index of the snapshot immediately after the render time.</param>
-    /// <param name="t">The 0-1 interpolation factor (lerp amount) between the two snapshots.</param>
-    /// <returns>The <see cref="EBufferState"/> representing whether the buffer is currently interpolating, extrapolating, or stale.</returns>
+    /// <param name="localTime">当前本地系统时间（通常是 <see cref="Time.unscaledTimeAsDouble"/>）。</param>
+    /// <param name="fromIdx">渲染时间之前那个快照的索引。</param>
+    /// <param name="toIdx">渲染时间之后那个快照的索引。</param>
+    /// <param name="t">两个快照之间 0-1 的插值系数（lerp 量）。</param>
+    /// <returns>表示缓冲区当前处于插值、外推还是过期状态的 <see cref="EBufferState"/>。</returns>
     public EBufferState GetInterpolationIndices(double localTime, out int fromIdx, out int toIdx, out float t)
     {
         fromIdx = toIdx = -1;
@@ -91,23 +91,23 @@ public sealed class PlayerSnapshotter<T> where T : struct, ISnapshot
             return EBufferState.Stale;
         }
 
-        // consume the dynamic delay from the AdaptiveJitterBuffer
+        // 从 AdaptiveJitterBuffer 取出动态延迟
         var renderTime = localTime + _timeSync.SmoothOffset - _adaptiveJitterBuffer.CurrentDelay;
         var offset = Math.Max(0, _totalAdded - _capacity);
 
-        // check if we need to extrapolate before searching
+        // 在搜索之前检查是否需要外推
         var newestIdx = (int)((offset + count - 1) & _mask);
         if (renderTime > _buffer[newestIdx].RemoteTime)
         {
             var timeSinceNewest = renderTime - _buffer[newestIdx].RemoteTime;
 
-            // hard limit extrapolation to 100ms. beyond this, predictions diverge too far from reality.
+            // 把外推硬性限制在 100ms 以内。超过这个值，预测会偏离现实太远。
             if (timeSinceNewest > 0.1d)
             {
                 return EBufferState.Stale;
             }
 
-            fromIdx = newestIdx; // use this index's data + velocity * timeSinceNewest
+            fromIdx = newestIdx; // 使用该索引的数据 + velocity * timeSinceNewest
             t = (float)timeSinceNewest;
             return EBufferState.Extrapolating;
         }
@@ -127,7 +127,7 @@ public sealed class PlayerSnapshotter<T> where T : struct, ISnapshot
             }
         }
 
-        // if low is 0, the renderTime is older than our oldest buffered snapshot
+        // 如果 low 为 0，说明 renderTime 比我们缓冲的最旧快照还要老
         if (low == 0)
         {
             return EBufferState.Stale;
@@ -136,7 +136,7 @@ public sealed class PlayerSnapshotter<T> where T : struct, ISnapshot
         fromIdx = (int)((offset + low - 1) & _mask);
         toIdx = (int)((offset + low) & _mask);
 
-        // access via ref readonly to avoid stack-copying the large ISnapshot structs
+        // 通过 ref readonly 访问，以避免在栈上复制大的 ISnapshot 结构体
         ref readonly var snapFrom = ref _buffer[fromIdx];
         ref readonly var snapTo = ref _buffer[toIdx];
 
@@ -147,10 +147,10 @@ public sealed class PlayerSnapshotter<T> where T : struct, ISnapshot
     }
 
     /// <summary>
-    /// Retrieves a reference to a snapshot in the buffer.
+    /// 获取缓冲区中某个快照的引用。
     /// </summary>
-    /// <param name="index">The masked index retrieved from <see cref="GetInterpolationIndices"/>.</param>
-    /// <returns>A <see langword="readonly"/> reference to the snapshot, preventing struct copies.</returns>
+    /// <param name="index">从 <see cref="GetInterpolationIndices"/> 取得的被掩码索引。</param>
+    /// <returns>对快照的 <see langword="readonly"/> 引用，可避免结构体复制。</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref readonly T GetSnapshot(int index)
     {
@@ -158,7 +158,7 @@ public sealed class PlayerSnapshotter<T> where T : struct, ISnapshot
     }
 
     /// <summary>
-    /// Clears the snapshotter and resets it to default
+    /// 清空 snapshotter 并把它重置为默认状态
     /// </summary>
     public void Clear()
     {

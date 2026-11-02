@@ -63,20 +63,20 @@ public class FikaClientGrenade : ObservedGrenade
                 Rigidbody.angularVelocity = _packet.AngularVelocity;
             }
 
-            // Run the native observed-grenade completion first. It is what plays the local
-            // explosion (ObservedGrenade.Expire -> Effects.EmitGrenade + the emission audio).
-            // Pre-setting _networkDone made that native path early-return, which is why the
-            // throwing client and every other client saw and heard no explosion while the
-            // host did. The latch is still set afterwards for Fika's own duplicate-packet
-            // guard (the native code usually sets it itself).
+            // 先执行原生的 ObservedGrenade 完成流程。正是它播放本地
+            // 爆炸（ObservedGrenade.Expire -> Effects.EmitGrenade 以及爆炸音效）。
+            // 预先设置 _networkDone 会让该原生路径提前返回，这正是投掷方
+            // 客户端以及其他所有客户端都看不到也听不到爆炸、而主机端
+            // 却能的原因。该闩锁随后仍会被设置，供 Fika 自己的重复包
+            // 防护使用（原生代码通常会自行设置它）。
             Fika.Core.Main.Utils.FikaGlobals.LogInfo($"[FikaGrenade] client got Done id={Id} pos={_packet.Position} nativeDone={_networkDone}");
             OnDoneFromNet();
             if (!_networkDone)
             {
                 _networkDone = true;
             }
-            // An observed grenade never runs the real fuse: the visible + audible explosion comes only
-            // from the native completion, so enforce it here as well in case that short-circuited.
+            // 被观察的手雷从不运行真正的引信：可见且可听的爆炸只
+            // 来自原生完成流程，因此这里也强制执行一次，以防该流程被短路。
             if (this != null)
             {
                 Fika.Core.Main.Utils.FikaGrenadeExplosion.TryExplode(this, "net-done");
@@ -86,7 +86,7 @@ public class FikaClientGrenade : ObservedGrenade
 
         _hasPacket = true;
         _interpolationRoutine ??= Fika.Core.Il2CppCoroutineExtensions.StartCoroutine(this, SmoothingCoroutine());
-        // If the host's Done packet never arrives the grenade would only die by Expire() (no effect).
+        // 如果主机的 Done 包始终不到达，手雷只会因 Expire() 消亡（没有效果）。
         if (_fuseRoutine == null)
         {
             _fuseRoutine = Fika.Core.Il2CppCoroutineExtensions.StartCoroutine(this, FuseFallbackCoroutine());

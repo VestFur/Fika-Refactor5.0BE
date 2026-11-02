@@ -1,17 +1,17 @@
 ﻿namespace Fika.Core.Networking.Packets;
 
 /// <summary>
-/// Packet that can be used with <see cref="IFikaNetworkManager.RegisterNetReusable{T}(System.Action{T}){T}(System.Action{T})"/> <br/>
-/// Requires manual serialization
+/// 可与 <see cref="IFikaNetworkManager.RegisterNetReusable{T}(System.Action{T}){T}(System.Action{T})"/> 一起使用的数据包 <br/>
+/// 需要手动序列化
 /// </summary>
 public interface INetReusable
 {
     /// <summary>
-    /// Clears all the data in the packet after sending
+    /// 在发送之后清空数据包中的全部数据
     /// </summary>
     public void Clear();
     /// <summary>
-    /// Clears all the data in the packet after receiving
+    /// 在接收之后清空数据包中的全部数据
     /// </summary>
     public void Flush();
 

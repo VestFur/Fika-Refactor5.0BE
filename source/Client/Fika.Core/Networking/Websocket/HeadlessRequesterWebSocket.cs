@@ -98,14 +98,14 @@ public sealed class HeadlessRequesterWebSocket : IDisposable
             catch (OperationCanceledException) when (_stop.IsCancellationRequested) { return; }
             catch (Exception ex) when (_stop.IsCancellationRequested && WebSocketShutdown.IsTeardown(ex))
             {
-                // The socket is being closed while the application quits: the released operations are the
-                // normal end of this loop (see WebSocketShutdown), not a connection problem.
+                // socket 在应用退出时被关闭：这些被释放的操作是
+                // 本循环的正常结束（见 WebSocketShutdown），而不是连接问题。
                 return;
             }
             catch (Exception ex)
             {
-                // Keep the connection waiter pending across transient failures;
-                // its caller owns the request timeout and cancellation.
+                // 在短暂失败期间保持连接等待者处于挂起状态；
+                // 请求超时与取消由其调用方负责。
                 _logger.LogWarning($"Headless requester websocket: {ex.GetBaseException().Message}");
             }
             finally
@@ -139,7 +139,7 @@ public sealed class HeadlessRequesterWebSocket : IDisposable
             }
             catch (Exception exception) when (token.IsCancellationRequested && WebSocketShutdown.IsTeardown(exception))
             {
-                // The socket was closed while this read was pending: the normal end of the loop.
+                // 在此读取仍挂起时 socket 被关闭：这是循环的正常结束。
                 return;
             }
 

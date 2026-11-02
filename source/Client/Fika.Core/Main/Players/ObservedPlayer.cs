@@ -45,9 +45,9 @@ using static Fika.Core.UI.FikaUIGlobals;
 namespace Fika.Core.Main.Players;
 
 /// <summary>
-/// Observed players are any other players in the world for a client, including bots. <br/>
-/// Bots are handled by the server, and other clients send their own data which the server replicates to other clients. <br/>
-/// As a host all <see cref="ObservedPlayer"/>s are only other clients.
+/// 对于客户端来说，观察玩家是世界中除自己以外的任何其它玩家，包括 bot。<br/>
+/// bot 由服务器处理，其它客户端发送自己的数据，再由服务器复制给其它客户端。<br/>
+/// 作为主机时，所有 <see cref="ObservedPlayer"/> 都只是其它客户端。
 /// </summary>
 public sealed class ObservedPlayer : FikaPlayer
 {
@@ -213,12 +213,12 @@ public sealed class ObservedPlayer : FikaPlayer
     private bool _isZombie;
     private Corpse _fikaFinalisedCorpse;
 
-    // (analysis/stutter-pose-reset) The animator flags this player was last given. The three Enable* calls in
-    // ManualStateUpdate used to run on every grounded frame and every player, while the native jump state only
-    // ever calls them on the frame the value changes (JumpStateClass.cs:108/148/200). They are booleans in the
-    // animator, so pushing the same value again is a no-op for the animation - it is pure native call cost
-    // (61 players x 3 calls x every frame). These caches turn the calls into edges; they are invalidated
-    // whenever the player changes state, because another writer (ObservedMountedState) moves the same flags.
+    // （analysis/stutter-pose-reset）上次给该玩家设置的 animator 标志。ManualStateUpdate 中
+    // 那三个 Enable* 调用过去在每个落地帧、对每个玩家都执行，而原生跳跃状态只在
+    // 值发生变化的那一帧调用它们（JumpStateClass.cs:108/148/200）。它们在 animator 中是
+    // 布尔量，所以再次推送同一个值对动画来说就是空操作——纯粹的原生调用开销
+    // （61 个玩家 × 3 个调用 × 每一帧）。这些缓存把调用变成边沿触发；它们会在
+    // 玩家改变状态时失效，因为另一个写入者（ObservedMountedState）会移动同一批标志。
     private bool _pushedJumpFlag;
     private bool _pushedJumpFlagValid;
     private bool _pushedLandingFlag;
@@ -357,7 +357,7 @@ public sealed class ObservedPlayer : FikaPlayer
     }
 
     /// <summary>
-    /// These are redundant on observed players
+    /// 这些在观察玩家上是多余的
     /// </summary>
     private void DisposeObservers()
     {
@@ -470,47 +470,47 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void OnSkillLevelChanged(BaseSkill skill)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void OnWeaponMastered(Mastering masterSkill)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void StartInflictSelfDamageCoroutine()
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void AddStateSpeedLimit(float speedDelta, ESpeedLimit cause)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void UpdateSpeedLimit(float speedDelta, ESpeedLimit cause)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void UpdateSpeedLimitByHealth()
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void UpdateSpeedLimit(float speedDelta, ESpeedLimit cause, float duration)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void UpdatePhones()
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void FaceshieldMarkOperation(FaceShieldComponent armor, bool hasServerOrigin)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void ShotReactions(DamageInfo shot, EBodyPart bodyPart)
@@ -545,7 +545,7 @@ public sealed class ObservedPlayer : FikaPlayer
 
         if (player.IsYourPlayer)
         {
-            // Check for GClass increment
+            // 检查 GClass 增量
             var flag = DamageInfo.DidBodyDamage / HealthController.GetBodyPartHealth(bodyPart, false).Maximum >= 0.6f && HealthController.FindExistingEffect<IBleeding>(bodyPart) != null;
             player.StatisticsManager.OnEnemyDamage(DamageInfo, bodyPart, ProfileId, Side, Profile.Info.Settings.Role,
                 GroupId, HealthController.GetBodyPartHealth(EBodyPart.Common, false).Maximum, flag,
@@ -556,7 +556,7 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void UpdateArmsCondition()
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override bool ShouldVocalizeDeath(EBodyPart bodyPart)
@@ -566,7 +566,7 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void SendHeadlightsPacket(bool isSilent)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void ApplyHitDebuff(float damage, float staminaBurnRate, EBodyPart bodyPartType, EDamageType damageType)
@@ -667,20 +667,20 @@ public sealed class ObservedPlayer : FikaPlayer
         CommonPacket.SubPacket = DamagePacket.FromValue(NetId, damageInfo, bodyPartType, colliderType, armorPlateCollider, absorbed: num);
         FikaSingleton<IFikaNetworkManager>.Instance.SendNetReusable(ref CommonPacket, DeliveryMethod.ReliableOrdered, true);
 
-        // Run this to get weapon skill
+        // 运行此项以获取武器技能
         ManageAggressor(damageInfo, bodyPartType, colliderType);
 
-        // [HitMarker] The shooter's machine never runs ActiveHealthController.ApplyDamage for this
-        // hit (the machine that owns the victim does), so re-issue it locally with zero damage.
+        // [HitMarker] 射击者的机器从不会为这次命中执行 ActiveHealthController.ApplyDamage
+        // （执行它的是拥有受害者的那台机器），因此在这里以零伤害本地重新发出。
         ReportLocalHit(damageInfo, bodyPartType);
 
         return hitInfo;
     }
 
     /// <summary>
-    /// Hands a hit that the local player just registered on this observed player to
-    /// <see cref="LocalHitFeedback"/>, which fires the local hit-feedback hook without applying
-    /// any damage. Calls from another machine's perspective are ignored.
+    /// 把本地玩家刚刚在这个观察玩家身上登记的一次命中交给
+    /// <see cref="LocalHitFeedback"/>，由它触发本地命中反馈钩子而不施加
+    /// 任何伤害。来自其它机器视角的调用会被忽略。
     /// </summary>
     private void ReportLocalHit(DamageInfo damageInfo, EBodyPart bodyPartType)
     {
@@ -695,7 +695,7 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void OnItemAddedOrRemoved(Item item, ItemAddress location, bool added)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void ApplyExplosionDamageToArmor(Il2CppSystem.Collections.Generic.Dictionary<ExplosionDamageInfo, float> armorDamage, DamageInfo DamageInfo)
@@ -760,11 +760,11 @@ public sealed class ObservedPlayer : FikaPlayer
         CommonPacket.SubPacket = DamagePacket.FromValue(NetId, damageInfo, bodyPartType, colliderType, armorPlateCollider, absorbed: num);
         FikaSingleton<IFikaNetworkManager>.Instance.SendNetReusable(ref CommonPacket, DeliveryMethod.ReliableOrdered, true);
 
-        // Run this to get weapon skill
+        // 运行此项以获取武器技能
         ManageAggressor(damageInfo, bodyPartType, colliderType);
 
-        // [HitMarker] Same as ApplyShot: the damage of this hit is applied by the machine that
-        // owns the victim, so the local hook has to be fired here to keep hit feedback alive.
+        // [HitMarker] 与 ApplyShot 相同：这次命中的伤害由拥有受害者的那台
+        // 机器施加，因此必须在本地触发该钩子以维持命中反馈。
         ReportLocalHit(damageInfo, bodyPartType);
 
         return hitInfo;
@@ -772,7 +772,7 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void OnMounting(EFT.MountingPacket.EMountingCommand command)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void ApplyCorpseImpulse()
@@ -795,7 +795,7 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void OnHealthEffectAdded(IHealthEffect effect)
     {
-        // Check for GClass increments
+        // 检查 GClass 增量
         if (effect?.TryCast<IFracture>() is { } fracture && !fracture.WasPaused && FractureSound != null && Singleton<BetterAudio>.Instantiated)
         {
             var options = PlayOptions.Default;
@@ -808,12 +808,12 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void OnHealthEffectRemoved(IHealthEffect effect)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void ConnectSkillManager()
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     #region proceed
@@ -885,17 +885,17 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void OnFovUpdatedEvent(int fov)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void ShowHelloNotification(string sender)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void HealthControllerUpdate(float deltaTime)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void OnPhraseTold(EPhraseTrigger @event, TaggedClip clip, TagBank bank, BaseSpeaker speaker)
@@ -922,7 +922,7 @@ public sealed class ObservedPlayer : FikaPlayer
     }
 
     /// <summary>
-    /// Updates replicated values
+    /// 更新被复制的值
     /// </summary>
     public void ManualStateUpdate(double localTime)
     {
@@ -930,8 +930,8 @@ public sealed class ObservedPlayer : FikaPlayer
 
         
 
-        // The Enable* caches below describe one player state only: after a state change another writer may have
-        // moved the flags (ObservedMountedState does), so the next push is forced.
+        // 下面的 Enable* 缓存只描述一种玩家状态：状态改变后另一个写入者可能
+        // 已经移动了这些标志（ObservedMountedState 就会这样），因此下一次推送会被强制执行。
         if (!_pushedFlagStateValid || CurrentPlayerState.State != _pushedFlagState)
         {
             _pushedFlagState = CurrentPlayerState.State;
@@ -1137,16 +1137,16 @@ public sealed class ObservedPlayer : FikaPlayer
             
         }
 
-        // The speed call stays where it was and keeps running every frame: its body also refreshes the covert
-        // efficiency, which depends on the player's weight and skills and not only on the pushed speed. The
-        // redundant half - the native smoothed-value write with its animator and weapon-sway side effects - is
-        // skipped inside ObservedMovementContext.SetCharacterMovementSpeed.
+        // 速度调用留在原处并继续每帧运行：它的函数体同时还会刷新隐蔽
+        // 效率，而后者取决于玩家的重量和技能，而不只取决于被推送的速度。多余的
+        // 那一半——带 animator 与武器摇摆副作用的原生平滑值写入——已在
+        // ObservedMovementContext.SetCharacterMovementSpeed 内部被跳过。
         MovementContext.SetCharacterMovementSpeed(CurrentPlayerState.MovementSpeed, true);
         
 
-        // (analysis/stutter-pose-reset) 值未变就不写: the native SprintSpeed setter pushes the value into the
-        // animator unconditionally (MovementContext.cs:781-792), and this line used to run for every observed
-        // player on every frame while a sprint speed never changes during a walk or a stand.
+        // （analysis/stutter-pose-reset）值未变就不写：原生 SprintSpeed setter 会无条件把值推入
+        // animator（MovementContext.cs:781-792），而这一行过去会在每次行走或站立期间速度都不会改变的
+        // 情况下，对每个观察玩家、每一帧都执行。
         if (!PoseWriteGuards.Enabled || MovementContext.SprintSpeed != CurrentPlayerState.SprintSpeed)
         {
             MovementContext.SprintSpeed = CurrentPlayerState.SprintSpeed;
@@ -1199,11 +1199,11 @@ public sealed class ObservedPlayer : FikaPlayer
     }
 
     /// <summary>
-    /// (analysis/stutter-pose-reset) 值未变就不写 for the jump flag. The native side is one unconditional call
-    /// into the animator (MovementContext.cs:3852-3855 -> PlayerAnimator.EnableJump) and the native jump state
-    /// only calls it on the frames the value changes (JumpStateClass.cs:108/148/200), so repeating it on every
-    /// grounded frame only buys native calls. The pushed value sequence is unchanged: the first frame of a state
-    /// always pushes (the cache is invalidated on every state change), and after that only real changes do.
+    /// （analysis/stutter-pose-reset）值未变就不写，用于跳跃标志。原生侧是一次无条件调用
+    /// 进入 animator（MovementContext.cs:3852-3855 -> PlayerAnimator.EnableJump），而原生跳跃状态
+    /// 只在值发生变化的那些帧才调用它（JumpStateClass.cs:108/148/200），因此在每个
+    /// 落地帧重复它只是多花原生调用。推送的值序列没有变化：一个状态的第一帧
+    /// 总是推送（缓存会在每次状态变化时失效），此后只有真正的变化才推送。
     /// </summary>
     private void PushJumpFlag(bool enabled)
     {
@@ -1220,9 +1220,9 @@ public sealed class ObservedPlayer : FikaPlayer
     }
 
     /// <summary>
-    /// (analysis/stutter-pose-reset) 值未变就不写 for the landing flag; same reasoning as
-    /// <see cref="PushJumpFlag"/>. The flag is a boolean animation gate: keeping it at the value it already has
-    /// changes nothing for the animation, while re-sending it costs a native call per player per frame.
+    /// （analysis/stutter-pose-reset）值未变就不写，用于落地标志；理由同
+    /// <see cref="PushJumpFlag"/>。该标志是一个布尔动画门：让它保持已有的值
+    /// 对动画没有任何改变，而重复发送它则每个玩家每帧都要付一次原生调用。
     /// </summary>
     private void PushLandingFlag(bool enabled)
     {
@@ -1239,9 +1239,9 @@ public sealed class ObservedPlayer : FikaPlayer
     }
 
     /// <summary>
-    /// (analysis/stutter-pose-reset) 值未变就不写 for the inertia flag. The native movement code does call
-    /// <c>PlayerAnimatorEnableInert</c> every frame in some states, which is the proof that repeating the same
-    /// boolean is harmless - and also the proof that it is not needed: the animator only sees the value.
+    /// （analysis/stutter-pose-reset）值未变就不写，用于惯性标志。原生的移动代码在某些状态下
+    /// 确实每帧都会调用 <c>PlayerAnimatorEnableInert</c>，这既证明了重复同一个
+    /// 布尔量是无害的，也证明了它并非必需：animator 只看到那个值。
     /// </summary>
     private void PushInertFlag(bool enabled)
     {
@@ -1258,10 +1258,10 @@ public sealed class ObservedPlayer : FikaPlayer
     }
 
     /// <summary>
-    /// (analysis/stutter-pose-reset) 值未变就不写 for the movement direction. The native setter is
-    /// unconditional (MovementContext.cs:942-953 -> PlayerAnimator.SetMovementDirection), and a standing or
-    /// idle player keeps the same direction for frame after frame. Reading the value back costs one native
-    /// getter and saves the setter and its animator call whenever the value already matches.
+    /// （analysis/stutter-pose-reset）值未变就不写，用于移动方向。原生 setter 是
+    /// 无条件的（MovementContext.cs:942-953 -> PlayerAnimator.SetMovementDirection），而站立或
+    /// 空闲的玩家会一帧接一帧保持同一个方向。把值读回来只花一次原生
+    /// getter，却能在值已经相同时省掉 setter 及其 animator 调用。
     /// </summary>
     private void PushMovementDirection(Vector2 direction)
     {
@@ -1301,10 +1301,10 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override Corpse CreateCorpse()
     {
-        // [CorpseSync] One corpse per victim. The native death path can still run after Fika
-        // already finalised the death (for example a revival plugin that swallowed the first
-        // Player.OnDead and releases it when its own timer expires); a second corpse component
-        // on the same body would be a duplicate that cannot be looted.
+        // [CorpseSync] 每个受害者只有一具尸体。在 Fika 已经完成
+        // 死亡处理之后，原生死亡路径仍可能运行（例如某个复活插件吞掉了第一次
+        // Player.OnDead，并在自己的计时到期时予以释放）；同一具尸体上出现第二个尸体组件
+        // 会成为一个无法被搜刮的重复尸体。
         if (_fikaFinalisedCorpse != null)
         {
             return _fikaFinalisedCorpse;
@@ -1385,16 +1385,16 @@ public sealed class ObservedPlayer : FikaPlayer
         Singleton<BetterAudio>.Instance.ProtagonistHearingChanged -= (System.Action)UpdateSoundRolloff;
         base.OnDead(damageType);
 
-        // [CorpseSync] The death of a client's observed AI must not depend on the native
-        // Player.OnDead being allowed to run. EFT derives Player.IsAI from AIData.IsAI, which the
-        // game only sets when a BotOwner is attached - a puppet never has one - so every AI check
-        // (the game's own and those of third-party plugins, for example a revival mod that guards
-        // its death hook with "player.IsAI") classifies a remote bot as a human player. Such a
-        // plugin turns the puppet's death into its critical state: its prefix on Player.OnDead
-        // returns false, so Corpse = CreateCorpse(), the animator/character controller shutdown
-        // and GameWorld.UnregisterPlayer never happen on this machine and the victim keeps
-        // crawling, prone and unlootable, while the authoritative machine already has the corpse.
-        // Finish the death here so the victim always ends up dead for everyone.
+        // [CorpseSync] 客户端所观察 AI 的死亡不能依赖于原生
+        // Player.OnDead 是否被允许运行。EFT 从 AIData.IsAI 推导 Player.IsAI，而游戏
+        // 只在挂上 BotOwner 时才设置它——puppet 从来没有 BotOwner——因此每一个 AI 判定
+        // （游戏自身的以及第三方插件的，例如某个用 "player.IsAI" 守卫
+        // 自身死亡钩子的复活 mod）都会把远端 bot 归类为真人玩家。这样的
+        // 插件会把 puppet 的死亡变成它的关键状态：它在 Player.OnDead 上的 prefix
+        // 返回 false，于是 Corpse = CreateCorpse()、animator/character controller 的关闭
+        // 以及 GameWorld.UnregisterPlayer 在这台机器上都不会发生，而受害者会继续
+        // 爬行、卧倒、无法搜刮，权威机器上却早已有尸体了。
+        // 在这里完成死亡处理，这样受害者对所有人来说都必定是死的。
         if (Corpse == null && IsObservedAI && !IsYourPlayer)
         {
             FinaliseObservedAiDeath();
@@ -1421,15 +1421,15 @@ public sealed class ObservedPlayer : FikaPlayer
     }
 
     /// <summary>
-    /// Completes the death of an observed AI whose native <see cref="Player.OnDead"/> was skipped
-    /// on this machine (a third-party prefix returned false).
+    /// 完成一个观察 AI 的死亡处理，其原生 <see cref="Player.OnDead"/> 在本机
+    /// 被跳过了（某个第三方 prefix 返回了 false）。
     /// </summary>
     /// <remarks>
-    /// This is the tail of the native Player.OnDead: the corpse is created from the host's synced
-    /// inventory descriptor (which is also what builds the loot container), the ragdoll takes the
-    /// body over, the puppet stops animating and the player leaves the world. Nothing here applies
-    /// damage or touches the health controller, so it can never duplicate a death or a hit: it
-    /// only runs when the game itself refused to finalise the death it already decided on.
+    /// 这是原生 Player.OnDead 的尾部：尸体依据主机同步过来的
+    /// 背包描述符创建（该描述符同时也是构建战利品容器的依据），ragdoll 接管
+    /// 身体，puppet 停止动画，玩家离开世界。这里不施加
+    /// 任何伤害，也不触碰健康控制器，因此它绝不会重复一次死亡或一次命中：它
+    /// 只在游戏自己拒绝完成它已经做出的死亡判定时才运行。
     /// </remarks>
     private void FinaliseObservedAiDeath()
     {
@@ -1452,8 +1452,8 @@ public sealed class ObservedPlayer : FikaPlayer
         {
                     }
 
-        // Stop the puppet the same way the native OnDead does, otherwise the body keeps being
-        // animated (crawling in a prone pose) next to the corpse that was just created.
+        // 像原生 OnDead 那样停止 puppet，否则身体会继续
+        // 在被刚创建出来的尸体旁边播放动画（以卧倒姿势爬行）。
         try
         {
             EnabledAnimators = 0;
@@ -1506,7 +1506,7 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void TransitInteraction(TransitController controller, int transitPointId, string keyId, EDateTime time)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void HandleDamagePacket(DamagePacket packet)
@@ -1555,7 +1555,7 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void OnBeenKilledByAggressor(IPlayer aggressor, DamageInfo damageInfo, EBodyPart bodyPart, EDamageType lethalDamageType)
     {
-        // Only handle if it was ourselves as otherwise it's irrelevant
+        // 只在是我们自己的情况下处理，否则无关紧要
         if (LastAggressor.IsYourPlayer)
         {
             base.OnBeenKilledByAggressor(aggressor, damageInfo, bodyPart, lethalDamageType);
@@ -1598,7 +1598,7 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void ExternalInteraction()
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void ToggleDowned(bool downed)
@@ -1859,13 +1859,13 @@ public sealed class ObservedPlayer : FikaPlayer
             this._climbAudioController = null;
         }
 
-        // Session humans share Fika's group sentinel, exactly like the local player
-        // (FikaPlayer.SetupMainPlayer). It is the only "same team" signal the game and
-        // third-party consumers have - "SPT Dynamic Maps" reports a player as
-        // "Friendly Player" when Player.GroupId equals the main player's, and the game's group
-        // logic (voice groups, exfil sharing, teammate nameplates) keys off it as well. The
-        // marker categories themselves come from the role/side classification, not from this
-        // value, so sharing it does not collapse PMC/Scav/Boss. Bots keep their own group.
+        // 会话中的真人玩家共享 Fika 的小组哨兵值，与本地玩家完全一样
+        // （FikaPlayer.SetupMainPlayer）。这是游戏与第三方消费者所拥有的唯一的
+        // “同队”信号——“SPT Dynamic Maps”在 Player.GroupId 等于主玩家的 GroupId 时
+        // 会把玩家报告为 “Friendly Player”，而游戏的组队
+        // 逻辑（语音组、撤离共享、队友铭牌）同样以此为键。标记
+        // 类别本身来自角色/阵营分类，而不来自这个
+        // 值，因此共享它不会把 PMC/Scav/Boss 混为一类。bot 保留自己的组。
         if (!IsObservedAI)
         {
             Profile.Info.GroupId = FikaGlobals.FikaGroupId;
@@ -1874,11 +1874,11 @@ public sealed class ObservedPlayer : FikaPlayer
 
         if (IsObservedAI)
         {
-            // SPT 5.0 sends every PMC bot with Profile.Info.Side = Savage (the server rewrites
-            // the side once the dog tag template has been chosen). Present the faction the role
-            // says instead, so side-based consumers such as "SPT Dynamic Maps" see a PMC as a PMC.
-            // This runs after CoopHandler already applied the spawn-time "spawned in session"
-            // handling, so loot semantics are unchanged.
+            // SPT 5.0 发送的每个 PMC bot 都带着 Profile.Info.Side = Savage（服务器在
+            // 选好狗牌模板之后就重写了 side）。这里改为呈现角色所声明的
+            // 阵营，好让“SPT Dynamic Maps”这类依赖 side 的消费者看到一个 PMC 就是 PMC。
+            // 这段代码运行在 CoopHandler 已经应用了生成期“在会话中生成”
+            // 处理之后，因此战利品语义保持不变。
             FikaGlobals.ApplyFactionSide(this, "observedBot");
         }
 
@@ -1910,8 +1910,8 @@ public sealed class ObservedPlayer : FikaPlayer
                 ENotificationDurationType.Default, ENotificationIconType.Friend);
             }
 
-            // Keep the replicated dogtag in the observed inventory. The host
-            // owns its ID and corpse inventory, including during reconnect.
+            // 把复制过来的狗牌保留在观察背包里。主机
+            // 拥有它的 ID 与尸体背包，重连期间也是如此。
         }
     }
 
@@ -1946,10 +1946,10 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void LateUpdate()
     {
-        // (analysis/perf-multiplayer) The engine calls this once per observed player per frame (61 on the
-        // measured client raids, none at all in a solo raid) and the body crosses into native code several
-        // times before it can cull itself, so it is one of the two per-entity frame costs a client owns.
-        // It gets its own slot; 
+        // （analysis/perf-multiplayer）引擎对每个观察玩家每帧调用一次（在实测的
+        // 客户端战局中是 61 次，单人战局里一次都没有），而其函数体在能够自行
+        // 剔除之前要多次跨入原生代码，所以它是客户端所承担的每实体每帧开销之一。
+        // 它拥有自己的槽位；
         try
         {
             DistanceDirty = true;
@@ -1993,12 +1993,12 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void UpdateMuffledState()
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void SendVoiceMuffledState(bool isMuffled)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public void SetMuffledState(bool muffled)
@@ -2021,7 +2021,7 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void LandingAdjustments(float d)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public new void CreateCompass()
@@ -2065,7 +2065,7 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void OnVaulting()
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void SetControllerInsteadRemovedOne(Item removingItem, Callback callback)
@@ -2152,7 +2152,7 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void FixedUpdateTick()
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void OnDestroy()
@@ -2646,8 +2646,8 @@ public sealed class ObservedPlayer : FikaPlayer
             FindKillerWeapon();
         }
 
-        // The corpse of an observed player is rebuilt from the host's inventory descriptor, so
-        // its dog tag is written by the host; 
+        // 观察玩家的尸体是依据主机的背包描述符重建的，所以
+        // 它的狗牌由主机写入；
     }
 
     private void ObservedFBBIKUpdate(float distance, int ikUpdateInterval)

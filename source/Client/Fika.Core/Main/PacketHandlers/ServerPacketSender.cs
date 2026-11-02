@@ -209,7 +209,7 @@ public sealed class ServerPacketSender : MonoBehaviour, IPacketSender
             var abstractPing = PingFactory.FromPingType(pingType, basePing);
             var pingColor = FikaPlugin.Instance.Settings.PingColor.Value;
             pingColor = new(pingColor.r, pingColor.g, pingColor.b, 1);
-            // ref so that we can mutate it if we want to, ex: if I ping a switch I want it at the switch.gameObject.position + Vector3.up
+            // 以 ref 传入，这样需要时我们可以修改它，例如：标记一个开关时，我希望它位于 switch.gameObject.position + Vector3.up
             abstractPing.Initialize(ref hitPoint, userData, pingColor);
 
             NetworkManager.SendGenericPacket(Networking.Packets.Generic.EGenericSubPacketType.Ping,

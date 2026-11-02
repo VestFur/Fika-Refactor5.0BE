@@ -20,8 +20,8 @@ internal sealed class PasscodeResultSyncPatch : ModulePatch
     [PatchPrefix]
     public static void Prefix(ClientLocalPasscodeController __instance, PasscodeTerminal terminal, string passcode, out bool __state)
     {
-        // Native return value means "attempt handled", including a WRONG code.
-        // Capture the code comparison before the native method changes the door state.
+        // 本机返回值表示"尝试已被处理"，包括密码错误的情况。
+        // 在本机方法改变门的状态之前，先把密码比较的结果取出来。
         __state = terminal != null && terminal.IsInteractable &&
             __instance._generatedPasscodes.TryGetValue(terminal.PasscodeId, out var expected) &&
             string.Equals(expected, passcode, System.StringComparison.Ordinal);
@@ -30,20 +30,20 @@ internal sealed class PasscodeResultSyncPatch : ModulePatch
     [PatchPostfix]
     public static void Postfix(Player player, PasscodeTerminal terminal, bool __result, bool __state)
     {
-        // AP (analysis/nonfika-raid-inertness): a passcode terminal is a world interaction every raid has.
-        // RaidInteractionSync is only bound inside a raid of ours, so this was already a no-op outside one;
-        // the guard makes that explicit and names it in the log when it happens.
+        // AP (analysis/nonfika-raid-inertness)：密码终端是每场 raid 都有的世界交互。
+        // RaidInteractionSync 只在我们的 raid 内被绑定，因此在 raid 之外本来就已经是 no-op；
+        // 这个守卫把这一点显式化，并在实际发生时于日志里点明。
         if (FikaRaidGate.Skip("ClientLocalPasscodeController.HandleSubmitPasscode postfix"))
         {
             return;
         }
 
         var handled = __result && __state;
-        // BB (analysis/icebreaker-keypad-door): the one line a host log has to hold for a passcode door - which
-        // attempt it announced, and whether it announced a success.
-        // BU (analysis/icebreaker-keypad-3): every machine whose world holds the game's own local controller runs
-        // this check, so the same method is also the native verdict of a client - the line says which one it is,
-        // and only a host announces anything (BroadcastPasscodeResult refuses on every other role).
+        // BB (analysis/icebreaker-keypad-door)：密码门在主机日志里必须留下的那一行 —— 它宣告了第几次
+        // 尝试，以及它宣告的是否为成功。
+        // BU (analysis/icebreaker-keypad-3)：每个 world 里持有游戏自身本地控制器的机器都会执行
+        // 这项检查，因此同一个方法也是客户端那边的本机裁决结果 —— 该行会说明它是哪一方，
+        // 而且只有主机会宣告任何东西（BroadcastPasscodeResult 在其他所有角色上都会拒绝）。
         var server = FikaBackendUtils.IsServer;
         
         RaidInteractionSync.BroadcastPasscodeResult(player, terminal, handled);
@@ -75,19 +75,19 @@ internal sealed class CutsceneStartSyncPatch : ModulePatch
         Il2CppSystem.Collections.Generic.List<int> __1)
     {
         if (RaidInteractionSync.World == null) return true;
-        // (2026-10-18) The host narrows the native seat table to the players the session really has, otherwise
-        // the "waiting for players" counter waits for seats nobody owns and the process never ends.
+        // (2026-10-18) 主机把本机座位表收窄成会话真正拥有的玩家，否则
+        // "waiting for players" 计数器会一直等待无人拥有的座位，进程永远不结束。
         if (FikaBackendUtils.IsServer) RaidInteractionSync.FilterViewersToSession(__1);
         if (!FikaBackendUtils.IsClient) return true;
-        // (analysis/cutscene-client-native-trigger) The one local start that is let through: this machine's own
-        // trigger asked for a cutscene the host never dispatched, so the bridge granted that very cutscene to the
-        // native call. Everything after this return is native - the process, its seat table and the local viewer's
-        // playback - which is the point: the client runs the same trigger chain the host runs.
+        // (analysis/cutscene-client-native-trigger) 唯一被放行的一次本地启动：本机自己的
+        // 触发器请求了主机从未派发的过场，因此桥把那一场过场授予了
+        // 这次本机调用。这个 return 之后的一切都是本机行为 —— 进程、它的座位表以及本地观看者的
+        // 播放 —— 这正是重点：客户端运行的触发链与主机完全相同。
         if (FikaLocalCutsceneTrigger.GrantNativeStart(__0, __1)) return true;
-        // Local quest/trigger handlers may still call the offline server controller.
-        // Only a host packet - or the granted local trigger above - starts the client's native playback. The
-        // dropped request is handed to the bridge, which re-runs it natively when the host stays silent
-        // (analysis/cutscene-client-native-trigger).
+        // 本地的任务/触发器处理仍可能调用离线服务器控制器。
+        // 只有主机报文 —— 或上面被授予的本地触发器 —— 才会启动客户端的本机播放。
+        // 被丢弃的请求被交给桥，当主机保持沉默时由桥以本机方式重新运行它
+        // （analysis/cutscene-client-native-trigger）。
         FikaLocalCutsceneTrigger.NoteNativeRequest(__0);
         __result = null;
         
@@ -99,11 +99,11 @@ internal sealed class CutsceneStartSyncPatch : ModulePatch
     {
         RaidInteractionSync.StartCutscene(__result, forceMode, initTime);
         
-        // (analysis/cutscene-client-native-trigger) The second half of a granted local start: a process this
-        // machine created itself has to be handed to this machine's own client controller. On a host that step is
-        // the broadcast above; on a client the offline mode used to own it and Fika switched that off
-        // (RaidInteractionSync.ConfigureControllers), so the bridge raises the same native event the host packet
-        // would have raised - with this machine's own process id.
+        // (analysis/cutscene-client-native-trigger) 被授予的本地启动的后半部分：本机自己
+        // 创建的进程必须交给本机自己的客户端控制器。在主机上这一步是
+        // 上面的广播；在客户端上，这一步以前归离线模式所有，而 Fika 把它关掉了
+        // （RaidInteractionSync.ConfigureControllers），因此桥会抛出与主机报文本会抛出的
+        // 相同的本机事件 —— 并带上本机自己的进程 id。
         if (FikaBackendUtils.IsClient && __result != null)
             RaidInteractionSync.PlayLocalNativeProcess(__result);
     }
@@ -121,8 +121,8 @@ internal sealed class CutsceneViewCompleteSyncPatch : ModulePatch
         if (RaidInteractionSync.World == null) return;
         if (__instance._currentCutsceneClientOnly)
         {
-            // Client-only finals still reach the ClientPlayer cast in this build.
-            // They have no server process to acknowledge, but need native cleanup.
+            // 在此构建中，仅客户端侧的收尾仍会走到 ClientPlayer 的转换。
+            // 它们没有需要确认的服务器进程，但仍需要本机清理。
             skip = true;
             return;
         }
@@ -131,9 +131,9 @@ internal sealed class CutsceneViewCompleteSyncPatch : ModulePatch
             __state = __instance._cutsceneProcessId;
             
         }
-        // The native network branch casts the local player to ClientPlayer, while
-        // FikaPlayer derives from LocalPlayer. Keep its UI/effect cleanup and replace
-        // only the completion notification (the same cleanup is used for skip=true).
+        // 本机网络分支会把本地玩家转换成 ClientPlayer，而
+        // FikaPlayer 派生自 LocalPlayer。保留它的 UI/特效清理，只替换
+        // 完成通知（skip=true 时用的是同一套清理）。
         skip = true;
     }
 
@@ -146,19 +146,19 @@ internal sealed class CutsceneViewCompleteSyncPatch : ModulePatch
 }
 
 /// <summary>
-/// (2026-10-21) THE ONE END OF A CUTSCENE, ON EVERY MACHINE: <c>EndCutscene(cutsceneId, cutsceneProcessId,
-/// process, playersId, skip)</c> (interop, 5 args) is the call both roles end a process through - the host through
-/// its own <c>OnUpdate</c>, a client through <see cref="FikaLocalCutsceneTrigger"/>. Its postfix therefore carries
-/// the two things every machine has to do when a process ends, and it does them <b>before</b> any role-specific
-/// bookkeeping can return early:
+/// (2026-10-21) 过场唯一的结束点，位于每一台机器上：<c>EndCutscene(cutsceneId, cutsceneProcessId,
+/// process, playersId, skip)</c>（interop，5 个参数）是两种角色结束进程时共同走的调用 —— 主机经由
+/// 自己的 <c>OnUpdate</c>，客户端经由 <see cref="FikaLocalCutsceneTrigger"/>。因此它的 postfix 承担了
+/// 每台机器在进程结束时都必须做的两件事，并且是在任何角色专属的
+/// 记账逻辑能提前返回<b>之前</b>完成它们：
 /// <list type="bullet">
-/// <item>the sniper-zone immunity the start granted is released for the viewers of the process and for this
-/// machine's own player - the host kept its entry for the rest of the raid because the old release was mapped
-/// from the session packet's NetIds, and the host's own raid id is not one of them;</item>
-/// <item>the host announces the end to the peers (see <see cref="RaidInteractionSync.EndCutscene"/>).</item>
+/// <item>启动时授予的狙击区免疫，会为本次进程的观众以及本机
+/// 自己的玩家解除 —— 主机以前会在 raid 余下的时间里留着它的条目，因为旧的解除逻辑是按
+/// 会话报文的 NetId 映射的，而主机自己的 raid id 并不在其中；</item>
+/// <item>主机向各 peer 宣告结束（见 <see cref="RaidInteractionSync.EndCutscene"/>）。</item>
 /// </list>
-/// The parameter names are the interop ones (<c>cutsceneProcessId</c>, <c>playersId</c>, <c>skip</c>), taken from
-/// the native stack trace of this build.
+/// 参数名用的是 interop 的名字（<c>cutsceneProcessId</c>、<c>playersId</c>、<c>skip</c>），取自
+/// 本构建的本机堆栈回溯。
 /// </summary>
 internal sealed class CutsceneEndSyncPatch : ModulePatch
 {
@@ -171,13 +171,13 @@ internal sealed class CutsceneEndSyncPatch : ModulePatch
 }
 
 /// <summary>
-/// (2026-10-21) THE MAP-TRIGGER CUTSCENE: <c>CutscenesServerController.StartCutsceneWithTime</c> (interop
-/// :94633, <c>cutsceneId, playersId, fixedTime, forceMode</c>) is the entry the location triggers use, and it
-/// does not pass the <c>StartCutscene</c> call the session broadcast hangs on - so a cutscene a trigger starts
-/// on the host never reached a client. The process it just created is taken from the controller's own table
-/// (<c>_cutsceneProcesses</c>, :94638) by cutscene id among the ones this session has not broadcast yet, and
-/// handed to the one broadcast of <see cref="RaidInteractionSync.StartCutscene"/> - same packet, same seat
-/// mapping, no second protocol.
+/// (2026-10-21) 地图触发器触发的过场：<c>CutscenesServerController.StartCutsceneWithTime</c>（interop
+/// :94633，<c>cutsceneId, playersId, fixedTime, forceMode</c>）是位置触发器所用的入口，而它
+/// 不经过会话广播所挂靠的 <c>StartCutscene</c> 调用 —— 因此触发器在主机上启动的过场
+/// 从未到达客户端。它刚刚创建的进程会从控制器自己的表
+/// （<c>_cutsceneProcesses</c>，:94638）中、按 cutscene id 在本会话尚未广播过的那些里取出，然后
+/// 交给 <see cref="RaidInteractionSync.StartCutscene"/> 的那一次广播 —— 同样的报文、同样的座位
+/// 映射，没有第二套协议。
 /// </summary>
 internal sealed class CutsceneStartWithTimeSyncPatch : ModulePatch
 {
@@ -222,11 +222,11 @@ internal sealed class CutsceneStartWithTimeSyncPatch : ModulePatch
 }
 
 /// <summary>
-/// (2026-10-21) THE LOCAL VIEWER'S END: <c>CutscenesClientController.TimelineShowed</c> (interop :94368) is the
-/// moment this machine's timeline finished showing, i.e. the "viewed" half of the lifecycle of a process this
-/// machine created itself (<see cref="FikaLocalCutsceneTrigger"/>). The process id is captured before the native
-/// body runs (the postfixes of this file already rewrite what it announces), so the notification names the
-/// process that is actually running.
+/// (2026-10-21) 本地观看者的结束点：<c>CutscenesClientController.TimelineShowed</c>（interop :94368）是本机
+/// 的 timeline 播放完毕的时刻，也就是本机自己创建的某个进程生命周期中的"已观看"那一半
+/// （<see cref="FikaLocalCutsceneTrigger"/>）。进程 id 在本机方法体执行之前就被捕获
+/// （本文件的各个 postfix 已经改写了它宣告的内容），因此该通知指出的是
+/// 真正在运行的那个进程。
 /// </summary>
 internal sealed class CutsceneViewedLocalProcessPatch : ModulePatch
 {
@@ -248,23 +248,23 @@ internal sealed class CutsceneViewedLocalProcessPatch : ModulePatch
         try { if (string.IsNullOrEmpty(cutscene) && __instance != null) cutscene = __instance._cutsceneId; }
         catch (System.Exception) { }
         FikaLocalCutsceneTrigger.NoteViewed(__state, cutscene);
-        // (2026-10-21) The end-of-cutscene safety net of the immunity release: this machine's own viewer just
-        // finished the timeline, which is the one end event both roles are guaranteed to run. It is only armed
-        // here - the release itself happens in RaidInteractionSync.Tick, a moment later, and the primary release
-        // (the postfix of the native EndCutscene) keeps precedence.
+        // (2026-10-21) 免疫解除的过场结束兜底网：本机自己的观看者刚刚
+        // 播放完 timeline，而这是两种角色都保证会执行的唯一结束事件。它在这里只是被
+        // 布防 —— 解除本身稍后在 RaidInteractionSync.Tick 中发生，而主解除路径
+        // （本机 EndCutscene 的 postfix）仍然优先。
         RaidInteractionSync.NoteLocalTimelineShown(__state);
     }
 }
 
-// (analysis/cutscene-view-and-end) The two per-frame methods the whole cutscene clock depends on. The round-16
-// host log proves nobody calls the server one (its elapsed time stands still while the process is alive), and the
-// same question for the client controller - whose per-frame step is what starts and finishes this machine's own
-// scene - could only be answered from the outside: it is never entered (no phase=view line exists anywhere) and
-// nothing is ever rendered. These patches count only: no return value, no parameter and no instance is touched,
-// so the game behaves exactly as it did. Their line is "phase=gate:ticks ... server engine=N bridge=M ..." and it
-// splits every call into "a native caller" and "this bridge".
-// Fika replaces the single-player driver on both host and peers. Preserve SPT's
-// implementation outside a bound Fika world.
+// (analysis/cutscene-view-and-end) 整个过场时钟所依赖的两个逐帧方法。round-16
+// 主机日志证明没有人调用服务器那一个（进程存活期间它的已用时间一动不动），而对客户端控制器的
+// 同一个问题 —— 它的逐帧步骤正是启动和结束本机自己那场
+// 场景的东西 —— 只能从外部回答：它从未被进入（哪里都不存在 phase=view 行），
+// 也从未渲染过任何东西。这些补丁只做计数：不触碰返回值、不触碰参数、也不触碰实例，
+// 因此游戏的行为与原来完全一致。它们的行是 "phase=gate:ticks ... server engine=N bridge=M ..."，
+// 它把每次调用拆成"本机调用者"和"本桥"。
+// Fika 在主机与各 peer 上都替换了单人驱动。在未绑定的 Fika world 之外
+// 保留 SPT 的实现。
 internal sealed class FinalMissionClientStartGuardPatch : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.Method(
@@ -282,28 +282,28 @@ internal sealed class FinalMissionClientTickGuardPatch : ModulePatch
     [PatchPrefix]
     public static bool Prefix() => !FikaFinalMissionDirector.Bound;
 }
-// ICEBREAKER-CUTSCENE-BRIDGE (analysis/icebreaker-cutscene): the client controller's timeline bank is
-// repaired at the head of FikaClient.ApplyPendingRaidInteractions itself, before the queued host cutscene
-// packets are drained - the same call this file used to place with a Harmony prefix. The prefix never
-// installed: the patch manager detours through IL2CPP, and a method of the Fika assembly itself has no IL2CPP
-// detour ("CutsceneClientBankTickPatch: NotSupportedException ... requires an IL2CPP detour", round-15 host
-// log, analysis/cutscene-play-and-end/REPORT.md). The call site is in FikaClient.RaidInteractions.cs.
+// ICEBREAKER-CUTSCENE-BRIDGE (analysis/icebreaker-cutscene)：客户端控制器的 timeline bank
+// 就在 FikaClient.ApplyPendingRaidInteractions 的开头被修补，早于排队的过场主机报文
+// 被消费 —— 也就是本文件以前用一个 Harmony prefix 放置的那次调用。那个 prefix 从未
+// 安装成功：补丁管理器是通过 IL2CPP 做 detour 的，而 Fika 程序集自身的方法没有 IL2CPP
+// detour（"CutsceneClientBankTickPatch: NotSupportedException ... requires an IL2CPP detour"，round-15 主机
+// 日志，analysis/cutscene-play-and-end/REPORT.md）。调用点现在位于 FikaClient.RaidInteractions.cs。
 
 // =============================================================================================================
-// BB (analysis/icebreaker-keypad-door): the keypad chain of one raid, named and repaired.
+// BB (analysis/icebreaker-keypad-door)：一场 raid 的键盘（keypad）链路，被点名并被修补。
 //
-// The report of this round is "the icebreaker keypad cannot be used on a client". The game's own submit guard
-// refuses such a code with "Tried to enter code on location without passcodes" before any Fika packet exists,
-// so the host never learns about the attempt and the door never opens although the host knows the code. None of
-// the three patches below filters, moves or replaces a native interaction:
-//   * PasscodeMenuDiagPatch   postfix, reads only  - the interaction menu of a PasscodeTerminal (offered/empty);
-//   * PasscodePanelShowDiagPatch prefix, void      - the native passcode panel of this machine opened;
-//   * PasscodeSubmitRelayPatch postfix, ref __result - a code the game refused is handed to the host through the
-//     very packet the native event path uses. Only on a client, only inside a bound Fika raid, and only after
-//     that host has answered this client at least once; with KeypadDiag.RepairEnabled=false it never acts.
+// 本轮的反馈是"破冰船键盘在客机上无法使用"。游戏自己的提交守卫在任何 Fika 报文
+// 出现之前，就用 "Tried to enter code on location without passcodes" 拒绝这样的密码，
+// 因此主机永远不知道这次尝试，门也永远不会打开，尽管主机知道那个密码。下面三个
+// 补丁都不过滤、不移动、也不替换任何本机交互：
+//   * PasscodeMenuDiagPatch   postfix，只读   - PasscodeTerminal 的交互菜单（offered/empty）；
+//   * PasscodePanelShowDiagPatch prefix，void    - 本机上的本机密码面板被打开；
+//   * PasscodeSubmitRelayPatch postfix，ref __result - 游戏拒绝的密码会经由本机事件路径所用的
+//     那个报文交给主机。仅在客户端上、仅在已绑定的 Fika raid 内，且仅在该主机
+//     至少应答过本客户端一次之后；当 KeypadDiag.RepairEnabled=false 时它永不动作。
 // =============================================================================================================
 
-/// <summary>The shared text of the keypad lines: door, controller kind and the two states the guard decides on.</summary>
+/// <summary>键盘各行的共用文本：门、控制器种类，以及守卫据以判断的两个状态。</summary>
 internal static class PasscodeText
 {
     internal static string Door(PasscodeTerminal terminal)
@@ -333,7 +333,7 @@ internal static class PasscodeText
         }
     }
 
-    /// <summary>How many passcode entries the location of this controller carries (null = none at all).</summary>
+    /// <summary>该控制器所在位置携带多少个密码条目（null = 完全没有）。</summary>
     internal static string Settings(ClientPasscodeController controller)
     {
         try
@@ -361,10 +361,10 @@ internal static class PasscodeText
 }
 
 /// <summary>
-/// The native interaction menu of one keypad: a postfix that only reads the state the native dispatcher
-/// returned. Nothing about the actions, their order or their delegates is touched - the menu of this machine
-/// cannot change because of this patch, it only names it. "result=empty" is the line that proves the report's
-/// "the keypad offers no interaction here" while "result=offered" rules the menu out as the cause.
+/// 某个键盘的本机交互菜单：一个只读取本机调度器所返回状态的 postfix。
+/// 关于动作、它们的顺序或它们的委托，没有任何东西被触碰 —— 本机的菜单
+/// 不会因为这个补丁而改变，它只是给它命名。"result=empty" 这一行证明了反馈中所说的
+/// "这里键盘没有提供交互"，而 "result=offered" 则排除了菜单是原因。
 /// </summary>
 internal sealed class PasscodeMenuDiagPatch : ModulePatch
 {
@@ -417,9 +417,9 @@ internal sealed class PasscodeMenuDiagPatch : ModulePatch
 }
 
 /// <summary>
-/// The native keypad screen of this machine: its Show is what the interaction action of a PasscodeTerminal
-/// calls, so one line here answers "did the entry screen of this report ever open on this machine, and with
-/// which controller". A void prefix cannot skip or alter the call.
+/// 本机的本机键盘界面：它的 Show 正是 PasscodeTerminal 的交互动作所调用的东西，
+/// 因此这里的一行就回答了"本次反馈中的输入界面是否在本机打开过，用的是
+/// 哪个控制器"。void prefix 无法跳过或改变这次调用。
 /// </summary>
 internal sealed class PasscodePanelShowDiagPatch : ModulePatch
 {
@@ -451,12 +451,12 @@ internal sealed class PasscodePanelShowDiagPatch : ModulePatch
 }
 
 /// <summary>
-/// The shared entry of both native controllers (the local one and the network one Fika installs on a client)
-/// and the one place that separates "the game handles this code" from "the game refused it". The prefix names
-/// the state the guard decides on; the postfix - only when the game refused a code, only on a client of a bound
-/// Fika raid whose host has answered this machine at least once - sends that very code to the host and reports
-/// the attempt as handled: the same contract the native network path has (the panel waits for the host's answer
-/// and plays its animation when it arrives). Outside that case nothing is changed.
+/// 两个本机控制器（本地那一个，以及 Fika 在客户端上安装的网络那一个）的共用入口，
+/// 也是把"游戏处理了这个密码"与"游戏拒绝了它"区分开的唯一地方。prefix 点出
+/// 守卫据以判断的状态；postfix —— 仅在游戏拒绝了某个密码时、仅在已绑定
+/// Fika raid 且其主机至少应答过本机一次的客户端上 —— 会把那个密码发给主机，并把这次尝试
+/// 报为已处理：与本机网络路径相同的契约（面板等待主机的应答，
+/// 并在应答到达时播放它的动画）。在该情形之外，不做任何改变。
 /// </summary>
 internal sealed class PasscodeSubmitRelayPatch : ModulePatch
 {
@@ -494,10 +494,10 @@ internal sealed class PasscodeSubmitRelayPatch : ModulePatch
         {
             if (__result)
             {
-                // BU (analysis/icebreaker-keypad-3): when this machine's world checks codes itself (the game's
-                // own local controller on the host's table), the answer is already made - and a code the native
-                // check ACCEPTED is reported to the host, which repeats the same native check for its own copy
-                // of the keypad and announces it to every peer. Fika transports that fact, it does not judge it.
+                // BU (analysis/icebreaker-keypad-3)：当本机的 world 自己校验密码时（即游戏自身的
+                // 本地控制器位于主机的表上），答案已经产生 —— 而本机检查所
+                // 接受（ACCEPTED）的密码会被上报给主机，主机对它自己那份键盘
+                // 重复同样的本机检查，并把它宣告给每个 peer。Fika 只是传输这个事实，并不对它做判断。
                 if (KeypadCodeSync.MatchesLocal(__instance, terminal?.PasscodeId, passcode))
                 {
                     var detail = "door=" + PasscodeText.Door(terminal) + " input=" + (passcode?.Length ?? 0)
@@ -520,8 +520,8 @@ internal sealed class PasscodeSubmitRelayPatch : ModulePatch
                 return;
             }
 
-            // A code the local check of this machine refused is a finished decision: the relay below exists for
-            // the fallback shape only (a world that checks through the host because it holds no table of its own).
+            // 本机本地检查所拒绝的密码是一个已完成的决定：下面的转发只为那种回退形态
+            // 而存在（即某个 world 因为自己没有表而通过主机来校验）。
             if (KeypadCodeSync.IsLocal(__instance))
             {
                 
@@ -534,8 +534,8 @@ internal sealed class PasscodeSubmitRelayPatch : ModulePatch
                 return;
             }
 
-            // The host owns this attempt now: report it as handled so the native panel waits for the result event
-            // instead of repeating a submit the game keeps refusing (the loop this round's log shows 13 times).
+            // 这次尝试现在归主机所有：把它报为已处理，好让本机面板等待结果事件，
+            // 而不是重复提交一个游戏一直拒绝的请求（本轮日志里这个循环出现了 13 次）。
             __result = true;
             
         }

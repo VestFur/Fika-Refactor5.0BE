@@ -4,8 +4,8 @@ using TMPro;
 using UnityEngine.UI;
 
 /// <summary>
-/// Controller for the Players Name Plate. <br/>
-/// Created by: ssh_
+/// 玩家名牌的控制器。 <br/>
+/// 创建者：ssh_
 /// </summary>
 public class PlayerPlateUI : MonoBehaviour
 {

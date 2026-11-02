@@ -10,8 +10,8 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.ArmorSystem;
 
 /// <summary>
-/// This skips recalculation of armors since Fika caches them <br/>
-/// It also removes the check for dev balaclava
+/// 这里跳过护甲重算，因为 Fika 已缓存护甲 <br/>
+/// 它还移除了对开发者巴拉克拉瓦的检查
 /// </summary>
 internal class Player_ProceedDamageThroughArmor_Patch : ModulePatch
 {

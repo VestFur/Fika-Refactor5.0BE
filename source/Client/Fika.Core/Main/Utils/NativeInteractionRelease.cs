@@ -6,17 +6,17 @@ using Fika.Core.Main.Patches.World;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Releases the native presentation state a ground loot pickup can leave behind.
-/// The pickup runs inside EFT.PickUpState (EPlayerState.Pickup) plus the
-/// animator's interaction queue. When the driving inventory operation never
-/// reports a terminal status that state stays entered, and the player keeps its
-/// restrictions: no view rotation, no movement, no crouch and no interaction
-/// prompts, while the inventory and firing keep working. Prone temporarily
-/// clears it because it forces a state change, and the queued TakeItem
-/// interaction then denies every later pickup for the rest of the raid.
-/// Every step is guarded: this only restores presentation state and never
-/// touches items, addresses or operations, so loot cannot be duplicated or
-/// rolled back by it.
+/// 释放地面战利品拾取可能遗留的原生表现状态。
+/// 拾取过程运行在 EFT.PickUpState(EPlayerState.Pickup)以及
+/// 动画器的交互队列之中。当驱动的库存操作始终
+/// 没有报告终止状态时,该状态会一直保持进入态,玩家也就继续受其
+/// 限制:不能转视角、不能移动、不能蹲下、没有交互
+/// 提示,而库存与开火仍然可用。趴下会暂时
+/// 清除它,因为趴下强制触发状态切换,而排队的 TakeItem
+/// 交互会在本场 raid 的剩余时间里拒绝之后每一次拾取。
+/// 每一步都有守卫:这里只恢复表现状态,绝不
+/// 触碰物品、地址或操作,因此无法借它复制或回滚
+/// 战利品。
 /// </summary>
 internal static class NativeInteractionRelease
 {
@@ -35,9 +35,9 @@ internal static class NativeInteractionRelease
                 return;
             }
 
-            // Only touch anything when the player really is stuck in a pickup or
-            // interaction state. A healthy operation failure must not cancel a
-            // legitimate reload, door, examine or throw animation.
+            // 只有在玩家确实卡在拾取或交互状态中时才做任何处理。
+            // 一次正常的操作失败不得取消合法的
+            // 换弹、开门、检视或投掷动画。
             var stuckState = movementContext.CurrentState is MovementState currentState
                 && currentState.Name is EPlayerState.Pickup or EPlayerState.Loot or EPlayerState.DoorInteraction
                     or EPlayerState.BreachDoor or EPlayerState.Plant;
@@ -73,14 +73,14 @@ internal static class NativeInteractionRelease
                 return;
             }
 
-            // [LootDiag] (analysis/pickup-stuck-again): this is the "a stuck pickup was
-            // detected and recovered" line. Read together with the pickup-request and the
-            // operation result lines it says whether the recovery released a take that was
-            // still in flight, which is exactly the reported "it recovered but I still
-            // cannot take the item".
-            // analysis/pickup-auto-fallback (Z4): it now also names the pickup path this machine
-            // is on (native / bypass(cfg) / bypass(auto)) and how often it switched, so one grep
-            // answers "did the automatic switch happen, and which take did it release".
+            // [LootDiag](analysis/pickup-stuck-again):这一行就是「检测到卡住的拾取
+            // 并已恢复」。与拾取请求行和操作结果行一起阅读
+            // 即可判断恢复是否释放了一次仍在进行中的
+            // 拿取——而这正是被报告的那个「它恢复了,但我仍然
+            // 拿不起这件物品」。
+            // analysis/pickup-auto-fallback (Z4):现在还同时记录本机所处的拾取
+            // 路径(native / bypass(cfg) / bypass(auto))以及它切换过多少次,因此一次 grep
+            // 就能回答「自动切换是否发生过,以及它释放了哪一次拿取」。
             GroundLootPickup.NoteRelease(reason);
                         FikaGlobals.LogWarning($"NativeInteractionRelease[{reason}]: releasing the interaction state " +
                 $"(state={movementContext.CurrentState?.Name}, blocked={blockedInteractions}, animatorStuck={animatorStuck}, " +
@@ -99,10 +99,10 @@ internal static class NativeInteractionRelease
                     {
                         state.Cancel();
 
-                        // Cancel() only leaves the state once its own callback finishes;
-                        // when that callback was lost the player stays locked forever (no
-                        // rotation, no movement, no interaction prompts). Force the state
-                        // machine back to Idle, exactly like a pose change does.
+                        // Cancel() 只有在其自身回调结束后才会离开该状态;
+                        // 一旦那个回调丢失,玩家就会永久被锁住(不能
+                        // 转视角、不能移动、没有交互提示)。把状态机
+                        // 强制拉回 Idle,完全和一次姿态切换所做的一样。
                         var states = movementContext.States;
                         if (states != null && movementContext.CurrentState?.Name != EPlayerState.Idle
                             && states.TryGetValue(EPlayerState.Idle, out var idleState) && idleState != null)
@@ -145,23 +145,23 @@ internal static class NativeInteractionRelease
     }
 
     /// <summary>
-    /// [InvDiag] (2026-10-27, T3) Polls the two interaction-lock signals that nothing else polls.
+    /// [InvDiag](2026-10-27, T3)轮询两个其他任何地方都不轮询的交互锁定信号。
     /// <para>
-    /// <see cref="Release(Player, string)"/> treats three signals as "the player is stuck": a pickup/loot/door/plant
-    /// movement state, <c>MovementContext.CanInteract</c> held, and the animator's interaction schedule denied
-    /// (<c>AnimatedInteractions.CanInteract</c> false or <c>IsScheduleDenied</c>). Only the first one is ever polled on
-    /// a timer (<c>CoopGame.RepairLocalInteractionState</c>, and only for Pickup/Plant), and
-    /// <c>CoopGame.RepairLocalInventoryState</c> defines "blocked" as <c>ItemController.Locked</c> /
-    /// <c>IsChangingWeapon</c> - neither of the other two. So a ground loot take whose inventory operation was never
-    /// answered can leave the animator queue denied while the player is otherwise idle: no interaction prompt appears,
-    /// every later take is refused by the native interaction gate, and no watchdog ever called Release. That is the
-    /// reported "the client locks up after taking an item".
+    /// <see cref="Release(Player, string)"/> 把三种信号视为「玩家卡住」:拾取/战利品/门/种植的
+    /// 移动状态、<c>MovementContext.CanInteract</c> 被持续占用,以及动画器的交互调度被拒绝
+    /// (<c>AnimatedInteractions.CanInteract</c> 为 false 或 <c>IsScheduleDenied</c>)。其中只有第一种会被
+    /// 定时轮询(<c>CoopGame.RepairLocalInteractionState</c>,且仅针对 Pickup/Plant),而
+    /// <c>CoopGame.RepairLocalInventoryState</c> 把「阻塞」定义为 <c>ItemController.Locked</c> /
+    /// <c>IsChangingWeapon</c>——这两个都不是。于是一次地面战利品拿取如果其库存操作从未
+    /// 得到应答,就可能让动画器队列在玩家其余方面空闲时仍被拒绝:交互提示不再出现,
+    /// 之后每次拿取都被原生交互门拒绝,而且没有任何看门狗调用过 Release。
+    /// 这就是被报告的那个「客户端在拿起一件物品之后就锁死」。
     /// </para>
     /// <para>
-    /// Only runs while the movement state is Idle: every legitimate holder of either signal is a movement state of its
-    /// own (door, approach, breach, stationary, pickup, plant), so an idle player with one of them still set has no
-    /// owner for it. The budget is the same reasoning the pickup budget uses - a native take finishes its animation
-    /// well inside two seconds, so eight seconds of an idle denied schedule is not a running interaction.
+    /// 只在移动状态为 Idle 时运行:这两个信号各自的合法持有者都是某个
+    /// 自身的移动状态(门、靠近、破门、静止、拾取、种植),因此一个处于空闲却仍置着其中之一的
+    /// 玩家没有任何持有者。预算用的是与拾取预算相同的推理——原生的拿取会在
+    /// 两秒内很好地完成其动画,因此空闲状态下八秒的拒绝调度并不属于正在进行的交互。
     /// </para>
     /// </summary>
     internal static void WatchLostInteractionSchedule(Player player, int pendingOperations, float now)
@@ -186,18 +186,18 @@ internal static class NativeInteractionRelease
             return;
         }
 
-        // Every legitimate holder of either signal is a movement state of its own, so an Idle player with one of
-        // them still set has no owner for it.
+        // 这两个信号各自的合法持有者都是某个自身的移动状态,因此一个处于 Idle 却仍
+        // 置着其中之一的玩家没有任何持有者。
         if (state.Name != EPlayerState.Idle)
         {
             _lostScheduleSince = 0f;
             return;
         }
 
-        // A usable item (meds, food, surgery, a range finder) runs its own animation through the hands controller while
-        // the movement state stays Idle and legitimately denies the interaction schedule for many seconds. Release()
-        // would cancel it, so those hands are never touched by this watch - the same exclusion the inventory gate
-        // watchdog makes. A hands switch in progress is the hands watchdog's business, not this one's.
+        // 可用物品(药品、食物、手术包、测距仪)会在移动状态保持 Idle 期间通过手部控制器
+        // 运行自己的动画,并会合法地拒绝交互调度许多秒。Release()
+        // 会取消它,因此该守视从不触碰这些手部状态——这与库存门
+        // 看门狗所做的排除相同。正在进行的手部切换属于手部看门狗的事,不归这里管。
         try
         {
             var hands = player.HandsController;
@@ -261,7 +261,7 @@ internal static class NativeInteractionRelease
             return;
         }
 
-        // Keep the timestamp so a release that did not help runs again after the same budget instead of every frame.
+        // 保留时间戳,使未能奏效的释放按同样的预算之后再跑一次,而不是每帧都跑。
         _lostScheduleSince = now;
         FikaGlobals.LogWarning($"[InvDiag] lost-interaction-schedule: idle for {heldFor:0.0}s with " +
             $"gate={(gateHeld ? "held" : "open")}, animatorDenied={scheduleDenied}, " +
@@ -269,7 +269,7 @@ internal static class NativeInteractionRelease
         Release(player, "lost-interaction-schedule");
     }
 
-    /// <summary>[InvDiag] A schedule/budget only ever belongs to one local player of one raid.</summary>
+    /// <summary>[InvDiag] 调度/预算永远只属于一场 raid 中的一名本地玩家。</summary>
     internal static void ResetLostScheduleWatch()
     {
         _lostSchedulePlayer = IntPtr.Zero;

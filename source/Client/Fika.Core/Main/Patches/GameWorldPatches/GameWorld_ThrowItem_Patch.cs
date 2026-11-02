@@ -19,20 +19,20 @@ public sealed class GameWorld_ThrowItem_Patch : ModulePatch
     [PatchPostfix]
     public static void Postfix(LootItem __result, IPlayer player)
     {
-        // AP (analysis/nonfika-raid-inertness): a throw is the chain the 2026-10-12 23:52 crash ended in
-        // (the native discard of a weapon, "Perform UNLOAD" as its last line). In a raid that is not a
-        // Fika raid this postfix used to attach an injected component (ItemPositionSyncer) to a *native*
-        // loot item and to resolve a FikaClient/FikaServer that does not exist here - the component then
-        // faulted on every physics frame and never destroyed itself. Outside our own raid nothing of ours
-        // touches the dropped item; the line [Inert] skip=GameWorld.ThrowItem postfix is the evidence.
+        // AP（analysis/nonfika-raid-inertness）：抛掷正是 2026-10-12 23:52 那次崩溃最终落入的调用链
+        // （武器的原生丢弃，"Perform UNLOAD" 作为它的最后一行）。在不是 Fika 突袭的
+        // 突袭里，这个后置过去会把注入的组件（ItemPositionSyncer）挂到一个*原生*
+        // 战利品物品上，并解析这里并不存在的 FikaClient/FikaServer——该组件随后
+        // 每个物理帧都出错，而且从不销毁自己。在我们自己的突袭之外，我们的任何东西都
+        // 不碰被丢下的物品；[Inert] skip=GameWorld.ThrowItem 后置这一行就是证据。
         if (FikaRaidGate.Skip("GameWorld.ThrowItem postfix"))
         {
             return;
         }
 
-        // ThrowItem returns a LootItem wrapper for native objects under
-        // IL2CPP. Resolve the observed subtype through the native identity;
-        // a CLR `is` check can otherwise miss the network position hook.
+        // ThrowItem 对 IL2CPP 下的原生对象返回一个 LootItem
+        // 包装器。通过原生身份解析被观测的子类型；
+        // CLR 的 `is` 检查否则可能错过网络位置钩子。
         if (__result?.TryCast<ObservedLootItem>() is { } observedLootItem)
         {
             if (player.IsYourPlayer || player.IsAI)

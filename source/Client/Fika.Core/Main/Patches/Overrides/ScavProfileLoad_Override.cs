@@ -14,12 +14,12 @@ internal class ScavProfileLoad_Override : ModulePatch
     [PatchPrefix]
     private static void PatchPrefix(ref string profileId, Profile savageProfile, EFT.TarkovApplication __instance)
     {
-        // SPT can enter OnGameEnd from a cancelled/failed raid before the
-        // secondary Scav profile has been created. Keep the native PMC id in
-        // that path instead of dereferencing a missing profile and aborting
-        // the result/save coroutine. GameWorld.Dispose can also reset
-        // ClientType before this callback, so scope the override to the
-        // profile captured by this Fika raid rather than the network state.
+        // SPT 可能在次要 Scav 档案创建之前，就从被取消/失败的战局
+        // 进入 OnGameEnd。在该路径上保留原生 PMC id，
+        // 而不是去解引用一个缺失的档案并中止
+        // 结果/存档协程。GameWorld.Dispose 也可能在该回调之前
+        // 重置 ClientType，因此把这个重写限定在
+        // 本次 Fika 战局捕获的档案上，而不是网络状态上。
         var descriptor = RaidEndProfile.ProfileDescriptor;
         if (__instance?._raidSettings != null &&
             !__instance._raidSettings.IsPmc &&

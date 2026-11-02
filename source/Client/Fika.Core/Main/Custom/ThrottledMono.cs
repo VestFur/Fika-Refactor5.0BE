@@ -1,8 +1,8 @@
 namespace Fika.Core.Main.Custom;
 
 /// <summary>
-/// An abstract MonoBehaviour that throttles the frequency of <see cref="Tick"/> calls
-/// based on a specified <see cref="UpdateRate"/>.
+/// 一个抽象 MonoBehaviour，它限制 <see cref="Tick"/> 的调用频率，
+/// 频率由指定的 <see cref="UpdateRate"/> 决定。
 /// </summary>
 public abstract class ThrottledMono : MonoBehaviour
 {
@@ -10,8 +10,8 @@ public abstract class ThrottledMono : MonoBehaviour
 
 
     /// <summary>
-    /// Gets the number of ticks per second. <br/>
-    /// E.g., a value of 10 means <see cref="Tick"/> is called 10 times per second.
+    /// 获取每秒的 tick 次数。<br/>
+    /// 例如，值 10 表示 <see cref="Tick"/> 每秒被调用 10 次。
     /// </summary>
     [Il2CppInterop.Runtime.Attributes.HideFromIl2Cpp]
     public abstract float UpdateRate { get; }
@@ -20,12 +20,12 @@ public abstract class ThrottledMono : MonoBehaviour
     private float _tickTimer;
 
     /// <summary>
-    /// Called when the script instance is being loaded.
-    /// Initializes the tick interval based on <see cref="UpdateRate"/>. <br/>
-    /// If you override this, ensure you call the base implementation or <see cref="ThrottledMono"/> will not function correctly.
+    /// 在脚本实例被加载时调用。
+    /// 基于 <see cref="UpdateRate"/> 初始化 tick 间隔。<br/>
+    /// 若你重写此方法，请务必调用基类实现，否则 <see cref="ThrottledMono"/> 将无法正常工作。
     /// </summary>
     /// <remarks>
-    /// <see cref="_secondsPerTick"/> is assigned during <see cref="Awake"/>.
+    /// <see cref="_secondsPerTick"/> 在 <see cref="Awake"/> 期间赋值。
     /// </remarks>
     protected virtual void Awake()
     {
@@ -33,8 +33,8 @@ public abstract class ThrottledMono : MonoBehaviour
     }
 
     /// <summary>
-    /// Unity callback called every frame.
-    /// Accumulates unscaled delta time and calls <see cref="Tick"/> when the interval elapses.
+    /// 每一帧都会被调用的 Unity 回调。
+    /// 累加未缩放增量时间，并在间隔到点时调用 <see cref="Tick"/>。
     /// </summary>
     private void Update()
     {
@@ -47,8 +47,8 @@ public abstract class ThrottledMono : MonoBehaviour
     }
 
     /// <summary>
-    /// Called at the throttled interval defined by <see cref="UpdateRate"/>.
-    /// Implement this method to define custom tick behavior.
+    /// 在 <see cref="UpdateRate"/> 所定义的限制间隔上调用。
+    /// 实现此方法以定义自定义的 tick 行为。
     /// </summary>
     [Il2CppInterop.Runtime.Attributes.HideFromIl2Cpp]
     public abstract void Tick();

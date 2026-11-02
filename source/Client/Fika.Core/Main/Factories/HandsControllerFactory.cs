@@ -10,10 +10,10 @@ using Fika.Core.Main.Utils;
 namespace Fika.Core.Main.Factories;
 
 /// <summary>
-/// Used to create custom <see cref="Player.ItemHandsController"/>s for the client that are used for networking
+/// 用于为客户端创建自定义的 <see cref="Player.ItemHandsController"/>，供网络同步使用
 /// </summary>
-/// <param name="player">The <see cref="FikaPlayer"/> to initiate the controller on.</param>
-/// <param name="item">The <see cref="EFT.InventoryLogic.Item"/> to add to the controller.</param>
+/// <param name="player">要初始化该控制器的 <see cref="FikaPlayer"/>。</param>
+/// <param name="item">要添加到该控制器上的 <see cref="EFT.InventoryLogic.Item"/>。</param>
 internal sealed class HandsControllerFactory(ObservedPlayer player, Item item = null, KnifeComponent knifeComponent = null)
 {
     public ObservedPlayer Player = player;
@@ -26,9 +26,9 @@ internal sealed class HandsControllerFactory(ObservedPlayer player, Item item = 
     public int AnimationVariant;
 
     /// <summary>
-    /// Creates a <see cref="ObservedFirearmController"/>
+    /// 创建一个 <see cref="ObservedFirearmController"/>
     /// </summary>
-    /// <returns>A new <see cref="ObservedFirearmController"/> or null if the action failed.</returns>
+    /// <returns>新的 <see cref="ObservedFirearmController"/>；操作失败时为 null。</returns>
     public Player.FirearmController CreateObservedFirearmController()
     {
         if (Item?.TryCast<Weapon>() is { } weapon)
@@ -41,9 +41,9 @@ internal sealed class HandsControllerFactory(ObservedPlayer player, Item item = 
     }
 
     /// <summary>
-    /// Creates a <see cref="ObservedGrenadeController"/>
+    /// 创建一个 <see cref="ObservedGrenadeController"/>
     /// </summary>
-    /// <returns>A new <see cref="ObservedGrenadeController"/> or null if the action failed.</returns>
+    /// <returns>新的 <see cref="ObservedGrenadeController"/>；操作失败时为 null。</returns>
     public Player.GrenadeHandsController CreateObservedGrenadeController()
     {
         if (Item?.TryCast<ThrowWeap>() is { } grenade)
@@ -56,9 +56,9 @@ internal sealed class HandsControllerFactory(ObservedPlayer player, Item item = 
     }
 
     /// <summary>
-    /// Creates a <see cref="ObservedQuickGrenadeController"/>
+    /// 创建一个 <see cref="ObservedQuickGrenadeController"/>
     /// </summary>
-    /// <returns>A new <see cref="ObservedQuickGrenadeController"/> or null if the action failed.</returns>
+    /// <returns>新的 <see cref="ObservedQuickGrenadeController"/>；操作失败时为 null。</returns>
     public Player.QuickGrenadeThrowHandsController CreateObservedQuickGrenadeController()
     {
         if (Item?.TryCast<ThrowWeap>() is { } grenade)
@@ -71,9 +71,9 @@ internal sealed class HandsControllerFactory(ObservedPlayer player, Item item = 
     }
 
     /// <summary>
-    /// Creates a <see cref="ObservedKnifeController"/>
+    /// 创建一个 <see cref="ObservedKnifeController"/>
     /// </summary>
-    /// <returns>A new <see cref="ObservedKnifeController"/> or null if the action failed.</returns>
+    /// <returns>新的 <see cref="ObservedKnifeController"/>；操作失败时为 null。</returns>
     public Player.KnifeController CreateObservedKnifeController()
     {
         if (KnifeComponent != null)
@@ -86,9 +86,9 @@ internal sealed class HandsControllerFactory(ObservedPlayer player, Item item = 
     }
 
     /// <summary>
-    /// Creates a <see cref="ObservedMedsController"/>
+    /// 创建一个 <see cref="ObservedMedsController"/>
     /// </summary>
-    /// <returns>A new <see cref="ObservedMedsController"/> or null if the action failed.</returns>
+    /// <returns>新的 <see cref="ObservedMedsController"/>；操作失败时为 null。</returns>
     public Player.MedsController CreateObservedMedsController()
     {
         if (FoodItem != null)

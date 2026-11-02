@@ -8,7 +8,7 @@ using SPTushonka.Reflection.Patching;
 
 namespace Fika.Core.UI.Patches;
 
-/// <summary>Preserves Fika's localized connection stages in the SPT 5 progress view.</summary>
+/// <summary>在 SPT 5 的进度视图中保留 Fika 已本地化的连接阶段。</summary>
 public sealed class FikaMatchingStatus_Patch : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(MatchingProgressView), nameof(MatchingProgressView.UpdateStatus));

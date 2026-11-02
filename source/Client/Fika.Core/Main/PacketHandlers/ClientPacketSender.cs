@@ -49,11 +49,11 @@ public class ClientPacketSender : MonoBehaviour, IPacketSender
     {
         get
         {
-            // (analysis/perf-multiplayer) The same conjunction, cheapest and least often true first. The ping
-            // key is false on virtually every frame, and every predicate behind it is an il2cpp read (the
-            // player, the preloader console, the game status), so putting the key test in front removes up to
-            // six native reads per frame from a client's frame - the game's frame every second of a raid.
-            // Only the order changes: all predicates are side-effect free reads of the same values.
+            // (analysis/perf-multiplayer) 同样的合取条件，把最便宜、
+            // 最少成立的判断放在最前面。ping 键在几乎每一帧上都是 false，
+            // 而它后面的每个谓词都是一次 il2cpp 读取（玩家、预加载控制台、游戏状态），
+            // 所以把键测试提到最前，每帧最多能从客户端的帧里省掉六次原生读取——对客户端来说，
+            // 这就是突袭中每秒都在跑的游戏帧。改变的只是顺序：所有谓词都是对相同值的无副作用读取。
             return FikaPlugin.Instance.Settings.UsePingSystem.Value
                 && Input.GetKey(FikaPlugin.Instance.Settings.PingButton.Value.MainKey)
                 && _lastPingTime < DateTime.Now.AddSeconds(-3)
@@ -96,8 +96,8 @@ public class ClientPacketSender : MonoBehaviour, IPacketSender
     }
 
     /// <summary>
-    /// (analysis/perf-round2) The state sender is one slot of the frame-cost probe: this is where the client
-    /// serialises and sends its own player state at 'Send Rate' Hz, on the main thread.
+    /// (analysis/perf-round2) 状态发送器是帧开销探针中的一个槽位：客户端正是在这里，
+    /// 在主线程上以 'Send Rate' Hz 的速率序列化并发送自己的玩家状态。
     /// </summary>
     protected void Update()
     {
@@ -230,7 +230,7 @@ public class ClientPacketSender : MonoBehaviour, IPacketSender
             var abstractPing = PingFactory.FromPingType(pingType, basePing);
             var pingColor = FikaPlugin.Instance.Settings.PingColor.Value;
             pingColor = new(pingColor.r, pingColor.g, pingColor.b, 1);
-            // ref so that we can mutate it if we want to, ex: if I ping a switch I want it at the switch.gameObject.position + Vector3.up
+            // ref 是为了在需要时能修改它，例如：给某个开关打 ping 时，我希望它的位置在 switch.gameObject.position + Vector3.up
             abstractPing.Initialize(ref hitPoint, userData, pingColor);
 
             NetworkManager.SendGenericPacket(Networking.Packets.Generic.EGenericSubPacketType.Ping,

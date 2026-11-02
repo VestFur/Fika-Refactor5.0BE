@@ -5,7 +5,7 @@ using Fika.Core.Networking.Pooling;
 namespace Fika.Core.Networking.Packets.Generic;
 
 /// <summary>
-/// Packet used for many different things to reduce packet bloat
+/// 用于承载多种不同内容以减少数据包膨胀的包
 /// </summary>
 public sealed class GenericPacket : INetReusable
 {
@@ -23,8 +23,8 @@ public sealed class GenericPacket : INetReusable
         NetId = reader.GetInt();
         Type = reader.GetEnum<EGenericSubPacketType>();
         SubPacket = GenericSubPacketPoolManager.Instance.GetPacket<IPoolSubPacket>(Type);
-        // (2026-10-26 W22) Unknown sub-packet type (a peer on a different build): the pool reports it and returns
-        // null. Skipping the body leaves this packet inert instead of throwing inside the network poll loop.
+        // (2026-10-26 W22) 未知的子包类型（对端使用不同构建）：池会报告该情况并返回
+        // null。跳过方法体可让该包保持惰性，而不会在网络轮询循环里抛出异常。
         if (SubPacket == null)
         {
             reader.SkipBytes(reader.AvailableBytes);

@@ -24,17 +24,17 @@ public sealed class TarkovApplication_LocalGamePreparer_Patch : ModulePatch
     [PatchPrefix]
     public static async void Prefix(TarkovApplication __instance)
     {
-        // Keep the native LocalGameMatching state machine intact. In IL2CPP,
-        // replacing its returned Task and invoking a copied trampoline changes
-        // the initialization order inside LoadMapAndData (the map unload
-        // controllers are not reached). The official 5.0 plugin uses an
-        // async-void preparation prefix and lets the native method continue.
+        // 保持原生 LocalGameMatching 状态机完整。在 IL2CPP 中，
+        // 替换它返回的 Task 并调用复制出来的 trampoline 会改变
+        // LoadMapAndData 内部的初始化顺序（地图卸载
+        // 控制器不再被走到）。官方 5.0 插件使用的是
+        // async-void 形式的准备前置，让原生方法继续执行。
         if (FikaBackendUtils.ClientType == EClientType.None)
             return;
 
-        // A new raid start owns a clean failure state: without this, the reason an earlier attempt
-        // recorded kept aborting every later start at CreateFikaGameCore ("The raid could not be
-        // started: <old reason>"), including host raids. A failure of this attempt still wins.
+        // 新的突袭启动拥有干净的失败状态：没有这一点，先前某次尝试
+        // 记录的原因会不断中止之后每一次启动，卡在 CreateFikaGameCore（“The raid could not be
+        // started: <old reason>”），包括主机突袭。本次尝试的失败仍然优先。
         FikaBackendUtils.ClearLeftoverJoinFailure();
 
         var isServer = FikaBackendUtils.IsServer;
@@ -46,11 +46,11 @@ public sealed class TarkovApplication_LocalGamePreparer_Patch : ModulePatch
         }
         catch (Exception exception)
         {
-            // This prefix is async void and the native method body keeps running while it
-            // awaits, so a swallowed failure here used to let the raid start continue with a
-            // network manager that was never created or connected: the Fika loading screen
-            // then sits at 0 % and the raid start throws further down the line. Mark the
-            // attempt as failed, so the raid start can abort with the real reason.
+            // 这个前置是 async void，原生方法体在它等待期间会
+            // 继续运行，所以这里吞掉一次失败曾让突袭启动带着一个
+            // 从未创建、从未连接的网络管理器继续下去：Fika 加载界面
+            // 随后停在 0 %，突袭启动在更后面抛异常。把这
+            // 次尝试标记为失败，好让突袭启动能以真实原因中止。
             FikaBackendUtils.MarkJoinFailed("The Fika network preparation failed: " + exception.Message, exception);
             Logger.LogError($"LocalGameMatching preparation failed: {exception}");
             

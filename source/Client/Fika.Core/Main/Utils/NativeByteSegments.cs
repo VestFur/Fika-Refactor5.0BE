@@ -5,7 +5,7 @@ namespace Fika.Core;
 
 internal static class NativeByteSegments
 {
-    // Copy the payload slice; transport readers and Dissonance both recycle buffers.
+    // 复制载荷切片；传输层的读取端和 Dissonance 都会回收缓冲区。
     public static Il2CppSystem.ArraySegment<byte> ToNative(this ArraySegment<byte> source)
     {
         var buffer = new Il2CppStructArray<byte>(source.Count);

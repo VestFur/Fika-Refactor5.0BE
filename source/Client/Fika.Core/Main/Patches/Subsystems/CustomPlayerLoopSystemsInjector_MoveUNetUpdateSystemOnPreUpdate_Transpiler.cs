@@ -5,7 +5,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.Subsystems;
 
 /// <summary>
-/// Prevents logic that is never used from being injected into the <see cref="UnityEngine.LowLevel.PlayerLoop"/>
+/// 阻止把从未使用的逻辑注入到 <see cref="UnityEngine.LowLevel.PlayerLoop"/> 中
 /// </summary>
 internal class CustomPlayerLoopSystemsInjector_MoveUNetUpdateSystemOnPreUpdate_Transpiler : ModulePatch
 {

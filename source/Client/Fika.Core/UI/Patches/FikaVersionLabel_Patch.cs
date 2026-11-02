@@ -10,7 +10,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.UI.Patches;
 
 /// <summary>
-/// Originally developed by SPT team
+/// 最初由 SPT 团队开发
 /// </summary>
 public class FikaVersionLabel_Patch : ModulePatch
 {
@@ -62,8 +62,8 @@ public class FikaVersionLabel_Patch : ModulePatch
             _version.Major = $"{FikaPlugin.FikaVersion} {_versionLabel}";
         }
 
-        // Version.Create can run before PreloaderUI has finished Awake. Keep
-        // the version data now; the Awake postfix applies the visible label.
+        // Version.Create 可能在 PreloaderUI 完成 Awake 之前就执行。现在先
+        // 保留版本数据；由 Awake 后置补丁应用可见的标签。
         if (preloader == null || preloader._alphaVersionLabel == null) return;
         preloader._alphaVersionLabel.LocalizationKey = "{0}";
         preloader._alphaVersionText = label;

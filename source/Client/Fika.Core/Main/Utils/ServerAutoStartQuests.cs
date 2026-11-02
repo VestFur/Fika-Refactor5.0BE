@@ -6,14 +6,14 @@ using EFT.Quests;
 
 namespace Fika.Core.Main.Utils;
 
-/// <summary>Tracks only quest accepts explicitly requested by an active backend response.</summary>
+/// <summary>仅跟踪由活动后端响应显式请求的任务接受。</summary>
 internal static class ServerAutoStartQuests
 {
     private static readonly Dictionary<IntPtr, Dictionary<string, int>> Pending = new();
 
     /// <summary>
-    /// Drops the per-controller pending tables at a world teardown (analysis/transit-crash-unload): the keys
-    /// are native quest controller addresses of the raid that ended. Returns the number of controllers dropped.
+    /// 在世界拆除时（analysis/transit-crash-unload）丢弃按控制器划分的待处理表：这些键是
+    /// 已结束突袭中原生任务控制器的地址。返回被丢弃的控制器数量。
     /// </summary>
     internal static int ClearForWorldTeardown()
     {

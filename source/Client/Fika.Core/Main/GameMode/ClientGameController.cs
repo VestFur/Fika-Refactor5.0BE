@@ -99,8 +99,8 @@ public class ClientGameController : BaseGameController
         var networkManager = FikaSingleton<IFikaNetworkManager>.Instance;
         var client = FikaSingleton<FikaClient>.Instance;
         var initialPlayerCount = Math.Max(1, networkManager.PlayerAmount);
-        // The host sends player-count updates on disconnect. A late join must
-        // not expand the barrier established when this client began loading.
+        // 主机在断线时发送玩家数更新。迟到加入不得
+        // 扩大本客户端开始加载时建立的屏障。
         int ExpectedPlayers() => Math.Max(1, Math.Min(initialPlayerCount, networkManager.PlayerAmount));
         int ExpectedHumans() => Math.Max(0, ExpectedPlayers() - (FikaBackendUtils.IsHeadlessGame ? 1 : 0));
         void EnsureConnected()
@@ -112,18 +112,18 @@ public class ClientGameController : BaseGameController
 #if DEBUG
         Logger.LogWarning("Client: Waiting for coopHandler.AmountOfHumans < expected players, expected: " + ExpectedHumans());
 #endif
-        // Judgement line (analysis/loading-screen-sync): the client's side of the same barrier. It waits
-        // for the characters (the other humans) and, in the second loop, for the host's ready count.
+        // 判定行 (analysis/loading-screen-sync)：同一屏障的客户端一侧。它等待
+        // 角色（其他真人玩家），并在第二个循环中等待主机的就绪计数。
         //
-        // What ends this wait, in this order:
-        //   * EnsureConnected - the transport (LiteNetLib's own thread keeps the connection and its acks
-        //     alive even while the host's main thread is busy loading a map, so "not connected" is the
-        //     only proof that the host is really gone);
-        //   * the ceiling from LoadSyncGate, which is longer inside a transit reload window - a connected
-        //     host that never makes progress cannot be waited for forever;
-        //   * a long application-level silence is *reported* (warning) but never ends the wait by itself.
-        // That split is what keeps a slow host alive: the fixed 40 s cap that aborted the 2026-10-11
-        // 18:58 transit join was an application-level stopwatch, not a liveness check.
+        // 结束这次等待的情况，按顺序如下：
+        //   * EnsureConnected——传输层（LiteNetLib 自身的线程会在主机主线程忙于加载地图
+        //     时仍保持连接及其 ack 存活，因此 "未连接" 是
+        //     主机确实消失的唯一证据）；
+        //   * LoadSyncGate 给出的上限，在 transit 重载窗口内该上限更长——
+        //     一个从不取得进展的已连接主机不能被永远等待下去；
+        //   * 长时间的应用层静默会被*报告*（警告），但绝不会自行结束等待。
+        // 正是这种区分让一个缓慢的主机得以存活：中止了 2026-10-11
+        // 18:58 那次 transit 加入的固定 40 秒上限是一个应用层秒表，而不是存活检查。
         var charactersStartedAt = UnityEngine.Time.realtimeSinceStartup;
         var charactersCeiling = LoadSyncGate.ClientCeilingSeconds(FikaBackendUtils.IsTransit);
         var nextCharacterReport = 0f;
@@ -254,8 +254,8 @@ public class ClientGameController : BaseGameController
     }
 
     /// <summary>
-    /// The progress this machine has published for itself, for the [LoadSync] lines ("local=92.5").
-    /// Never throws and never blocks: the screen is a pure managed read.
+    /// 本机为自身发布的进度，用于 [LoadSync] 行（"local=92.5"）。
+    /// 从不抛异常也从不阻塞：该界面是一次纯托管读取。
     /// </summary>
     private static string DescribeLocalProgress()
     {
@@ -282,7 +282,7 @@ public class ClientGameController : BaseGameController
     }
 
     /// <summary>
-    /// Gets the weather from the host
+    /// 从主机获取天气
     /// </summary>
     /// <returns></returns>
     private async Task GetWeather()
@@ -347,11 +347,11 @@ public class ClientGameController : BaseGameController
 
     private bool CheckSpawnTogether()
     {
-        // (2026-10-19) Labyrinth: the five密室 are the map's whole point, so the group never spawns together
-        // there - by default, on a direct join and on a transit alike. The raid setting stays the explicit
-        // override: turning 'Random Labyrinth Spawns' off restores the plain 'spawn together' behaviour, and a
-        // raid setting that already asks for separate places is honoured as well. Every other map keeps the
-        // old default (together unless the setting says otherwise).
+        // (2026-10-19) Labyrinth：五个密室正是这张地图的全部意义，因此小队在那里从不一起生成
+        // ——默认如此，直接加入和 transit 加入都一样。raid 设置仍是显式的
+        // 覆盖手段：关闭 'Random Labyrinth Spawns' 会恢复朴素的 "一起生成" 行为，而一个
+        // 已经要求分开位置的 raid 设置同样会被遵从。其他每张地图保持
+        // 旧的默认值（一起生成，除非设置另有说明）。
         if (string.Equals(RaidSettings.SelectedLocation.Id, "labyrinth", StringComparison.OrdinalIgnoreCase))
         {
             return !FikaPlugin.Instance.Settings.RandomLabyrinthSpawns
@@ -375,13 +375,13 @@ public class ClientGameController : BaseGameController
     }
 
     /// <summary>
-    /// Waits for the host to finish its own raid initialisation (HostLoaded, i.e. the host set
-    /// FikaServer.RaidInitialized at the end of its CoopGame.InitPlayer).
+    /// 等待主机完成其自身的 raid 初始化（HostLoaded，即主机在其
+    /// CoopGame.InitPlayer 末尾设置了 FikaServer.RaidInitialized）。
     ///
-    /// Bounded by silence, not by a stopwatch: a host that keeps answering InformationPackets is still
-    /// loading its own copy of the raid and abandoning it would abort a join that is only slow (the
-    /// mistake that killed the 2026-10-11 18:58 transit join after a fixed 40 s). A host that stops
-    /// answering is a dead session, and the client reports it as such.
+    /// 以静默为界，而不是以秒表为界：仍在应答 InformationPackets 的主机
+    /// 仍在加载它自己那份 raid，放弃它会中止一次仅仅是慢的加入（
+    /// 即那个在固定 40 秒后杀死 2026-10-11 18:58 transit 加入的错误）。停止
+    /// 应答的主机就是一个死会话，而客户端会照此报告。
     /// </summary>
     public async Task WaitForHostToLoad()
     {
@@ -408,8 +408,8 @@ public class ClientGameController : BaseGameController
         {
             _abstractGame.SetMatchmakerStatus(LocaleUtils.UI_WAIT_FOR_HOST_INIT.Localized());
 
-            // The transport is the liveness check: a host whose main thread is busy keeps the connection
-            // (and its acks) alive from LiteNetLib's own thread, a dead host does not.
+            // 传输层就是存活检查：主线程忙碌的主机会通过 LiteNetLib 自身的线程
+            // 保持连接（及其 ack）存活，而死掉的主机不会。
             if (client.ServerConnection?.ConnectionState != ConnectionState.Connected)
             {
                 throw new InvalidOperationException(
@@ -474,8 +474,8 @@ public class ClientGameController : BaseGameController
         {
             client.SendData(ref packet, DeliveryMethod.ReliableOrdered);
             await Task.Delay(TimeSpan.FromSeconds(1));
-            // WaitForHostInit clears LootItems so stale data cannot be reused.
-            // It remains null until the host descriptor arrives.
+            // WaitForHostInit 会清除 LootItems，因此过期数据无法被复用。
+            // 在主机描述符到达之前它保持为 null。
             if (!HasReceivedLoot && (LootItems == null || LootItems.Count < 1))
             {
                 await Task.Delay(TimeSpan.FromSeconds(2));
@@ -505,8 +505,8 @@ public class ClientGameController : BaseGameController
             attempts++;
             if (attempts % 10 == 0)
             {
-                // A stalled exfil request used to be invisible: the client simply
-                // stayed on the "retrieving exfiltration data" screen forever.
+                // 卡住的撤离请求过去是看不见的：客户端就那样
+                // 永远停留在 "正在获取撤离数据" 界面上。
                 FikaGlobals.LogWarning($"InitExfils: still waiting for the exfiltration data " +
                     $"after {attempts} requests (controller={(ExfiltrationController.Instance == null ? "null" : "ready")})");
             }
@@ -571,8 +571,8 @@ public class ClientGameController : BaseGameController
             secretExfilPoints = ExfiltrationController.Instance.SecretEligiblePoints();
         }
 
-        // The game's ExtractionTimersPanel starts its slide/colour coroutines from inside SetTime,
-        // and Unity refuses that on the closed (inactive) panel. Drive it only while it is live.
+        // 游戏的 ExtractionTimersPanel 会在 SetTime 内部启动其滑动/变色协程，
+        // 而 Unity 在已关闭（未激活）的面板上会拒绝这样做。只在它存活时驱动它。
         if (FikaUiPanels.CanDrive(coopGame.GameUi.TimerPanel, "ClientGameController.Spawn.TimerPanel.SetTime"))
         {
             coopGame.GameUi.TimerPanel.SetTime(DateTimeExtensions.UtcNow,
@@ -629,8 +629,8 @@ public class ClientGameController : BaseGameController
             sharedQuestController.ToggleQuestSharing(false);
         }
 
-        // The native statistics base queues health and metabolism experience
-        // until extraction; consume it before Runner and result evaluation.
+        // 原生统计基类会把生命与代谢经验入队直到撤离；
+        // 在 Runner 和结果评估之前消费它。
         player.StatisticsManager?.TryCast<HealthStatisticsManager>()?.ConsumeExperience();
 
 #if !DEBUG
@@ -647,14 +647,14 @@ public class ClientGameController : BaseGameController
 
             if (exfiltrationPoint.HasRequirements && exfiltrationPoint.TransferItemRequirement?.Met(player, exfiltrationPoint) == true && player.IsYourPlayer)
             {
-                // Seems to already be handled by SPT so we only add it visibly
+                // 似乎已由 SPT 处理，因此我们只做可见的添加
                 player.Profile.EftStats.SessionCounters.AddDouble(0.2d, NativeCounters.ExitStanding());
             }
         }
 
         if (player.Side == EPlayerSide.Savage)
         {
-            // Seems to already be handled by SPT so we only add it visibly
+            // 似乎已由 SPT 处理，因此我们只做可见的添加
             player.Profile.EftStats.SessionCounters.AddDouble(0.01d, NativeCounters.ExitStanding());
         }
 
@@ -699,10 +699,10 @@ public class ClientGameController : BaseGameController
 
             _extractRoutine = coopGame.StartCoroutine(ExtractRoutine(player, coopGame));
 
-            // Prevents players from looting after extracting
+            // 防止玩家在撤离后继续搜刮
             EftScreenManager.Instance.CloseAllScreensForced();
 
-            // Destroys session timer
+            // 销毁会话计时器
             if (TimeManager != null)
             {
                 UnityEngine.Object.Destroy(TimeManager);
@@ -751,7 +751,7 @@ public class ClientGameController : BaseGameController
         _abstractGame.SetMatchmakerStatus(LocaleUtils.UI_FINISHING_RAID_INIT.Localized());
         Logger.LogInfo("All players are loaded, continuing...");
 
-        // Add FreeCamController to GameWorld GameObject
+        // 将 FreeCamController 添加到 GameWorld 游戏对象
         var freeCamController = gameWorld.gameObject.AddComponent<FreeCameraController>();
         FikaSingleton<FreeCameraController>.Create(freeCamController);
 

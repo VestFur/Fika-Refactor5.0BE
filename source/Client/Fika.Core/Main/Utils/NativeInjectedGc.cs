@@ -9,9 +9,9 @@ namespace Fika.Core.Main.Utils;
 internal static class NativeInjectedGc
 {
     /// <summary>
-    /// Enables native reference tracing for a class the injector just created.
-    /// Returns true when the class had inherited a GC descriptor from its base
-    /// class and that descriptor had to be dropped.
+    /// 为注入器刚创建的类启用原生引用追踪。
+    /// 当该类从其基类继承了一个 GC 描述符并且
+    /// 该描述符必须被丢弃时返回 true。
     /// </summary>
     internal static unsafe bool PreserveReferences(Type type)
     {
@@ -19,14 +19,14 @@ internal static class NativeInjectedGc
         var klass = UnityVersionHandler.Wrap((Il2CppClass*)pointer);
         if (!IL2CPP.il2cpp_class_has_references((IntPtr)klass.Parent) && klass.FieldCount == 0) return false;
 
-        // The installed injector zero-initializes the class metadata it
-        // allocates and then copies the base class GC state into it (gc_desc
-        // and has_references). Native allocation would follow the base class
-        // bitmap, which only describes the base layout: the injector appends
-        // this class's own fields after the base instance size, so their
-        // reference slots are invisible to a typed GC pass. Resolve the layout
-        // from the runtime's selected handler rather than hard-coding a class
-        // offset for one Unity version.
+        // 所安装的注入器会把它分配的类元数据零初始化，
+        // 然后把基类的 GC 状态复制进去（gc_desc
+        // 和 has_references）。原生分配会按基类的位图进行，
+        // 而该位图只描述基类布局：注入器把本类自己的字段
+        // 追加在基类实例大小之后，因此它们的引用槽位
+        // 对带类型的 GC 遍历是不可见的。要从运行时所选的处理器中
+        // 解析布局，而不是为某个 Unity 版本硬编码
+        // 一个类偏移。
         var layout = klass.GetType().GetProperty("_", BindingFlags.NonPublic | BindingFlags.Instance)?.PropertyType.GetElementType()
             ?? throw new NotSupportedException("Cannot resolve injected class GC layout.");
         var flags = layout.GetField("_bitfield0", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
@@ -37,17 +37,17 @@ internal static class NativeInjectedGc
         var droppedInheritedDescriptor = false;
         if (Marshal.ReadIntPtr(pointer, descriptor) != IntPtr.Zero)
         {
-            // A descriptor present here is never this class's own: the injector
-            // copied it from the base class in the same registration call.
-            // Drop it rather than keeping it or installing a replacement.
-            // With a null descriptor, has_references selects conservative
-            // tracing, which covers inherited and injected fields alike, while
-            // a bitmap sized for the base layout can only miss slots.
+            // 此处存在的描述符绝不是本类自己的：注入器在同一次
+            // 注册调用中从基类复制了它。丢弃它，
+            // 而不是保留它或安装一个替代品。
+            // 描述符为 null 时，has_references 会选择保守的
+            // 追踪，它同时覆盖继承字段和注入字段，而
+            // 一个按基类布局确定大小的位图只会漏掉槽位。
             Marshal.WriteIntPtr(pointer, descriptor, IntPtr.Zero);
             droppedInheritedDescriptor = true;
         }
-        // A null descriptor plus has_references requests conservative tracing,
-        // covering inherited and injected fields, including future assignments.
+        // 空描述符加上 has_references 请求保守追踪，
+        // 覆盖继承与注入的字段，包括将来的赋值。
         Marshal.WriteByte(pointer, offset, (byte)(Marshal.ReadByte(pointer, offset) | mask));
         if (!IL2CPP.il2cpp_class_has_references(pointer))
             throw new InvalidOperationException($"Native reference tracing was not enabled for {type}.");

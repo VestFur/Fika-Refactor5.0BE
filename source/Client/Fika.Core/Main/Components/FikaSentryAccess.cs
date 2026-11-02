@@ -9,61 +9,61 @@ using Fika.Core.Networking.Packets.World;
 namespace Fika.Core.Main.Components;
 
 /// <summary>
-/// BJ (analysis/terminal-rauf-card): the access check of the sentries of the terminal (the Russian
-/// soldiers at the transfer point, RAUF).
+/// BJ (analysis/terminal-rauf-card)：终端哨兵的访问检查（即转移点处的俄罗斯
+/// 士兵，RAUF）。
 ///
-/// <para>NATIVE RULE - where it lives. The whole rule is a state of the sentry, not a state of the
-/// player and not a state of a zone:</para>
+/// <para>原生命名规则——它在哪里。整条规则是哨兵的一个状态，而不是
+/// 玩家的状态，也不是某个区域的状态：</para>
 /// <list type="number">
-/// <item><c>GlobalEventDispatcher.OnTerminalTransitAccessGained</c> is the event of 「this player has
-/// passed the card check」; its only consumer is <c>SentryBossLogic.OnTerminalAccessGained(Player)</c>
-/// (<c>SentryBossLogic.cs</c>, interop :31193), which writes the player id into the private
-/// <c>HashSet&lt;Int32&gt; _accessedPlayerIds</c>;</item>
-/// <item><c>SentryBossLogic : ABossLogic, IAccessBossLogic</c> exposes exactly one question -
-/// <c>HaveAccess(Int32 playerId)</c> (<c>IAccessBossLogic.cs</c>) - answered from that set;</item>
-/// <item>the hostility of a bot group is recomputed on the machine itself:
-/// <c>BotGroupHostility.UpdateHostilityStatusForAllPlayers()</c> (native, per frame) ->
-/// <c>BotHostilityService.EvaluateHostility</c> -> the rule list, which contains
+/// <item><c>GlobalEventDispatcher.OnTerminalTransitAccessGained</c> 就是「此玩家已
+/// 通过卡片检查」这个事件；它唯一的消费者是 <c>SentryBossLogic.OnTerminalAccessGained(Player)</c>
+/// （<c>SentryBossLogic.cs</c>，interop :31193），后者把玩家 id 写入私有的
+/// <c>HashSet&lt;Int32&gt; _accessedPlayerIds</c>；</item>
+/// <item><c>SentryBossLogic : ABossLogic, IAccessBossLogic</c> 只暴露一个问题——
+/// <c>HaveAccess(Int32 playerId)</c>（<c>IAccessBossLogic.cs</c>）——由该集合回答；</item>
+/// <item>机器人组的敌对性在本机自行重新计算：
+/// <c>BotGroupHostility.UpdateHostilityStatusForAllPlayers()</c>（原生，每帧）->
+/// <c>BotHostilityService.EvaluateHostility</c> -> 规则列表，其中包含
 /// <c>BossSentryHostilityRule : IHostilityRulePlayer</c> -> <c>IAccessBossLogic.HaveAccess</c>
-/// (<c>BossSentryHostilityRule.cs</c>, interop :70175).</item>
+/// （<c>BossSentryHostilityRule.cs</c>，interop :70175）。</item>
 /// </list>
-/// <para>So the emission belongs to the machine that runs the interaction and the evaluation belongs to
-/// the machine that owns the bot - and on a Fika raid those are two different machines. What the r32 run
-/// of this port measured (analysis/terminal-rauf-hostility-2) refines the first reading of the symptom:</para>
+/// <para>因此发出归属于运行交互的那台机器，而评估归属于
+/// 拥有该机器人的那台机器——在一场 Fika 战局中，这是两台不同的机器。本移植 r32 那次运行
+/// 测到的结果（analysis/terminal-rauf-hostility-2）修正了对该症状的第一种解读：</para>
 /// <list type="bullet">
-/// <item>a client DOES raise the native event, for its own player (its local interaction runs natively:
-/// 「the native event was raised on this machine」 appears in the client log with <c>sentries=0</c>);</item>
-/// <item>a client holds no sentry at all - no <c>BotOwner</c>, no <c>BotBoss</c>, no
-/// <c>SentryBossLogic</c>, no bot group (it runs no <c>BotsController</c> and spawns every remote character
-/// as an <c>ObservedPlayer</c>), so nothing on that machine evaluates the sentry rule in the first place;</item>
-/// <item>the machine that does evaluate it - the authority - was never told about the client's player.</item>
+/// <item>客户端确实会为它自己的玩家抬升原生事件（它的本地交互是原生运行的：
+/// 「the native event was raised on this machine」会带着 <c>sentries=0</c> 出现在客户端日志里）；</item>
+/// <item>客户端根本不持有任何哨兵——没有 <c>BotOwner</c>、没有 <c>BotBoss</c>、没有
+/// <c>SentryBossLogic</c>、没有机器人组（它不运行 <c>BotsController</c>，而是把每个远程角色都生成为
+/// <c>ObservedPlayer</c>），因此那台机器上根本没有东西会去评估哨兵规则；</item>
+/// <item>真正评估它的那台机器——权威端——从未被告知该客户端的玩家。</item>
 /// </list>
-/// <para>So the break is not 「the client's set stays empty」, it is 「the fact never travels to the machine
-/// whose sentry decides」 - and that is the reported symptom.</para>
+/// <para>因此断点不是「客户端的集合一直是空的」，而是「这个事实从未到达那台
+/// 由它的哨兵做决定的机器」——而这正是所报告的症状。</para>
 ///
-/// <para>THE REPAIR - the native shape, one hop wider than native. The grant is taken where the native
-/// chain makes it and applied to the sentries of every machine through the same native entry point
-/// (<c>SentryBossLogic.OnTerminalAccessGained</c>). No rule, no hostility list and no bot state is
-/// written from here: only the one fact the native event carries, on the machines the event does not
-/// reach on its own.</para>
+/// <para>修复——原生形状，比原生多走一跳。授予在原生链做出它的地方取得，
+/// 并通过同一个原生入口点应用到每台机器的哨兵上
+/// （<c>SentryBossLogic.OnTerminalAccessGained</c>）。这里不写入任何规则、任何敌对性列表、任何机器人状态：
+/// 只有原生事件所携带的那一个事实，被写到该事件自身无法到达的
+/// 机器上。</para>
 ///
-/// <para>(analysis/terminal-rauf-hostility-2) A machine in a Fika raid only owns bots when it is the
-/// authority (<see cref="IsAuthority"/>); a client runs no <c>BotsController</c> at all and holds every
-/// remote character - bots included - as an <c>ObservedPlayer</c> without a <c>BotOwner</c>. Such a machine
-/// therefore has no sentry to write to, in any of the two landings; what it does have is the native event
-/// itself, which it raises for its own player. So the fact is completed in two directions:</para>
+/// <para>(analysis/terminal-rauf-hostility-2) Fika 战局中的一台机器只有在它是
+/// 权威端（<see cref="IsAuthority"/>）时才拥有机器人；客户端完全不运行 <c>BotsController</c>，它把每个
+/// 远程角色——包括机器人——都作为没有 <c>BotOwner</c> 的 <c>ObservedPlayer</c> 持有。这样的机器
+/// 因此在两种落点中都没有哨兵可写；它真正拥有的是原生事件
+/// 本身，并会为自己的玩家抬升它。因此这个事实在两个方向上被补全：</para>
 /// <list type="bullet">
-/// <item>UPWARD (client -> authority): <see cref="NoteNativeEmission"/> reports a native emission of a
-/// non-authority machine to the host, which owns the bot simulation, applies the fact to its own sentries
-/// and hands it back out. This is the hop that decides the reported case - 「the client swiped, the RAUF
-/// kept shooting」 - because the shooting is decided on the authority;</item>
-/// <item>SIDEWAYS (two landings on the machine that applies): the native entry point first, and - only when
-/// this machine holds no sentry boss logic at all - the native container the group's hostility data keeps
-/// for exactly this fact, <c>BotGroupInnerHostilityData.AlliesBySentryAcces</c>, of the groups of this
-/// machine's sentry bots. Nothing else is written: no rule, no threshold, no enemy list.</item>
+/// <item>向上（客户端 -> 权威端）：<see cref="NoteNativeEmission"/> 把非权威端机器的原生
+/// 抬升报告给主机，主机拥有机器人模拟，会把该事实应用到自己的哨兵上
+/// 并再把它分发出去。这一跳决定了所报告的情形——「客户端刷卡，RAUF
+/// 继续射击」——因为是否射击是由权威端决定的；</item>
+/// <item>侧向（在应用该事实的机器上有两个落点）：先是原生入口点，并且——仅当
+/// 本机根本不持有哨兵 boss 逻辑时——该组敌对性数据专门为此事实保存的原生
+/// 容器 <c>BotGroupInnerHostilityData.AlliesBySentryAcces</c>，它属于本机
+/// 哨兵机器人的组。别的什么都不写：没有规则、没有阈值、没有敌人列表。</item>
 /// </list>
 ///
-/// <para>DIAGNOSIS - one grep, the lines the brief asks for:</para>
+/// <para>诊断——一次 grep，即任务书所要求的那几行：</para>
 /// <code>
 /// [SentryDiag] card=swiped role=assault state=access-gained applied=yes side=client sentries=0 profile=6acdcb85 raidId=2 -> result=the native event was raised on this machine
 /// [SentryDiag] card=swiped role=assault state=access-gained applied=yes side=client granted=yes profile=6acdcb85 raidId=2 -> result=reported to the authority (this machine owns no bots)
@@ -72,50 +72,50 @@ namespace Fika.Core.Main.Components;
 /// [SentryDiag] card=swiped role=assault state=applied applied=yes side=host source=packet-from-client via=hostility-data sentries=0/0 allies=3 -> result=the sentry groups of this machine now hold the player as an ally by sentry access
 /// [SentryDiag] card=swiped role=assault state=applied applied=no side=client source=packet-from-host via=none sentries=0/0 allies=0 -> result=no-sentry-and-no-group-on-this-machine
 /// </code>
-/// <para>One switch reverts the behaviour (<see cref="RepairEnabled"/>), see the report for the one-line
-/// rollback.</para>
+/// <para>一个开关即可回退该行为（<see cref="RepairEnabled"/>），一行式
+/// 回退方式见报告。</para>
 /// </summary>
 internal static class FikaSentryAccess
 {
     /// <summary>
-    /// Master switch of the repair. OFF = the port behaves exactly as before: the lines are still written
-    /// (they are the evidence), the grant is never replicated. One line to revert - one field, no config
-    /// file, no file edits (the main agent may bind it to a config entry later).
+    /// 该修复的总开关。OFF = 本移植与之前完全一样：日志行仍会被写入
+    /// （它们就是证据），授予永远不会被复制。回退只需一行——一个字段，不改配置
+    /// 文件，不改文件（主代理之后可以把它绑定到某个配置项）。
     /// </summary>
     internal static bool RepairEnabled = true;
 
     /// <summary>
-    /// (analysis/terminal-rauf-hostility-2) The second landing of the same fact: the native container the
-    /// group's hostility data keeps for exactly this fact -
-    /// <c>BotGroupInnerHostilityData.AlliesBySentryAcces</c> - written only for the groups of this machine's
-    /// sentry bots, and only when the native entry point had no object to run on. OFF = case (2) falls back
-    /// to the previous behaviour (the refusal is still written).
+    /// (analysis/terminal-rauf-hostility-2) 同一事实的第二个落点：该组
+    /// 敌对性数据专门为此事实保存的原生容器——
+    /// <c>BotGroupInnerHostilityData.AlliesBySentryAcces</c>——只为本机
+    /// 哨兵机器人的组写入，且仅在原生入口点没有可运行对象时写入。OFF = 情形 (2) 回退到
+    /// 之前的行为（拒绝仍会被写入）。
     /// </summary>
     internal static bool HostilityDataEnabled = true;
 
     /// <summary>
-    /// (analysis/terminal-rauf-hostility-2) The upward hop: a machine that owns no bot simulation reports the
-    /// native emission of its own player to the authority, which owns the bots and therefore the answer.
-    /// OFF = a client's swipe stays on the client (the previous behaviour).
+    /// (analysis/terminal-rauf-hostility-2) 向上那一跳：不拥有机器人模拟的机器把
+    /// 它自己玩家的原生抬升报告给权威端，权威端拥有机器人，因此也拥有答案。
+    /// OFF = 客户端的刷卡留在客户端上（之前的行为）。
     /// </summary>
     internal static bool RelayToAuthorityEnabled = true;
 
-    /// <summary>The landing a line names: the native entry point of a sentry of this machine.</summary>
+    /// <summary>日志行所指的落点：本机某个哨兵的原生入口点。</summary>
     internal const string ViaNativeSentry = "native-sentry";
-    /// <summary>The landing a line names: the group hostility data of this machine's sentry bots.</summary>
+    /// <summary>日志行所指的落点：本机哨兵机器人的组敌对性数据。</summary>
     internal const string ViaHostilityData = "hostility-data";
-    /// <summary>Neither landing exists on this machine (it owns no bot at all - the client case).</summary>
+    /// <summary>本机上两个落点都不存在（它根本不拥有任何机器人——客户端情形）。</summary>
     internal const string ViaNone = "none";
 
-    /// <summary>Upper bound of the verbatim lines of this family per raid; the rest is counted.</summary>
+    /// <summary>此族逐字日志行每场战局的上限；其余只做计数。</summary>
     private const int MaxLines = 400;
 
     private static readonly HashSet<string> Written = new(StringComparer.Ordinal);
     private static readonly HashSet<string> Granted = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Players whose grant the native entry point of THIS machine already applied (the sentry postfix ran).
-    /// It is what keeps the emission half from applying the same fact twice on the authority.
+    /// 原生入口点已经对本机应用过其授予的玩家（哨兵 postfix 运行过）。
+    /// 正是它使发出那一半不会在权威端上把同一个事实应用两次。
     /// </summary>
     private static readonly HashSet<string> NativeApplied = new(StringComparer.Ordinal);
     private static readonly HashSet<int> AccessYes = new();
@@ -123,18 +123,18 @@ internal static class FikaSentryAccess
     private static int _suppressed;
 
     /// <summary>
-    /// BT (analysis/terminal-hostility-graph): the last verdict this AUTHORITY machine read back from its own
-    /// native state (<see cref="Verify"/>). The authority echoes it to the reporting client, so the client log
-    /// carries the answer of the machine that owns the bots without that machine's log.
+    /// BT (analysis/terminal-hostility-graph)：本权威端机器从自身原生状态读回的最后一个判定
+    /// （<see cref="Verify"/>）。权威端把它回传给上报的客户端，因此客户端日志
+    /// 无需那台机器的日志就带有拥有机器人的机器的答案。
     /// </summary>
     private static int _lastVerifyYes;
     private static int _lastVerifyNo;
     private static int _lastVerifyAllies;
 
-    /// <summary>host / client / headless / single - the vocabulary of this port.</summary>
+    /// <summary>host / client / headless / single——本移植的词汇。</summary>
     internal static string Side => FikaRaidGate.Side;
 
-    /// <summary>True on the machine that owns the bot simulation and therefore the emission.</summary>
+    /// <summary>在拥有机器人模拟、因而拥有发出的那台机器上为 true。</summary>
     internal static bool IsAuthority => FikaBackendUtils.IsServer || FikaBackendUtils.IsHeadless;
 
     internal static void Reset()
@@ -149,14 +149,14 @@ internal static class FikaSentryAccess
             _suppressed = 0;
         }
 
-        // BT (analysis/terminal-hostility-graph): the fan-out family is per raid too.
+        // BT (analysis/terminal-hostility-graph)：fan-out 这一族同样每场战局一份。
         FikaTerminalHostility.Reset();
     }
 
     /// <summary>
-    /// The native entry point itself (<c>SentryBossLogic.OnTerminalAccessGained</c>) fired on this
-    /// machine. Called from the patch on every machine that holds a sentry boss logic: the host reaches
-    /// it through the native event, a client through the replica of this class.
+    /// 原生入口点本身（<c>SentryBossLogic.OnTerminalAccessGained</c>）在本机
+    /// 触发。由补丁在每台持有哨兵 boss 逻辑的机器上调用：主机通过原生事件
+    /// 到达它，客户端通过本类的副本到达它。
     /// </summary>
     internal static void NoteNativeGrant(Player player, int accessedCount, string source)
     {
@@ -175,15 +175,15 @@ internal static class FikaSentryAccess
             return;
         }
 
-        // This machine's own sentries hold the fact through the native method now: the emission half must
-        // not apply it a second time (see NoteNativeEmission).
+        // 本机自己的哨兵现在已经通过原生方法持有该事实：发出那一半绝不能
+        // 再次应用它（见 NoteNativeEmission）。
         lock (Written)
         {
             NativeApplied.Add(profileId);
         }
 
-        // The emission half: only the authority machine asks the others to apply the same fact, and it
-        // asks once per player.
+        // 发出那一半：只有权威端机器会要求其它机器应用同一个事实，并且
+        // 每个玩家只要求一次。
         if (IsAuthority && Remember(profileId))
         {
             Broadcast(player, profileId, true);
@@ -191,17 +191,17 @@ internal static class FikaSentryAccess
     }
 
     /// <summary>
-    /// The third native surface of the same rule: the machine raised the native event
-    /// (<c>GlobalEventDispatcher.ApplyOnTerminalTransitAccessGained</c>) for a player. Every machine raises
-    /// it for the player whose interaction it runs - including a client, which runs the interaction of its
-    /// own player locally (analysis/terminal-rauf-hostility-2, the r32 line
-    /// 「the native event was raised on this machine」 of the client).
+    /// 同一规则的第三个原生表面：本机为某个玩家抬升了原生事件
+    /// （<c>GlobalEventDispatcher.ApplyOnTerminalTransitAccessGained</c>）。每台机器都为它运行交互的那个玩家
+    /// 抬升它——包括客户端，客户端在本地运行它自己玩家的
+    /// 交互（analysis/terminal-rauf-hostility-2，客户端 r32 那行
+    /// 「the native event was raised on this machine」）。
     ///
-    /// <para>What is missing is not the emission, it is the direction: a machine that owns no bot simulation
-    /// - a Fika client - has nothing to apply the fact to, and the machine that decides (the authority,
-    /// which simulates every bot) never hears about it. So this method only routes the fact: a client
-    /// reports it to the authority once per player; the authority applies it (when the native subscribers
-    /// of its own sentries did not: no sentry instance) and hands it to the peers.</para>
+    /// <para>缺的不是发出，而是方向：一台不拥有机器人模拟的机器
+    /// ——一个 Fika 客户端——没有任何东西可以应用该事实，而做决定的那台机器（权威端，
+    /// 它模拟每一个机器人）从未听说过它。因此本方法只负责路由这个事实：客户端
+    /// 每个玩家向权威端上报一次；权威端应用它（当它自己哨兵的原生
+    /// 订阅者没有应用时：没有哨兵实例），然后把它交给对端。</para>
     /// </summary>
     internal static void NoteNativeEmission(Player player)
     {
@@ -219,9 +219,9 @@ internal static class FikaSentryAccess
             return;
         }
 
-        // BT: the machine that ran the interaction hands the same fact to the OTHER systems that can fire on
-        // this player here (the code-driven zones of its own scene included) - the sentry entry above is not
-        // the only reader of 「this player has the access」.
+        // BT：运行交互的那台机器把同一事实交给在这里也能对此玩家触发的其它系统
+        // （包括它自己场景中由代码驱动的区域）——上面的哨兵入口并不是
+        // 「此玩家拥有访问权限」的唯一读者。
         FikaTerminalHostility.Deliver(player, "native-event", true);
 
         var nativeHere = false;
@@ -241,8 +241,8 @@ internal static class FikaSentryAccess
                 return;
             }
 
-            // A client owns no bots at all: the fact is worth nothing here, and the authority owns the
-            // answer. One report per player per raid.
+            // 客户端根本不拥有机器人：这个事实在这里毫无价值，而答案由权威端
+            // 拥有。每场战局每个玩家上报一次。
             if (Remember(profileId))
             {
                 Broadcast(player, profileId, true, "reported to the authority (this machine owns no bots)");
@@ -253,15 +253,15 @@ internal static class FikaSentryAccess
 
         if (nativeHere)
         {
-            // The sentry postfix of this machine already applied the fact (and handed it out): the native
-            // entry did the work, this method adds nothing.
+            // 本机的哨兵 postfix 已经应用了该事实（并把它分发出去）：原生
+            // 入口做了工作，本方法不增加任何东西。
             return;
         }
 
-        // The authority raised the event but no sentry of its own consumed it (it holds no sentry boss
-        // logic right now, so there is no machine-local object the native entry could have run on): apply
-        // it where the native chain of this machine cannot reach - the emission is the fact - and hand it
-        // to the peers. Applying is idempotent and the hand-out happens once per player.
+        // 权威端抬升了事件，但它自己的哨兵没有任何一个消费了它（它此刻不持有哨兵
+        // boss 逻辑，因此原生入口没有可运行的机器本地对象）：把它应用在
+        // 本机原生链无法到达的地方——发出即是事实——并把它交给
+        // 对端。应用是幂等的，分发每个玩家只发生一次。
         Apply(player, true, "native-event");
         if (Remember(profileId))
         {
@@ -270,9 +270,9 @@ internal static class FikaSentryAccess
     }
 
     /// <summary>
-    /// A machine reports the fact of <paramref name="profileId"/> to this machine. On the host this is a
-    /// client that ran the native chain locally (it owns its player's interaction); it is applied and
-    /// handed to the other peers. On a client this is the host's replica and is applied locally.
+    /// 某台机器把 <paramref name="profileId"/> 的事实上报给本机。在主机上这是一个
+    /// 在本地运行了原生链的客户端（它拥有其玩家的交互）；该事实会被应用并
+    /// 交给其它对端。在客户端上这是主机的副本，只在本地应用。
     /// </summary>
     internal static void Receive(string profileId, int raidId, bool granted, bool fromClient,
         int hostAccessYes = 0, int hostAccessNo = 0, int hostAllies = 0)
@@ -294,16 +294,16 @@ internal static class FikaSentryAccess
             return;
         }
 
-        // The judgement a client can make on its own: when the fact that arrives is the fact THIS machine
-        // reported, the packet can only come from the authority, and the authority only hands it out after
-        // its own sentries (or their groups) took it - so this line is the authority's confirmation, read
-        // without the authority's log. Before this round a client never received such a packet about its own
-        // profile at all (r32: the only packet-from-host line named the host's player).
+        // 客户端可以自行做出的判断：当到达的事实正是本机
+        // 所上报的那个事实时，该数据包只可能来自权威端，而权威端只有在自己的
+        // 哨兵（或它们的组）收下之后才会分发它——因此这一行就是权威端的确认，
+        // 无需权威端的日志即可读取。在这一轮之前，客户端根本收不到关于自身
+        // profile 的这类数据包（r32：唯一的 packet-from-host 行写的是主机的玩家）。
         if (!IsAuthority && !fromClient && IsLocalProfile(world, profileId))
         {
-            // BT (analysis/terminal-hostility-graph): the resourceful part of the echo - the authority now
-            // carries its own read back (its sentry answered yes/no for how many objects), so the client log
-            // holds the answer of the machine that owns the bots without that machine's log.
+            // BT (analysis/terminal-hostility-graph)：回响中最有料的部分——权威端如今
+            // 会把它自己的读取结果带回来（它的哨兵对多少个对象回答了 yes/no），因此客户端日志
+            // 无需那台机器的日志就带有拥有机器人的机器的答案。
             var authorityAnswered = hostAccessYes + hostAccessNo > 0;
             Line("confirm:" + Short(profileId) + ":" + granted + ":" + Short(Side),
                 "card=swiped role=" + RoleOf(player) + " state=confirm applied=- side=" + Side
@@ -320,13 +320,13 @@ internal static class FikaSentryAccess
         var applied = Apply(player, granted, fromClient ? "packet-from-client" : "packet-from-host");
         if (IsAuthority && fromClient && applied > 0 && Remember(profileId))
         {
-            // A client ran the native chain on its own world; the host owns the answer, so the other peers
-            // get the same line from here instead of from the client.
+            // 一个客户端在它自己的世界上运行了原生链；答案归主机，因此其它对端
+            // 从这里拿到同一行，而不是从该客户端处拿到。
             Broadcast(player, profileId, granted);
         }
     }
 
-    /// <summary>True when the profile id of a report is the profile id of the local player of this machine.</summary>
+    /// <summary>当某次上报的 profile id 是本机本地玩家的 profile id 时为 true。</summary>
     private static bool IsLocalProfile(GameWorld world, string profileId)
     {
         try
@@ -340,9 +340,9 @@ internal static class FikaSentryAccess
     }
 
     /// <summary>
-    /// The single application point: the private native state is written through the native entry point
-    /// (<c>SentryBossLogic.OnTerminalAccessGained</c>), so the rules that read it
-    /// (<c>BossSentryHostilityRule</c>) cannot tell this grant from the native one.
+    /// 唯一的应用点：私有的原生状态通过原生入口点被写入
+    /// （<c>SentryBossLogic.OnTerminalAccessGained</c>），因此读取它的规则
+    /// （<c>BossSentryHostilityRule</c>）无法把这次授予与原生授予区分开。
     /// </summary>
     internal static int Apply(Player player, bool granted, string source)
     {
@@ -382,7 +382,7 @@ internal static class FikaSentryAccess
 
                 try
                 {
-                    // Native path: the same method the native event calls.
+                    // 原生路径：原生事件所调用的同一个方法。
                     logic.OnTerminalAccessGained(player);
                     applied++;
                 }
@@ -402,14 +402,14 @@ internal static class FikaSentryAccess
             return 0;
         }
 
-        // THE SECOND LANDING (analysis/terminal-rauf-hostility-2). The first landing has no object on a
-        // machine that holds no sentry boss logic - which is every Fika client, and an authority whose
-        // sentries are not spawned. The same fact exists a second time in the native state, one level up:
-        // the hostility data of the group carries the container the sentry access is expressed in
-        // (BotGroupInnerHostilityData.AlliesBySentryAcces, a set of player ids - the SAME id space as
-        // SentryBossLogic._accessedPlayerIds). It is written only for the groups of this machine's sentry
-        // bots, and only when the native entry point could not be used at all; nothing else of the group is
-        // touched (no enemy list, no rule, no threshold).
+        // 第二个落点 (analysis/terminal-rauf-hostility-2)。在一台不持有哨兵 boss 逻辑的
+        // 机器上，第一个落点没有对象——每台 Fika 客户端都是这样，权威端在其哨兵
+        // 未生成时也是如此。同一个事实在原生状态中还存在第二次，位于上一层：
+        // 该组的敌对性数据携带表达哨兵访问所用的那个容器
+        // （BotGroupInnerHostilityData.AlliesBySentryAcces，一个玩家 id 集合——与
+        // SentryBossLogic._accessedPlayerIds 相同的 id 空间）。它只为本机哨兵机器人的组
+        // 写入，且仅在原生入口点完全无法使用时写入；该组的其它任何东西都不被
+        // 触碰（没有敌人列表、没有规则、没有阈值）。
         var via = applied > 0 ? ViaNativeSentry : ViaNone;
         if (granted && applied == 0 && HostilityDataEnabled)
         {
@@ -449,25 +449,25 @@ internal static class FikaSentryAccess
             + " allies=" + allies + " sentryBots=" + sentryBots
             + " profile=" + Short(ProfileIdOf(player)) + " -> result=" + verdict);
 
-        // The check the report is judged by: did the sentries of THIS machine now answer the access
-        // question with yes, and does its sentry groups' own container hold the player? Read through the
-        // native members themselves, not through our own bookkeeping.
+        // 判断本报告所依据的检查：本机的哨兵现在是否对访问
+        // 问题回答了 yes，以及它哨兵组自己的容器是否持有该玩家？读取是通过原生
+        // 成员本身进行的，而不是通过我们自己的记账。
         Verify(player, source, considered, allies, sentryBots);
 
-        // BT: the single application point of the fact is also the fan-out point - the sentry (above), the
-        // group containers (above) and the systems that own no container of ours (the code-driven zones of
-        // this machine, the group tables of the bots of this machine).
+        // BT：该事实唯一的应用点同时也是 fan-out 点——哨兵（上面）、
+        // 组容器（上面），以及那些不归我们管、不持有我们任何容器的系统（本机
+        // 由代码驱动的区域、本机机器人的组表）。
         FikaTerminalHostility.Deliver(player, source, granted);
 
         return applied > 0 ? applied : allies;
     }
 
     /// <summary>
-    /// The verdict line: the native question <c>IAccessBossLogic.HaveAccess(playerId)</c> asked again
-    /// after the application, on this machine - and, for the second landing, the native container of the
-    /// sentry groups of this machine asked the same question. A yes in either column is the proof that
-    /// this machine's sentry will stop treating the player as an enemy in the next hostility
-    /// recalculation.
+    /// 判定行：原生问题 <c>IAccessBossLogic.HaveAccess(playerId)</c> 在应用之后
+    /// 于本机上被重新提问——并且，对第二个落点而言，本机
+    /// 哨兵组的原生容器也会被问同一个问题。任一列出现 yes，都是
+    /// 本机的哨兵会在下一次敌对性重算中不再把该玩家当作
+    /// 敌人的证明。
     /// </summary>
     private static void Verify(Player player, string source, int considered, int allies, int sentryBots)
     {
@@ -543,9 +543,9 @@ internal static class FikaSentryAccess
     }
 
     /// <summary>
-    /// The sentry bots of this machine, by their native role (<c>BotOwner.Role</c> =
-    /// <c>WildSpawnType.sentry</c>, the role of the RAUF of the terminal). A machine that owns no bots -
-    /// a Fika client - has none, and every line of the family then says so.
+    /// 本机的哨兵机器人，按其原生角色（<c>BotOwner.Role</c> =
+    /// <c>WildSpawnType.sentry</c>，即终端 RAUF 的角色）。一台不拥有机器人的机器
+    /// ——一个 Fika 客户端——一个都没有，于是该族的每一行都会这么说。
     /// </summary>
     private static List<BotOwner> SentryRoleOwners()
     {
@@ -562,7 +562,7 @@ internal static class FikaSentryAccess
             }
             catch (Exception)
             {
-                // A bot whose role cannot be read is not part of the question.
+                // 角色无法读取的机器人不属于这个问题。
             }
         }
 
@@ -570,18 +570,18 @@ internal static class FikaSentryAccess
     }
 
     /// <summary>
-    /// One question to the native state of the second landing, the same fact one level up from the sentry:
+    /// 对第二个落点原生状态的一个问题，即比哨兵高一层的同一事实：
     /// <c>BotOwner.BotsGroup</c> -> <c>BotsGroup.BotGroupHostility</c> ->
-    /// <c>BotGroupHostility.InnerHostilityData</c> -> <c>BotGroupInnerHostilityData.AlliesBySentryAcces</c>.
-    /// All four are native members of this build (interop face: <c>get_BotsGroup</c>,
-    /// <c>get_BotGroupHostility</c>, <c>get_InnerHostilityData</c>, <c>get_AlliesBySentryAcces</c>), and the
-    /// container is the id set the sentry access is expressed in - the same id space as
-    /// <c>SentryBossLogic._accessedPlayerIds</c>.
+    /// <c>BotGroupHostility.InnerHostilityData</c> -> <c>BotGroupInnerHostilityData.AlliesBySentryAcces</c>。
+    /// 这四个都是本构建的原生成员（interop 面：<c>get_BotsGroup</c>、
+    /// <c>get_BotGroupHostility</c>、<c>get_InnerHostilityData</c>、<c>get_AlliesBySentryAcces</c>），而该
+    /// 容器就是表达哨兵访问的那一个 id 集合——与
+    /// <c>SentryBossLogic._accessedPlayerIds</c> 相同的 id 空间。
     ///
-    /// <para>Returns -1 when this bot carries no such container on this machine (an observed bot of a
-    /// client has no group at all), 0 when the container exists without the player, 1 when it holds him.
-    /// With <paramref name="write"/> the missing id is added and the answer is read back through the same
-    /// native getter, so a write that did not land reports 0.</para>
+    /// <para>当该机器人在本机上不携带这样的容器时返回 -1（客户端的观察机器人
+    /// 根本没有组），容器存在但不含该玩家时返回 0，持有他时返回 1。
+    /// 传入 <paramref name="write"/> 时会补上缺失的 id，并通过同一个原生 getter
+    /// 读回答案，因此一次未能落地的写入会报告 0。</para>
     /// </summary>
     private static int ByData(BotOwner owner, int raidId, bool write)
     {
@@ -625,8 +625,8 @@ internal static class FikaSentryAccess
     }
 
     /// <summary>
-    /// The write of the second landing: the player id of this machine's player object goes into the
-    /// container of every sentry bot's group of this machine. Nothing else of the group is touched.
+    /// 第二个落点的写入：本机玩家对象的玩家 id 会被写进本机
+    /// 每个哨兵机器人所属组的容器中。该组的其它任何东西都不被触碰。
     /// </summary>
     private static void ApplyToHostilityData(Player player, out int sentryBots, out int allies)
     {
@@ -651,8 +651,8 @@ internal static class FikaSentryAccess
     }
 
     /// <summary>
-    /// Hands the fact to every other machine. The host broadcasts to its peers; a client sends it to the
-    /// host (the host then owns the answer and hands it to the rest).
+    /// 把该事实交给其它每一台机器。主机向它的对端广播；客户端把它发送给
+    /// 主机（随后由主机拥有答案并把它交给其余机器）。
     /// </summary>
     private static void Broadcast(Player player, string profileId, bool granted, string verdict = null)
     {
@@ -672,8 +672,8 @@ internal static class FikaSentryAccess
                 RaidId = SafeRaidId(player),
                 Granted = granted,
                 FromClient = (byte)(FikaBackendUtils.IsClient ? 1 : 0),
-                // BT: only the authority holds the bots and therefore the verdict; a client reports zeros and
-                // the authority fills the echo it sends back.
+                // BT：只有权威端持有机器人，因此也持有判定；客户端报告零值，
+                // 由权威端填入它回送的副本。
                 HostAccessYes = IsAuthority ? _lastVerifyYes : 0,
                 HostAccessNo = IsAuthority ? _lastVerifyNo : 0,
                 HostAllies = IsAuthority ? _lastVerifyAllies : 0
@@ -695,8 +695,8 @@ internal static class FikaSentryAccess
     }
 
     /// <summary>
-    /// Every bot owner of this machine. The client and the host both hold their bots in the world's
-    /// player list, and a bot carries its owner on <c>Player.AIData.BotOwner</c>.
+    /// 本机的每一个机器人所有者。客户端和主机都把它们的机器人放在世界的
+    /// 玩家列表里，而机器人通过 <c>Player.AIData.BotOwner</c> 携带其所有者。
     /// </summary>
     private static List<BotOwner> LocalBotOwners()
     {
@@ -732,7 +732,7 @@ internal static class FikaSentryAccess
             }
             catch (Exception)
             {
-                // A half-spawned player is not part of the question.
+                // 未完整生成的玩家不属于这个问题。
             }
         }
 
@@ -740,9 +740,9 @@ internal static class FikaSentryAccess
     }
 
     /// <summary>
-    /// The sentry boss logic of one bot, or null when this bot is not a sentry. <c>BotBoss.BossLogic</c>
-    /// is where the game keeps it (<c>BotOwner.Boss.BossLogic</c>), and the sentry is the only boss logic
-    /// that implements <c>IAccessBossLogic</c>.
+    /// 某个机器人的哨兵 boss 逻辑，当该机器人不是哨兵时为 null。游戏把它存放在 <c>BotBoss.BossLogic</c>
+    /// 中（<c>BotOwner.Boss.BossLogic</c>），而哨兵是实现
+    /// <c>IAccessBossLogic</c> 的唯一一种 boss 逻辑。
     /// </summary>
     private static SentryBossLogic SentryLogicOf(BotOwner owner)
     {
@@ -768,7 +768,7 @@ internal static class FikaSentryAccess
         }
     }
 
-    /// <summary>How many sentry boss logics this machine holds (named in every line of the family).</summary>
+    /// <summary>本机持有多少个哨兵 boss 逻辑（在该族的每一行中都会写明）。</summary>
     internal static int CountLocalSentries()
     {
         try
@@ -791,7 +791,7 @@ internal static class FikaSentryAccess
         }
     }
 
-    /// <summary>First yes of a player on this machine (the line worth writing).</summary>
+    /// <summary>某玩家在本机上的第一次 yes（值得写入的那一行）。</summary>
     internal static bool NoteAccessYes(int raidId)
     {
         lock (Written)
@@ -801,9 +801,9 @@ internal static class FikaSentryAccess
     }
 
     /// <summary>
-    /// A refusal of the native question. It is the default answer of a machine whose sentry never saw the
-    /// grant, so it is counted and written once per player with a bound - the first line is the evidence,
-    /// the rest is the per-frame recalculation.
+    /// 对原生问题的一次拒绝。它是一台哨兵从未见过该授予的机器的默认
+    /// 答案，因此它被计数，并按有界的方式每个玩家写一次——第一行是证据，
+    /// 其余的是每帧的重算。
     /// </summary>
     internal static void NoteAccessNo(int raidId)
     {
@@ -829,9 +829,9 @@ internal static class FikaSentryAccess
     }
 
     /// <summary>
-    /// The verdict of one calculation of the sentry rule (called by the EvaluateHostility patch). The two
-    /// interesting cases are written; everything else is counted by the deduplicating writer, so a raid
-    /// costs a handful of lines whatever the frame rate.
+    /// 哨兵规则某一次计算的判定（由 EvaluateHostility 补丁调用）。两种
+    /// 有意义的情形会被写出；其余全部由去重写入器计数，因此一场战局无论帧率
+    /// 多高都只花掉几行。
     /// </summary>
     internal static void RuleVerdict(Player player, int raidId, string verdict)
     {
@@ -891,10 +891,10 @@ internal static class FikaSentryAccess
         }
     }
 
-    /// <summary>The native role name of a player (the RAUF sentries are bots - their role is the proof).</summary>
+    /// <summary>某玩家的原生角色名（RAUF 哨兵是机器人——它们的角色就是证明）。</summary>
     /// <summary>
-    /// True while the player holds nothing (the state the reported rule is about: a player who passed the
-    /// card check is not attacked as long as he carries no weapon).
+    /// 玩家什么都没持有时为 true（所报告规则针对的状态：一个已通过
+    /// 卡片检查的玩家，只要不带武器就不会被攻击）。
     /// </summary>
     internal static bool IsUnarmed(Player player)
     {
@@ -914,7 +914,7 @@ internal static class FikaSentryAccess
         }
     }
 
-    /// <summary>The native role name of a player (the RAUF sentries are bots - their role is the proof).</summary>
+    /// <summary>某玩家的原生角色名（RAUF 哨兵是机器人——它们的角色就是证明）。</summary>
     internal static string RoleOf(Player player)
     {
         try
@@ -936,9 +936,9 @@ internal static class FikaSentryAccess
         string.IsNullOrEmpty(value) ? "-" : value.Length > 8 ? value.Substring(0, 8) : value;
 
     /// <summary>
-    /// The family writer: bounded, deduplicated, never throws into a native path. It is independent of
-    /// 'Coop / Diagnostics' because it is the evidence of the repair itself, and it writes through the
-    /// normal Fika logger - so one grep in LogOutput.log and one in Fika-diagnostics.log both work.
+    /// 该族的写入器：有界、去重、绝不让异常抛进原生路径。它独立于
+    /// 'Coop / Diagnostics'，因为它本身就是该修复的证据，并且它通过
+    /// 常规的 Fika logger 写入——因此在 LogOutput.log 里做一次 grep、在 Fika-diagnostics.log 里做一次 grep 都有效。
     /// </summary>
     internal static void Line(string key, string text)
     {
@@ -957,7 +957,7 @@ internal static class FikaSentryAccess
         }
         catch (Exception)
         {
-            // A diagnostic must never be the reason a raid breaks.
+            // 诊断绝不能成为一场战局崩掉的原因。
         }
     }
 }

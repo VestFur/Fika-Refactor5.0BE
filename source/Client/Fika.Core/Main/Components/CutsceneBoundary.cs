@@ -9,10 +9,10 @@ using CommonAssets.Scripts.Cutscenes;
 namespace Fika.Core.Main.Components;
 
 /// <summary>
-/// (2026-10-18 refactor W3-cutscene, plan B) Minimal cutscene bridge.
-/// A Fika raid needs three facts from Fika here: both native controllers exist, both know the map's
-/// MapTimelinesBank (without it the native StartCutscene throws), and neither runs in offline mode.
-/// Which process plays, who may skip and how a scene ends stays with the game.
+/// (2026-10-18 refactor W3-cutscene, 方案 B) 最小化的过场桥接。
+/// Fika 战局在这里需要从 Fika 得到三个事实：两个原生控制器都存在、两者都知道地图的
+/// MapTimelinesBank（没有它原生 StartCutscene 会抛异常）、且都不在离线模式下运行。
+/// 由哪个进程播放、谁可以跳过、场景如何结束，仍交由游戏决定。
 /// </summary>
 internal static class CutsceneBoundary
 {
@@ -36,9 +36,9 @@ internal static class CutsceneBoundary
 
     private static nint _preparedWorld = -1;
     private static MapTimelinesBank _bank;
-    // (2026-10-19 hotfix) The bank lookup is a full scene scan (FindObjectOfType). It must not run per frame:
-    // the reset build called it on every Tick until both controllers had a bank, which is the in-raid frame
-    // drop the user reported. Bounded attempts with a growing interval instead.
+    // (2026-10-19 hotfix) bank 查找是全场景扫描（FindObjectOfType）。它不能每帧运行：
+    // 重置构建在每次 Tick 都调用它，直到两个控制器都拿到 bank，这就是用户报告的
+    // 战局内掉帧。改用次数有限、间隔递增的重试方式。
     private static float _nextBankAttempt;
     private static int _bankAttempts;
     private const int MaxBankAttempts = 6;
@@ -85,9 +85,9 @@ internal static class CutsceneBoundary
             try { world.CutscenesClientController._offlineMode = false; } catch (Exception) { }
             try { world.CutscenesServerController._offlineMode = false; } catch (Exception) { }
 
-            // (2026-10-19) The controllers link themselves: the native FindMapTimelinesBank is what wires the
-            // timeline bank and the event subscriptions a process needs. Calling it is the whole "setup" the
-            // hand-written bank assignment was imitating.
+            // (2026-10-19) 控制器会自行连接：原生 FindMapTimelinesBank 才是将
+            // 时间线 bank 和进程所需事件订阅接线的东西。调用它就是手写 bank 赋值
+            // 一直在模仿的全部「setup」。
             try { world.CutscenesClientController.FindMapTimelinesBank(); }
             catch (Exception exception) { FikaGlobals.LogWarning("[CutsceneBoundary] client FindMapTimelinesBank failed: " + exception.Message); }
             try { world.CutscenesServerController.FindMapTimelinesBank(); }
@@ -131,11 +131,11 @@ internal static class CutsceneBoundary
     private static float _lastElapsed = -1f;
 
     /// <summary>
-    /// (2026-10-19) The minimal playback pump. The native controllers have no managed caller for OnUpdate on
-    /// this runtime (interop reports CallerCount 0), so a process Fika starts is never advanced by the engine:
-    /// the subtitles/UI state is switched but the timeline never plays, which is the opening Terminal scene
-    /// showing text over the spawn view. The pump advances the client controller when a start is pending and
-    /// stops touching it as soon as the engine advances the process on its own.
+    /// (2026-10-19) 最小化的播放泵。在此运行时上原生控制器没有 OnUpdate 的托管调用者
+    /// （interop 报告 CallerCount 为 0），因此 Fika 启动的进程永远不会被引擎推进：
+    /// 字幕／UI 状态被切换，但时间线从不播放，这就是开场 Terminal 场景
+    /// 在出生点视图上显示文字的原因。当有启动挂起时，该泵推进客户端控制器，
+    /// 一旦引擎自行推进该进程就停止触碰它。
     /// </summary>
     internal static void TickPlayback(GameWorld world)
     {

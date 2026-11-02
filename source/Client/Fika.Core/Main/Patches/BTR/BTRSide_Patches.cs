@@ -14,8 +14,8 @@ public class BTRSide_Patches
     public static List<ValueTuple<BTRSide, Player, int>> Passengers = [];
 
     /// <summary>
-    /// Drops the passenger list at a world teardown (analysis/transit-crash-unload): every entry is a native
-    /// BTRSide and a native Player, i.e. an object of the world that just ended. Returns the count.
+    /// 在世界拆除时丢弃乘客列表（analysis/transit-crash-unload）：每个条目都是一个原生
+    /// BTRSide 和一个原生 Player，即刚结束的那个世界的对象。返回数量。
     /// </summary>
     internal static int ClearForWorldTeardown()
     {
@@ -44,10 +44,10 @@ public class BTRSide_Patches
                 return true;
             }
 
-            // AddPassenger can be replayed after a reconnect snapshot or a
-            // delayed interaction response. A BTR passenger belongs to one
-            // side, so remove stale entries for this player on every side
-            // before recording the new authoritative slot.
+            // AddPassenger 可能在一次重连快照或一次延迟的
+            // 交互响应之后被重放。一个 BTR 乘客只属于一个侧面，
+            // 所以在记录新的权威槽位之前，先在每一个侧面上
+            // 移除这个玩家的过期条目。
             for (var i = Passengers.Count - 1; i >= 0; i--)
             {
                 if (Passengers[i].Item2?.Pointer == player.Pointer)
@@ -87,9 +87,9 @@ public class BTRSide_Patches
                 }
             }
 
-            // A delayed remove for one side must not detach a passenger that
-            // was already re-added on another side. Only clear the parent when
-            // no authoritative cache entry for this player remains.
+            // 针对某个侧面的延迟移除，绝不能把一个已经在另一个侧面上
+            // 被重新加入的乘客分离出去。只有当这个玩家已无权威缓存条目
+            // 时才清除父引用。
             var stillPassenger = false;
             for (var i = 0; i < Passengers.Count; i++)
             {

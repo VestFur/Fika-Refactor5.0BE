@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 
 namespace Fika.Core.Main.Utils;
 
-/// <summary>Tracks the one early death save; normal raid-end saving remains the fallback.</summary>
+/// <summary>跟踪那一次早死的存档；正常的突袭结束存档仍是兜底。</summary>
 internal sealed class RaidSaveState
 {
     private TaskCompletionSource<object> _completion;
@@ -11,8 +11,8 @@ internal sealed class RaidSaveState
     internal Task Completion => _completion?.Task ?? Task.CompletedTask;
     internal bool HasSaved => _completion?.Task.Status == TaskStatus.RanToCompletion;
 
-    // Called on the Unity dispatcher. Publish the pending task before invoking
-    // the operation so reentrant death/exit callbacks observe the same save.
+    // 在 Unity 调度器上调用。先发布待处理任务，再调用
+    // 该操作，这样重入的死亡/退出回调观察到的是同一次存档。
     internal Task SaveOnce(Func<Task> operation)
     {
         if (_completion != null) return _completion.Task;

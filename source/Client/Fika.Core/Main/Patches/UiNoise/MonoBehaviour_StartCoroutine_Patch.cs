@@ -8,33 +8,33 @@ using UnityEngine;
 namespace Fika.Core.Main.Patches.UiNoise;
 
 /// <summary>
-/// Removes the red "<c>Coroutine couldn't be started because the the game object 'TimerPanel' is inactive!</c>"
-/// family without changing what the game does.
+/// 移除红色报错「<c>Coroutine couldn't be started because the the game object 'TimerPanel' is inactive!</c>」
+/// 这一族信息，同时不改变游戏的行为。
 ///
-/// Analysis: analysis/red-errors-coroutines (E2). The 2026-10-10 21:35 raid (BHERKP, Sandbox) wrote that error
-/// five times between the host spawn and the local player's death. None of them came from Fika: every Fika drive
-/// of that panel is behind <see cref="FikaUiPanels.CanDrive"/> (four lines in LogOutput.log name the skipped
-/// sites), a drive that passes the guard cannot produce the error at all (the guard requires an active object),
-/// and the one unguarded Fika statement that touches the panel
-/// (<c>BaseGameController.cs:524 _abstractGame.GameUi.TimerPanel.ProfileId = profileId</c>) did not run in that
-/// raid - the diagnostic journal records the master switch "Skip Countdown Body" as ON, with statement 2/8
-/// explicitly skipped. The driving code is therefore the game's own HUD code, which keeps updating the closed
-/// panel's timer.
+/// 分析：analysis/red-errors-coroutines（E2）。2026-10-10 21:35 的战局（BHERKP，Sandbox）在主机生成到
+/// 本地玩家死亡之间写下了五次该错误。它们没有一次来自 Fika：Fika 对该面板的每次驱动
+/// 都在 <see cref="FikaUiPanels.CanDrive"/> 之后（LogOutput.log 中有四行指明了被跳过的
+/// 位置），而通过该守卫的驱动根本不可能产生这个错误（守卫要求对象处于激活状态），
+/// 唯一一处未被守卫保护却触碰该面板的 Fika 语句
+/// （<c>BaseGameController.cs:524 _abstractGame.GameUi.TimerPanel.ProfileId = profileId</c>）在那次战局中并未执行
+/// ——诊断日志记录主开关「Skip Countdown Body」为 ON，语句 2/8
+/// 被显式跳过。因此驱动代码是游戏自身的 HUD 代码，它一直在更新已关闭
+/// 面板的计时器。
 ///
-/// Unity's own answer to that call is: write one red error, start nothing, return null. This prefix produces the
-/// identical outcome - <c>__result = null</c>, the original is skipped - and reports the driver once through
-/// <see cref="FikaUiPanels.ReportRefusedEngineStart"/> (component type, coroutine type, game object name). The
-/// routine type is the part Unity's message withholds: for an iterator method the runtime names its state
-/// machine after the method (<c>EFT.UI.ExtractionTimersPanel+&lt;Co_MovePivot&gt;d__NN</c>), so the next raid
-/// names the game method that drove the closed panel instead of only counting the errors.
+/// Unity 对该调用自身的回应是：写一条红色错误、什么都不启动、返回 null。本 prefix 产生的
+/// 结果完全相同——<c>__result = null</c>，原方法被跳过——并通过
+/// <see cref="FikaUiPanels.ReportRefusedEngineStart"/> 报告一次驱动方（组件类型、协程类型、游戏对象名）。协程
+/// 类型正是 Unity 消息所隐去的部分：对于迭代器方法，运行时会按方法名命名其状态
+/// 机（<c>EFT.UI.ExtractionTimersPanel+&lt;Co_MovePivot&gt;d__NN</c>），因此下一次战局
+/// 能指出驱动已关闭面板的游戏方法，而不只是统计错误条数。
 ///
-/// Why the engine method and not the panel: skipping a whole call of <c>ExtractionTimersPanel.SetTime</c> would
-/// also skip its non-UI bookkeeping (profile binding, stored times), while suppressing only the coroutine start
-/// reproduces exactly the vanilla outcome of an inactive object. Every coroutine the game starts elsewhere is
-/// untouched: an active object returns from the prefix on the first check.
+/// 为什么选引擎方法而不是面板：跳过 <c>ExtractionTimersPanel.SetTime</c> 的整次调用
+/// 也会跳过它的非 UI 记账（profile 绑定、已存时间），而只抑制协程启动
+/// 则精确复现了对象未激活时的原版结果。游戏在其他地方启动的每个协程都
+/// 不受影响：处于激活状态的对象会在第一次检查时就从 prefix 返回。
 ///
-/// The guard is exception safe: an unexpected shape degrades to one warning line and the vanilla call runs
-/// unchanged.
+/// 守卫是异常安全的：出现意外形态时会退化为一行警告，原版调用照常
+/// 执行。
 /// </summary>
 internal sealed class MonoBehaviour_StartCoroutine_Patch : ModulePatch
 {
@@ -42,7 +42,7 @@ internal sealed class MonoBehaviour_StartCoroutine_Patch : ModulePatch
 
     protected override MethodBase GetTargetMethod()
     {
-        // Only the IEnumerator overload can animate a panel; the two string overloads cannot produce this error.
+        // 只有 IEnumerator 重载能为面板做动画；两个 string 重载不可能产生这个错误。
         foreach (var method in typeof(MonoBehaviour).GetMethods(BindingFlags.Public | BindingFlags.Instance))
         {
             if (method.Name != nameof(MonoBehaviour.StartCoroutine))
@@ -80,8 +80,8 @@ internal sealed class MonoBehaviour_StartCoroutine_Patch : ModulePatch
                 return true;
             }
 
-            // The engine cannot start a coroutine on an inactive object: it writes the red error and returns
-            // null. Return the same null and let the report name the caller.
+            // 引擎无法在未激活的对象上启动协程：它会写下红色错误并返回
+            // null。返回同样的 null，并让报告指明调用方。
             __result = null;
             FikaUiPanels.ReportRefusedEngineStart(__instance, routine);
             return false;

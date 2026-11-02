@@ -12,9 +12,9 @@ using EFT.Interactive;
 namespace Fika.Core.Main.Components;
 
 /// <summary>
-/// Tracks raid dialog entry points (trader/cutscene terminals) that are
-/// currently occupied.  The host is authoritative; clients only apply the
-/// occupancy snapshots and state changes received from it.
+/// 跟踪当前被占用的战局对话入口点（商人/过场终端）。
+/// 主机是权威；客户端只应用从主机收到的
+/// 占用快照与状态变更。
 /// </summary>
 public static class DialogEntryOccupancy
 {
@@ -110,8 +110,8 @@ public static class DialogEntryOccupancy
                         DialogEntryPacket.Release(pointId, player.NetId));
                 return;
             }
-            // Re-enter the native offline dialog only after the host has granted the claim.
-            // Its close callback still calls ReleaseOffline and therefore OnNativeChanged.
+            // 只有在主机授予该占用之后才重新进入原生离线对话。
+            // 它的关闭回调仍会调用 ReleaseOffline，从而调用 OnNativeChanged。
             await point.StartDialogOffline().AsManaged();
         }
         catch
@@ -141,7 +141,7 @@ public static class DialogEntryOccupancy
         if (string.IsNullOrEmpty(pointId)) return;
         if (_occupants.TryGetValue(pointId, out var current) && current == occupantId && _native != null)
         {
-            // The player may already have left the world; use the native stored ID.
+            // 玩家可能已经离开世界；使用原生保存的 ID。
             if (_native._occupantByPointId.TryGetValue(pointId, out var raidId)) _native.ReleaseOffline(pointId, raidId);
         }
     }
@@ -169,7 +169,7 @@ public static class DialogEntryOccupancy
     public static void ApplyFullState(IEnumerable<KeyValuePair<string, int>> occupants)
     {
         if (FikaBackendUtils.IsServer) return;
-        // Clear absent entries in the native controller as well as the managed snapshot.
+        // 在原生控制器与托管快照中都清除已缺席的条目。
         var snapshot = new Dictionary<string, int>();
         foreach (var pair in occupants)
             if (!string.IsNullOrEmpty(pair.Key) && pair.Value != 0) snapshot[pair.Key] = pair.Value;

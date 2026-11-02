@@ -5,7 +5,7 @@ using SPTushonka.Reflection.Patching;
 
 namespace Fika.Core.Main.Patches.ArmorSystem;
 
-// Same SPT 5 hit matching, using Fika's equipped-armor cache.
+// 同样的 SPT 5 命中匹配，但使用 Fika 的已装备护甲缓存。
 internal class Player_CheckArmorHitByDirection_Transpiler : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(Player), nameof(Player.CheckArmorHitByDirection));

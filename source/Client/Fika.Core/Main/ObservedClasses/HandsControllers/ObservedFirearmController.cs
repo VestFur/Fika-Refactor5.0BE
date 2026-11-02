@@ -88,10 +88,10 @@ public sealed class ObservedFirearmController : FirearmController
 
     public override Il2CppSystem.Collections.Generic.Dictionary<Il2CppSystem.Type, OperationFactoryDelegate> GetOperationFactoryDelegates()
     {
-        // Check for GClass increments..
+        // 检查 GClass 的递增..
         var operationFactoryDelegates = global::Fika.Core.Main.Utils.NativeBaseCalls.Call12(this);
         operationFactoryDelegates[Il2CppInterop.Runtime.Il2CppType.Of<Player.FirearmController.Idling>()] = (OperationFactoryDelegate)Idle1;
-        // Look for operations that implement OnShellEjectEvent and ThrowPatronAsLoot
+        // 查找实现了 OnShellEjectEvent 和 ThrowPatronAsLoot 的操作
         operationFactoryDelegates[Il2CppInterop.Runtime.Il2CppType.Of<Player.FirearmController.ReloadMultiBarrelOperation>()] = (OperationFactoryDelegate)ThrowPatron1;
         operationFactoryDelegates[Il2CppInterop.Runtime.Il2CppType.Of<Player.FirearmController.ReloadSingleBarrelOperation>()] = (OperationFactoryDelegate)ThrowPatron2;
         operationFactoryDelegates[Il2CppInterop.Runtime.Il2CppType.Of<Player.FirearmController.RepairMalfunction>()] = (OperationFactoryDelegate)ThrowPatron3;
@@ -191,9 +191,9 @@ public sealed class ObservedFirearmController : FirearmController
 
     public void ReceiveFireMode(Weapon.EFireMode fireMode)
     {
-        // A remote controller can still be drawing its weapon when the host
-        // is already idle. SPT 5's non-idle operation may return true without
-        // changing the mode. Retain the latest ordered update until idle.
+        // 远程控制器可能仍在掏枪，而主机已经
+        // 处于空闲状态。SPT 5 的非空闲操作可能返回 true 却不
+        // 改变模式。在空闲之前保留最新的有序更新。
         _pendingFireMode = fireMode;
         ApplyPendingFireMode();
     }
@@ -411,13 +411,13 @@ public sealed class ObservedFirearmController : FirearmController
         }
     }
 
-    // AdjustShotVectors was an empty override here. An override of this (injected) type makes the
-    // interop emit a reverse-P/Invoke entry point for it (invoker + trampoline), which the runtime
-    // JIT-compiles for the first time inside the native callout that reaches it - where a failure is
-    // the uncatchable 0x80131506 fail fast rather than a managed exception. The behaviour (observed
-    // players must not adjust shot vectors locally) is now expressed on the native method instead:
-    // Main/Patches/HandsController/FirearmController_AdjustShotVectors_Patch.cs. See
-    // analysis/adjust-shot-vectors/REPORT.md.
+    // AdjustShotVectors 在这里曾是空的 override。对这种（注入的）类型的 override 会让
+    // interop 为它生成反向 P/Invoke 入口点（invoker + trampoline），运行时会在
+    // 到达它的那次原生回调中首次 JIT 编译该入口点——此处的失败是不可捕获的
+    // 0x80131506 fail fast，而不是托管异常。该行为（受观察的
+    // 玩家不得在本地调整射击向量）现在改为在原生方法上表达：
+    // Main/Patches/HandsController/FirearmController_AdjustShotVectors_Patch.cs。参见
+    // analysis/adjust-shot-vectors/REPORT.md。
 
     public override bool CanChangeCompassState(bool newState)
     {
@@ -431,12 +431,12 @@ public sealed class ObservedFirearmController : FirearmController
 
     public override void OnCanUsePropChanged(bool canUse)
     {
-        // Do nothing
+        // 不执行任何操作
     }
 
     public override void SetCompassState(bool active)
     {
-        // Do nothing
+        // 不执行任何操作
     }
 
     public override bool ToggleBipod()
@@ -445,16 +445,16 @@ public sealed class ObservedFirearmController : FirearmController
     }
 
     /// <summary>
-    /// Fires a replicated rocket
+    /// 发射一枚复制的火箭弹
     /// </summary>
-    /// <param name="rocketClass">The ammo to shoot</param>
-    /// <param name="shotPosition">Start position</param>
-    /// <param name="shotForward">The forward velocity</param>
+    /// <param name="rocketClass">要射击的弹药</param>
+    /// <param name="shotPosition">起始位置</param>
+    /// <param name="shotForward">前向速度</param>
     public void HandleRocketShot(Ammo rocketClass, Vector3 shotPosition, Vector3 shotForward)
     {
         FirearmsAnimator.SetFire(true);
 
-        // Handle the rocket shot
+        // 处理火箭弹射击
         rocketClass.IsUsed = true;
         var smokePort = TransformTools.FindTransformRecursiveContains(WeaponRoot.transform, "smokeport", false);
         InitiateRocket(rocketClass.Cast<Rocket>(), shotPosition, shotForward, smokePort);
@@ -554,7 +554,7 @@ public sealed class ObservedFirearmController : FirearmController
                         if (fedAmmo != null)
                         {
                             Weapon.MalfState.MalfunctionedAmmo = fedAmmo;
-                            // Leave here for now - Lacyway
+                            // 暂时保留在此处 - Lacyway
                             /*weaponManager.SetRoundIntoWeapon(fedAmmo, 0);
                             weaponManager.MoveAmmoFromChamberToShellPort(false, 0);*/
                         }
@@ -777,9 +777,9 @@ public sealed class ObservedFirearmController : FirearmController
 
         ammo.IsUsed = true;
 
-        // SPT 5 commits the next cartridge in ProcessInventoryOperationsForSingleShot
-        // for bolt actions too. Observed animation events may be culled, so they
-        // must not own inventory mutations or allocate the next cartridge's ID.
+        // SPT 5 在 ProcessInventoryOperationsForSingleShot 中也会为栓动
+        // 枪械提交下一发枪弹。受观察的动画事件可能被剔除，因此它们
+        // 不得负责库存变更，也不得分配下一发枪弹的 ID。
         if (magazine?.Count > 0)
         {
             if (hasChambers && magazine.IsAmmoCompatible(Item.Chambers) && Item.Chambers[0].ContainedItem == null)
@@ -815,10 +815,10 @@ public sealed class ObservedFirearmController : FirearmController
     }
 
     /// <summary>
-    /// Handles a shot when the reload mode is <see cref="Weapon.EReloadMode.OnlyBarrel"/>
+    /// 在换弹模式为 <see cref="Weapon.EReloadMode.OnlyBarrel"/> 时处理射击
     /// </summary>
-    /// <param name="weapon">The weapon to handle</param>
-    /// <param name="index">Index of the chamber</param>
+    /// <param name="weapon">要处理的武器</param>
+    /// <param name="index">弹膛的索引</param>
     private void HandleBarrelOnlyShot(Weapon weapon, int index)
     {
         var ammoSlot = weapon.Chambers[index];
@@ -904,7 +904,7 @@ public sealed class ObservedFirearmController : FirearmController
 
         public override void ProcessRemoveOneOffWeapon()
         {
-            // Do nothing
+            // 不执行任何操作
         }
     }
 

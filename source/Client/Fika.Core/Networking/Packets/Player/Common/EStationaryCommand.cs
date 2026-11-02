@@ -1,22 +1,22 @@
 ﻿namespace Fika.Core.Networking.Packets.Player.Common;
 
 /// <summary>
-/// Represents commands related to stationary equipment or positions.
+/// 表示与固定式设备或固定位置相关的命令。
 /// </summary>
 public enum EStationaryCommand : byte
 {
     /// <summary>
-    /// Occupy the stationary turret.
+    /// 占用固定式炮塔。
     /// </summary>
     Occupy,
 
     /// <summary>
-    /// Leave the stationary turret.
+    /// 离开固定式炮塔。
     /// </summary>
     Leave,
 
     /// <summary>
-    /// Access to the turret was denied.
+    /// 对炮塔的访问被拒绝。
     /// </summary>
     Denied
 }

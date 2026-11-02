@@ -4,8 +4,8 @@ namespace Fika.Core;
 
 internal static class FikaNotifications
 {
-    // IL2CPP's generated wrapper unboxes Nullable<Color>. C#'s optional null
-    // is a null wrapper, not the native value type with HasValue == false.
+    // IL2CPP 生成的包装会拆箱 Nullable<Color>。C# 的可选 null
+    // 是一个 null 包装对象，而不是 HasValue == false 的原生值类型。
     public static void DisplayMessageNotification(string message,
         ENotificationDurationType duration = ENotificationDurationType.Default,
         ENotificationIconType iconType = ENotificationIconType.Default,

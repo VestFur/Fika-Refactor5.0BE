@@ -28,12 +28,12 @@ public static class FikaRequestHandler
     }
 
     /// <summary>
-    /// Resolves the WAN address this machine announces when it hosts a raid.
+    /// 解析本机在主持 raid 时宣告的 WAN 地址。
     ///
-    /// Returns <see langword="null"/> when no provider answers. This is a degradation and
-    /// never a failure: the address is read by exactly one caller (FikaServer.Init, the raid
-    /// host) and the client join path does not touch it. Throwing here used to turn an
-    /// offline install into a "RunChecks" error line that hid the real problem.
+    /// 当没有提供者应答时返回 <see langword="null"/>。这是一种降级，
+    /// 而绝不是失败：该地址恰好只被一个调用方读取（FikaServer.Init，即 raid
+    /// 主机），而客户端加入路径不触碰它。在此处抛异常过去会把一次
+    /// 离线安装变成一行 "RunChecks" 错误，从而掩盖真正的问题。
     /// </summary>
     public static async Task<IPAddress> GetPublicIP()
     {
@@ -44,22 +44,22 @@ public static class FikaRequestHandler
             "https://ipv4.icanhazip.com/"
         ];
 
-        // An IPv6 only network has no IPv4 egress at all, so a second pass over
-        // providers that answer over IPv6 keeps the raid host announceable there
-        // instead of burning three timeouts and failing.
+        // 纯 IPv6 网络完全没有 IPv4 出口，因此对通过 IPv6 应答的提供者
+        // 再做一轮遍历，可以让 raid 主机在那里仍然可被宣告，
+        // 而不是白白消耗三个超时然后失败。
         string[] ipv6Urls = [
             "https://api64.ipify.org/",
             "https://ipv6.icanhazip.com/",
             "https://ifconfig.co/ip"
         ];
 
-        // The first provider that fails is the one that explains the whole lookup, and every provider
-        // after it usually repeats the same transport failure. Reported once per cause accordingly: the
-        // first failure keeps the full evidence (message, stack, inner exceptions), the others are one
-        // line each without a stack. Before this, one reset TLS handshake produced one stack block per
-        // provider plus the first-chance entries of every throw inside HttpClient
-        // (2026-10-10, analysis/log-noise-cleanup: api.ipify.org reset the handshake, 10 first-chance
-        // entries, ~54 lines of stack for a single provider failure).
+        // 第一个失败的提供者就解释了整个查询，而它之后每个提供者
+        // 通常重复同样的传输失败。因此按原因只报告一次：
+        // 第一次失败保留完整证据（消息、堆栈、内部异常），其余各只是
+        // 一行且不带堆栈。在此之前，一次被重置的 TLS 握手会为每个
+        // 提供者产生一个堆栈块，再加上 HttpClient 内部每次抛出的首次机会异常条目
+        // （2026-10-10，analysis/log-noise-cleanup：api.ipify.org 重置了握手，10 条首次机会
+        // 条目，单个提供者失败约 54 行堆栈）。
         string firstFailure = null;
 
         void ReportFailure(string url, AddressFamily family, string reason, Exception exception)
@@ -138,10 +138,10 @@ public static class FikaRequestHandler
         }
 
         const string failure = "Could not retrieve or parse the external IP address from any provider.";
-        // Degraded from error to warning, with the first reason in the same line: no provider answering
-        // costs the raid host its announced WAN address (set 'Force IP' to announce one) and leaves the
-        // join path untouched. The reason itself is what a tester needs, and it used to be buried under
-        // the per-provider stack blocks.
+        // 由错误降级为警告，并在同一行给出首个原因：没有提供者应答会
+        // 让 raid 主机失去其宣告的 WAN 地址（设置 'Force IP' 来宣告一个），而
+        // 加入路径不受影响。原因本身才是测试者需要的，而它过去被埋在
+        // 每个提供者的堆栈块之下。
         FikaGlobals.LogWarning(firstFailure == null ? failure : failure + " First failure: " + firstFailure);
         
         return null;
@@ -167,8 +167,8 @@ public static class FikaRequestHandler
 
     private static T GetJson<T>(string path)
     {
-        // Only transport runs off-thread. Game objects must be decoded on the
-        // caller's thread, especially while Plugin.Load blocks the Unity loop.
+        // 只有传输在线程外运行。游戏对象必须在
+        // 调用方的线程上解码，尤其是当 Plugin.Load 阻塞 Unity 循环时。
         var response = Task.Run(() => _httpClient.GetAsync(path))
             .GetAwaiter()
             .GetResult();
@@ -261,16 +261,16 @@ public static class FikaRequestHandler
 
     public static async Task RaidCreate(CreateMatch data)
     {
-        // The SPT 5.0 server intentionally returns an empty body for raid
-        // creation. Treat a completed request as success and let transport
-        // exceptions propagate to the caller.
+        // SPT 5.0 服务器对 raid 创建刻意返回空响应体。
+        // 把已完成的请求视为成功，并让传输
+        // 异常传播到调用方。
         await PutJsonAsync("/fika/raid/create", data);
     }
 
     /// <summary>
-    /// The backend address this client is pointed at (for example https://127.0.0.1:6969), for
-    /// diagnostics only. The launcher owns this value; it is printed next to every host lookup
-    /// failure so a report says which server was asked.
+    /// 本客户端所指向的后端地址（例如 https://127.0.0.1:6969），
+    /// 仅用于诊断。该值由启动器掌管；它会打印在每一次主机查询
+    /// 失败旁边，以便报告说明询问的是哪个服务器。
     /// </summary>
     public static string ServerHost
     {
@@ -289,19 +289,19 @@ public static class FikaRequestHandler
     }
 
     /// <summary>
-    /// Raw JSON of the last <see cref="GetHost"/> answer, or <see langword="null"/> when that call
-    /// produced none. The join path prints it when a host answers without an address: the decoded DTO
-    /// alone cannot show whether the server sent an empty list, a "null" body for an unknown match or
-    /// something else entirely.
+    /// 最后一次 <see cref="GetHost"/> 应答的原始 JSON，或 <see langword="null"/>（当该调用
+    /// 没有产生任何应答时）。当某个主机应答却没有地址时，加入路径会打印它：
+    /// 仅凭解码后的 DTO 无法看出服务器发送的是空列表、针对未知对局的 "null" 响应体，
+    /// 还是完全不同的东西。
     /// </summary>
     public static string LastGetHostResponseBody { get; private set; }
 
     /// <summary>
-    /// Transport-level failure of the last <see cref="GetHost"/> call, or <see langword="null"/> when
-    /// it returned. The HTTP layer (SPTushonka's Client.SendAsync) throws
-    /// "Http response status code: {code}" for every non-2xx answer and never hands the body back, so
-    /// the status is only ever visible here, as this text. Reading the status separately would need a
-    /// change inside that layer; a raw-body channel for the one call that matters avoids it.
+    /// 最后一次 <see cref="GetHost"/> 调用的传输级失败，或 <see langword="null"/>（当它
+    /// 成功返回时）。HTTP 层（SPTushonka 的 Client.SendAsync）对每个
+    /// 非 2xx 应答都抛出 "Http response status code: {code}"，且从不把响应体交回，因此
+    /// 状态只能在这里以这段文本的形式可见。单独读取状态将需要在
+    /// 该层内部做改动；为那个真正重要的调用提供一条原始响应体通道就避免了它。
     /// </summary>
     public static string LastGetHostFailure { get; private set; }
 
@@ -314,7 +314,7 @@ public static class FikaRequestHandler
         byte[] response;
         try
         {
-            // Same transport path as PostJson: only the transfer runs off-thread.
+            // 与 PostJson 相同的传输路径：只有传输在线程外运行。
             response = Task.Run(() => _httpClient.PostAsync("/fika/raid/gethost", payload))
                 .GetAwaiter()
                 .GetResult();
@@ -325,7 +325,7 @@ public static class FikaRequestHandler
             throw;
         }
 
-        // Kept before decoding so a body that fails to deserialize is still readable.
+        // 在解码之前保存，这样反序列化失败的响应体仍可读取。
         LastGetHostResponseBody = Encoding.UTF8.GetString(response);
         return FikaJson.Deserialize<GetHostResponse>(LastGetHostResponseBody);
     }

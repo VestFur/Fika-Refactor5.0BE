@@ -18,10 +18,10 @@ public class MenuTaskBar_Patch : ModulePatch
 {
     private static DateTime _lastDownload = DateTime.Now.AddMinutes(-2);
 
-    // The toggle and the tooltip below are handed to the live MenuTaskBar, which calls into
-    // them on every screen transition. They are kept so the next main menu can re-check the
-    // exact pointers that were registered (a reference the engine holds is the one thing a
-    // guard in this class cannot see).
+    // 下面的 toggle 与 tooltip 会被交给运行中的 MenuTaskBar，它会在每次界面切换时
+    // 调用它们。之所以保留它们，是为了让下一个主菜单能够重新核对
+    // 当初注册的那些确切指针（引擎持有的引用正是本类中的
+    // 防护无法看见的东西）。
     private static AnimatedToggle _registeredToggle;
     private static HoverTooltipArea _registeredTooltip;
     private static bool _disabledReported;
@@ -34,9 +34,9 @@ public class MenuTaskBar_Patch : ModulePatch
     [PatchPostfix]
     public static void Postfix(EFT.UI.MenuTaskBar __instance)
     {
-        // Coop / 'Download Profile Button' is this decoration's own kill switch: the taskbar
-        // calls into the toggle and the tooltip registered here on every screen transition,
-        // so it can be switched off while the online players panel stays enabled.
+        // Coop / 'Download Profile Button' 是这个装饰自身的 kill switch：taskbar
+        // 会在每次界面切换时调用此处注册的 toggle 与 tooltip，
+        // 因此可以关掉它而让在线玩家面板保持启用。
         if (!(FikaPlugin.Instance.Settings.DownloadProfileButton?.Value ?? true))
         {
             if (!_disabledReported)
@@ -48,9 +48,9 @@ public class MenuTaskBar_Patch : ModulePatch
             return;
         }
 
-        // The nodes this patch rewires are live SPT 5 taskbar objects. A missing node used
-        // to throw straight out of MenuTaskBar.Awake and abort the main menu; report it and
-        // leave the taskbar untouched instead.
+        // 本补丁重接的节点是运行中的 SPT 5 taskbar 对象。缺少节点过去会直接从
+        // MenuTaskBar.Awake 抛出并中断主菜单；现在改为上报它，并
+        // 让 taskbar 保持原状。
         try
         {
             Apply(__instance);
@@ -62,8 +62,8 @@ public class MenuTaskBar_Patch : ModulePatch
     }
 
     /// <summary>
-    /// Looks up the first child image of a taskbar node without ever dereferencing a child
-    /// that is not a real object (the chain used to be evaluated unconditionally).
+    /// 查找某个 taskbar 节点的第一个子图像，且绝不会解引用一个并非真实对象的
+    /// 子节点（这条链过去是无条件求值的）。
     /// </summary>
     private static Image FirstImageOf(GameObject root)
     {
@@ -101,8 +101,8 @@ public class MenuTaskBar_Patch : ModulePatch
         var watchlistGameobject = GameObject.Find("Preloader UI/Preloader UI/BottomPanel/Content/TaskBar/Tabs/Watchlist");
         if (NativeRefGuard.IsUsable(watchlistGameobject))
         {
-            // SPT 5 retains serialized references to taskbar controls after
-            // Awake. Keep hidden controls alive for later screen transitions.
+            // SPT 5 在 Awake 之后仍保留对 taskbar 控件的序列化引用。
+            // 为后续的界面切换保持隐藏控件存活。
             watchlistGameobject.SetActive(false);
             var fleaMarketGameObject = GameObject.Find("Preloader UI/Preloader UI/BottomPanel/Content/TaskBar/Tabs/FleaMarket");
             if (NativeRefGuard.IsUsable(fleaMarketGameObject))
@@ -110,9 +110,9 @@ public class MenuTaskBar_Patch : ModulePatch
                 var downloadProfileGameObject = GameObject.Instantiate(fleaMarketGameObject);
                 
                 downloadProfileGameObject.name = "DownloadProfile";
-                // The live taskbar node is used as the parent, so it is verified before it
-                // is handed to SetParent - an invalid parent reference would be stored by the
-                // engine and dereferenced later.
+                // 运行中的 taskbar 节点被用作父节点，因此在交给 SetParent 之前
+                // 会先验证它 —— 无效的父引用会被引擎存下来并
+                // 在之后被解引用。
                 var taskBarParent = fleaMarketGameObject.transform.parent;
                 if (!NativeRefGuard.IsUsable(taskBarParent))
                 {
@@ -129,8 +129,8 @@ public class MenuTaskBar_Patch : ModulePatch
 
                 
                 cloneTransform.SetParent(taskBarParent, false);
-                // The sibling index is only applied to a transform that proved to be real: the
-                // engine stores it in the parent's child list and dereferences it later.
+                // 同级索引只会应用在已证实为真实的 transform 上：
+                // 引擎会把它存进父节点的子列表并在之后解引用。
                 cloneTransform.SetSiblingIndex(10);
 
                 var downloadProfileButton = downloadProfileGameObject.transform.GetChild(0).gameObject;
@@ -148,8 +148,8 @@ public class MenuTaskBar_Patch : ModulePatch
                 var buildListObject = GameObject.Find("/Menu UI/UI/EquipmentBuildsScreen/Panels/BuildsListPanel/Header/SizeSample/Selected/Icon");
                 if (NativeRefGuard.IsUsable(buildListObject))
                 {
-                    // The sprite donors are live SPT 5 objects; each step of the chain is
-                    // checked so a missing node cannot turn into a native dereference.
+                    // 提供 sprite 的对象是运行中的 SPT 5 对象；这条链的每一步都会被
+                    // 检查，因此缺失的节点不会变成一次原生解引用。
                     var downloadImage = buildListObject.GetComponent<Image>();
                     var downloadProfileImage = FirstImageOf(downloadProfileButton);
                     if (NativeRefGuard.IsUsable(downloadProfileImage) && NativeRefGuard.IsUsable(downloadImage))
@@ -162,9 +162,9 @@ public class MenuTaskBar_Patch : ModulePatch
                 if (NativeRefGuard.IsProvablyUsable(animatedToggle, "AnimatedToggle", out string toggleDetail))
                 {
                     
-                    // Both of these are writes into serialized fields of a live object that the
-                    // taskbar re-uses on every screen transition; they only happen once the
-                    // object proved to be the expected component.
+                    // 这两处都是对运行中对象的序列化字段的写入，而该对象会被
+                    // taskbar 在每次界面切换时复用；只有在对象已证实为期望的
+                    // 组件之后才会发生。
                     animatedToggle.group = null;
                     animatedToggle.onValueChanged = new Toggle.ToggleEvent();
                     
@@ -198,7 +198,7 @@ public class MenuTaskBar_Patch : ModulePatch
                                         Directory.CreateDirectory(fikaDir);
                                     }
 
-                                    // create dir, put profile in dir and moddata, change to dictionary, key = modName
+                                    // 创建目录，把档案和 moddata 放进目录，切换为字典，key = modName
 
                                     var profileId = Singleton<ClientApplication<IEftSession>>.Instance.Session.Profile.ProfileId;
 
@@ -259,10 +259,10 @@ public class MenuTaskBar_Patch : ModulePatch
                         surveyButton.gameObject.SetActive(false);
                     }
 
-                    // These two objects are handed to the live taskbar, which calls into them
-                    // on every screen transition. Registering a reference that is not a real
-                    // native object would make the menu dereference garbage later, so the
-                    // registration only happens once both proved usable.
+                    // 这两个对象会被交给运行中的 taskbar，它会在每次界面切换时调用它们。
+                    // 注册一个并非真实原生对象的引用，会让菜单之后解引用到垃圾数据，
+                    // 因此只有在两个对象都被证明确实可用之后，
+                    // 才会进行注册。
                     var tooltip = downloadProfileGameObject.GetComponentInChildren<HoverTooltipArea>(true);
                     if (!NativeRefGuard.IsProvablyUsable(tooltip, "HoverTooltipArea", out _))
                     {
@@ -277,9 +277,9 @@ public class MenuTaskBar_Patch : ModulePatch
                         return;
                     }
 
-                    // The taskbar keeps these two and calls into them on every screen
-                    // transition: it only receives references that proved to be the expected
-                    // components, so the engine never ends up holding a value like 0x0A.
+                    // taskbar 会保留这两个对象，并在每次界面
+                    // 切换时调用它们：它只会收到被证明确为期望组件的引用，
+                    // 因此引擎永远不会持有类似 0x0A 这样的值。
                     __instance._toggleButtons.Add(EMenuType.NewsHub, animatedToggle);
                     __instance._hoverTooltipAreas.Add(EMenuType.NewsHub, tooltip);
                     _registeredToggle = animatedToggle;

@@ -14,8 +14,8 @@ internal class FikaPlayer_OnItemAddedOrRemoved_Transpiler : ModulePatch
     public static void Postfix(Player __instance)
     {
         if (__instance.TryCast<FikaPlayer>() == null) return;
-        // Includes nested plate changes, which need not replace the armor slot.
-        // Keep the native item event path and refresh Fika's cache afterwards.
+        // 包含嵌套的护板变更，这类变更不一定替换护甲槽位。
+        // 保留原生的物品事件路径，随后刷新 Fika 的缓存。
         var armors = __instance._preAllocatedArmorComponents;
         armors.Clear();
         __instance.Inventory.GetPutOnArmorsNonAlloc(armors);

@@ -12,11 +12,11 @@ using UnityEngine.SceneManagement;
 
 namespace Fika.Core.Networking.VOIP;
 
-/// <summary>A raid transport owns its voice scene, including unfinished scene loads.</summary>
+/// <summary>一个突袭传输拥有自己的语音场景，包括尚未完成的场景加载。</summary>
 internal sealed class FikaVoiceSession(IFikaNetworkManager owner, bool headless) : IDisposable
 {
-    // Unity scene loading cannot be cancelled. A cancelled load keeps this lease
-    // until it finishes and is unloaded, so the next raid cannot adopt its objects.
+    // Unity 场景加载无法取消。被取消的加载会一直持有这份租约，
+    // 直到它完成并被卸载，这样下一次突袭就无法收养它的对象。
     private static readonly SemaphoreSlim SceneLease = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
     private FikaCommsNetwork _network;
@@ -70,8 +70,8 @@ internal sealed class FikaVoiceSession(IFikaNetworkManager owner, bool headless)
             await AssetsManagerExtension.LoadScene(EFT.Assets.Manager, Scenes.DissonanceSetupScene,
                 LoadSceneMode.Additive).AsManaged();
 
-            // Capture the scene before checking cancellation; a late scene still
-            // belongs to this session and must not initialize in the next raid.
+            // 在检查取消之前先捕获场景；迟到的场景仍然
+            // 属于这个会话，绝不能在下一次突袭中初始化。
             for (var i = 0; i < SceneManager.sceneCount; i++)
             {
                 var scene = SceneManager.GetSceneAt(i);
@@ -85,8 +85,8 @@ internal sealed class FikaVoiceSession(IFikaNetworkManager owner, bool headless)
                     break;
                 }
             }
-            // Scene loading may complete before its voice prefab becomes active.
-            // Keep the lease until the new component appears or this session is cancelled.
+            // 场景加载可能在它的语音预制体变为激活之前就完成。
+            // 一直持有租约，直到新组件出现或者这个会话被取消。
             while (_native == null)
             {
                 foreach (var native in UnityEngine.Object.FindObjectsOfType<MirrorIgnoranceCommsNetwork>())
@@ -152,10 +152,10 @@ internal sealed class FikaVoiceSession(IFikaNetworkManager owner, bool headless)
                     comms.IsMuted = true;
                     comms.MuteAllRemoteVoices = true;
                 }
-                // Also handles a setup prefab which moved to DontDestroyOnLoad.
+                // 同样处理一个被移到 DontDestroyOnLoad 的装配预制体。
                 UnityEngine.Object.Destroy(_native.gameObject);
-                // Destroy is deferred until the end of the frame, including
-                // clearing Dissonance's native singleton in OnDestroy.
+                // Destroy 会推迟到帧末执行，其中也包括
+                // 在 OnDestroy 中清除 Dissonance 的原生单例。
                 while (_native != null) await Task.Yield();
             }
             if (_ownsScene && _scene.IsValid() && _scene.isLoaded)

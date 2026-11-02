@@ -46,7 +46,7 @@ public sealed class ObservedQuickUseItemController : Player.QuickUseItemControll
 
 
         /// <summary>
-        /// Used to prevent nullref due to BSG never assigning _onControllerDestroyed
+        /// 用于防止空引用，因为 BSG 从未给 _onControllerDestroyed 赋值
         /// </summary>
         public override void OnUseAction()
         {

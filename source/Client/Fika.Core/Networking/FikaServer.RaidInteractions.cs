@@ -18,9 +18,9 @@ public sealed partial class FikaServer
         FikaFinalMissionDirector.ReceiveQuestStates(packet, peer.Player);
 
     /// <summary>
-    /// BJ (analysis/terminal-rauf-card): a peer reports that a player passed the terminal card check. The
-    /// host owns the answer (its own world holds the sentry whose rule decides), so it applies the fact to
-    /// its own sentries and hands it to every other peer - which is what makes every machine agree.
+    /// BJ (analysis/terminal-rauf-card)：某个节点报告有玩家通过了终端刷卡检查。
+    /// 主机拥有答案（它自己的世界中持有做出判定的哨兵），因此它把该事实应用到
+    /// 自己的哨兵，并转交给其他每个节点——这正是让每台机器达成一致的原因。
     /// </summary>
     private void OnSentryAccessPacketReceived(SentryAccessPacket packet, NetPeer peer) =>
         Main.Components.FikaSentryAccess.Receive(packet.ProfileId, packet.RaidId, packet.Granted, true,
@@ -31,11 +31,11 @@ public sealed partial class FikaServer
         if (packet.IsRequest) RaidInteractionSync.RequestSnapshot(peer);
     }
 
-    // BB (analysis/icebreaker-keypad-door): every well-formed attempt of a living participant is answered now.
-    // The two paths that used to return silently (this host knows no such passcode id, no terminal carries the
-    // net id of the attempt) left the peer's native panel in its waiting state with a locked keypad - the native
-    // server always answers an attempt, so a rejection is answered as a rejection. Each branch writes one
-    // [KeypadDiag] line, which is the only place the host's side of a keypad can be read from.
+    // BB (analysis/icebreaker-keypad-door)：活着的参与者发出的每个格式正确的尝试现在都会得到应答。
+    // 过去会静默返回的两条路径（本主机不知道这样的通行码 id、没有终端持有该尝试的
+    // net id）会让节点的原生面板停在等待状态、键盘被锁——而原生
+    // 服务器总会应答一次尝试，因此拒绝也会作为拒绝被应答。每个分支写一行
+    // [KeypadDiag] 日志，这是唯一能读到主机侧键盘情况的地方。
     private void OnPasscodeAttemptPacketReceived(PasscodeAttemptPacket packet, NetPeer peer)
     {
         var player = peer.Player;
@@ -69,10 +69,10 @@ public sealed partial class FikaServer
                 AnswerAttempt(peer, player.NetId, packet);
                 return;
             }
-            // Use the same native validation, unlock and interaction-result path as the host.
-            // Its postfix broadcasts the actual result, including failed attempts.
+            // 使用与主机相同的原生校验、解锁与交互结果路径。
+            // 它的 postfix 会广播实际结果，包括失败的尝试。
             controller.HandleSubmitPasscode(player, terminal, packet.Input);
-            // The host has no password panel subscribed for this observed player.
+            // 主机没有为该观察玩家订阅密码面板。
             var successful = controller._generatedPasscodes.TryGetValue(packet.PasscodeId, out var expected) &&
                 string.Equals(expected, packet.Input, StringComparison.Ordinal);
             
@@ -84,7 +84,7 @@ public sealed partial class FikaServer
         AnswerAttempt(peer, player.NetId, packet);
     }
 
-    /// <summary>The native answer to an attempt this host cannot accept, so a peer's panel never waits forever.</summary>
+    /// <summary>对本主机无法接受的尝试给出的原生应答，这样节点的面板永远不会无限等待。</summary>
     private void AnswerAttempt(NetPeer peer, int netId, PasscodeAttemptPacket packet)
     {
         var failure = new PasscodeResultPacket { NetId = netId, PasscodeId = packet.PasscodeId,
@@ -92,7 +92,7 @@ public sealed partial class FikaServer
         SendDataToPeer(ref failure, DeliveryMethod.ReliableOrdered, peer);
     }
 
-    /// <summary>The passcode ids this host knows, so a rejection names what it could have accepted.</summary>
+    /// <summary>本主机已知的通行码 id，这样拒绝时能指明它本可接受什么。</summary>
 
     private void OnCutsceneSkipIntentionPacketReceived(CutsceneSkipIntentionPacket packet, NetPeer peer)
     {
@@ -129,7 +129,7 @@ public sealed partial class FikaServer
                     break;
                 }
         }
-        // A denial must answer too, otherwise the client's native interaction would hang.
+        // 拒绝也必须应答，否则客户端的原生交互会挂起。
         DialogEntryOccupancy.Current.TryGetValue(packet.PointId, out var occupant);
         SendGenericPacketToPeer(EGenericSubPacketType.DialogEntry, DialogEntryPacket.Occupancy(packet.PointId, occupant), peer);
     }

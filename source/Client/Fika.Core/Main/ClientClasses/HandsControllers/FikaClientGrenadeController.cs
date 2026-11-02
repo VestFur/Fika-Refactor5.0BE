@@ -205,7 +205,7 @@ public class FikaClientGrenadeController : Player.GrenadeHandsController
             return;
         }
 
-        // Check for GClass increments
+        // 检查 GClass 的递增
         var currentOperation = CurrentOperation;
         if (currentOperation != null)
         {

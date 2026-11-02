@@ -29,8 +29,8 @@ using Fika.Core.Networking.Packets.Player.Common;
 using Fika.Core.Networking.Packets.World;
 using HarmonyLib;
 
-// BJ (analysis/terminal-rauf-card): the sentry access line of the terminal, host side - see
-// FikaSentryAccess and the patches of SentryTerminalAccessPatches.cs.
+// BJ（analysis/terminal-rauf-card）：终端的哨兵通行日志行，主机侧——见
+// FikaSentryAccess 以及 SentryTerminalAccessPatches.cs 中的那些补丁。
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -225,11 +225,11 @@ public sealed partial class FikaServer
     }
 
     /// <summary>
-    /// Attempts to find the item with the given id
+    /// 尝试查找具有给定 id 的物品
     /// </summary>
-    /// <param name="itemId">The id to search for</param>
-    /// <param name="item">The item if found</param>
-    /// <returns><see langword="true"/> if found; otherwise <see langword="false"/></returns>
+    /// <param name="itemId">要搜索的 id</param>
+    /// <param name="item">找到时的物品</param>
+    /// <returns>找到时为 <see langword="true"/>；否则为 <see langword="false"/></returns>
     private bool TryFindItemForProceedPacket(MongoID itemId, out Item item)
     {
         var gameWorld = Singleton<GameWorld>.Instance;
@@ -270,8 +270,8 @@ public sealed partial class FikaServer
         if (!_assignedPeerNetIds.TryGetValue(peer, out var assignedNetId) || packet.NetIds?.Length != 1 ||
             packet.NetIds[0] != assignedNetId || packet.Nicknames?.Length != 1 || LoadingScreenUI.Instance == null)
         {
-            // (analysis/loading-screen-peer-state) A dropped row announcement is the fingerprints of a peer
-            // whose loading state can never appear: name it instead of returning silently.
+            // (analysis/loading-screen-peer-state) 一条被丢弃的行公告，就是一个其加载状态
+            // 永远不可能出现的对等端的指纹：把它点出来，而不是静默返回。
             LoadingScreenUI.DiagThrottled("players-rejected-" + peer.Id, 5f,
                 "row announcement from peer " + peer.Id + " did not pass the check and was dropped: netIds="
                 + (packet.NetIds?.Length.ToString() ?? "null") + ", first="
@@ -286,8 +286,8 @@ public sealed partial class FikaServer
         var hadRow = LoadingScreenUI.Instance.EnsureRow(assignedNetId, packet.Nicknames[0]);
         if (hadRow)
         {
-            // The row was re-created by this announcement: the peer announced itself again after this
-            // machine's own re-arm had dropped its row (the round10 gap) - or it is a normal late join.
+            // 该行已由这次公告重新创建：对等端在
+            // 本机自己的重新装填丢掉它的行之后再次自我公告（round10 的缺口）——也可能只是一次正常的迟到加入。
             LoadingScreenUI.Diag("row for peer " + peer.Id + " (netId=" + assignedNetId + ", '"
                 + packet.Nicknames[0] + "') did not exist on this screen and was created from the peer's "
                 + "announcement (" + LoadingScreenUI.Instance.DescribeRows() + ")");
@@ -301,8 +301,8 @@ public sealed partial class FikaServer
     {
         if (!_assignedPeerNetIds.TryGetValue(peer, out var assignedNetId) || packet.NetId != assignedNetId)
         {
-            // (analysis/loading-screen-peer-state) Progress of a peer that this machine cannot match to an
-            // assigned net id would otherwise vanish without a line.
+            // (analysis/loading-screen-peer-state) 本机无法匹配到某个已分配
+            // net id 的对等端的进度，否则会不留一行地消失。
             LoadingScreenUI.DiagThrottled("progress-rejected-" + peer.Id, 5f,
                 "progress from peer " + peer.Id + " was dropped: packetNetId=" + packet.NetId + ", assigned="
                 + (_assignedPeerNetIds.TryGetValue(peer, out var known) ? known.ToString() : "none")
@@ -312,8 +312,8 @@ public sealed partial class FikaServer
 
         if (LoadingScreenUI.Instance != null)
         {
-            // (analysis/loading-screen-peer-state) ApplyPeerProgress creates the row when this machine's
-            // re-arm dropped it; the row is what makes the peer's loading state visible here at all.
+            // (analysis/loading-screen-peer-state) 当本机自己的重新装填丢掉该行时，
+            // ApplyPeerProgress 会把该行创建出来；正是这一行才让对等端的加载状态在这里可见。
             LoadingScreenUI.Instance.ApplyPeerProgress(packet.NetId, packet.Progress, "peer#" + peer.Id);
         }
 
@@ -381,17 +381,17 @@ public sealed partial class FikaServer
         {
             if (player.FikaQuests is ObservedQuestController controller)
             {
-                // Resource loading can suspend. Keep the decoded packet value
-                // and relay only after the host observer has applied it.
+                // 资源加载可能挂起。保留已解码的包值，
+                // 并且只在主机观察者应用它之后再转发。
                 var relay = packet;
                 MainThreadDispatcher.RunAsync(async () =>
                 {
                     try
                     {
                         await controller.HandleInraidQuestPacketAsync(relay);
-                        // The sender can disconnect while reward bundles load.
-                        // The host has accepted the update, so other clients
-                        // must still receive it after the observer applies it.
+                        // 在奖励包加载期间，发送方可能断开连接。
+                        // 主机已经接受了这次更新，因此其他客户端
+                        // 在观察者应用它之后仍然必须收到它。
                         SendData(ref relay, DeliveryMethod.ReliableOrdered, peer);
                     }
                     catch (Exception exception)
@@ -418,7 +418,7 @@ public sealed partial class FikaServer
                 return;
             }
 
-            // SPT regenerated the scav profile for this late joiner.
+            // SPT 为这名迟到加入者重新生成了 scav 档案。
             _logger.LogInfo($"Rebinding peer {peer.Id} from {assignedProfile} to {packet.ProfileId} (player scav late join)");
             _assignedPeerProfiles[peer] = packet.ProfileId;
         }
@@ -522,7 +522,7 @@ public sealed partial class FikaServer
                 return;
             }
 
-            // Player scav late join: SPT regenerated the profile for this raid.
+            // 玩家 scav 迟到加入：SPT 为本场突袭重新生成了档案。
             _logger.LogInfo($"Accepting loading profile {profile.ProfileId} from player scav peer {peer.Id}");
             _assignedPeerProfiles[peer] = profile.ProfileId;
         }
@@ -556,8 +556,8 @@ public sealed partial class FikaServer
 
     private void OnBotStatePacketReceived(BotStatePacket packet, NetPeer peer)
     {
-        // A client acknowledges loading host-created bots; it cannot own
-        // their enable, disable, or disposal transitions.
+        // 客户端只确认加载主机创建的 bot；它不能拥有
+        // 这些 bot 的启用、禁用或销毁状态变迁。
         if (packet.Type != BotStatePacket.EStateType.LoadBot) return;
         var host = FikaSingleton<IFikaGame>.Instance?.GameController as HostGameController;
         host?.IncreaseLoadedPlayers(packet.NetId, peer);
@@ -565,10 +565,10 @@ public sealed partial class FikaServer
 
     private void OnTransitInteractPacketReceived(TransitInteractPacket packet, NetPeer peer)
     {
-        // (analysis/client-transit-terminal) This drop used to be silent. When a client's press produced no request
-        // on its own machine, the fix re-sends that request, and a mismatch here is the one place it can still
-        // vanish - the line below is the pair of the client's 'press fallback' line, so "the gate refused" and
-        // "the request never arrived" can be told apart in one grep.
+        // (analysis/client-transit-terminal) 这次丢弃原本是静默的。当客户端的按压没有产生请求时，
+        // 修复方案会在它自己的机器上重发该请求，而这里的不匹配是它仍然可能
+        // 消失的唯一地方——下面这一行与客户端的 'press fallback' 行是一对，因此「闸门拒绝了」与
+        // 「请求从未到达」可以用一次 grep 区分开。
         if (peer.Player == null || packet.NetId != peer.Player.NetId)
         {
             return;
@@ -742,14 +742,14 @@ public sealed partial class FikaServer
     {
         if (!_assignedPeerNetIds.TryGetValue(peer, out var assignedNetId) && packet.Type is EGenericSubPacketType.SendCharacter)
         {
-            // (2026-10-17) A transit keeps the UDP connection, but the host can be left without the
-            // per-peer assignment (the assignment table is rebuilt whenever the server object is
-            // re-created, and a surviving connection never re-sends NetworkSettings on its own). The peer
-            // then announces its character into a missing assignment, no player is ever created for it and
-            // every later request is answered with "unbound player" - the reported state after a transit:
-            // no weapon switching, no item moves, and the client standing still on the host.
-            // The assignment is restored only from the net id this host itself handed out for exactly that
-            // profile, never from a value the peer chooses.
+            // (2026-10-17) 中转会保留 UDP 连接，但主机可能被留成没有
+            // 逐对等端分配的状态（每当服务器对象被重建，分配表都会重建，
+            // 而一条存活下来的连接从不自行重发 NetworkSettings）。对等端随后
+            // 就把自己的角色公告进一个缺失的分配里，于是永远不会为它创建玩家，
+            // 之后每个请求都被回答 "unbound player"——这就是中转之后被报告的状态：
+            // 无法切换武器、无法移动物品，客户端在主机上站着不动。
+            // 分配只从这台主机自己为那个档案发出的 net id 恢复，
+            // 绝不使用对等端自己选的值。
             if (packet.SubPacket is SendCharacterPacket restoring
                 && restoring.PlayerInfoPacket.Profile != null
                 && _cachedConnections.TryGetValue(restoring.PlayerInfoPacket.Profile.ProfileId, out var cachedNetId)
@@ -776,9 +776,9 @@ public sealed partial class FikaServer
         }
         if (packet.Type is EGenericSubPacketType.SendCharacter)
         {
-            // The first character announcement precedes the final information
-            // packet that binds peer.Player. Validate against the settings
-            // assignment instead of requiring that later binding.
+            // 第一次角色公告发生在绑定 peer.Player 的最终信息
+            // 包之前。要针对设置里的分配来校验，
+            // 而不是要求那个稍后才会发生的绑定。
             if (packet.SubPacket is SendCharacterPacket logged)
             {
                 _logger.LogInfo($"Character announcement from peer {peer.Id}: netId={logged.NetId} " +
@@ -795,8 +795,8 @@ public sealed partial class FikaServer
 
             if (character.IsAI || character.NetId != assignedNetId || character.PlayerInfoPacket.Profile == null)
             {
-                // Without this the peer silently never gets a player, and every one
-                // of its inventory operations is rejected afterwards.
+                // 没有这一步，对等端就会静默地永远得不到玩家，而它的每一项
+                // 物品栏操作此后都会被拒绝。
                 _logger.LogWarning($"Rejected the character announcement from peer {peer.Id}: " +
                     $"isAI={character.IsAI}, netId={character.NetId} (assigned {assignedNetId}), " +
                     $"profile={(character.PlayerInfoPacket.Profile == null ? "null" : "present")}");
@@ -809,9 +809,9 @@ public sealed partial class FikaServer
                 _logger.LogInfo($"Peer {peer.Id} announced profile " +
                     $"{character.PlayerInfoPacket.Profile.ProfileId} while the server assigned " +
                     $"{(_assignedPeerProfiles.TryGetValue(peer, out var current) ? current : "none")}");
-                // A player scav that joined a running raid announces the profile
-                // SPT regenerated for this raid; accept and rebind it, otherwise
-                // the host never creates a player for it.
+                // 加入一场进行中突袭的玩家 scav 会公告 SPT 为这场突袭
+                // 重新生成的档案；接受并重新绑定它，否则
+                // 主机永远不会为它创建玩家。
                 if (!_scavLateJoinPeers.Contains(peer)) return;
                 _logger.LogInfo($"Accepting regenerated scav profile " +
                     $"{character.PlayerInfoPacket.Profile.ProfileId} from peer {peer.Id}");
@@ -835,9 +835,9 @@ public sealed partial class FikaServer
         packet.Execute();
         if (packet.Type is EGenericSubPacketType.SendCharacter)
         {
-            // This announcement was validated above. Forward it explicitly:
-            // the raw broadcast path suppresses unvalidated character data.
-            // Do not clear the receive packet; NetPacketProcessor owns its pool.
+            // 这次公告已在上方校验过。要显式转发它：
+            // 原始广播路径会抑制未校验的角色数据。
+            // 不要清空接收包；NetPacketProcessor 拥有它的对象池。
             var writer = new NetDataWriter();
             writer.PutEnum(EPacketType.Serializable);
             _packetProcessor.WriteNetReusable(writer, ref packet);
@@ -847,12 +847,12 @@ public sealed partial class FikaServer
 
     private void OnInformationPacketReceived(InformationPacket packet, NetPeer peer)
     {
-        // The client polls this request and can retry the ready message during
-        // reconnect. Count the connection once for this raid's ready barrier.
-        // A packet can arrive while the native server component is being
-        // constructed (or while a reconnect is tearing down the old raid).
-        // Treat the unbound state as not ready instead of dereferencing the
-        // dictionaries before Init has populated them.
+        // 客户端会轮询这个请求，并可能在
+        // 重连期间重试就绪消息。对本次突袭的就绪屏障，这条连接只计一次。
+        // 包可能在原生服务器组件正在构造时到达
+        // （或者在重连正在拆除旧突袭时到达）。
+        // 要把未绑定状态当作未就绪处理，而不是在 Init 填充那些
+        // 字典之前就去解引用它们。
         if (_assignedPeerProfiles?.ContainsKey(peer) == true && packet.ReadyPlayers > 0 &&
             _readyPeers?.Add(peer) == true) ReadyClients++;
 
@@ -881,9 +881,9 @@ public sealed partial class FikaServer
         {
             var gameTimer = _coopHandler.LocalGameInstance.GameController.GameInstance.GameTimer;
             var sessionTime = NativeNullable<Il2CppSystem.TimeSpan>.Read(gameTimer, "<SessionTime>k__BackingField");
-            // During reconnect the native GameTimer can briefly exist without its
-            // SessionTime payload. Do not read Nullable.Value in that window and
-            // do not advertise a partially populated timing packet to the client.
+            // 在重连期间，原生 GameTimer 可能短暂存在却没有它的
+            // SessionTime 载荷。不要在那个窗口里读取 Nullable.Value，也
+            // 不要把填了一半的计时包公布给客户端。
             if (_gameStartTime is not { } gameStartTime || !sessionTime.HasValue)
             {
                 respondPackage.HostReady = false;
@@ -898,10 +898,10 @@ public sealed partial class FikaServer
 
         if (_assignedPeerNetIds?.TryGetValue(peer, out var assignedNetId) == true && assignedNetId != 0)
         {
-            // A player scav that walks into a running raid can announce itself
-            // before it ever reports a remote net id, so fall back to the net id
-            // the server assigned to this peer. Without the binding every proceed
-            // request is answered with "unbound player".
+            // 走进一场进行中突袭的玩家 scav 可能在它报告任何远程
+            // net id 之前就自我公告，因此退回使用服务器分配给
+            // 这个对等端的 net id。没有这个绑定，每个 proceed
+            // 请求都会被回答 "unbound player"。
             var remoteNetId = packet.RemoteNetId != 0 ? packet.RemoteNetId : assignedNetId;
             if (remoteNetId == assignedNetId &&
                 _assignedPeerProfiles?.TryGetValue(peer, out var assignedProfile) == true &&
@@ -929,9 +929,9 @@ public sealed partial class FikaServer
 
     private void OnInventoryPacketReceived(InventoryPacket packet, NetPeer peer)
     {
-        // A client must not choose another player's inventory as the host-side
-        // execution target. Reconnect associates the peer on the information
-        // exchange before normal inventory traffic starts.
+        // 客户端不得把别人的物品栏选作主机侧的
+        // 执行目标。重连会在信息交换阶段就把对等端
+        // 关联好，而这是在正常物品栏流量开始之前。
         if (peer.Player == null || peer.Player.NetId != packet.NetId)
         {
             _logger.LogWarning($"Rejected inventory operation for net id {packet.NetId} from an unbound peer");
@@ -940,12 +940,12 @@ public sealed partial class FikaServer
 
         if (_coopHandler.Players.TryGetValue(packet.NetId, out var playerToApply))
         {
-            // [CarExtract] A paid exfiltration point ("car extract") handover is a
-            // local prediction on the paying client: the native interaction already
-            // told the player the money was transferred. Rejecting the request here
-            // is therefore the only way to stop a second payment, and the rejection
-            // carries the authoritative inventory back so the client can roll its
-            // prediction back.
+            // [CarExtract] 付费撤离点位（"car extract"）的交付，在付款客户端上
+            // 是一次本地预测：原生交互已经
+            // 告诉玩家钱已经转走了。因此在这里拒绝该请求，
+            // 是阻止第二次付款的唯一办法，而这次拒绝
+            // 会带回权威物品栏，好让客户端把自己的
+            // 预测回滚。
             ExfiltrationPoint carExtractPoint = null;
             try
             {
@@ -972,14 +972,14 @@ public sealed partial class FikaServer
                     }
                 }
 
-                // [PlantGuard] (analysis/plant-client-host-crash): the host rebuilds a client's
-                // operation from its descriptor and executes it natively afterwards. For the
-                // destroy-shaped descriptors that rebuild walks the sender's item graph and builds an
-                // ItemManipulator.Discard result before the operation object even exists; a removal
-                // this host can already tell it cannot complete must be stopped in managed code,
-                // here, instead of being handed to that native chain. Every refusal answers exactly
-                // like the conversion failure below (Failed + authoritative resync + id resync), so
-                // the client is never left waiting for a callback.
+                // [PlantGuard]（analysis/plant-client-host-crash）：主机会根据客户端的
+                // 描述符重建它的操作，然后再原生执行它。对于
+                // 销毁形态的描述符，那次重建会遍历发送方的物品图，并在操作对象还不存在时
+                // 就构建出一个 ItemManipulator.Discard 结果；这次主机已经能判断自己
+                // 无法完成的移除，必须在托管代码里、就在这里
+                // 被拦下，而不是交给那条原生链。每一次拒绝的回答都与
+                // 下面的转换失败完全一致（Failed + 权威重同步 + id 重同步），因此
+                // 客户端永远不会被晾在那里等回调。
                 if (PlantRelayGuard.TryRefuse(playerToApply, packet.Descriptor, out var guardRefusal))
                 {
                     PlantRelayGuard.ReportRefusal(packet.NetId, packet.CallbackId, packet.Descriptor, guardRefusal);
@@ -1005,9 +1005,9 @@ public sealed partial class FikaServer
                     if (result.Failed)
                     {
                         _logger.LogError($"ItemControllerExecutePacket::Operation conversion failed: {result.Error}");
-                        // The client's descriptor can name items the host never spawned
-                        // (profile-filtered loot). Log enough to tell a resolver defect
-                        // apart from a genuinely missing world item.
+                        // 客户端的描述符可能点到主机从未生成过的物品
+                        // （被档案过滤掉的战利品）。要记录足以把解析器缺陷与
+                        // 真正缺失的世界物品区分开的日志。
                         try
                         {
                             _logger.LogError($"ItemControllerExecutePacket::Descriptor {packet.Descriptor}");
@@ -1039,15 +1039,15 @@ public sealed partial class FikaServer
                     handler.Set(result, packet.CallbackId, packet.NetId, peer, this);
                     try
                     {
-                        // Prepare the relay before acknowledging Started. If
-                        // serialization fails, the client only sees Failed and
-                        // the native operation has not been executed.
+                        // 在确认 Started 之前先准备好中继。如果
+                        // 序列化失败，客户端只会看到 Failed，而
+                        // 原生操作尚未被执行。
                         handler.SetRelayPayload(CreateInventoryRelayPayload(packet));
                         SendGenericPacketToPeer(EGenericSubPacketType.OperationCallback,
                             OperationCallbackPacket.FromValue(packet.NetId, packet.CallbackId, EOperationStatus.Started), peer);
 
-                        // Native execution can finish after the receive packet
-                        // has been returned to its pool.
+                        // 原生执行可能在接收包已经归还到
+                        // 它的对象池之后才结束。
                         handler.OperationResult.Value.Execute(handler.HandleResultDelegate);
 
                         if (carExtractPoint != null)
@@ -1059,16 +1059,16 @@ public sealed partial class FikaServer
                     }
                     catch (Exception exception)
                     {
-                        // A native Execute may invoke its completion synchronously
-                        // and still throw while unwinding. Its terminal status has
-                        // already been sent in that case; do not contradict it.
+                        // 原生 Execute 可能同步调用它的完成回调，
+                        // 同时在展开过程中仍然抛异常。那种情况下它的终态已经
+                        // 发出过了；不要与它矛盾。
                         if (handler.TerminalStatusReported)
                         {
                             _logger.LogError($"Inventory operation threw after completion for {packet.NetId}: {exception}");
                             return;
                         }
-                        // No completion was sent. Invalidate the callback before
-                        // sending the failure and authoritative snapshot below.
+                        // 没有发送任何完成通知。要在下面发送失败与权威快照
+                        // 之前，先把该回调作废。
                         handler.Cancel();
                         throw;
                     }

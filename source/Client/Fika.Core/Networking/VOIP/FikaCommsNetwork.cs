@@ -13,8 +13,8 @@ using NativeNetwork = Dissonance.Networking.BaseCommsNetwork<Dissonance.Integrat
 namespace Fika.Core.Networking.VOIP;
 
 /// <summary>
-/// Binds Fika transport to the game's AOT-compiled Dissonance specialization.
-/// Codec, channels, rooms and voice state remain owned by native Dissonance.
+/// 把 Fika 传输层绑定到游戏那套经 AOT 编译的 Dissonance 专用实现上。
+/// 编解码器、频道、房间与语音状态仍由原生 Dissonance 拥有。
 /// </summary>
 public sealed class FikaCommsNetwork : MonoBehaviour
 {
@@ -93,7 +93,7 @@ public sealed class FikaCommsNetwork : MonoBehaviour
     {
         if (!IsActive) return true;
         if (!peer.Peer.IsLocal) return false;
-        // Native Dissonance recycles its send buffer immediately after this call.
+        // 原生 Dissonance 会在这次调用之后立即回收它的发送缓冲区。
         if (Client != null) _loopbackQueue.Enqueue(packet.ToManaged().ToNative());
         return true;
     }
@@ -150,8 +150,8 @@ public sealed class FikaCommsNetwork : MonoBehaviour
                     comms.IsMuted = true;
                     comms.MuteAllRemoteVoices = true;
                 }
-                // Keep the bridge registered while native Disconnect calls its
-                // virtual methods; otherwise they fall through to Mirror.
+                // 在原生 Disconnect 调用它的虚方法期间保持网桥处于注册状态；
+                // 否则这些调用会穿透到 Mirror。
                 Native.Stop();
             }
         }

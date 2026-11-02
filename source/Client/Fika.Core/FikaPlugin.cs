@@ -33,16 +33,16 @@ using System.Threading.Tasks;
 namespace Fika.Core;
 
 /// <summary>
-/// Fika.Core main plugin. <br/> <br/>
-/// Originally by: Paulov <br/>
-/// Re-written by: <see langword="Lacyway and the Fika team"/>
+/// Fika.Core 主插件。<br/> <br/>
+/// 原作者：Paulov <br/>
+/// 重写者：<see langword="Lacyway and the Fika team"/>
 /// </summary>
 [BepInPlugin("com.fika.core", "Fika.Core", FikaVersion)]
 [BepInProcess("EscapeFromTarkov.exe")]
-[BepInDependency("com.sptushonka.custom", BepInDependency.DependencyFlags.HardDependency)] // This is used so that we guarantee to load after spt-custom, that way we can disable its patches
-[BepInDependency("com.sptushonka.singleplayer", BepInDependency.DependencyFlags.HardDependency)] // This is used so that we guarantee to load after spt-singleplayer, that way we can disable its patches
-[BepInDependency("com.sptushonka.core", BepInDependency.DependencyFlags.HardDependency)] // This is used so that we guarantee to load after spt-core, that way we can disable its patches
-[BepInDependency("com.sptushonka.debugging", BepInDependency.DependencyFlags.HardDependency)] // This is used so that we guarantee to load after spt-debugging, that way we can disable its patches
+[BepInDependency("com.sptushonka.custom", BepInDependency.DependencyFlags.HardDependency)] // 用于保证我们在 spt-custom 之后加载，这样就可以禁用它的补丁
+[BepInDependency("com.sptushonka.singleplayer", BepInDependency.DependencyFlags.HardDependency)] // 用于保证我们在 spt-singleplayer 之后加载，这样就可以禁用它的补丁
+[BepInDependency("com.sptushonka.core", BepInDependency.DependencyFlags.HardDependency)] // 用于保证我们在 spt-core 之后加载，这样就可以禁用它的补丁
+[BepInDependency("com.sptushonka.debugging", BepInDependency.DependencyFlags.HardDependency)] // 用于保证我们在 spt-debugging 之后加载，这样就可以禁用它的补丁
 public sealed class FikaPlugin : BasePlugin
 {
     public const string FikaVersion = "3.0.4";
@@ -121,10 +121,10 @@ public sealed class FikaPlugin : BasePlugin
         _patchManager = new(this, true);
         Settings = new FikaConfig(Config);
 
-        // The Unity lifecycle component owns the main-thread queue. It has to
-        // exist before anything below can fail: without it every dispatched
-        // operation (inventory, spawn queue, lobby actions) would be enqueued
-        // and never drained, which looks exactly like the game freezing.
+        // Unity 生命周期组件掌管主线程队列。它必须在下方任何
+        // 东西可能失败之前就存在：没有它,每一项派发的操作
+        // (库存、生成队列、大厅动作)都会被入队而永不出队,
+        // 看起来就完全和游戏卡死一样。
         AddComponent<FikaPluginBehaviour>();
 
         
@@ -155,8 +155,8 @@ public sealed class FikaPlugin : BasePlugin
         }
         catch (Exception exception)
         {
-            // Bots fall back to the game's own difficulty when this is missing,
-            // so a server or serialization problem must not abort the plugin.
+            // 缺少该值时,机器人会回退到游戏自身的难度设置,
+            // 因此服务器或序列化问题不应导致插件中止。
             Log.LogError($"Failed to load bot difficulties, bots will use the game defaults: {exception}");
         }
 
@@ -178,7 +178,7 @@ public sealed class FikaPlugin : BasePlugin
     }
 
     /// <summary>
-    /// Run these at start to hopefully ensure that all mods are loaded
+    /// 在启动时执行这些检查,以期确保所有 mod 均已加载
     /// </summary>
     internal void StartDeferredChecks()
     {
@@ -223,16 +223,16 @@ public sealed class FikaPlugin : BasePlugin
 #endif
 
     /// <summary>
-    /// Task that ensure all mods are loaded by waiting 5 seconds
+    /// 通过等待 5 秒来确保所有 mod 均已加载的任务
     /// </summary>
     /// <remarks>
-    /// The wait is most likely redundant as it runs inside <see cref="Start"/>, however it is kept as last safety check
+    /// 该等待很可能多余,因为它运行在 <see cref="Start"/> 内部,但仍作为最后的安全检查保留
     /// </remarks>
     private async Task RunChecks()
     {
         
-        // First-chance probe: names the object the engine is working on when the menu fault
-        // fires (see FirstChanceFaultProbe). It only observes; 
+        // 首次异常探针：当菜单故障触发时,它会记录引擎正在处理的对象
+        // (见 FirstChanceFaultProbe)。它只做观测;
         
         
         ReportStartupSettings();
@@ -244,7 +244,7 @@ public sealed class FikaPlugin : BasePlugin
         }
         catch (Exception exception)
         {
-            // The server check already reports its own failure to the user; 
+            // 服务器检查已自行向用户报告其失败;
         }
 #endif
         await ModHandler.VerifyMods(_patchManager);
@@ -269,9 +269,9 @@ public sealed class FikaPlugin : BasePlugin
 
         if (WanIP == null)
         {
-            // Degradation, not a failure: the WAN address is only ever read by the raid
-            // host (FikaServer.Init) to advertise itself. Every other path - including the
-            // whole client join path - works without it, so this must never abort anything.
+            // 这属于降级而非失败：WAN 地址只会被 raid
+            // 主机(FikaServer.Init)读取以公布自身。其他所有路径——包括
+            // 整个客户端加入路径——都不依赖它,因此这里绝不能中止任何东西。
             Log.LogWarning("RunChecks: no public IP address is known. Hosting a raid for players outside "
                 + "your network will not work (set 'Force IP' in the network settings to announce one); "
                 + "joining a raid is unaffected.");
@@ -286,15 +286,15 @@ public sealed class FikaPlugin : BasePlugin
     }
 
     /// <summary>
-    /// Writes the settings that change what the next join attempt does into the stable
-    /// diagnostics file, so a captured failure can be read against the config that produced it.
+    /// 把决定下一次加入尝试行为的设置写入稳定的
+    /// 诊断文件,以便将捕获到的失败与其产生的配置对照阅读。
     ///
-    /// RunChecks runs at frame 1, which is *before* the locales are ready and therefore before
-    /// <see cref="FikaConfig.SetupConfig"/> has bound the entries: every entry property is still
-    /// null at that moment, and reading one of them made this diagnostic report a
-    /// NullReferenceException about itself on its very first use (2026-10-09 22:57:25). The
-    /// entries are read defensively here and the report is repeated once the config is bound, so
-    /// the file still ends up with the settings the run actually used.
+    /// RunChecks 在第 1 帧运行,此时尚在语言包就绪之前,因此也早于
+    /// <see cref="FikaConfig.SetupConfig"/> 绑定各个条目:那一刻每个条目属性仍是
+    /// null,而读取其中之一会让这份诊断报告在其首次使用时就报告自身的
+    /// NullReferenceException(2026-10-09 22:57:25)。此处
+    /// 对条目做了防御性读取,并在配置绑定后再次重复报告,因此
+    /// 文件最终仍会包含本次运行实际使用的设置。
     /// </summary>
     private void ReportStartupSettings()
     {
@@ -307,7 +307,7 @@ public sealed class FikaPlugin : BasePlugin
                 return;
             }
 
-            // 'SetupConfig' binds every one of these at once, so one of them is a valid probe.
+            // 'SetupConfig' 会一次性绑定所有这些条目,因此取其中任意一个都是有效的探针。
             var bound = settings.EnableOnlinePlayers is not null;
             if (bound && _boundSettingsReported)
             {
@@ -327,15 +327,15 @@ public sealed class FikaPlugin : BasePlugin
         }
     }
 
-    /// <summary>Reads a boolean entry that may not be bound yet (see <see cref="ReportStartupSettings"/>).</summary>
+    /// <summary>读取一个可能尚未绑定的布尔条目(见 <see cref="ReportStartupSettings"/>)。</summary>
     private static string ReadFlag(BepInEx.Configuration.ConfigEntry<bool> entry)
     {
         return entry is null ? "unbound" : entry.Value.ToString();
     }
 
-    /// <summary>Reads an integer entry that may not be bound yet (see <see cref="ReportStartupSettings"/>).</summary>
+    /// <summary>读取一个可能尚未绑定的整数条目(见 <see cref="ReportStartupSettings"/>)。</summary>
 
-    /// <summary>True once the config report was written with the entries that were really bound.</summary>
+    /// <summary>当配置报告已使用真正绑定的条目写出后为 true。</summary>
     private bool _boundSettingsReported;
 
     private void GetClientConfig()
@@ -349,8 +349,8 @@ public sealed class FikaPlugin : BasePlugin
 
         NatPunchServerEnable = natPunchServerConfig.Enable;
 
-        // The SPT backend host can be a bracketed IPv6 literal such as
-        // https://[::1]:6969; splitting on ':' would leave a stray '[' behind.
+        // SPT 后端主机可能是带方括号的 IPv6 字面量,形如
+        // https://[::1]:6969;若按 ':' 拆分,会残留一个多余的 '['。
         var backendHost = RequestHandler.Host;
         NatPunchServerIP = Uri.TryCreate(backendHost, UriKind.Absolute, out var backendUri)
             ? backendUri.Host
@@ -362,9 +362,9 @@ public sealed class FikaPlugin : BasePlugin
     }
 
     /// <summary>
-    /// This is required for the locales to be properly loaded, for some reason they are still unavailable for a few seconds after getting populated
+    /// 这是语言包能被正确加载所必需的——不知为何,它们在填充之后仍会有几秒钟不可用
     /// </summary>
-    /// <param name="localesTask">The <see cref="Task"/> that populates the locales</param>
+    /// <param name="localesTask">负责填充语言包的 <see cref="Task"/></param>
     public void WaitForLocales(Il2CppSystem.Threading.Tasks.Task localesTask)
     {
         ArgumentNullException.ThrowIfNull(localesTask);
@@ -372,8 +372,8 @@ public sealed class FikaPlugin : BasePlugin
         Log.LogInfo("Waiting for locales to be ready...");
     }
 
-    // Unity's Update owns all native task, localization and configuration/UI access.
-    // A CLR async continuation is not guaranteed to resume on Unity's main thread.
+    // Unity 的 Update 掌管所有原生任务、本地化以及配置/UI 访问。
+    // CLR 异步续体并不保证会在 Unity 主线程上恢复执行。
     internal void UpdateInitialization()
     {
         if (LocalesLoaded || InitializationError != null) return;
@@ -382,12 +382,12 @@ public sealed class FikaPlugin : BasePlugin
         try
         {
             if (!task.IsCompleted) return;
-            task.GetAwaiter().GetResult(); // Observe cancellation/failure before binding settings.
+            task.GetAwaiter().GetResult(); // 在绑定设置之前观察取消/失败。
             if (!FikaBackendUtils.IsHeadless &&
                 LocaleUtils.BEPINEX_H_ADVANCED.Localized() == "F_BepInEx_H_Advanced") return;
             Settings.SetupConfig();
-            // Now that the entries exist, record the settings this run really uses (the frame-1
-            // report could only say "not bound yet").
+            // 现在条目已存在,记录本次运行真正使用的设置(第 1 帧的
+            // 报告只能说"尚未绑定")。
             ReportStartupSettings();
             LocalesLoaded = true;
             FikaVersionLabel_Patch.UpdateVersionLabel();
@@ -473,11 +473,11 @@ public sealed class FikaPlugin : BasePlugin
 
     private void DisableSPTPatches()
     {
-        // ModulePatch no longer has Disable(). Its Harmony owner is the patch
-        // type name (verified against the installed SPTushonka.Reflection DLL).
+        // ModulePatch 不再提供 Disable()。它的 Harmony 归属者是 patch
+        // 类型名(已对照安装的 SPTushonka.Reflection DLL 验证)。
         Harmony.UnpatchID(nameof(VersionLabelPatch));
         Harmony.UnpatchID(nameof(PreloaderVersionLabelPatch));
-        // The six old RaidFix/ScavMode patches are absent in this SPT 5 build.
+        // 这六个旧的 RaidFix/ScavMode patch 在此 SPT 5 构建中已不存在。
     }
 
     public enum EPingSound

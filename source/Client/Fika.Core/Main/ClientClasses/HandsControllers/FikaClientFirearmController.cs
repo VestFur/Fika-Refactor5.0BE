@@ -158,8 +158,8 @@ public class FikaClientFirearmController : Player.FirearmController
 
     public Player.ObjectInHandsOperation Weapon3()
     {
-        // Item is a generated Weapon wrapper; query its native class before
-        // choosing the operation that owns chamber/cylinder inventory updates.
+        // Item 是一个生成的 Weapon 包装器；先查询它的原生类，
+        // 再选择负责弹膛/转轮仓库更新的操作。
         if (Item.TryCast<RocketLauncher>() != null)
         {
             return new Player.FirearmController.RocketLauncherFire(this);
@@ -222,10 +222,10 @@ public class FikaClientFirearmController : Player.FirearmController
 
     public override bool ChangeFireMode(Weapon.EFireMode fireMode)
     {
-        // A native AI mode request can outlive the hands transition. Destroy
-        // clears our packet, while a non-idle native operation may still
-        // return true. Reject only a controller explicitly marked destroyed;
-        // initialization failures on live controllers remain observable.
+        // 原生 AI 模式请求的寿命可能超过手部状态转换。Destroy
+        // 会清除我们的包，而非空闲的原生操作仍可能
+        // 返回 true。只拒绝被明确标记为 destroyed 的控制器；
+        // 存活控制器上的初始化失败仍然保持可观测。
         if (Destroyed)
         {
             return false;
@@ -391,9 +391,9 @@ public class FikaClientFirearmController : Player.FirearmController
 
     public override void ReloadGrenadeLauncher(AmmoPack ammoPack, Callback callback)
     {
-        // SPT 5's launcher path intentionally skips the firearm-malfunction
-        // gate; this matches the native launcher reload operation and the
-        // official dev-5.0 client implementation.
+        // SPT 5 的发射器路径有意跳过枪械故障
+        // 门槛；这与原生发射器换弹操作以及
+        // 官方 dev-5.0 客户端实现一致。
         if (CanStartReload(false) && CurrentOperation != null && ammoPack != null)
         {
             var reloadingAmmoIds = ammoPack.GetReloadingAmmoIds();
@@ -587,9 +587,9 @@ public class FikaClientFirearmController : Player.FirearmController
         _packet.SubPacket = FlareShotPacket.FromValue(shotPosition, forward, flareItem.TemplateId, false);
         _fikaPlayer.PacketSender.NetworkManager.SendNetReusable(ref _packet, DeliveryMethod.ReliableOrdered, true);
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call36(this, flareItem, shotPosition, forward);
-        // Green ("ExitActivate") flares activate a flare exfiltration point for the shooter and,
-        // by default, its squad. The native detector zone only records the flare on the machine
-        // that saw it succeed, so a client reports it to the host here.
+        // 绿色（"ExitActivate"）信号弹会为发射者激活一次信号弹撤离点，
+        // 默认情况下还包括其小队。原生侦测区域只把信号弹记录在
+        // 亲眼看到它成功的那台机器上，所以客户端在这里把它上报给主机。
         global::Fika.Core.Main.Components.FikaFlareExfil.OnLocalFlareShot(flareItem, shotPosition);
     }
 

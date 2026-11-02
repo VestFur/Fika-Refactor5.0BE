@@ -7,8 +7,8 @@ using Fika.Core.Networking.Snapshotting;
 namespace Fika.Core.Networking.Packets.Player;
 
 /// <summary>
-/// A local-only container that pairs a networked state with synchronization timestamps. <br/>
-/// Used for interpolation, lag compensation, and state buffering.
+/// 仅本机使用的容器，把一份联网状态与同步时间戳配对。 <br/>
+/// 用于插值、延迟补偿与状态缓冲。
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public readonly struct PlayerStateSnapshot : ISnapshot
@@ -21,86 +21,86 @@ public readonly struct PlayerStateSnapshot : ISnapshot
         Data = packet;
     }
 
-    /// <summary>8 bytes, offset 0</summary>
+    /// <summary>8 字节，偏移 0</summary>
     public readonly double RemoteTime { get; }
-    /// <summary>8 bytes, offset 8</summary>
+    /// <summary>8 字节，偏移 8</summary>
     public readonly double LocalTime { get; }
-    /// <summary>39 bytes, offset 16</summary>
+    /// <summary>39 字节，偏移 16</summary>
     public readonly PlayerStateData Data;
 }
 
 /// <summary>
-/// State packet for a player
+/// 玩家的状态数据包
 /// </summary>
 /// <remarks>
-/// Assumes little-endian architecture
+/// 假定为小端架构
 /// </remarks>
 [StructLayout(LayoutKind.Sequential, Pack = 1)]
 public readonly struct PlayerStateData
 {
     /// <summary>
-    /// Size in bytes of a <see cref="PlayerStateData"/>
+    /// <see cref="PlayerStateData"/> 的字节大小
     /// </summary>
     public static readonly byte PacketSize = (byte)Unsafe.SizeOf<PlayerStateData>();
 
-    /// <summary>12 bytes, offset 0</summary>
+    /// <summary>12 字节，偏移 0</summary>
     public readonly Vector3 Position;
 
-    /// <summary>4 bytes, offset 12</summary>
+    /// <summary>4 字节，偏移 12</summary>
     private readonly float _rotYaw;
 
-    /// <summary>2 bytes, offset 16</summary>
+    /// <summary>2 字节，偏移 16</summary>
     private readonly ushort _tiltPacked;
 
-    /// <summary>2 bytes, offset 18</summary>
+    /// <summary>2 字节，偏移 18</summary>
     private readonly ushort _movementSpeedPacked;
 
-    /// <summary>2 bytes, offset 20</summary>
+    /// <summary>2 字节，偏移 20</summary>
     private readonly ushort _sprintSpeedPacked;
 
-    /// <summary>2 bytes, offset 22</summary>
+    /// <summary>2 字节，偏移 22</summary>
     private readonly ushort _poseLevelPacked;
 
-    /// <summary>2 bytes, offset 24</summary>
+    /// <summary>2 字节，偏移 24</summary>
     private readonly ushort _weaponOverlapPacked;
 
-    /// <summary>1 byte, offset 26</summary>
+    /// <summary>1 字节，偏移 26</summary>
     private readonly byte _headRotYawPacked;
 
-    /// <summary>1 byte, offset 27</summary>
+    /// <summary>1 字节，偏移 27</summary>
     private readonly byte _headRotPitchPacked;
 
-    /// <summary>1 byte, offset 28</summary>
+    /// <summary>1 字节，偏移 28</summary>
     private readonly byte _rotPitchPacked;
 
-    /// <summary>1 byte, offset 29</summary>
+    /// <summary>1 字节，偏移 29</summary>
     private readonly byte _moveDirXPacked;
 
-    /// <summary>1 byte, offset 30</summary>
+    /// <summary>1 字节，偏移 30</summary>
     private readonly byte _moveDirYPacked;
 
-    /// <summary>2 bytes, offset 31</summary>
+    /// <summary>2 字节，偏移 31</summary>
     public readonly ushort NetId;
 
-    /// <summary>1 byte, offset 33</summary>
+    /// <summary>1 字节，偏移 33</summary>
     private readonly byte _stepPacked;
 
-    /// <summary>1 byte, offset 34</summary>
+    /// <summary>1 字节，偏移 34</summary>
     private readonly byte _blindfirePacked;
 
-    /// <summary>1 byte, offset 35</summary>
+    /// <summary>1 字节，偏移 35</summary>
     public readonly EPlayerState State;
 
-    /// <summary>1 byte, offset 36</summary>
+    /// <summary>1 字节，偏移 36</summary>
     private readonly byte _boolFlags;
 
-    /// <summary>1 byte, offset 37</summary>
+    /// <summary>1 字节，偏移 37</summary>
     private readonly byte _velocityDirXPacked;
 
-    /// <summary>1 byte, offset 38</summary>
+    /// <summary>1 字节，偏移 38</summary>
     private readonly byte _velocityDirYPacked;
 
-    /// <summary>1 byte, offset 39</summary>
+    /// <summary>1 字节，偏移 39</summary>
     private readonly byte _velocityDirZPacked;
 
     public PhysicalBase.StaminaStruct Physical

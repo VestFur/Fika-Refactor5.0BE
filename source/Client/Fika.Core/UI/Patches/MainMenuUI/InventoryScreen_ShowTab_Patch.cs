@@ -10,7 +10,7 @@ using static Fika.Core.UI.FikaUIGlobals;
 
 namespace Fika.Core.UI.Patches.MainMenuUI;
 
-/// <summary>Updates presence when the main-menu inventory tab is opened.</summary>
+/// <summary>在主菜单库存标签页被打开时更新在线状态。</summary>
 public sealed class InventoryScreen_ShowTab_Patch : ModulePatch
 {
     protected override MethodBase GetTargetMethod() =>

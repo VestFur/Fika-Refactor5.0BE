@@ -19,8 +19,8 @@ public class DisconnectButton_Patch : ModulePatch
     [PatchPostfix]
     static void Postfix(MenuScreen __instance)
     {
-        // Keep the native menu initialization and existing listeners. Guard the
-        // disconnect event itself for both mouse clicks and keyboard submission.
+        // 保留原生菜单初始化与既有监听器。只对
+        // 断开连接事件本身做保护，覆盖鼠标点击与键盘提交两种方式。
         var button = __instance._disconnectButton;
         var originalClick = button.OnClick;
         var guardedClick = new UnityEngine.Events.UnityEvent();

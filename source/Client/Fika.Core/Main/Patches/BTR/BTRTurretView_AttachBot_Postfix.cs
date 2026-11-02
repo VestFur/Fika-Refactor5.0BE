@@ -6,7 +6,7 @@ using SPTushonka.Reflection.Patching;
 
 namespace Fika.Core.Main.Patches.BTR;
 
-/// <summary>Move Fika's LocalPlayer-based remote shooter before native weapon alignment.</summary>
+/// <summary>在原生武器对齐之前，先移动 Fika 基于 LocalPlayer 的远程射手。</summary>
 public class BTRTurretView_AttachBot_Postfix : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(BTRTurretView), nameof(BTRTurretView.AttachBot));
@@ -22,8 +22,8 @@ public class BTRTurretView_AttachBot_Postfix : ModulePatch
             bot = __instance._offlineBot;
         }
         if (bot.Item1 == null) return;
-        // Native AttachBot does this only for its online game mode. Fika's
-        // observed player inherits LocalPlayer, so it uses the offline branch.
+        // 原生 AttachBot 只在其在线游戏模式下执行这一步。Fika 的
+        // observed player 继承自 LocalPlayer，因此会走离线分支。
         bot.Item1.PlayerBones.BodyTransform.Original.position = __instance.BotRoot.position;
     }
 }

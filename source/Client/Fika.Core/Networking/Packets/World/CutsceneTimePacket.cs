@@ -1,6 +1,6 @@
 namespace Fika.Core.Networking.Packets.World;
 
-/// <summary>Forwards the native periodic timeline correction, including late joins.</summary>
+/// <summary>转发 native 的周期性时间线校正，包括中途加入的情况。</summary>
 public struct CutsceneTimePacket : INetSerializable
 {
     public int ProcessId;

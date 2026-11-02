@@ -1,7 +1,7 @@
 using System.Text.Json;
 
-// Compatibility facade for code migrated from the official 5.0 tree and
-// consumed by the separate Fika.Headless plugin.
+// 为从官方 5.0 代码树迁移而来的代码提供的兼容外观，
+// 由独立的 Fika.Headless 插件使用。
 namespace Fika.Core.Networking.Http;
 
 public static class FikaJson

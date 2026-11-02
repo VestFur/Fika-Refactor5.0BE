@@ -19,10 +19,10 @@ public static class NetworkUtils
     }
 
     /// <summary>
-    /// Compresses the given byte array using LZ4 compression
+    /// 使用 LZ4 压缩给定的字节数组
     /// </summary>
-    /// <param name="input">The original uncompressed byte array</param>
-    /// <returns>The compressed byte array</returns>
+    /// <param name="input">原始未压缩的字节数组</param>
+    /// <returns>压缩后的字节数组</returns>
     public static ReadOnlySpan<byte> CompressBytes(byte[] input)
     {
         var buffer = new byte[LZ4Codec.MaximumOutputSize(input.Length)];
@@ -32,11 +32,11 @@ public static class NetworkUtils
     }
 
     /// <summary>
-    /// Decompresses a LZ4-compressed byte array back to its original form
+    /// 将 LZ4 压缩的字节数组解压回其原始形式
     /// </summary>
-    /// <param name="compressedData">The compressed byte array to decompress</param>
-    /// <param name="originalLength">The length of the original byte array</param>
-    /// <returns>The decompressed byte array</returns>
+    /// <param name="compressedData">要解压的已压缩字节数组</param>
+    /// <param name="originalLength">原始字节数组的长度</param>
+    /// <returns>解压后的字节数组</returns>
     public static byte[] DecompressBytes(byte[] compressedData, int originalLength)
     {
         var result = new byte[originalLength];
@@ -59,23 +59,23 @@ public static class NetworkUtils
     }
 
     /// <summary>
-    /// Validates whether the given IP string represents a connectable, routable IP address.
+    /// 校验给定的 IP 字符串是否表示一个可连接、可路由的 IP 地址。
     /// </summary>
-    /// <param name="ip">The IP address string to validate (IPv4 or IPv6).</param>
+    /// <param name="ip">要校验的 IP 地址字符串（IPv4 或 IPv6）。</param>
     /// <returns>
-    /// <see langword="true"/> if the IP is valid and suitable for advertising or binding; <see langword="false"/> otherwise.
+    /// 若 IP 有效且适合用于通告或绑定则为 <see langword="true"/>；否则为 <see langword="false"/>。
     /// </returns>
     /// <remarks>
-    /// Validation rules applied:
+    /// 应用的校验规则：
     /// <list type="bullet">
-    ///   <item><description>Null, empty, or whitespace strings are rejected.</description></item>
-    ///   <item><description>IPv6 scope identifiers (e.g., fe80::1%12) are removed before validation.</description></item>
-    ///   <item><description>Unspecified addresses (<c>0.0.0.0</c> or <c>::</c>) are rejected.</description></item>
-    ///   <item><description>Loopback addresses (<c>127.0.0.1</c> or <c>::1</c>) are rejected.</description></item>
-    ///   <item><description>IPv4 APIPA addresses (169.254.x.x) are rejected.</description></item>
-    ///   <item><description>IPv4 multicast and reserved addresses (224.0.0.0 and above) are rejected.</description></item>
-    ///   <item><description>IPv6 link-local, site-local, and multicast addresses are rejected.</description></item>
-    ///   <item><description>IPv6 addresses must be global unicast (2000::/3) to be accepted.</description></item>
+    ///   <item><description>null、空串或空白字符串会被拒绝。</description></item>
+    ///   <item><description>校验前会移除 IPv6 scope 标识符（例如 fe80::1%12）。</description></item>
+    ///   <item><description>未指定地址（<c>0.0.0.0</c> 或 <c>::</c>）会被拒绝。</description></item>
+    ///   <item><description>回环地址（<c>127.0.0.1</c> 或 <c>::1</c>）会被拒绝。</description></item>
+    ///   <item><description>IPv4 APIPA 地址 (169.254.x.x) 会被拒绝。</description></item>
+    ///   <item><description>IPv4 组播与保留地址（224.0.0.0 及以上）会被拒绝。</description></item>
+    ///   <item><description>IPv6 链路本地、站点本地与组播地址会被拒绝。</description></item>
+    ///   <item><description>IPv6 地址必须是全局单播 (2000::/3) 才会被接受。</description></item>
     /// </list>
     /// </remarks>
     public static bool ValidateIP(string ip)
@@ -85,7 +85,7 @@ public static class NetworkUtils
             return false;
         }
 
-        // Remove IPv6 scope ID if present (fe80::1%12)
+        // 若存在则移除 IPv6 scope ID (fe80::1%12)
         var percentIndex = ip.IndexOf('%');
         if (percentIndex >= 0)
         {
@@ -97,13 +97,13 @@ public static class NetworkUtils
             return false;
         }
 
-        // Reject unspecified
+        // 拒绝未指定地址
         if (address.Equals(IPAddress.Any) || address.Equals(IPAddress.IPv6Any))
         {
             return false;
         }
 
-        // Reject loopback
+        // 拒绝回环地址
         if (IPAddress.IsLoopback(address))
         {
             return false;
@@ -121,7 +121,7 @@ public static class NetworkUtils
                         return false;
                     }
 
-                    // Multicast / reserved (224+)
+                    // 组播 / 保留地址 (224+)
                     if (b[0] >= 224)
                     {
                         return false;
@@ -132,24 +132,24 @@ public static class NetworkUtils
 
             case AddressFamily.InterNetworkV6:
                 {
-                    // Link-local, site-local, multicast
+                    // 链路本地、站点本地、组播
                     if (address.IsIPv6LinkLocal || address.IsIPv6SiteLocal || address.IsIPv6Multicast)
                     {
                         return false;
                     }
 
-                    // Unique local addresses (fc00::/7) are the IPv6 counterpart of a
-                    // private LAN range. Virtual LAN adapters (Radmin VPN, ZeroTier,
-                    // Tailscale, easyN2N) hand them out and peers on that network reach
-                    // each other directly over them, so they are advertised and bound
-                    // like a private IPv4 address instead of being dropped.
+                    // 唯一本地地址 (fc00::/7) 是私有局域网网段在
+                    // IPv6 中的对应物。虚拟局域网适配器（Radmin VPN、ZeroTier、
+                    // Tailscale、easyN2N）会分配这类地址，该网络上的对端
+                    // 通过它们直接互相可达，因此它们会被通告和绑定，
+                    // 就像私有 IPv4 地址一样，而不是被丢弃。
                     var uniqueLocal = address.GetAddressBytes();
                     if ((uniqueLocal[0] & 0b1111_1100) == 0b1111_1100)
                     {
                         return true;
                     }
 
-                    // Global unicast must be in 2000::/3
+                    // 全局单播必须位于 2000::/3 之内
                     var b = address.GetAddressBytes();
                     return (b[0] & 0b1110_0000) == 0b0010_0000;
                 }
@@ -159,12 +159,12 @@ public static class NetworkUtils
     }
 
     /// <summary>
-    /// Resolves a remote address from a string IP or hostname and port.
+    /// 从字符串 IP 或主机名以及端口解析出一个远程地址。
     /// </summary>
-    /// <param name="ip">The IP address or hostname.</param>
-    /// <param name="port">The port number.</param>
-    /// <returns>The resolved <see cref="IPEndPoint"/>.</returns>
-    /// <exception cref="ParseException">Thrown if the address cannot be resolved.</exception>
+    /// <param name="ip">IP 地址或主机名。</param>
+    /// <param name="port">端口号。</param>
+    /// <returns>解析得到的 <see cref="IPEndPoint"/>。</returns>
+    /// <exception cref="ParseException">地址无法解析时抛出。</exception>
     public static IPEndPoint ResolveRemoteAddress(string ip, int port)
     {
         var resolved = NetUtils.ResolveAddress(ip);
@@ -172,24 +172,24 @@ public static class NetworkUtils
     }
 
     /// <summary>
-    /// Used to determine what kind of packet was received on the <see cref="IFikaNetworkManager"/>
+    /// 用于判断在 <see cref="IFikaNetworkManager"/> 上收到的是哪种数据包
     /// </summary>
     public enum EPacketType : byte
     {
         /// <summary>
-        /// A packet that implements <see cref="INetSerializable"/>
+        /// 一个实现了 <see cref="INetSerializable"/> 的数据包
         /// </summary>
         Serializable,
         /// <summary>
-        /// A raw <see cref="Packets.Player.PlayerStateData"/>
+        /// 原始的 <see cref="Packets.Player.PlayerStateData"/>
         /// </summary>
         PlayerState,
         /// <summary>
-        /// A raw <see cref="ShapshotBTRMessage"/>
+        /// 原始的 <see cref="ShapshotBTRMessage"/>
         /// </summary>
         BTR,
         /// <summary>
-        /// A voip packet that contains a raw byte array
+        /// 一个包含原始字节数组的 voip 数据包
         /// </summary>
         VOIP
     }

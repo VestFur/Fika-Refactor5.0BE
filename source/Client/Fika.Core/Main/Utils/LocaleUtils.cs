@@ -6,7 +6,7 @@ using EFT;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Utilities for locales/language
+/// 区域设置／语言相关的工具
 /// </summary>
 public static class LocaleUtils
 {
@@ -28,21 +28,21 @@ public static class LocaleUtils
         { WildSpawnType.bossPartisan, "Partisan" },
         { WildSpawnType.bossTagillaAgro, "Shadow of Tagilla" },
         { WildSpawnType.bossKillaAgro, "Vengeful Killa" },
-        // 1.0 map roles (Icebreaker / Black Division, and the Laboratory variant of
-        // the same character). Upstream Fika predates them, so every boss test on
-        // those maps came out false even though the game's own quest data lists
-        // bossWedge among the bosses players have to eliminate.
+        // 1.0 地图角色（Icebreaker / Black Division，以及同一角色的
+        // Laboratory 变体）。上游 Fika 早于它们，因此在这些地图上
+        // 每次 boss 检查都返回 false，尽管游戏自己的任务数据把
+        // bossWedge 列在玩家需要消灭的 boss 之中。
         { WildSpawnType.bossWedge, "Wedge" },
         { WildSpawnType.bossWedgeLab, "Wedge" },
         { WildSpawnType.bossBullyBlackDiv, "Bully Black Div" }
     };
 
     /// <summary>
-    /// Used to determine whether this player was a boss
+    /// 用于判断该玩家是否为 boss
     /// </summary>
-    /// <param name="wildSpawnType">The <see cref="WildSpawnType"/> to check</param>
-    /// <param name="name">The name if it was a boss</param>
-    /// <returns><see langword="true"/> if it's a boss, <see langword="false"/> if not</returns>
+    /// <param name="wildSpawnType">要检查的 <see cref="WildSpawnType"/></param>
+    /// <param name="name">若为 boss 则为对应的名称</param>
+    /// <returns>是 boss 返回 <see langword="true"/>，否则返回 <see langword="false"/></returns>
     public static bool IsBoss(WildSpawnType wildSpawnType, out string name)
     {
         if (_bossNames.TryGetValue(wildSpawnType, out name))
@@ -50,10 +50,10 @@ public static class LocaleUtils
             return true;
         }
 
-        // Self-maintaining fallback: the game names every boss role "boss<Name>",
-        // so a role that is missing from the table above (a map or a boss added
-        // after this port was written) still keeps its boss name, its kill
-        // notification and its spawn telemetry instead of silently losing them.
+        // 自维护兜底：游戏把每个 boss 角色命名为 "boss<Name>"，
+        // 因此上表中缺失的角色（编写此次移植之后新增的
+        // 地图或 boss）仍然保留其 boss 名称、击杀
+        // 通知与刷新遥测，而不会静默丢失。
         var role = wildSpawnType.ToString();
         if (role.Length > 4 && role.StartsWith("boss", StringComparison.OrdinalIgnoreCase))
         {
@@ -66,8 +66,8 @@ public static class LocaleUtils
     }
 
     /// <summary>
-    /// Turns an enum member name such as <c>BullyBlackDiv</c> into a readable
-    /// label ("Bully Black Div") for roles that have no entry in the table above.
+    /// 把诸如 <c>BullyBlackDiv</c> 的枚举成员名转换成可读的
+    /// 标签（"Bully Black Div"），用于上表中没有条目的角色。
     /// </summary>
     private static string SplitCamelCase(string value)
     {
@@ -202,7 +202,7 @@ public static class LocaleUtils
     public const string UI_REVIVING_BEEN_DOWNED = "F_UI_BeenDowned";
     public const string UI_REVIVING_BEEN_REVIVED = "F_UI_BeenRevived";
 
-    // Main Menu UI
+    // 主菜单 UI
     public const string UI_MMUI_ONLINE_PLAYERS = "F_MMUI_OnlinePlayers";
     public const string UI_MMUI_IN_MENU = "F_MMUI_InMenu";
     public const string UI_MMUI_IN_RAID = "F_MMUI_InRaid";

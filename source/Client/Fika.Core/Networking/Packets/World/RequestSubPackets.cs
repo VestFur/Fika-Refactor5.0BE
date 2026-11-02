@@ -197,9 +197,9 @@ public static class RequestSubPackets
                 Type = ERequestSubPacketType.Exfiltration,
                 RequestSubPacket = new ExfiltrationRequest()
                 {
-                    // Secret exits live in a separate native array in SPT 5.0.
-                    // Include both arrays so late joiners and reconnecting peers
-                    // receive the same state as the host.
+                    // 秘密撤离点在 SPT 5.0 中位于独立的原生数组里。
+                    // 两个数组都要包含，这样迟到加入的玩家和重连的节点
+                    // 才能收到与主机一致的状态。
                     Data = CaptureSnapshot(exfilController.ExfiltrationPoints,
                         exfilController.SecretExfiltrationPoints)
                 }
@@ -241,8 +241,8 @@ public static class RequestSubPackets
             return writer.CopyData();
         }
 
-        // Version marker for the extended snapshot. A legacy snapshot starts
-        // with the regular-exit count, which is always non-negative.
+        // 扩展快照的版本标记。旧版快照以常规撤离点数量开头，
+        // 而该值始终非负。
         private const int SnapshotMagic = unchecked((int)0x464B5035);
 
         internal static byte[] CaptureSnapshot(ExfiltrationPoint[] points, SecretExfiltrationPoint[] secretPoints)
@@ -263,15 +263,15 @@ public static class RequestSubPackets
                     if (point.Status == EExfiltrationStatus.Countdown)
                         writer.Put(point.ExfiltrationStartTime);
 
-                    // These values are private-set in the game source but are
-                    // exposed by the SPT 5.0 IL2CPP interop wrappers.
+                    // 这些值在游戏源码中是 private set，但由 SPT 5.0 的
+                    // IL2CPP interop 包装器暴露出来。
                     writer.Put(point.EligibleForPmc);
                     writer.Put(point.EligibleForScav);
                     writer.Put(point.ItemTransferred);
 
-                    // Hidden is the native representation for a secret exit
-                    // that has not been discovered yet. Preserve that bit so a
-                    // reconnect can restore discovery without a live event.
+                    // Hidden 是秘密撤离点的原生表示，
+                    // 表示尚未被发现。保留该位，这样
+                    // 重连时无需实时事件也能恢复发现状态。
                     writer.Put(point.Status != EExfiltrationStatus.Hidden);
                 }
             }
@@ -338,9 +338,9 @@ public static class RequestSubPackets
                         if (discovered && exfilPoint.Status == EExfiltrationStatus.Hidden)
                             exfilPoint.ExternalDiscoverOfPoint(false);
 
-                        // Set the timestamp and all secret flags before the
-                        // status setter so native subscribers observe a
-                        // coherent state, matching regular exits.
+                        // 在状态 setter 之前设置时间戳和所有秘密标记，
+                        // 以便原生订阅者观察到
+                        // 与常规撤离点一致的自洽状态。
                         exfilPoint.Status = status;
                     }
                 }
@@ -361,8 +361,8 @@ public static class RequestSubPackets
                 var exfilPoint = points?.FirstOrDefault(x => x.Settings.Name == name);
                 if (exfilPoint != null)
                 {
-                    // A flare gated exit is only open for the players the flare activation covers;
-                    // the point level status of the sender says nothing about this player.
+                    // 信号弹限制的撤离点只对信号弹激活覆盖的玩家开放；
+                    // 发送者在撤离点层面的状态并不能说明该玩家的状态。
                     if (Fika.Core.Main.Components.FikaFlareExfil.ShouldSkipPointStatus(name))
                     {
                         continue;
@@ -371,8 +371,8 @@ public static class RequestSubPackets
                     exfilPoint.Settings.StartTime = startTime;
                     if (status == EExfiltrationStatus.Countdown)
                         exfilPoint.ExfiltrationStartTime = exfilStartTime;
-                    // The native setter raises OnStatusChanged synchronously.
-                    // Its subscribers must see the received start time.
+                    // 原生 setter 会同步触发 OnStatusChanged。
+                    // 其订阅者必须能看到收到的开始时间。
                     exfilPoint.Status = status;
                 }
             }
@@ -550,11 +550,11 @@ public static class RequestSubPackets
         }
 
         /// <summary>
-        /// Handled in <see cref="SendCharacterPacket.Execute(FikaPlayer)"/>
+        /// 在 <see cref="SendCharacterPacket.Execute(FikaPlayer)"/> 中处理
         /// </summary>
         public void HandleResponse()
         {
-            // Do nothing
+            // 不做任何事
         }
 
         public void Serialize(NetDataWriter writer)

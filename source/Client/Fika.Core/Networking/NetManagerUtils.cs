@@ -24,8 +24,8 @@ public static class NetManagerUtils
     private static CancellationTokenSource _pingTokenSource;
 
     /// <summary>
-    /// Applies the optional artificial latency and packet loss from the network
-    /// settings so a lag dependent problem can be reproduced on one machine.
+    /// 按网络设置应用可选的人为延迟与丢包，
+    /// 以便在一台机器上复现与延迟相关的问题。
     /// </summary>
     public static void ApplySimulationSettings(NetManager manager)
     {
@@ -59,7 +59,7 @@ public static class NetManagerUtils
 
     public static void CreateNetManager(bool isServer)
     {
-        // Required for VOIP
+        // VOIP 需要
         TrafficCounters.Reset();
         FikaChatUIScript.IsActive = false;
 
@@ -103,7 +103,7 @@ public static class NetManagerUtils
     }
 
     /// <summary>
-    /// Disables the <see cref="LoadingScreenUI"/> and clears all data in it
+    /// 禁用 <see cref="LoadingScreenUI"/> 并清除其中的所有数据
     /// </summary>
     public static void DisableLoadingScreenUI()
     {
@@ -116,7 +116,7 @@ public static class NetManagerUtils
     }
 
     /// <summary>
-    /// Destroys the <see cref="LoadingScreenUI"/>
+    /// 销毁 <see cref="LoadingScreenUI"/>
     /// </summary>
     public static void DestroyLoadingScreenUI()
     {
@@ -145,28 +145,28 @@ public static class NetManagerUtils
     {
         NetworkUtils.ResetReaderAndWriter();
 
-        // Transit retains UDP transport but creates another voice scene/player.
-        // Stop capture before releasing singletons or starting that next scene.
+        // Transit 保留 UDP 传输，但会创建另一个语音场景/玩家。
+        // 在释放单例或启动那个下一个场景之前停止采集。
         if (isServer) FikaSingleton<FikaServer>.Instance?.ShutdownVOIP();
         else FikaSingleton<FikaClient>.Instance?.ShutdownVOIP();
 
-        // (analysis/transit-crash-unload) This method is reached from the world's own teardown
-        // (FikaHostGameWorld.Dispose / FikaClientGameWorld.Dispose) and from the raid-end path, i.e. at
-        // exactly the moment the world this process was using is gone. Everything that still points into
-        // that world - the routines the pump would keep stepping (the native session enumerator above all)
-        // and the static caches keyed by its native objects - is dropped here, once, before the rest of this
-        // teardown runs. Idempotent: a second call inside the same window only writes a line, and the next
-        // world (FikaClientWorld/FikaHostWorld.Create) opens a fresh epoch.
+        // (analysis/transit-crash-unload) 本方法会从世界自身的拆除流程
+        // （FikaHostGameWorld.Dispose / FikaClientGameWorld.Dispose）以及 raid 结束路径到达，即
+        // 恰好在本进程所用的世界消失的那一刻。所有仍然指向
+        // 那个世界的东西——泵会继续步进的例程（尤其是原生会话枚举器）
+        // 以及以其原生对象为键的静态缓存——都在此处一次性丢弃，然后才运行本
+        // 拆除流程的其余部分。幂等：同一窗口内的第二次调用只写一行，而下一个
+        // 世界（FikaClientWorld/FikaHostWorld.Create）会开启一个新的 epoch。
         WorldLifecycle.MarkWorldTornDown(isServer
             ? "NetManagerUtils.DestroyNetManager (host), transit=" + FikaBackendUtils.IsTransit
             : "NetManagerUtils.DestroyNetManager (client), transit=" + FikaBackendUtils.IsTransit);
 
         if (FikaBackendUtils.IsTransit)
         {
-            // Judgement line (analysis/loading-screen-sync): this branch keeps the UDP session, the
-            // singletons and ClientType on purpose - the next raid of the same transit uses them. It
-            // must only ever be taken for a transit that is really continuing (see AbortFailedJoin,
-            // which clears the flag before it tears a failed join down).
+            // 判定行 (analysis/loading-screen-sync)：本分支刻意保留 UDP 会话、
+            // 单例和 ClientType——同一次 transit 的下一个 raid 会用到它们。它
+            // 只应当被用于确实还在继续的 transit（见 AbortFailedJoin，它会
+            // 在拆除失败的加入之前清除该标志）。
 
             CreateLoadingScreenUI();
             LoadingScreenUI.Instance.ReInitAfterTransit();
@@ -175,14 +175,14 @@ public static class NetManagerUtils
 
             if (!isServer)
             {
-                // The world of this client was just torn down and the next one is being created: open
-                // the world packet queue for that window (see FikaClient.TryQueueWorldPacket).
+                // 本客户端的世界刚刚被拆除，而下一个世界正在被创建：为那个
+                // 窗口打开世界封包队列（见 FikaClient.TryQueueWorldPacket）。
                 FikaSingleton<FikaClient>.Instance?.ArmWorldPacketQueue("transit world swap");
 
-                // (analysis/transit-reload-oom) This is the boundary the reported crash is missing a
-                // release at: the previous world is gone, the next one is not created yet. Record the
-                // swap so FikaRaidMemory releases the replaced raid's assets directly before the new
-                // level is loaded (FikaClientGameWorld.InitLevel), and print what is still held here.
+                // (analysis/transit-reload-oom) 这就是所报告的崩溃缺少一次释放的
+                // 边界处：上一个世界已消失，下一个世界尚未创建。把这次
+                // 切换记录下来，好让 FikaRaidMemory 在新的关卡加载之前
+                // 直接释放被替换 raid 的资源（FikaClientGameWorld.InitLevel），并打印此处仍持有的东西。
                 FikaRaidMemory.NoteWorldSwap("DestroyNetManager: transit teardown, client world is down");
             }
             if (isServer)
@@ -192,11 +192,11 @@ public static class NetManagerUtils
                 server.RaidInitialized = false;
                 server.ResetReadyClients();
                 server.LocationReceived = false;
-                // (analysis/transit-reload-oom) The host has the same two-maps-at-once exposure as the
-                // client - same process, same replaced world, same missing asset release - it only runs on
-                // a bigger machine, so it does not crash first. Record the swap here; FikaHostGameWorld
-                // releases the replaced raid's assets directly before its own new level is loaded (one shot
-                // per swap, gated on FikaBackendUtils.IsTransit, and never able to fail the load).
+                // (analysis/transit-reload-oom) 主机与客户端有同样的同时持有两张地图的
+                // 暴露面——同一进程、同一个被替换的世界、同样缺失的资源释放——只是它运行在
+                // 更大的机器上，所以不会先崩。在此记录这次切换；FikaHostGameWorld
+                // 会在自己的新关卡加载之前直接释放被替换 raid 的资源（每次切换
+                // 一次，以 FikaBackendUtils.IsTransit 为条件，且绝不会让加载失败）。
                 FikaRaidMemory.NoteWorldSwap("DestroyNetManager: transit teardown, host world is down");
                 return;
             }
@@ -273,10 +273,10 @@ public static class NetManagerUtils
     }
 
     /// <summary>
-    /// Cleans up everything a *failed* join attempt left behind, so the player lands on a
-    /// usable main menu instead of a Fika loading screen stuck at 0 %.
+    /// 清理一次*失败的*加入尝试留下的一切，让玩家落到一个
+    /// 可用的主菜单，而不是卡在 0 % 的 Fika 加载界面。
     ///
-    /// Called from the failure handler of the raid start; it never throws.
+    /// 由 raid 启动的失败处理器调用；它从不抛异常。
     /// </summary>
     public static void AbortFailedJoin(bool isServer, string reason)
     {
@@ -288,16 +288,16 @@ public static class NetManagerUtils
                 "aborting role=" + (isServer ? "host" : "client") + " (clientType=" + FikaBackendUtils.ClientType
                 + ", transit=" + wasTransit + "): " + reason + " => the raid start is given up, the session is torn down");
 
-            // A raid start that failed is not a transit that continues: the next raid will set the flag
-            // again from its own raid settings, while DestroyNetManager must take its full-teardown path
-            // here. Leaving the flag set (what this method used to do) kept the whole net manager, the
-            // UDP connection and the peer's view of this machine alive while ClientType was already
-            // cleared - which is what left the host waiting for a character that could never come
-            // (analysis/loading-screen-sync, host LogOutput.log:4730/4731) and what produced the
-            // "Received CharacterSyncPacket as server" lines on a client that was still connected.
+            // 失败的 raid 启动并不是一个还在继续的 transit：下一个 raid 会从其自身的
+            // raid 设置中重新设置该标志，而 DestroyNetManager 在这里必须走完整的拆除路径。
+            // 让标志保持设置（本方法过去的行为）会让整个 net manager、
+            // UDP 连接以及对等端对本机的视图在 ClientType 已被清除的情况下继续存活——
+            // 正是它让主机一直等待一个永远不会到来的角色
+            // （analysis/loading-screen-sync，主机 LogOutput.log:4730/4731），也是它在一个仍然连接的客户端上
+            // 产生了 "Received CharacterSyncPacket as server" 这些行。
             FikaBackendUtils.IsTransit = false;
-            // A raid start that was given up is not a transit reload any more: the hold of the next reload
-            // must not be inherited by a later raid start (analysis/transit-reload-sync).
+            // 被放弃的 raid 启动不再属于 transit 重载：下一次重载的保持设置
+            // 不得被后来的 raid 启动继承（analysis/transit-reload-sync）。
             TransitReloadGate.Disarm("the raid start was given up (" + reason + ")");
             DisableLoadingScreenUI();
             DestroyLoadingScreenUI();
@@ -339,8 +339,8 @@ public static class NetManagerUtils
             var client = FikaSingleton<FikaClient>.Instance;
             if (client == null)
             {
-                // CreateNetManager must have failed or the singleton was released in
-                // between. Report which step is missing instead of dereferencing null.
+                // CreateNetManager 一定是失败了，或者单例在此期间被
+                // 释放了。报告缺少哪一步，而不是解引用 null。
                 _logger.LogError("InitNetManager: FikaClient singleton was null!");
                 
                 throw new InvalidOperationException(
@@ -414,8 +414,8 @@ public static class NetManagerUtils
         var networkManager = FikaSingleton<IFikaNetworkManager>.Instance;
         if (networkManager == null)
         {
-            // This used to hand back a NullReferenceException, which reached the raid start
-            // as the generic "Object reference not set to an instance of an object." box.
+            // 这里过去会抛回一个 NullReferenceException，它到达 raid 启动处时
+            // 变成了泛化的 "Object reference not set to an instance of an object." 弹框。
             _logger.LogError("CreateCoopHandler: IFikaNetworkManager was null!");
             
             return Task.FromException(new InvalidOperationException(

@@ -6,44 +6,44 @@ using EFT.UI.Matchmaker;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// The clock time the game itself pins on some maps ("this map always runs at HH:mm").
+/// 游戏本身在某些地图上钉死的时钟时间（"这张地图始终运行在 HH:mm"）。
 ///
-/// Where the vanilla value lives: the matchmaker's own conditions panel,
-/// <see cref="EFT.UI.Matchmaker.LocationConditionsPanel"/>, carries one static DateTime property per
-/// such map - the installed 5.0 build has FactoryDayTime, FactoryNightTime and IcebreakerFixedTime
-/// (interop Assembly-CSharp.dll, type EFT.UI.Matchmaker.LocationConditionsPanel). The panel feeds
-/// that value into the raid time selector, which is why the live game gives a player no usable time
-/// choice on those maps. The raid clock itself is only ever told an integer hour
-/// (EFT.TimeAndWeatherSettings.HourOfDay), so the hour is the whole of what the game consumes.
+/// 原版数值所在的位置：匹配器自己的条件面板，
+/// <see cref="EFT.UI.Matchmaker.LocationConditionsPanel"/>，每张这样的地图都带有一个静态 DateTime 属性，
+/// 已安装的 5.0 构建中有 FactoryDayTime、FactoryNightTime 和 IcebreakerFixedTime
+/// （interop Assembly-CSharp.dll，类型 EFT.UI.Matchmaker.LocationConditionsPanel）。该面板把这个值
+/// 送入战局时间选择器，这就是为什么正式游戏中玩家在这些地图上得不到可用的
+/// 时间选项。战局时钟本身只会被告知一个整数小时
+/// （EFT.TimeAndWeatherSettings.HourOfDay），因此游戏所消费的全部内容就是这个小时数。
 ///
-/// Why this class exists: a Fika raid never runs that panel, so nothing brought the pinned time into
-/// the raid and the raid started on whatever the raid settings held - which on this port is usually
-/// the -1 ("follow the world clock") the Fika raid settings screen leaves behind. This reads the same
-/// native value the panel would have used, by name, so a map the game pins later works without a code
-/// change here. See analysis/map-fixed-time/REPORT.md for the evidence and the judging lines.
+/// 为什么需要这个类：Fika 的战局从不运行那个面板，因此没有任何东西把钉死的时间带进
+/// 战局，而战局会以战局设置中持有的任意值启动——在本移植版上这通常是
+/// Fika 战局设置界面留下的 -1（"跟随世界时钟"）。本类按名字读取
+/// 面板本会使用的同一个原生数值，因此游戏以后钉死的地图无需在此改动代码
+/// 即可工作。证据与判定依据见 analysis/map-fixed-time/REPORT.md。
 /// </summary>
 internal static class MapFixedTime
 {
     /// <summary>
-    /// The name the game gives a pinned map time: the location id followed by "FixedTime"
-    /// (IcebreakerFixedTime for the location id "Icebreaker"). The lookup is by this name and not by
-    /// a per-map list, so no map is hardcoded here.
+    /// 游戏给钉死的地图时间起的名字：地点 id 后接 "FixedTime"
+    /// （地点 id 为 "Icebreaker" 时即 IcebreakerFixedTime）。查找依据这个名字，而不再依据
+    /// 逐地图的列表，因此这里没有硬编码任何地图。
     /// </summary>
     private const string NativeSuffix = "FixedTime";
 
     /// <summary>
-    /// Explicit fallback for a map whose pinned time cannot be read from the native panel (the UI
-    /// type missing, or the property renamed/removed by a game update).
+    /// 为无法从原生面板读到钉死时间的地图提供的显式回退（UI
+    /// 类型缺失，或属性被游戏更新重命名/移除）。
     ///
-    /// Deliberately EMPTY. The value exists in exactly one place - the body of the native getter in
-    /// GameAssembly.dll - and no decompile of it is available (the 4.0 tree ends before this panel and
-    /// 5.0 ships none), so every number written here would be a guess. A guessed time is worse than
-    /// the status quo: the raid would silently start at an invented hour. Nothing is lost while the
-    /// table is empty - "no pinned time found" means CoopGame keeps the player's own setting, which is
-    /// exactly the behaviour before this class existed.
+    /// 故意保持为空。该数值只存在于一个地方——
+    /// GameAssembly.dll 中那个原生 getter 的函数体——而它没有可用的反编译（4.0 代码树止于该面板之前，
+    /// 5.0 未提供），因此写在这里的任何数字都只能是猜测。猜出来的时间比
+    /// 现状更糟：战局会在一个凭空编造的小时上静默启动。在表为空期间
+    /// 不会有任何损失——"no pinned time found" 表示 CoopGame 保留玩家自己的设置，这
+    /// 正是本类存在之前的行为。
     ///
-    /// To fill it, take the hour the diagnostic line prints on that map
-    /// ("Raid time: ... fixed=HH:mm (native ...)") and add one entry, for example:
+    /// 要填充它，取该地图上诊断行打印出的小时数
+    /// （"Raid time: ... fixed=HH:mm (native ...)"），然后添加一个条目，例如：
     ///     { "Icebreaker", (19, 0) },
     /// </summary>
     private static readonly Dictionary<string, (int Hour, int Minute)> Fallback =
@@ -65,17 +65,17 @@ internal static class MapFixedTime
         }
     }
 
-    /// <summary>Resolved lookups: the native read runs once per map per process, misses included.</summary>
+    /// <summary>已解析的查找结果：原生读取每地图每进程只运行一次，未命中同样缓存。</summary>
     private static readonly Dictionary<string, Entry> Cache = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>The cache is written from whoever creates a raid; the read itself is not thread safe.</summary>
+    /// <summary>缓存由创建战局的调用方写入；读取本身不是线程安全的。</summary>
     private static readonly object Gate = new();
 
     /// <summary>
-    /// The pinned time of <paramref name="locationId"/>, or false when the map has none (or this
-    /// build cannot read it). Never throws: a raid start must not fail over a diagnostic lookup.
+    /// <paramref name="locationId"/> 的钉死时间；当地图没有该时间（或本
+    /// 构建读不到它）时返回 false。永不抛出异常：战局启动不应因一次诊断性查找而失败。
     /// </summary>
-    /// <param name="source">Where the value came from, for the diagnostic line: "native &lt;name&gt;", "table" or "none".</param>
+    /// <param name="source">数值的来源，用于诊断行："native &lt;name&gt;"、"table" 或 "none"。</param>
     internal static bool TryGet(string locationId, out int hour, out int minute, out string source)
     {
         hour = 0;
@@ -127,9 +127,9 @@ internal static class MapFixedTime
         {
             var panel = typeof(LocationConditionsPanel);
 
-            // The name comparison is case insensitive on purpose: the location id the raid reports
-            // ("Icebreaker") and the name the panel uses ("IcebreakerFixedTime") come from two different
-            // places and their casing has to agree only on the identity of the map, not on spelling.
+            // 这里的名称比较故意不区分大小写：战局报告的地点 id
+            // （"Icebreaker"）与面板使用的名称（"IcebreakerFixedTime"）来自两个不同的
+            // 地方，它们的大小写只需在地图身份上一致，而不必在拼写上一致。
             object value = null;
             var found = false;
             foreach (var property in panel.GetProperties(BindingFlags.Public | BindingFlags.Static))

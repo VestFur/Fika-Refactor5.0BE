@@ -1,103 +1,103 @@
 ﻿namespace Fika.Core.Networking.Packets.Player.Common;
 
 /// <summary>
-/// Represents common sub-packet types for general player actions.
+/// 表示通用玩家动作的常用子数据包类型。
 /// </summary>
 public enum ECommonSubPacketType : byte
 {
     /// <summary>
-    /// Player phrase.
+    /// 玩家语音。
     /// </summary>
     Phrase,
 
     /// <summary>
-    /// Interaction with the world environment.
+    /// 与世界环境的交互。
     /// </summary>
     WorldInteraction,
 
     /// <summary>
-    /// Interaction with containers.
+    /// 与容器的交互。
     /// </summary>
     ContainerInteraction,
 
     /// <summary>
-    /// Proceed action.
+    /// Proceed 动作。
     /// </summary>
     Proceed,
 
     /// <summary>
-    /// Headlights toggled or updated.
+    /// 头灯被切换或更新。
     /// </summary>
     HeadLights,
 
     /// <summary>
-    /// Inventory contents changed.
+    /// 库存内容发生变化。
     /// </summary>
     InventoryChanged,
 
     /// <summary>
-    /// Item dropped.
+    /// 物品被丢弃。
     /// </summary>
     Drop,
 
     /// <summary>
-    /// Stationary interaction.
+    /// 驻留交互。
     /// </summary>
     Stationary,
 
     /// <summary>
-    /// Vault or climbing action.
+    /// 翻越或攀爬动作。
     /// </summary>
     Vault,
 
     /// <summary>
-    /// Generic interaction event.
+    /// 通用交互事件。
     /// </summary>
     Interaction,
 
     /// <summary>
-    /// Mounting or dismounting action.
+    /// 上车或下车动作。
     /// </summary>
     Mounting,
 
     /// <summary>
-    /// Dealing damage
+    /// 造成伤害
     /// </summary>
     Damage,
 
     /// <summary>
-    /// Armor durability update
+    /// 护甲耐久更新
     /// </summary>
     ArmorDamage,
 
     /// <summary>
-    /// Syncing health
+    /// 同步生命值
     /// </summary>
     HealthSync,
 
     /// <summary>
-    /// Usable item being used
+    /// 正在使用可用物品
     /// </summary>
     UsableItem,
 
     /// <summary>
-    /// Syncing downed state
+    /// 同步倒地状态
     /// </summary>
     DownedSync,
 
     /// <summary>
-    /// A player was revived
+    /// 有玩家被救起
     /// </summary>
     RevivedPlayer,
 
     /// <summary>
-    /// A player is being revived or revive was cancelled
+    /// 有玩家正在被救起,或救援被取消
     /// </summary>
     RevivingPlayer,
 
-    /// <summary>Tape recorder hand action.</summary>
+    /// <summary>录音机手部动作。</summary>
     RecorderAction,
 
-    /// <summary>Fast-forward a locally outdated hands operation.</summary>
+    /// <summary>快进本地已过时的手部操作。</summary>
     FastForwardOutdated
 }

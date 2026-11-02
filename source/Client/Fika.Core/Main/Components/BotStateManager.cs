@@ -74,17 +74,17 @@ public sealed class BotStateManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Pumps the host controller's per-frame work, which is what invokes the game's own
-    /// <c>IBotGame.UpdateByUnity</c> subscribers.
+    /// 驱动主机控制器的逐帧工作，而正是它调用了游戏自身
+    /// <c>IBotGame.UpdateByUnity</c> 的订阅者。
     /// <para>
-    /// (analysis/session-log-archive) One of those subscribers is native and dereferences a field that is still
-    /// null while the raid world is being built: <c>BotGroupHostility.UpdateHostilityStatusForAllPlayers</c> ->
-    /// <c>OwnedGroupCalcActionNextFrame</c> throws a NullReferenceException from its own native frame (seen
-    /// once per session in three sessions, always in the build-the-world window; see
-    /// analysis/session-log-archive/REPORT.md). The invoke is isolated in
-    /// <see cref="Fika.Core.Main.Utils.NativeActionEvent"/> now: the failure is reported as a [NativeUpdate]
-    /// WARN with its native frame, and this Update keeps its remaining work - above all the bot state batch
-    /// below - instead of being aborted for that frame.
+    /// (analysis/session-log-archive) 其中一个订阅者是原生的，它会解引用一个在突袭世界
+    /// 仍在构建时还是 null 的字段：<c>BotGroupHostility.UpdateHostilityStatusForAllPlayers</c> ->
+    /// <c>OwnedGroupCalcActionNextFrame</c> 从它自己的原生栈帧中抛出 NullReferenceException（在三次会话中
+    /// 每次会话见到一次，总是出现在构建世界的窗口内；见
+    /// analysis/session-log-archive/REPORT.md）。现在这次调用被隔离在
+    /// <see cref="Fika.Core.Main.Utils.NativeActionEvent"/> 中：失败会以 [NativeUpdate]
+    /// WARN 连同其原生栈帧一起上报，而这个 Update 保住它剩余的工作——首要是下面
+    /// 的 bot 状态批次——而不是为此被中止一帧。
     /// </para>
     /// </summary>
     private void Update()

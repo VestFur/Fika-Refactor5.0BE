@@ -26,7 +26,7 @@ public sealed class BotDifficulties : Dictionary<string, BotDifficulties.RoleDat
         var coreString = RequestHandler.GetJson("/singleplayer/settings/bot/difficulty/core/core");
         _coreSettings = FikaJson.Deserialize<BotGlobalsCoreSettings>(coreString);
 
-        // Adjust wave coefs so that wave settings do something
+        // 调整波次系数，让波次设置真正起作用
         _coreSettings.WAVE_COEF_LOW = 0.5f;
         _coreSettings.WAVE_COEF_HIGH = 1.5f;
     }

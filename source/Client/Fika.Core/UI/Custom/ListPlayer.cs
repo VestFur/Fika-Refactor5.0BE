@@ -48,9 +48,9 @@ public class ListPlayer : MonoBehaviour
     public int _lastHealth;
 
     /// <summary>
-    /// Updates values
+    /// 更新各项数值
     /// </summary>
-    /// <returns><see langword="true"/> if the entry should be remove, <see langword="false"/> otherwise</returns>
+    /// <returns>若该条目应被移除则为 <see langword="true"/>，否则为 <see langword="false"/></returns>
     public void ManualUpdate()
     {
         var health = Player.HealthController.GetBodyPartHealth(EBodyPart.Common, true);

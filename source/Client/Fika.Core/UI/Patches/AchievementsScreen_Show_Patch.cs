@@ -5,7 +5,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.UI.Patches;
 
 /// <summary>
-/// By default the amount of players that have earned an achievement is not shown in if the session mode is <see cref="ESessionMode.Pve"/>, this patch forces it to be shown regardless of mode
+/// 默认情况下，若会话模式为 <see cref="ESessionMode.Pve"/>，则不显示已获得某成就的玩家数量，此补丁强制无论何种模式都显示它
 /// </summary>
 public class AchievementsScreen_Show_Patch : ModulePatch
 {

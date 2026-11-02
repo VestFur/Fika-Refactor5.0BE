@@ -5,7 +5,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.AI;
 
 /// <summary>
-/// Fixes a live bug where there is no null check on the <see cref="AIPlaceInfo"/> during <see cref="AIPlaceLogicPartisan.Dispose"/>, causing a<see cref="NullReferenceException"/> if it is null
+/// 修复一个线上 bug：<see cref="AIPlaceLogicPartisan.Dispose"/> 期间对 <see cref="AIPlaceInfo"/> 没有空值检查，若其为 null 就会引发 <see cref="NullReferenceException"/>
 /// </summary>
 public class AIPlaceLogicPartisan_Dispose_Patch : ModulePatch
 {

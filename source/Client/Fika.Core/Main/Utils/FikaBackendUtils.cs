@@ -29,7 +29,7 @@ public enum EClientType
 public static class FikaBackendUtils
 {
     /// <summary>
-    /// The local player PMC <see cref="EFT.Profile"/>
+    /// 本地玩家的 PMC <see cref="EFT.Profile"/>
     /// </summary>
     public static Profile Profile
     {
@@ -45,45 +45,45 @@ public static class FikaBackendUtils
         }
     }
     /// <summary>
-    /// The name of the local player PMC
+    /// 本地玩家 PMC 的名称
     /// </summary>
     public static string PMCName => Profile.Nickname;
     /// <summary>
-    /// If the current raid is a scav raid
+    /// 当前 raid 是否为一次 scav raid
     /// </summary>
     public static bool IsScav { get; internal set; }
     public static EClientType ClientType { get; internal set; } = EClientType.None;
     /// <summary>
-    /// If this client is a headless client
+    /// 本客户端是否为无头客户端
     /// </summary>
     /// <remarks>
-    /// Headless clients are always raid hosts (<see cref="IsServer"/> is always <see langword="true"/>) <br/>
-    /// This check should mainly be used to prevent GPU/animation logic, etc.
+    /// 无头客户端始终是 raid 主机（<see cref="IsServer"/> 始终为 <see langword="true"/>） <br/>
+    /// 此检查主要用于阻止 GPU/动画逻辑等。
     /// </remarks>
     public static bool IsHeadless { get; set; }
     /// <summary>
-    /// If this client is a player scav walking into a raid that already runs.
-    /// Such a player is spawned as a scav and never joins the host's group.
+    /// 本客户端是否为一名走进已经进行中的 raid 的玩家 scav。
+    /// 这样的玩家以 scav 身份生成，且永远不会加入主机的队伍。
     /// </summary>
     public static bool IsScavLateJoin { get; internal set; }
     /// <summary>
-    /// If the raid host is a headless client
+    /// raid 主机是否为无头客户端
     /// </summary>
     public static bool IsHeadlessGame { get; set; }
     /// <summary>
-    /// If this client requested the headless session
+    /// 本客户端是否请求了无头会话
     /// </summary>
     public static bool IsHeadlessRequester { get; set; }
     /// <summary>
-    /// If the current raid is a transit
+    /// 当前 raid 是否为一次中转
     /// </summary>
     public static bool IsTransit { get; set; }
     /// <summary>
-    /// If the current session is spectator only
+    /// 当前会话是否仅为观战
     /// </summary>
     public static bool IsSpectator { get; internal set; }
     /// <summary>
-    /// If the host is using NAT punching
+    /// 主机是否使用 NAT 打洞
     /// </summary>
     public static bool IsHostNatPunch { get; internal set; }
     public static IPEndPoint RemoteEndPoint { get; internal set; }
@@ -102,10 +102,10 @@ public static class FikaBackendUtils
     private static Profile _profile;
 
     /// <summary>
-    /// Why the current join / raid start failed, or <see langword="null"/> while it is healthy.
-    /// The raid start reads this before it creates a game, so a failed preparation (no network
-    /// manager, no host endpoint, a backend error) aborts with a reason instead of continuing
-    /// into a half-initialised session.
+    /// 当前加入 / raid 启动失败的原因；一切正常时为 <see langword="null"/>。
+    /// raid 启动在创建游戏之前读取它，因此一次失败的准备（没有网络
+    /// 管理器、没有主机端点、一个后端错误）会带原因中止，而不是继续
+    /// 进入一个半初始化的会话。
     /// </summary>
     public static string JoinFailure { get; private set; }
 
@@ -117,7 +117,7 @@ public static class FikaBackendUtils
         }
     }
 
-    /// <summary>Records the first failure of the current attempt and writes it to the stable log.</summary>
+    /// <summary>记录当前尝试的第一次失败，并写入稳定日志。</summary>
     public static void MarkJoinFailed(string reason, Exception exception = null)
     {
         if (JoinFailure != null)
@@ -133,7 +133,7 @@ public static class FikaBackendUtils
         }
     }
 
-    /// <summary>Clears the failure state so the next attempt starts clean.</summary>
+    /// <summary>清除失败状态，让下一次尝试从干净状态开始。</summary>
     public static void ClearJoinFailure()
     {
         if (JoinFailure == null)
@@ -146,14 +146,14 @@ public static class FikaBackendUtils
     }
 
     /// <summary>
-    /// Drops the failure an <em>earlier</em> attempt recorded, at the moment a new attempt starts.
+    /// 在新一次尝试开始的那一刻，丢弃<em>更早</em>一次尝试记录的失败。
     ///
-    /// CreateFikaGameCore reads <see cref="JoinFailed"/> before it creates anything and aborts the raid
-    /// with "The raid could not be started: " + <see cref="JoinFailure"/>. MarkJoinFailed keeps the first
-    /// reason of an attempt and only CleanUpVariables cleared it, so one failed join made every later
-    /// raid start fail instantly - with the previous attempt's reason, on a menu where nothing had gone
-    /// wrong yet. A failure of the *current* attempt is still recorded and shown exactly as before:
-    /// this is only called when a new attempt begins.
+    /// CreateFikaGameCore 在创建任何东西之前读取 <see cref="JoinFailed"/>，并以
+    /// "The raid could not be started: " + <see cref="JoinFailure"/> 中止 raid。MarkJoinFailed 保留一次
+    /// 尝试的第一个原因，且只有 CleanUpVariables 会清除它，所以一次失败的加入会让之后每一次
+    /// raid 启动都立即失败 —— 用的是上一次尝试的原因，而且是在一个什么都还没
+    /// 出错的菜单上。*当前*尝试的失败仍照原样记录并展示：
+    /// 这里只在新一次尝试开始时才被调用。
     /// </summary>
     public static void ClearLeftoverJoinFailure()
     {
@@ -177,12 +177,12 @@ public static class FikaBackendUtils
             IsSpectator = false;
             IsHeadlessRequester = false;
             IsHeadlessGame = false;
-            // AP (analysis/nonfika-raid-inertness): the raid kind is a raid-scoped fact and used to survive
-            // the raid, so after a single Fika raid every "ClientType == EClientType.None" gate of the next
-            // native single-player raid answered "no, this is Fika" - and the port acted on that raid. The
-            // 2026-10-12 23:52 crash was played in exactly that state (the raid's own line says side=single).
-            // Cleared together with the other raid-scoped fields; a transit keeps it because the reload
-            // belongs to the same raid.
+            // AP (analysis/nonfika-raid-inertness)：raid 种类是一个 raid 作用域的事实，过去会跨 raid
+            // 存留，因此在一场 Fika raid 之后，下一场原生单人 raid 的每个 "ClientType == EClientType.None"
+            // 门禁都回答「不，这是 Fika」—— 于是本移植作用到了那场 raid 上。
+            // 2026-10-12 23:52 的崩溃正是在那种状态下发生的（raid 自己的行写着 side=single）。
+            // 与其他 raid 作用域字段一起清除；中转会保留它，因为重载
+            // 属于同一场 raid。
             ClientType = EClientType.None;
         }
 
@@ -196,9 +196,9 @@ public static class FikaBackendUtils
     }
 
     /// <summary>
-    /// If this client is hosting the raid
+    /// 本客户端是否在主持 raid
     /// </summary>
-    /// <remarks>A headless client is always server</remarks>
+    /// <remarks>无头客户端始终是服务器</remarks>
     public static bool IsServer
     {
         get
@@ -207,7 +207,7 @@ public static class FikaBackendUtils
         }
     }
     /// <summary>
-    /// If this client joined a raid
+    /// 本客户端是否加入了一场 raid
     /// </summary>
     public static bool IsClient
     {
@@ -217,7 +217,7 @@ public static class FikaBackendUtils
         }
     }
     /// <summary>
-    /// If this client is hosting the raid and no clients are connectec
+    /// 本客户端是否在主持 raid 且没有客户端连接
     /// </summary>
     public static bool IsSinglePlayer
     {
@@ -230,7 +230,7 @@ public static class FikaBackendUtils
     public static string GroupId { get; internal set; }
     public static string RaidCode { get; internal set; }
     /// <summary>
-    /// The <see cref="Guid"/> of the current raid session
+    /// 当前 raid 会话的 <see cref="Guid"/>
     /// </summary>
     public static Guid ServerGuid { get; internal set; }
     public static TransitSettings TransitData

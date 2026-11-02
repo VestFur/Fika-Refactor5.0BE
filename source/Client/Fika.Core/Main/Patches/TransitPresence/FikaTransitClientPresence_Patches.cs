@@ -16,38 +16,38 @@ using ClientTransitController = Fika.Core.Main.ClientClasses.ClientTransitContro
 namespace Fika.Core.Main.Patches.TransitPresence;
 
 /// <summary>
-/// Every hook that turns "this client's player stands in a transit point" into a message for the
-/// host. Evidence for the targets (SPT 5.0 / 47965 interop dump, mirrored by 47888; see
-/// analysis/transit-presence-binding/REPORT.md):
+/// 每一个把"本客户端的玩家站在过境点内"这一事实转成发往
+/// 主机的消息的钩子。目标方法的依据（SPT 5.0 / 47965 interop dump，47888 与之对应；见
+/// analysis/transit-presence-binding/REPORT.md）：
 /// <para>
-/// <c>PlayerEnter(TransitPoint, Player)</c> / <c>PlayerExit(TransitPoint, Player)</c> are declared on
-/// <c>EFT.LocalTransitController</c> (dump 242850 / 242851), <b>not</b> on
-/// <c>EFT.ClientTransitController</c>. A raid client's native controller is an
-/// <c>EFT.NetworkTransitController</c> (Fika creates one for every non-host in
-/// <c>BaseGameController:1469-1471</c>), which never declares those methods, so the previous
-/// targets could not bind at all - the two failures in <c>LogOutput.log:594-597</c> are exactly
-/// that - and the client stayed invisible to the host
-/// (<c>LogOutput.log:2507 in=1/2 allowed=False</c>).
+/// <c>PlayerEnter(TransitPoint, Player)</c> / <c>PlayerExit(TransitPoint, Player)</c> 声明在
+/// <c>EFT.LocalTransitController</c>（dump 242850 / 242851）上，<b>而不是</b>
+/// <c>EFT.ClientTransitController</c> 上。战局客户端的原生控制器是一个
+/// <c>EFT.NetworkTransitController</c>（Fika 会为每个非主机在
+/// <c>BaseGameController:1469-1471</c> 处创建一个），它从不声明这些方法，因此之前的
+/// 目标根本无法绑定——<c>LogOutput.log:594-597</c> 中的两次失败正是
+/// 如此——而客户端对主机一直不可见
+/// （<c>LogOutput.log:2507 in=1/2 allowed=False</c>）。
 /// </para>
 /// <para>
-/// The one object that holds both the point and the entering player on every machine is the point:
-/// <c>EFT.Interactive.TransitPoint</c> declares <c>OnTriggerEnter(Collider)</c> /
-/// <c>OnTriggerExit(Collider)</c> (dump 212394 / 212395), the public static
-/// <c>TryGetPlayer(Collider, out Player)</c> (dump 212400), implements the physics trigger
-/// (<c>IPhysicsTrigger.enabled</c>) and owns the <c>Controller</c> reference. Fika keeps those points
-/// alive on a client (<c>ClientTransitController.cs:39</c> re-activates them, and nothing in Fika
-/// calls <c>NetworkTransitController.DisablePointsTrigger</c>), so the point trigger is the client's
-/// real entry point. The <c>LocalTransitController</c> hooks below stay for any machine that
-/// actually runs that controller (and would cover a build that gives clients one); they are inert on
-/// a Fika host because that raid's world controller is a <see cref="FikaHostTransitController"/>,
-/// which is not a <see cref="ClientTransitController"/>.
+/// 在每台机器上都同时持有过境点与进入玩家的唯一对象就是过境点本身：
+/// <c>EFT.Interactive.TransitPoint</c> 声明了 <c>OnTriggerEnter(Collider)</c> /
+/// <c>OnTriggerExit(Collider)</c>（dump 212394 / 212395）、公开静态的
+/// <c>TryGetPlayer(Collider, out Player)</c>（dump 212400），实现了物理触发器
+/// （<c>IPhysicsTrigger.enabled</c>）并持有 <c>Controller</c> 引用。Fika 在客户端上
+/// 保持这些过境点存活（<c>ClientTransitController.cs:39</c> 会重新激活它们，且 Fika 中没有任何代码
+/// 调用 <c>NetworkTransitController.DisablePointsTrigger</c>），因此过境点触发器就是客户端的
+/// 真正入口。下面这些 <c>LocalTransitController</c> 钩子保留下来，供任何确实
+/// 运行该控制器的机器使用（也能覆盖给客户端分配该控制器的构建）；它们在
+/// Fika 主机上是惰性的，因为那场战局的世界控制器是 <see cref="FikaHostTransitController"/>，
+/// 而它不是 <see cref="ClientTransitController"/>。
 /// </para>
 /// </summary>
 internal static class TransitPresenceBinding
 {
     /// <summary>
-    /// Resolves one patch target and proves the result in the log. A missing target is reported as an
-    /// ERROR (not just HarmonyX's warning) because a silently unbound hook is what broke this feature.
+    /// 解析一个补丁目标，并在日志中证明结果。目标缺失会以
+    /// ERROR（而不只是 HarmonyX 的警告）上报，因为毁掉这个功能的正是静默未绑定的钩子。
     /// </summary>
     internal static MethodBase Resolved(string patch, System.Type declaring, string name, params System.Type[] parameters)
     {
@@ -85,7 +85,7 @@ internal static class TransitPresenceBinding
         return builder.ToString();
     }
 
-    /// <summary>Logging is best effort: a logger that is not ready yet must not break patch installation.</summary>
+    /// <summary>日志尽力而为：尚未就绪的日志器不得破坏补丁安装。</summary>
     internal static void Log(bool error, string message)
     {
         try
@@ -101,34 +101,34 @@ internal static class TransitPresenceBinding
 }
 
 /// <summary>
-/// The single funnel every client-side presence hook reports through, so the native paths and the
-/// geometric fallback cannot double-report or contradict each other: the decision of "does the host
-/// already know" is read back from <see cref="ClientTransitController.SentZonePoint"/>, which is the
-/// same map the packet sender deduplicates with.
+/// 所有客户端侧存在感钩子统一上报的单一漏斗，因此原生路径与
+/// 几何回退不会重复上报或互相矛盾："主机是否已经
+/// 知道"这一判断是从 <see cref="ClientTransitController.SentZonePoint"/> 读回的，而它与
+/// 发包方去重所用的是同一张映射表。
 /// </summary>
 internal static class TransitPresenceReporter
 {
-    /// <summary>Five geometry sweeps per second: enough for a walking player, cheap for the raid thread.</summary>
+    /// <summary>每秒五次几何扫描：对步行玩家足够，对战局线程也很廉价。</summary>
     private const float PollInterval = 0.25f;
 
     /// <summary>
-    /// (2026-10-19) Off: the per-poll position scan is replaced by the native trigger events and the host's
-    /// interaction answers. Turned on only for a build that has to verify a missing trigger.
+    /// (2026-10-19) 关闭：每次轮询的位置扫描已被原生触发器事件与主机的
+    /// 交互应答取代。仅在需要验证缺失触发器的构建上开启。
     /// </summary>
     internal const bool GeometricFallback = false;
 
-    /// <summary>Bounded: one line per player, point and reason per raid.</summary>
+    /// <summary>有上限：每场战局中每个玩家、每个过境点和每种原因各一行。</summary>
     private static readonly System.Collections.Generic.HashSet<string> LoggedSkips = [];
 
     private static float _nextPoll;
 
     /// <summary>
-    /// One report per raid about a disabled geometric fallback, so a client that silently lost its
-    /// last entry point does not look like a client whose player never stands in a transit zone.
+    /// 每场战局上报一次几何回退被禁用的情况，这样静默失去
+    /// 最后一个入口的客户端，就不会看起来像一个玩家从未站进过境区域的客户端。
     /// </summary>
     private static bool _pollDisabledReported;
 
-    /// <summary>Native trigger path: the point already resolved the collider that entered or left it.</summary>
+    /// <summary>原生触发器路径：过境点已经解析出进入或离开它的碰撞体。</summary>
     internal static void FromCollider(TransitPoint point, Collider col, bool inside, string source)
     {
         if (point == null || col == null) return;
@@ -136,28 +136,28 @@ internal static class TransitPresenceReporter
         Report(point, player, inside, source);
     }
 
-    /// <summary>Report for an already resolved player (trigger and controller-event paths).</summary>
+    /// <summary>为已解析出的玩家上报（触发器路径与控制器事件路径）。</summary>
     internal static void Report(TransitPoint point, Player player, bool inside, string source)
     {
-        // Bots and remote observed players also have colliders that can enter a point trigger on
-        // this machine; only the player that is local here may speak for this machine.
+        // 机器人和远端被观察的玩家也有碰撞体，在本机上同样可能进入过境点触发器；
+        // 只有在本机属于本地的玩家才有资格代表本机发言。
         if (point?.parameters == null || player == null || !player.IsYourPlayer) return;
         ClientWith(Singleton<GameWorld>.Instance?.TransitController)?.ReportZonePresence(player, point, inside, source);
     }
 
     /// <summary>
-    /// Geometric fallback, independent of every native callback: once per <see cref="PollInterval"/>
-    /// the local player's position is tested against each point's trigger volume, and only a change is
-    /// reported. The criterion is the point's own trigger bounds (see <see cref="FindPointInside"/>).
+    /// 几何回退，独立于任何原生回调：每 <see cref="PollInterval"/>
+    /// 执行一次本地玩家位置与各过境点触发体积的判定，且只上报变化。
+    /// 判定标准是过境点自身的触发边界（见 <see cref="FindPointInside"/>）。
     /// </summary>
     internal static void Poll(GameWorld world)
     {
         if (world == null || Time.unscaledTime < _nextPoll) return;
         _nextPoll = Time.unscaledTime + PollInterval;
 
-        // The host's own transit countdown is clocked from here as well: a host raid has no client
-        // wrapper (the early return below), and the native tick of a local raid is not guaranteed to
-        // run for a transferred group. Guarded, because a poll must never break the frame it runs in.
+        // 主机自己的过境倒计时也从这里驱动：主机战局没有客户端
+        // 包装器（见下面的提前返回），而本地战局的原生 tick 并不保证会
+        // 为被传送的组运行。此处加了保护，因为轮询绝不能破坏它所在的这一帧。
         try
         {
             FikaWorldControllers.Find<FikaHostTransitController>(world.TransitController)?.HostCountdownTick();
@@ -168,9 +168,9 @@ internal static class TransitPresenceReporter
         }
 
         var controller = ClientWith(world.TransitController);
-        // A host or headless raid drives the host's own native path; there is no host to report to.
-        // That is expected there and a silent failure on a client, where this poll is the fallback
-        // that keeps working when the native trigger paths are offline - so name which one it is.
+        // 主机战局或无头战局走主机自己的原生路径；没有需要上报的主机。
+        // 在那里这是预期行为，在客户端上则是静默失败——在客户端，这个轮询是
+        // 原生触发器路径离线时仍能工作的回退，因此要说清这里究竟是哪种情况。
         if (controller == null)
         {
             if (!_pollDisabledReported)
@@ -187,9 +187,9 @@ internal static class TransitPresenceReporter
         var player = world.MainPlayer;
         if (player == null || !player.IsYourPlayer) return;
 
-        // (2026-10-19) The geometric scan below walks every point volume four times per second. Presence and the
-        // prompt are event driven now (the native trigger enter/exit patches plus the host's Show/Confirm/
-        // InactivePoint answers), so the scan is off by default and only kept as an explicit fallback.
+        // (2026-10-19) 下面的几何扫描每秒遍历每个过境点体积四次。存在感与
+        // 提示现在都是事件驱动的（原生触发器 enter/exit 补丁加上主机的 Show/Confirm/
+        // InactivePoint 应答），因此扫描默认关闭，仅作为显式回退保留。
         if (!GeometricFallback) return;
 
         var point = FindPointInside(world.TransitController, player.Position);
@@ -197,17 +197,17 @@ internal static class TransitPresenceReporter
         if (point != null)
         {
             if (reported != point.parameters.id) controller.ReportZonePresence(player, point, true, "geo poll");
-            // The presence report is deduplicated, the interaction check is not: the prompt can still be
-            // missing after the zone report was sent (host-granted state, native visibility, or a first
-            // attempt that ran before the host's snapshot arrived).
+            // 存在感上报会去重，交互检查不会：在区域上报发出之后提示仍可能
+            // 缺失（主机授予的状态、原生可见性，或第一次
+            // 尝试在主机的快照到达之前就已经执行）。
             controller.ClientInteractionTick(point, player, "geo poll");
             return;
         }
 
         if (reported >= 0)
         {
-            // Leaving the volume has to clear the host's registration; the native PlayerExit does that on
-            // machines that receive the trigger, this keeps the same semantics without it.
+            // 离开体积必须清除主机的登记；原生 PlayerExit 在接收该触发器的
+            // 机器上做这件事，而这里在没有它的情况下保持同样的语义。
             controller.SendZonePresence(0, false, "geo poll");
         }
 
@@ -218,17 +218,17 @@ internal static class TransitPresenceReporter
         FikaWorldControllers.Find<ClientTransitController>(transit);
 
     /// <summary>
-    /// The point the local player stands in, or null. Criterion: the point's own trigger collider
-    /// bounds contain the player position.
+    /// 本地玩家所站的过境点，或 null。判定标准：过境点自身触发碰撞体的
+    /// 边界包含玩家位置。
     /// <para>
-    /// Evidence that this collider is the trigger volume: TransitPoint receives Unity trigger
-    /// messages (<c>OnTriggerEnter/OnTriggerExit</c>, dump 212394/212395) and implements
-    /// <c>IPhysicsTrigger</c>, so the collider that produces those messages sits on the point's own
-    /// GameObject. Bounds containment is used instead of <c>Collider.ClosestPoint</c> because it works
-    /// for every collider shape and also when the collider is disabled; it is a superset of the
-    /// trigger volume, which only ever registers a player that is already at the point - access,
-    /// entry requirements, the quest condition, the group-size limit and the host's own registration
-    /// checks are untouched by it.
+    /// 该碰撞体就是触发体积的依据：TransitPoint 接收 Unity 的触发器
+    /// 消息（<c>OnTriggerEnter/OnTriggerExit</c>，dump 212394/212395）并实现了
+    /// <c>IPhysicsTrigger</c>，因此产生这些消息的碰撞体就位于过境点自身的
+    /// GameObject 上。这里用边界包含判断而非 <c>Collider.ClosestPoint</c>，因为它适用于
+    /// 所有碰撞体形状，并且在碰撞体被禁用时也能工作；它是
+    /// 触发体积的超集，而触发体积只会登记已经位于该点的玩家——准入、
+    /// 进入条件、任务条件、队伍人数上限以及主机自身的
+    /// 登记检查都不受它影响。
     /// </para>
     /// </summary>
     private static TransitPoint FindPointInside(EFT.TransitController transit, Vector3 position)
@@ -251,12 +251,12 @@ internal static class TransitPresenceReporter
         return collider != null ? collider : point.GetComponentInChildren<Collider>(true);
     }
 
-    /// <summary>One log line per player, point and reason per raid for a skipped report.</summary>
+    /// <summary>每场战局中每个玩家、每个过境点和每种原因各一行被跳过上报的日志。</summary>
     internal static bool MarkSkipLogged(string key) => LoggedSkips.Count < 64 && LoggedSkips.Add(key);
 
     /// <summary>
-    /// Reports a failing host countdown tick once per raid. The tick itself already stops the countdown
-    /// and releases the registrations it made, so this line only names the exception that caused it.
+    /// 每场战局上报一次主机倒计时 tick 失败。该 tick 本身已经停止了倒计时
+    /// 并释放了它所做的登记，因此这一行只需指出引发它的异常。
     /// </summary>
     private static bool MarkHostTickFailure(System.Exception exception)
     {
@@ -264,22 +264,22 @@ internal static class TransitPresenceReporter
                 return true;
     }
 
-    /// <summary>The raid is over; the next one gets a fresh set of diagnostic characters.</summary>
+    /// <summary>战局已结束；下一场战局会获得一组全新的诊断键。</summary>
     internal static void ResetSkips()
     {
         LoggedSkips.Clear();
-        // Re-arm the fallback report as well: the same process can host one raid and join the next
-        // one as a client, where a missing wrapper is a failure instead of the host's normal path.
+        // 同时也重新武装回退上报：同一个进程可以先主持一场战局，然后以客户端身份
+        // 加入下一场，在那里缺少包装器是失败，而不是主机的正常路径。
         _pollDisabledReported = false;
     }
 }
 
 /// <summary>
-/// Native <c>EFT.LocalTransitController.PlayerEnter(TransitPoint, Player)</c> - the declaration the
-/// host raids already use through <see cref="Fika.Core.Main.Patches.TransitController.FikaTransitEnterPatch"/>.
-/// A client raid's controller is a <c>NetworkTransitController</c> and never reaches this method, so
-/// on a client this hook is a safety net (see the class comment on <see cref="TransitPresenceBinding"/>;
-/// the point-trigger hook below is the client's real path).
+/// 原生 <c>EFT.LocalTransitController.PlayerEnter(TransitPoint, Player)</c>——主机战局已经通过
+/// <see cref="Fika.Core.Main.Patches.TransitController.FikaTransitEnterPatch"/> 使用的那个声明。
+/// 客户端战局的控制器是 <c>NetworkTransitController</c>，永远不会到达这个方法，因此
+/// 在客户端上这个钩子只是一层安全网（见 <see cref="TransitPresenceBinding"/> 的类注释；
+/// 下面的过境点触发器钩子才是客户端的真实路径）。
 /// </summary>
 public sealed class FikaTransitClientPresenceEnterPatch : ModulePatch
 {
@@ -288,9 +288,9 @@ public sealed class FikaTransitClientPresenceEnterPatch : ModulePatch
         typeof(TransitPoint), typeof(Player));
 
     /// <summary>
-    /// Runs for the machine that owns this controller. Only its own player is reported; bots and
-    /// remote observed players are ignored, and a machine without a client wrapper (the Fika host)
-    /// reports nothing at all.
+    /// 在拥有该控制器的机器上运行。只上报本机自己的玩家；机器人和
+    /// 远端被观察的玩家会被忽略，而没有客户端包装器的机器（Fika 主机）
+    /// 什么都不上报。
     /// </summary>
     [PatchPrefix]
     private static void Prefix(EFT.LocalTransitController __instance, TransitPoint point, Player player) =>
@@ -310,10 +310,10 @@ public sealed class FikaTransitClientPresenceExitPatch : ModulePatch
 }
 
 /// <summary>
-/// The client's real entry point: the point's own trigger. <c>TransitPoint.OnTriggerEnter/OnTriggerExit</c>
-/// run on every machine that has the point activated, resolve the collider with the game's own
-/// <c>TryGetPlayer</c> helper and are independent of which controller class the raid installed.
-/// Prefixes are used so a native exception inside the trigger cannot swallow the report.
+/// 客户端的真实入口：过境点自身的触发器。<c>TransitPoint.OnTriggerEnter/OnTriggerExit</c>
+/// 在每个激活了该过境点的机器上运行，使用游戏自身的
+/// <c>TryGetPlayer</c> 辅助方法解析碰撞体，且与战局安装了哪个控制器类无关。
+/// 这里使用 Prefix，这样触发器内部的原生异常就无法吞掉这次上报。
 /// </summary>
 public sealed class FikaTransitClientPointEnterPatch : ModulePatch
 {
@@ -337,11 +337,11 @@ public sealed class FikaTransitClientPointExitPatch : ModulePatch
 }
 
 /// <summary>
-/// Geometric fallback host: <c>EFT.GameWorld.Update()</c> runs once per frame in a raid on every
-/// machine, and <see cref="TransitPresenceReporter.Poll"/> throttles itself to
-/// <c>0.25 s</c> and returns immediately for a host (no client wrapper) or outside a raid. It exists
-/// so the client can still tell the host where its player stands on a build where the native trigger
-/// or the controller callback does not run.
+/// 几何回退的宿主：<c>EFT.GameWorld.Update()</c> 在战局中每台机器上每帧运行一次，
+/// 而 <see cref="TransitPresenceReporter.Poll"/> 会把自己限流到
+/// <c>0.25 s</c>，并对主机（无客户端包装器）或战局之外立即返回。它存在的目的
+/// 是让客户端在原生触发器或控制器回调不运行的构建上，仍然能告诉主机
+/// 它的玩家站在哪里。
 /// </summary>
 public sealed class FikaTransitPresencePollPatch : ModulePatch
 {
@@ -353,13 +353,13 @@ public sealed class FikaTransitPresencePollPatch : ModulePatch
 }
 
 /// <summary>
-/// Native <c>EFT.ClientTransitController.OnPlayerDead(Player, IPlayer, DamageInfo, EBodyPart)</c>
-/// (declared on the base controller, so it is reachable from the client's
-/// <c>NetworkTransitController</c>; verified against the dump and by
-/// <c>LogOutput.log:598 Enabled patch FikaTransitDeathPresencePatch</c>) is the transit interaction's
-/// death path. It is the exact signal for "this player will never stand in the zone again", so the
-/// host can drop a registration the client will not clear itself. The client branch reports its own
-/// death; the host branch clears its local map.
+/// 原生 <c>EFT.ClientTransitController.OnPlayerDead(Player, IPlayer, DamageInfo, EBodyPart)</c>
+/// （声明在基类控制器上，因此可以从客户端的
+/// <c>NetworkTransitController</c> 到达；已对照 dump 并通过
+/// <c>LogOutput.log:598 Enabled patch FikaTransitDeathPresencePatch</c> 验证）是过境交互的
+/// 死亡路径。它是"该玩家再也不会站进该区域"的精确信号，因此
+/// 主机可以丢弃客户端自己不会清除的登记。客户端分支上报自己的
+/// 死亡；主机分支清除其本地映射表。
 /// </summary>
 public sealed class FikaTransitDeathPresencePatch : ModulePatch
 {
@@ -376,10 +376,10 @@ public sealed class FikaTransitDeathPresencePatch : ModulePatch
             client.SendZonePresence(0, false, "died", player.ProfileId);
             if (player.IsYourPlayer)
             {
-                // A dead player cannot be carried by any countdown: this machine drops its own transit
-                // registration, gives its exit interaction back and closes the countdown panel it shows, and
-                // the host applies the same rule for the same profile (TransitCountdownGuard: a death drops
-                // the participant, or cancels the transfer when Coop / Transit: Abort When Someone Dies is on).
+                // 死掉的玩家不能被任何倒计时携带：本机丢弃自己的过境
+                // 登记、归还其退出交互并关闭自己显示的倒计时面板，而
+                // 主机对同一个 profile 应用同样的规则（TransitCountdownGuard：死亡会丢弃
+                // 该参与者，或在 Coop / Transit: Abort When Someone Dies 开启时取消传送）。
                 client.CancelLocalCountdown(-1, "this machine's player died", "death hook");
             }
 
@@ -391,13 +391,13 @@ public sealed class FikaTransitDeathPresencePatch : ModulePatch
 }
 
 /// <summary>
-/// Native <c>EFT.ClientTransitController.ShowInteraction(Int32, Player, EDateTime)</c> (interop dump
-/// 238472 / 238522) is the one call that puts the transit interaction in front of a player. A local raid
-/// reaches it from its own <c>PlayerEnter</c> path; a network client would need the host's
-/// <c>TransitInteractionEvent</c> with <c>EType.Show</c>, and the host only builds that packet in the
-/// branch that answers its own native <c>PlayerEnter</c> - a method a remote player never reaches. The
-/// postfix tells the client controller about a prompt this machine did not raise itself, so the client log
-/// answers whether the host drove the interaction or the client had to.
+/// 原生 <c>EFT.ClientTransitController.ShowInteraction(Int32, Player, EDateTime)</c>（interop dump
+/// 238472 / 238522）是唯一把过境交互呈现到玩家面前的调用。本地战局
+/// 从自己的 <c>PlayerEnter</c> 路径到达它；网络客户端则需要主机的
+/// <c>TransitInteractionEvent</c>（带 <c>EType.Show</c>），而主机只在
+/// 应答自己原生 <c>PlayerEnter</c> 的那个分支里构建该数据包——远端玩家永远到不了这个方法。该
+/// Postfix 告诉客户端控制器有一个并非本机自己弹出的提示，因此客户端日志
+/// 可以回答究竟是主机驱动了交互，还是客户端不得不自己驱动。
 /// </summary>
 public sealed class FikaTransitClientShowInteractionPatch : ModulePatch
 {
@@ -414,12 +414,12 @@ public sealed class FikaTransitClientShowInteractionPatch : ModulePatch
 }
 
 /// <summary>
-/// Native <c>EFT.ClientTransitController.EnsureConfirmed(TransitPoint, Player, Action)</c> (interop dump
-/// 238471 / 238521) is the step between pressing the transit prompt and the interaction action that asks
-/// <c>EFT.Player.TransitInteraction</c> for the request - the request Fika sends to the host from
-/// <see cref="Fika.Core.Main.Players.FikaPlayer.TransitInteraction"/>. The press and the local confirmation
-/// state are logged here, and the controller reports a press that stalls, which is the one place where a
-/// client can be blocked without the host ever hearing about it.
+/// 原生 <c>EFT.ClientTransitController.EnsureConfirmed(TransitPoint, Player, Action)</c>（interop dump
+/// 238471 / 238521）是按下过境提示之后、到向
+/// <c>EFT.Player.TransitInteraction</c> 索取请求的那个交互动作之间的一步——也就是 Fika 从
+/// <see cref="Fika.Core.Main.Players.FikaPlayer.TransitInteraction"/> 发给主机的那个请求。这里会记录按下动作与本地确认
+/// 状态，控制器还会上报卡住的按下动作，而这是客户端可能被阻塞
+/// 而主机却完全不知情的唯一一处。
 /// </summary>
 public sealed class FikaTransitClientEnsureConfirmedPatch : ModulePatch
 {

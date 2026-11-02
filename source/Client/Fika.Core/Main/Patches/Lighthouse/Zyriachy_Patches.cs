@@ -10,7 +10,7 @@ namespace Fika.Core.Main.Patches.Lighthouse;
 public static class Zyriachy_Patches
 {
     /// <summary>
-    /// Search for 'Zryachiy don't have controllable zone FIX it' string in assembly to find class
+    /// 在程序集里搜索 'Zryachiy don't have controllable zone FIX it' 这个字符串即可找到该类
     /// </summary>
     public class BossZryachiy_Activate_Patch : ModulePatch
     {
@@ -30,8 +30,8 @@ public static class Zyriachy_Patches
     }
 }
 
-// Bind the native DamageInfo delegate to a registered receiver. Converting a
-// CLR Action creates an unsupported value-wrapper trampoline on this runtime.
+// 把原生的 DamageInfo 委托绑定到一个已注册的接收者。转换
+// CLR Action 在本运行时上会生成不受支持的值包装跳板。
 internal sealed class ZryachiyDeathListener : UnityEngine.MonoBehaviour
 {
     public ZryachiyDeathListener(System.IntPtr pointer) : base(pointer) { }
@@ -45,8 +45,8 @@ internal sealed class ZryachiyDeathListener : UnityEngine.MonoBehaviour
         if (_handler == null && !NativeDelegates.TryBindManaged<System.Action<EFT.Player, EFT.IPlayer, EFT.Ballistics.DamageInfo, EBodyPart>>(
                 this, nameof(OnPlayerDead), "ZryachiyDeathListener.OnPlayerDead", out _handler))
         {
-            // DamageInfo travels by value: when the interop refuses that delegate, the native zone
-            // logic keeps running and only this Fika-side notification is lost.
+            // DamageInfo 按值传递：当互操作层拒绝该委托时，原生区域的
+            // 逻辑仍会继续运行，只是丢失了 Fika 这一侧的通知。
             return;
         }
         _player = player;

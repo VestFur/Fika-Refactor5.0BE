@@ -7,62 +7,62 @@ using Fika.Core.Networking;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// The memory side of a transit reload, in one place.
+/// 一次 transit 重载的内存侧处理，集中在一处。
 ///
-/// Why this exists (analysis/transit-reload-oom, client Fika-diagnostics.log frame=48430 /
-/// LogOutput.log:4880): the client reloads the next map inside the same process. The old world is
-/// torn down, but nothing ever releases the assets that world had loaded. The client never called
-/// UnityEngine.Resources.UnloadUnusedAssets() anywhere - the only call sites in the whole product
-/// source are the headless ones (FikaHeadlessPlugin.cs:531, HeadlessGame.cs:350) and the headless
-/// deliberately skips them for a transit (FikaHeadlessPlugin.cs:529) - and the game's own memory
-/// management only reacts once the next raid is already up (LogOutput.log:4872 "EmptyWorkingSet",
-/// 4873 "Can't disable GC due to low memory size 15.24219GB, requested 25GB", 4880 the failed
-/// 20 MB TempOverflow allocation). The second map is therefore loaded on top of the first one, and
-/// the process dies exactly when the characters of the second raid are spawned.
+/// 缘何存在（analysis/transit-reload-oom，客户端 Fika-diagnostics.log frame=48430 /
+/// LogOutput.log:4880）：客户端在同一个进程内重载下一张地图。旧 world 被
+/// 拆除了，但没有任何东西释放那个 world 加载过的资源。客户端在任何地方都
+/// 没有调用过 UnityEngine.Resources.UnloadUnusedAssets() —— 整个产品源码中仅有的
+/// 调用点是无头（headless）侧的那些（FikaHeadlessPlugin.cs:531、HeadlessGame.cs:350），而无头侧
+/// 在 transit 时会刻意跳过它们（FikaHeadlessPlugin.cs:529）—— 而且游戏自身的内存
+/// 管理机制要等到下一场 raid 已经起来之后才反应（LogOutput.log:4872 "EmptyWorkingSet"，
+/// 4873 "Can't disable GC due to low memory size 15.24219GB, requested 25GB"，4880 那次失败的
+/// 20 MB TempOverflow 分配）。因此第二张地图被叠加在第一张之上，
+/// 而进程恰好在第二场 raid 的角色出生时崩溃。
 ///
-/// The release runs at the one boundary where it is both possible and useful: the new world object
-/// exists but its level (bundles, pools, scenes) has not been loaded yet, i.e. directly before the
-/// native ClientLocalGameWorld.InitLevel call. At that moment the previous world is gone, so
-/// everything it held is unreachable and the asset pass can free it; and the new map is still
-/// unloaded, so nothing that this pass could free is needed by the raid being started.
+/// 释放动作跑在唯一既可行又有用的那个边界上：新的 world 对象
+/// 已经存在，但它的关卡（bundle、池、场景）尚未加载，也就是正好在
+/// 本机 ClientLocalGameWorld.InitLevel 调用之前。此刻上一个 world 已经不在了，因此
+/// 它持有的一切都不可达，资源清理过程可以将其释放；而新地图仍然
+/// 未加载，因此这次清理可能释放的东西都不是正在启动的 raid 所需要的。
 ///
-/// The [MemDiag] lines make the next run readable: one line per boundary with the managed heap, the
-/// process working set and private bytes and, where the engine exposes them, the Unity allocator
-/// totals. A second transit run then answers "the old map was never released" (the numbers drop
-/// only by the release, and the new map starts from a high base) versus "the new map alone is too
-/// big" (the base is low and the raid still runs out).
+/// [MemDiag] 行让下一次运行可读：每个边界一行，带上托管堆、
+/// 进程工作集与 private bytes，以及（在引擎暴露这些数值的地方）Unity 分配器的
+/// 总计。第二次 transit 运行随后就能回答"旧地图从未被释放"（数值只因释放
+/// 而下降，且新地图从很高的基线开始）还是"新地图本身就太
+/// 大"（基线很低，而 raid 依然耗尽内存）。
 /// </summary>
 internal static class FikaRaidMemory
 {
     /// <summary>
-    /// Diagnostics scope for the [MemDiag] lines. The prefix is on <c>FikaDiagnostics.QuietSteps</c>,
-    /// so these lines survive the quiet diagnostics mode exactly like the [LoadSync] ones do.
+    /// [MemDiag] 各行的诊断 scope。前缀被列入 <c>FikaDiagnostics.QuietSteps</c>，
+    /// 因此这些行会像 [LoadSync] 的那些行一样，在静默诊断模式下继续保留。
     /// </summary>
     private const string DiagScope = "LoadingScreen.MemDiag";
 
 
     /// <summary>
-    /// Frame bound of the asset pass. It needs a handful of frames; the bound only exists so that a
-    /// pass which never reports <c>isDone</c> cannot hold the raid start forever.
+    /// 资源清理过程的帧数上限。它需要几帧时间；这个上限存在的唯一目的是让
+    /// 一次始终不上报 <c>isDone</c> 的清理不会永远卡住 raid 的启动。
     /// </summary>
     private const int MaxUnloadFrames = 300;
 
     private static bool _worldSwapPending;
     private static int _worldSwaps;
 
-    /// <summary>True between the teardown of a world and the level load of its replacement.</summary>
+    /// <summary>在某个 world 拆除之后、其替代者的关卡加载之前为 true。</summary>
     internal static bool WorldSwapPending => _worldSwapPending;
 
     /// <summary>
-    /// Records that the current world has been torn down and the next one is being created. Called from
-    /// the transit branch of <see cref="NetManagerUtils.DestroyNetManager"/> for BOTH roles (the client
-    /// branch arms the world packet queue there; the host branch keeps the server alive there), so both
-    /// facts are read from the same log position.
+    /// 记录当前 world 已被拆除、下一个 world 正在创建。调用点位于
+    /// <see cref="NetManagerUtils.DestroyNetManager"/> 的 transit 分支，且对两种角色都会调用（客户端
+    /// 分支在那里装载 world 报文队列；主机分支在那里保活服务器），因此这两项事实
+    /// 都从同一个日志位置读出。
     ///
-    /// Gated by <c>FikaBackendUtils.IsTransit</c> on purpose: the release below must only ever run for a
-    /// transit that is really continuing. Outside that window the assets of the raid that just ended
-    /// belong to the next raid's own loading path (and the process is about to return to the menu, which
-    /// releases them itself), so an ordinary raid start is never touched.
+    /// 特意用 <c>FikaBackendUtils.IsTransit</c> 加以门控：下面的释放只允许在真正
+    /// 延续的 transit 中运行。在该窗口之外，刚刚结束的那场 raid 的资源
+    /// 属于下一场 raid 自己的加载路径（而且进程即将返回菜单，而菜单
+    /// 自己会释放它们），因此普通的 raid 启动绝不会被触及。
     /// </summary>
     internal static void NoteWorldSwap(string reason)
     {
@@ -76,13 +76,13 @@ internal static class FikaRaidMemory
     }
 
     /// <summary>
-    /// Releases the previous raid's assets, once, at the given boundary. A no-op when no world swap was
-    /// noted (the ordinary raid start of a process pays nothing for this), and a no-op when the swap is
-    /// no longer a transit by the time the boundary is reached.
+    /// 在给定边界上释放上一场 raid 的资源，且只释放一次。没有记录到 world 换挡时是 no-op
+    /// （进程的普通 raid 启动不为此付出任何代价）；而当到达边界时这次换挡
+    /// 已经不再是 transit 时，同样是 no-op。
     ///
-    /// The returned task NEVER faults and never runs the release twice: every failure path inside logs one
-    /// WARN line and continues. A release that fails must not stop the raid that is being loaded - this is
-    /// awaited in front of the native level load on both roles, the host included.
+    /// 返回的 task 绝不会 fault，也绝不会把释放跑两遍：内部的每条失败路径都只记录一行
+    /// WARN 然后继续。失败的释放不能阻止正在加载的 raid —— 因为这一处在两种角色
+    /// （主机也包含在内）上都被 await 在本机关卡加载之前。
     /// </summary>
     internal static Task ReleaseWorldSwapAsync(string boundary)
     {
@@ -120,7 +120,7 @@ internal static class FikaRaidMemory
         }
         catch (Exception exception)
         {
-            // Belt and braces: the dispatcher itself must not be able to fail the raid that is loading.
+            // 双重保险：调度器本身也不得让正在加载的 raid 失败。
             FikaGlobals.LogWarning("FikaRaidMemory: the swap release at '" + boundary
                 + "' could not be scheduled, the load continues regardless: " + exception);
             return Task.CompletedTask;
@@ -128,11 +128,11 @@ internal static class FikaRaidMemory
     }
 
     /// <summary>
-    /// One Unity asset pass, driven to completion on the pumping thread. Everything the old world held
-    /// is unreachable at the call site, so this is the call that turns the old map's textures, meshes and
-    /// audio (Unity's ALLOC_CACHEOBJECTS, 3.89 GB / 4.18 GB reserved in the reported crash) back into
-    /// free memory. Objects that are still referenced - the loading screen, the menu, the network manager,
-    /// every prefab a live object points at - are deliberately kept by the engine.
+    /// 一次 Unity 资源清理过程，在泵线程（pumping thread）上被驱动到完成。旧 world 持有的一切
+    /// 在调用点都不可达，所以正是这次调用把旧地图的纹理、网格和
+    /// 音频（Unity 的 ALLOC_CACHEOBJECTS，在报告的崩溃中保留了 3.89 GB / 4.18 GB）重新变回
+    /// 空闲内存。仍然被引用的对象 —— 加载界面、菜单、网络管理器、
+    /// 以及每个活对象所指向的 prefab —— 会被引擎刻意保留。
     /// </summary>
     private static async Task<int> UnloadUnusedAssetsAsync()
     {
@@ -155,28 +155,28 @@ internal static class FikaRaidMemory
     }
 
     /// <summary>
-    /// One forced, blocking, compacting managed collection. A transit carries a whole raid of managed
-    /// state (profiles, items, packets, the item factory caches) into the next one; without this the
-    /// old raid's garbage is still on the heap while the new raid is being built. Runs on the loading
-    /// screen, so the one-time pause costs nothing that the player can see.
+    /// 一次强制的、阻塞式的、带压缩的托管回收。一次 transit 会把整场 raid 的托管
+    /// 状态（profile、物品、报文、物品工厂的缓存）带进下一场；没有这一步，
+    /// 旧 raid 的垃圾会一直留在堆上，而新 raid 正在被构建。它跑在加载
+    /// 界面上，因此这一次性停顿不会让玩家看到任何代价。
     /// </summary>
     /// <summary>
-    /// One-click switch for the expensive form of the release (analysis/transit-crash-unload).
+    /// 用于释放动作昂贵形态的一键开关（analysis/transit-crash-unload）。
     ///
-    /// Measured in the round-12 log, the release boundary of the first transit of the crash session
-    /// (Fika-diagnostics.log, frames 31414 -> 31415, "before the release" 330055 ms -> "after the release"
-    /// 330571 ms): the asset pass finished in one frame and the whole 516 ms of that window was the two
-    /// blocking *compacting* collections with a finalizer wait - while the pass itself freed 2.6 MiB of
-    /// Unity memory and the collections freed 25 MiB of managed garbage. 516 ms of frozen main thread is
-    /// exactly the "the next map loads slowly" complaint, so the default is now one blocking, non-compacting
-    /// collection (which still drops the old raid's garbage) and the compaction is opt in.
+    /// 在 round-12 日志中测得，崩溃会话第一次 transit 的释放边界
+    /// （Fika-diagnostics.log，frames 31414 -> 31415，"before the release" 330055 ms -> "after the release"
+    /// 330571 ms）：资源清理过程在一帧内完成，而该窗口的全部 516 ms 都是那两次
+    /// 带终结器等待的阻塞式 *压缩* 回收 —— 而清理过程本身只释放了 2.6 MiB 的
+    /// Unity 内存，那些回收释放了 25 MiB 的托管垃圾。516 ms 的主线程冻结
+    /// 正是"下一张地图加载很慢"这类抱怨，所以现在的默认是一次阻塞式、不压缩的
+    /// 回收（它仍然会丢掉旧 raid 的垃圾），而压缩改为按需开启。
     /// </summary>
     private static readonly bool CompactAfterUnload = false;
 
     /// <summary>
-    /// The managed collection of the release. One blocking collection of generation 2 without compaction by
-    /// default; with <see cref="CompactAfterUnload"/> set it is the previous pair, compaction included.
-    /// Never throws.
+    /// 释放动作所使用的托管回收。默认是一次不带压缩的第 2 代阻塞式回收；
+    /// 在设置了 <see cref="CompactAfterUnload"/> 时则是原先的那一对，压缩也包含在内。
+    /// 绝不抛出异常。
     /// </summary>
     private static string ForceCollect()
     {
@@ -199,7 +199,7 @@ internal static class FikaRaidMemory
         }
     }
 
-    /// <summary>MEMORYSTATUSEX, filled by <see cref="GlobalMemoryStatusEx"/>.</summary>
+    /// <summary>MEMORYSTATUSEX，由 <see cref="GlobalMemoryStatusEx"/> 填充。</summary>
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
     private struct MemoryStatusEx
     {
@@ -226,50 +226,50 @@ internal static class FikaRaidMemory
         }
     }
 
-    // ------------------------------------------------------------------ commit watch
-    // (AB: commit-watch) Why this exists: the 2026-10-12 19:59:56 death was a CLR fail fast
-    // (0x80131506, coreclr.dll) and the last two [MemDiag] lines before it read
-    // sysCommitAvail=820.7MiB / 883.9MiB while this process held committed=12.8GB - the commit of the
-    // whole machine was gone, not this process's heap. The page file is a user-side setting
-    // (Win32_PageFileUsage reports only C: 15608 MB while the registry configures d:/pagefile.sys), so
-    // the only two things this plugin can do about it are: say it out loud before the runtime does, and
-    // give back what it is allowed to give back.
+    // ------------------------------------------------------------------ commit 监视
+    // (AB: commit-watch) 缘何存在：2026-10-12 19:59:56 那次死亡是一次 CLR fail fast
+    // (0x80131506, coreclr.dll)，而它之前最后两条 [MemDiag] 行读到的是
+    // sysCommitAvail=820.7MiB / 883.9MiB，而本进程持有 committed=12.8GB —— 是整台机器的
+    // commit 被打光了，而不是本进程的堆。页面文件是用户侧的设置
+    // （Win32_PageFileUsage 只报告 C: 15608 MB，而注册表配置的是 d:/pagefile.sys），所以
+    // 本插件对此唯二能做的事就是：在运行时喊出来之前先喊出来，以及
+    // 把它被允许归还的东西归还回去。
     //
-    // The watch is driven from LoadCostMeter.Tick, i.e. from the plugin Update on every frame, whether or
-    // not a world window is open - the death above happened inside a live raid, not in a swap window.
-    // Outside a warning it costs one bool test, one timestamp compare and (once per second) one call into
-    // kernel32!GlobalMemoryStatusEx, which allocates nothing.
+    // 该监视由 LoadCostMeter.Tick 驱动，即由插件 Update 每帧驱动，无论
+    // 是否处于 world 窗口内 —— 上面那次死亡发生在一场进行中的 raid 里，而不是换挡窗口里。
+    // 在不告警时，它的代价是一次 bool 判断、一次时间戳比较，以及（每秒一次）一次对
+    // kernel32!GlobalMemoryStatusEx 的调用，而后者不分配任何内存。
     //
-    // Levels (see LevelFor):
-    //   normal   sysCommitAvail above WarnMiB (default 1536 MiB)
-    //   WARN     at or below WarnMiB: one [MemWatch] line at most every 5 s, carrying every number the
-    //            diagnosis needs (this process's committed / unityAllocated, and our queues)
-    //   CRITICAL at or below CriticalMiB (default 1024 MiB): the same line tagged CRITICAL, plus the relief
-    // The WARN band is only left above WarnMiB + 512 MiB, so a 1.5 GiB band cannot turn the 5 s rate limit
-    // into one line per second.
+    // 级别（见 LevelFor）：
+    //   normal   高于 WarnMiB 时的 sysCommitAvail（默认 1536 MiB）
+    //   WARN     等于或低于 WarnMiB：最多每 5 秒一行 [MemWatch]，携带诊断所需的
+    //            每一个数值（本进程的 committed / unityAllocated，以及我们的队列）
+    //   CRITICAL 等于或低于 CriticalMiB（默认 1024 MiB）：同样的一行但标记为 CRITICAL，外加缓解动作
+    // WARN 带只有高于 WarnMiB + 512 MiB 才会离开，因此 1.5 GiB 的带宽不会把 5 秒的限速
+    // 变成每秒一行。
     //
-    // The relief (own switch, arms only below CRITICAL) is the "give back" half: it pauses our own
-    // low-priority work and, at most once per 30 s, runs the release the transit path already proved safe.
-    // Every item it gives up is pure observation or reconstructible; nothing that carries inventory or
-    // synchronisation state is ever dropped. The list, its reasons and the one-click revert are in
-    // analysis/commit-watch/REPORT.md.
+    // 缓解动作（独立开关，仅在低于 CRITICAL 时布防）就是"归还"的那一半：它会暂停我们自己的
+    // 低优先级工作，并最多每 30 秒运行一次 transit 路径已证明安全的释放。
+    // 它放弃的每一项都是纯观测或可重建的；任何承载库存或
+    // 同步状态的东西都不会被丢弃。清单、原因以及一键回退都在
+    // analysis/commit-watch/REPORT.md 中。
 
-    /// <summary>How often the commit is read. One read per second is free and enough for a curve.</summary>
+    /// <summary>读取 commit 的频率。每秒一次读取不花代价，且足以画出曲线。</summary>
     private const long ProbeMillis = 1000L;
 
-    /// <summary>Hard rate limit of the warning lines: the brief's "at most one line per 5 s".</summary>
+    /// <summary>告警行的硬性限速：任务书要求的"最多每 5 秒一行"。</summary>
     private const long WatchReportMillis = 5000L;
 
-    /// <summary>Shortest distance between two releases while the machine stays below CRITICAL.</summary>
+    /// <summary>机器持续低于 CRITICAL 时，两次释放之间的最短间隔。</summary>
     private const long ReleaseCooldownMillis = 30000L;
 
-    /// <summary>Distance above the warn threshold at which the band is left again (hysteresis).</summary>
+    /// <summary>离开告警带所需要的、高于告警阈值的距离（迟滞）。</summary>
     private const long ReleaseHysteresisMiB = 512L;
 
     private static long _nextProbeAt;
     private static int _level = -1;
     private static long _lastWatchAt;
-    /// <summary>Uptime of the last release. Zero (not long.MinValue) so the first cooldown cannot overflow.</summary>
+    /// <summary>上次释放时的运行时长。用零（而非 long.MinValue），这样第一次冷却不会溢出。</summary>
     private static long _lastReleaseAt;
     private static bool _reliefActive;
     private static long _reliefArmedAt;

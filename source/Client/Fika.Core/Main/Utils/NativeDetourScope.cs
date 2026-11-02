@@ -12,17 +12,17 @@ using MonoMod.Utils;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Preserves inline ref value wrappers while generating Fika detours.
+/// 在生成 Fika detour 时保留内联的 ref 值包装器。
 /// <para>
-/// The detour trampoline hands a byref value argument (for example <c>ref DamageInfo</c>) to the
-/// managed replacement as a real wrapper and has to copy the - possibly modified - value back into
-/// the caller's inline storage afterwards. Il2CppInterop has emitted that copy in two shapes:
-/// up to at least 1.5.x the trampoline ended with <c>call Il2CppObjectBaseToPtr</c> + <c>stind.i</c>,
-/// which stores an object pointer over the first eight structure bytes and is rewritten here into a
-/// field-wise copy; 1.6.7 ends with <c>call TrampolineHelpers.CopyBoxedStructTo(Il2CppObjectBase src,
-/// IntPtr dst)</c>, which already copies the complete boxed structure back and must be left alone.
-/// A trampoline that contains neither shape is reported once and left untouched instead of failing
-/// the patch that depends on it.
+/// detour trampoline 把一个 byref 值参数（例如 <c>ref DamageInfo</c>）以真正的包装器
+/// 交给托管替换方法，并必须在之后把该（可能已被修改的）值复制回
+/// 调用方的内联存储中。Il2CppInterop 曾以两种形态生成这次复制：
+/// 至少到 1.5.x 为止，trampoline 以 <c>call Il2CppObjectBaseToPtr</c> + <c>stind.i</c> 结束，
+/// 它把一个对象指针写入结构的前八个字节，这里会把它改写为
+/// 逐字段复制；1.6.7 则以 <c>call TrampolineHelpers.CopyBoxedStructTo(Il2CppObjectBase src,
+/// IntPtr dst)</c> 结束，它已经把完整的装箱结构复制回去，必须保持原样。
+/// 两种形态都不包含的 trampoline 只报告一次并保持不动，而不是让依赖它的
+/// 补丁失败。
 /// </para>
 /// </summary>
 internal sealed class NativeDetourScope : IDisposable
@@ -87,8 +87,8 @@ internal sealed class NativeDetourScope : IDisposable
 
             if (call.Name == "CopyBoxedStructTo")
             {
-                // Il2CppInterop 1.6.7: the stack already holds the caller's inline address and the
-                // updated wrapper, and CopyBoxedStructTo copies the whole boxed structure back.
+                // Il2CppInterop 1.6.7：栈上已经有调用方的内联地址和
+                // 更新后的包装器，而 CopyBoxedStructTo 会把整个装箱结构复制回去。
                 if (handled.Add(local.Index)) copiedBack++;
                 continue;
             }
@@ -96,9 +96,9 @@ internal sealed class NativeDetourScope : IDisposable
             if (call.Name != "Il2CppObjectBaseToPtr" || i + 1 >= instructions.Count ||
                 instructions[i + 1].OpCode != Mono.Cecil.Cil.OpCodes.Stind_I) continue;
 
-            // Legacy: the stack holds the caller's inline address and the updated wrapper, and the
-            // wrapper would be stored as an object pointer over the first eight structure bytes.
-            // Copy the fields back instead, including GC reference barriers.
+            // 旧形态：栈上持有调用方的内联地址和更新后的包装器，而该包装器
+            // 会被当作对象指针写入结构的前八个字节。
+            // 改为逐字段复制回去，并包含 GC 引用屏障。
             instruction.Operand = __result.Module.ImportReference(writeInline.MakeGenericMethod(element));
             instructions[i + 1].OpCode = Mono.Cecil.Cil.OpCodes.Nop;
             if (handled.Add(local.Index)) rewritten++;
@@ -117,9 +117,9 @@ internal sealed class NativeDetourScope : IDisposable
         if (handled.Count != ValueLocals.Count && !_reportedMissing)
         {
             _reportedMissing = true;
-            // The patch itself stays installed: the read side is independent of the writeback, so the
-            // managed code still sees the correct value. Only the copy back to native memory is missing,
-            // which has to be visible instead of a silent "patch did not apply" at startup.
+            // 补丁本身仍然保持安装：读取侧与回写无关，因此
+            // 托管代码仍能看到正确的值。缺失的只是复制回原生内存这一步，
+            // 它必须是可见的，而不是启动时静默地「补丁未应用」。
             _logger.LogWarning($"{__result.Definition.Name}: {handled.Count} of {ValueLocals.Count} ref value argument(s) have a native writeback; " +
                 "the remaining argument(s) keep their pre-call value in native memory.");
         }
@@ -141,8 +141,8 @@ internal sealed class NativeDetourScope : IDisposable
         {
             if ((IL2CPP.il2cpp_field_get_flags(field) & (int)FieldAttributes.Static) != 0) continue;
             var offset = (long)IL2CPP.il2cpp_field_get_offset(field);
-            // field_set_value adds the boxed field offset to its owner pointer.
-            // Adjust for the caller's unboxed struct without touching its header.
+            // field_set_value 会把装箱字段偏移加到其所有者指针上。
+            // 针对调用方未装箱的结构做调整，且不触碰它的头部。
             var fieldClass = IL2CPP.il2cpp_class_from_type(IL2CPP.il2cpp_field_get_type(field));
             if (IL2CPP.il2cpp_class_is_valuetype(fieldClass))
                 IL2CPP.il2cpp_field_set_value(destination - (int)header, field, (byte*)value.Pointer + offset);

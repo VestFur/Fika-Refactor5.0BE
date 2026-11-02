@@ -52,21 +52,21 @@ public sealed class CharacterSyncPacket : IPoolSubPacket
     }
 
     /// <summary>
-    /// Applies the host's character list on the receiving client.
+    /// 在接收客户端上应用主机下发的角色列表。
     ///
-    /// The direction of this packet is fixed by the sender, not by a flag on the receiver: only the
-    /// host produces it (CoopHandler.SyncPlayersWithClients -> SendGenericPacket(CharacterSync, true)),
-    /// the host's own receive path refuses to relay it (FikaServer.IsHostOnlyGenericPacket lists
-    /// CharacterSync), so a machine that received it and owns a FikaClient is the addressed client.
+    /// 该包的方向由发送方决定，而不是由接收方上的某个标志决定：只有
+    /// 主机会生成它（CoopHandler.SyncPlayersWithClients -> SendGenericPacket(CharacterSync, true)），
+    /// 主机自身的接收路径拒绝转发它（FikaServer.IsHostOnlyGenericPacket 列出了
+    /// CharacterSync），因此收到它并且持有 FikaClient 的机器就是被寻址的客户端。
     ///
-    /// This used to be gated on FikaBackendUtils.IsClient (i.e. ClientType == EClientType.Client) and
-    /// logged an error otherwise. ClientType is a *session* flag that NetManagerUtils.AbortFailedJoin
-    /// clears when a raid start fails: after the 2026-10-11 18:58 client run gave up on the transit
-    /// raid, that flag was already None while the still-connected client kept receiving the host's
-    /// periodic sync, and every packet produced the error line
-    /// "Received CharacterSyncPacket as server" (20 of them, LogOutput.log:4401-4420) even though the
-    /// packet was addressed to that client and was simply ignored. The real question is whether a
-    /// live client exists, which is what the check below asks; the flag is reported, not obeyed.
+    /// 这里过去用 FikaBackendUtils.IsClient（即 ClientType == EClientType.Client）作为门槛，
+    /// 否则就记录一条错误。ClientType 是一个*会话*标志，突袭启动失败时
+    /// NetManagerUtils.AbortFailedJoin 会清除它：在 2026-10-11 18:58 的那次客户端运行放弃中转
+    /// 突袭之后，该标志已是 None，而仍在连接的客户端继续接收主机的
+    /// 周期性同步，于是每个包都产生了这行错误
+    /// "Received CharacterSyncPacket as server"（共 20 条，LogOutput.log:4401-4420），尽管
+    /// 该包正是发给那个客户端的，并且只是被忽略而已。真正的问题在于是否
+    /// 存在一个活的客户端，这正是下面这个检查所问的；标志只被上报，不被遵从。
     /// </summary>
     public void Execute(FikaPlayer player = null)
     {

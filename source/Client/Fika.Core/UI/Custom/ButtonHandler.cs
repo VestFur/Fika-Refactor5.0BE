@@ -20,8 +20,8 @@ public class ButtonHandler : MonoBehaviour, IPointerExitHandler, IPointerEnterHa
     private float _alphaModifier;
 
     
-    // The original bundle's _buttonSprite is null and the fade animation uses
-    // the Image already on this object. No additional sprite reference is used.
+    // 原始 bundle 的 _buttonSprite 为 null，淡出动画使用的是
+    // 本对象上已有的 Image。没有使用额外的 sprite 引用。
 
     protected void Awake()
     {

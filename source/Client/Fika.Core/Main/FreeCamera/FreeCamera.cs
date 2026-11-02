@@ -15,9 +15,9 @@ using Fika.Core.Main.Utils;
 namespace Fika.Core.Main.FreeCamera;
 
 /// <summary>
-/// <para>FreeCamera modified for Fika</para>
+/// <para>为 Fika 修改的 FreeCamera</para>
 /// <para>
-/// This is based on the original freecam by Terkoiz <br/>
+/// 基于 Terkoiz 的原始 freecam <br/>
 /// <see href="https://github.com/acidphantasm/SPT-Freecam"/>
 /// </para>
 /// </summary>
@@ -146,7 +146,7 @@ public partial class FreeCamera : MonoBehaviour
     }
 
     /// <summary>
-    /// Forces a recalculation on extract
+    /// 在撤离时强制重新计算
     /// </summary>
     public void RecalculateOnExtract()
     {
@@ -238,10 +238,10 @@ public partial class FreeCamera : MonoBehaviour
     }
 
     /// <summary>
-    /// Helper method to cycle spectating players
+    /// 用于循环切换观战玩家的辅助方法
     /// </summary>
     /// <param name="reverse">
-    /// If true, cycle players in reverse direction
+    /// 若为 true,则按相反方向循环玩家
     /// </param>
     public void CycleSpectatePlayers(bool reverse = false)
     {
@@ -295,7 +295,7 @@ public partial class FreeCamera : MonoBehaviour
     }
 
     /// <summary>
-    /// Clears and recalculates all alive players for free cam tracking (human and AI)
+    /// 清空并重新计算所有存活玩家以供自由相机跟踪(人类与 AI)
     /// </summary>
     private void RecalculatePlayerList()
     {
@@ -315,10 +315,10 @@ public partial class FreeCamera : MonoBehaviour
     }
 
     /// <summary>
-    /// Clears and recalculates all alive players for free cam tracking (human and AI) and returns a list
+    /// 清空并重新计算所有存活玩家以供自由相机跟踪(人类与 AI),并返回一个列表
     /// </summary>
-    /// <returns>A list of all valid players</returns>
-    /// <remarks>Non-alloc</remarks>
+    /// <returns>所有有效玩家的列表</returns>
+    /// <remarks>零分配</remarks>
     public List<FikaPlayer> RecalculateAndGetPlayers()
     {
         RecalculatePlayerList();
@@ -332,7 +332,7 @@ public partial class FreeCamera : MonoBehaviour
             return;
         }
 
-        // Toggle input
+        // 切换输入开关
         if (Input.GetKeyDown(KeyCode.Home))
         {
             _disableInput = !_disableInput;
@@ -350,28 +350,28 @@ public partial class FreeCamera : MonoBehaviour
             return;
         }
 
-        // Spectate next player
+        // 观战下一位玩家
         if (Input.GetKeyDown(KeyCode.Mouse0))
         {
             CycleSpectatePlayers(false);
             return;
         }
 
-        // Spectate previous player
+        // 观战上一位玩家
         if (Input.GetKeyDown(KeyCode.Mouse1))
         {
             CycleSpectatePlayers(true);
             return;
         }
 
-        // Toggle vision
+        // 切换视野
         if (Input.GetKeyDown(KeyCode.N))
         {
             ToggleVision();
             return;
         }
 
-        // Disable culling
+        // 禁用剔除
         if (Input.GetKeyDown(KeyCode.M) && _freeCameraController != null)
         {
             _freeCameraController.DisableAllCullingObjects();
@@ -447,7 +447,7 @@ public partial class FreeCamera : MonoBehaviour
                 CycleSpectatePlayers();
                 if (_currentPlayer == null)
                 {
-                    // still no players, let's go to map
+                    // 仍然没有玩家,那就前往地图
                     AttachToMap();
                 }
             }
@@ -518,7 +518,7 @@ public partial class FreeCamera : MonoBehaviour
             transform.position += -Vector3.up * (movementSpeed * deltaTime);
         }
 
-        // Teleportation
+        // 传送
         if (Input.GetKeyDown(KeyCode.T))
         {
             var player = Singleton<GameWorld>.Instance?.MainPlayer?.TryCast<FikaPlayer>();
@@ -529,7 +529,7 @@ public partial class FreeCamera : MonoBehaviour
             }
         }
 
-        // Zooming
+        // 缩放
         const string mouseScrollAxis = "Mouse ScrollWheel";
         var scrollValue = Input.GetAxisRaw(mouseScrollAxis);
         if (scrollValue != 0)
@@ -547,14 +547,14 @@ public partial class FreeCamera : MonoBehaviour
         var mouseX = Input.GetAxis(mouseAxisX);
         var mouseY = Input.GetAxis(mouseAxisY);
 
-        // update yaw first
+        // 先更新偏航角
         _yaw += mouseX * _lookSensitivity;
 
-        // update and clamp pitch
+        // 更新并钳制俯仰角
         _pitch -= mouseY * _lookSensitivity;
         _pitch = Mathf.Clamp(_pitch, -89f, 89f);
 
-        // apply rotation
+        // 应用旋转
         transform.rotation = Quaternion.Euler(_pitch, _yaw, 0f);
     }
 
@@ -575,7 +575,7 @@ public partial class FreeCamera : MonoBehaviour
     {
         if (enabled)
         {
-            // use different coordinates for headcam
+            // 头戴相机使用不同的坐标
             if (transform.localPosition.z == -0.17f)
             {
                 transform.localPosition = new(transform.localPosition.x, transform.localPosition.y, -transform.localPosition.z);
@@ -589,7 +589,7 @@ public partial class FreeCamera : MonoBehaviour
             return;
         }
 
-        // use different coordinates for headcam
+        // 头戴相机使用不同的坐标
         if (transform.localPosition.z == 0.17f)
         {
             transform.localPosition = new(transform.localPosition.x, transform.localPosition.y, -transform.localPosition.z);
@@ -655,9 +655,9 @@ public partial class FreeCamera : MonoBehaviour
     }
 
     /// <summary>
-    /// Checks if there is an active player, and if not assigns the last spectated
+    /// 检查是否存在活跃玩家,若不存在则指派最后观战的那一位
     /// </summary>
-    /// <returns><see langword="true"/> if a player was assigned</returns>
+    /// <returns><see langword="true"/> 表示已指派了玩家</returns>
     private bool CheckAndAssignPlayer()
     {
         if (_currentPlayer == null && _lastSpectatingPlayer != null)
@@ -791,27 +791,27 @@ public partial class FreeCamera : MonoBehaviour
     }
 
     /// <summary>
-    /// Sets the camera's position relative to the player
+    /// 设置相机相对于玩家的位置
     /// </summary>
-    /// <param name="player">The <see cref="Player"/> object containing transform and bone references</param>
+    /// <param name="player">包含 transform 与骨骼引用的 <see cref="Player"/> 对象</param>
     private void SetCameraPosition(Player player)
     {
-        // offset camera relative to player
+        // 相对玩家偏移相机
         transform.position = player.Transform.position - (player.Transform.forward * 1.5f) + (player.Transform.up * 2f);
-        // look at the head
+        // 朝向头部
         transform.LookAt(player.PlayerBones.Head.Original.position, Vector3.up);
 
-        // extract pitch and yaw from rotation
+        // 从旋转中提取俯仰角与偏航角
         var euler = transform.eulerAngles;
         _pitch = NormalizeAngle(euler.x);
         _yaw = NormalizeAngle(euler.y);
     }
 
     /// <summary>
-    /// Normalizes an angle to the range [-180, 180] degrees
+    /// 将角度归一化到 [-180, 180] 度区间
     /// </summary>
-    /// <param name="angle">The angle in degrees to normalize</param>
-    /// <returns>The normalized angle within [-180, 180]</returns>
+    /// <param name="angle">要归一化的角度(度)</param>
+    /// <returns>位于 [-180, 180] 区间内的归一化角度</returns>
     private float NormalizeAngle(float angle)
     {
         angle %= 360f;

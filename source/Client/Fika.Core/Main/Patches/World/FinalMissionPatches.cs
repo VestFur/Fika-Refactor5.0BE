@@ -41,24 +41,24 @@ internal sealed class FinalMissionTimerPatch : ModulePatch
 
 internal sealed class FinalMissionClientExitPatch : ModulePatch
 {
-    // Intercept the SPT action shim, not the game's shared empty native Init body.
+    // 拦截 SPT 的动作 shim，而不是游戏共享的空原生 Init 方法体。
     protected override MethodBase GetTargetMethod() => AccessTools.Method(
         typeof(SPTushonka.SinglePlayer.Patches.Cutscenes.ServerActionPatches.ClientInitActionPatch), "Postfix");
     [PatchPrefix]
     public static bool Prefix(CutscenesClientController __0, string __1)
     {
-        // The target is SPT's static Postfix; its parameter named __instance is
-        // argument zero, not an instance of the target method.
+        // 目标是 SPT 的静态 Postfix；其名为 __instance 的参数
+        // 是第零个实参，而不是目标方法的实例。
         if (!FikaFinalMissionDirector.Bound) return true;
         if (FikaFinalMissionDirector.IsLocalFinalExitAction(__0, __1))
         {
             FikaFinalMissionDirector.LocalExitAction(__0, __1);
             return false;
         }
-        // (analysis/terminal-ending-settlement) The one line a raid that reached the ending picture needs: was
-        // the exit action of this machine's ending refused by the guard above? If it was, SPT's own shim runs
-        // instead - and its StopRaid ends a LocalGame, while a Fika raid is no LocalGame, so that path is a
-        // silent dead end (which is why this port owns the ending and its acknowledgement).
+        // (analysis/terminal-ending-settlement) 一局到达结局画面后所需的那一行：这台机器的结局
+        // 退场动作是否被上面的守卫拒绝了？如果是，SPT 自己的 shim 就会
+        // 接手——而它的 StopRaid 结束的是 LocalGame，而 Fika 突袭不是 LocalGame，所以那条路径是
+        // 一个静默的死胡同（这也是本移植版自己掌管结局及其确认的原因）。
         if (FikaFinalMissionDirector.HasLocalEnding)
         {
             
@@ -88,8 +88,8 @@ internal sealed class FinalMissionServerExitPatch : ModulePatch
             !__0._actions.TryGetValue(__1, out var action) ||
             action.TryCast<CutsceneActionExitAfterCutscene>() == null ||
             !FikaFinalMissionDirector.SuppressExitAction(__3)) return true;
-        // The SPT shim would call StopRaid for the entire LocalGame. Final mission
-        // outcomes are per-player and are acknowledged by FikaFinalMissionDirector.
+        // SPT 的 shim 会为整个 LocalGame 调用 StopRaid。最终任务
+        // 结果是按玩家分别处理的，并由 FikaFinalMissionDirector 确认。
         __result = false;
         return false;
     }

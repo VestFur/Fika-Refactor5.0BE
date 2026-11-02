@@ -10,51 +10,51 @@ using UnityEngine;
 namespace Fika.Core;
 
 /// <summary>
-/// The one place Fika still hands the engine a managed enumerator, and the place that names it in the
-/// diagnostics file.
+/// Fika 仍然把托管枚举器交给引擎的唯一地方，也是把这件事
+/// 记入诊断文件的地方。
 ///
-/// This is deliberately the only remaining hand-over shape: the engine holds an
-/// <c>BepInEx.Unity.IL2CPP.Utils.Collections.Il2CppManagedEnumerator</c> for the whole life of the coroutine and
-/// releases it afterwards, and that release path is where the engine dereferenced the bogus pointer 0xA
-/// (analysis/panel-crash-round7 for the menu panel, analysis/host-raid-coroutine for the host raid start).
-/// Every site that ran during the raid start is now driven by <see cref="FikaRoutinePump"/> instead; the sites
-/// that are left here have run in verified sessions without a fault, and each start writes one line naming the
-/// site, the managed routine and both pointers, so the next fault can be attributed instead of guessed.
+/// 这刻意是仅剩的一种交接形态：引擎在整个协程生命周期内持有一个
+/// <c>BepInEx.Unity.IL2CPP.Utils.Collections.Il2CppManagedEnumerator</c>，随后释放它，
+/// 而该释放路径正是引擎解引用假指针 0xA 的地方
+/// （菜单面板见 analysis/panel-crash-round7，主机 raid 启动见 analysis/host-raid-coroutine）。
+/// 过去在 raid 启动期间运行的每个站点现在改由 <see cref="FikaRoutinePump"/> 驱动；此处
+/// 留下的站点都已在经过验证的会话中无故障运行过，且每次启动都会写一行，给出
+/// 站点、托管例程和两个指针，以便下一次故障能被归因而非猜测。
 ///
-/// Round 2026-10-10 21:35 (analysis/red-errors-coroutines, E1): the hand-over is now wrapped in
-/// <see cref="EngineRoutineBridge"/>, which translates every yielded value on the way out. A routine driven
-/// from here used to hand the engine a managed <c>WaitSeconds</c> and lost the wait, because
-/// <c>Il2CppManagedEnumerator.Current</c> can only forward an il2cpp object. The engine never receives a managed
-/// value now, so that failure mode is closed for every site below at once.
+/// 2026-10-10 21:35 轮次（analysis/red-errors-coroutines，E1）：交接现在被包装在
+/// <see cref="EngineRoutineBridge"/> 中，它在向外传递时转换每一个 yield 出的值。从
+/// 这里驱动的例程过去会把托管的 <c>WaitSeconds</c> 交给引擎，从而丢失这次等待，因为
+/// <c>Il2CppManagedEnumerator.Current</c> 只能转发 il2cpp 对象。现在引擎永远不会收到托管的
+/// 值，因此下面每个站点的这一失效模式被一次性关闭。
 /// </summary>
 /// <remarks>
-/// The class is public so that the other Fika assembly (Fika.Headless, whose raid start hands the engine
-/// <c>CreateStashes()</c> and <c>SyncTraps()</c>) can be routed through the same boundary instead of calling
-/// <c>WrapToIl2Cpp()</c> directly - those two routines yield <c>WaitSeconds</c> and reproduced exactly the
-/// failure this class closes. See analysis/red-errors-coroutines, E1, "invariant completeness".
+/// 该类为 public，以便另一个 Fika 程序集（Fika.Headless，其 raid 启动会把
+/// <c>CreateStashes()</c> 和 <c>SyncTraps()</c> 交给引擎）可以走同一边界，而不是直接
+/// 调用 <c>WrapToIl2Cpp()</c>——这两个例程会 yield <c>WaitSeconds</c>，并原样复现了
+/// 本类所关闭的那个失效。见 analysis/red-errors-coroutines，E1，"invariant completeness"。
 /// </remarks>
 public static class EngineCoroutines
 {
-    /// <summary>Starts logged per site and session; a per-frame site must not flood the diagnostics file.</summary>
+    /// <summary>每个站点与会话记录启动次数的上限；每帧站点不得刷爆诊断文件。</summary>
     private const int ReportsPerSite = 4;
 
     /// <summary>
-    /// Steps allowed in one engine call. Unity steps nested routines until a real wait in the same frame; the
-    /// cap stops a routine that loops on completed tasks from stalling the frame (see EngineRoutineBridge).
+    /// 一次引擎调用中允许的步进次数。Unity 会在同一帧内步进嵌套例程直到遇到真正的等待；
+    /// 该上限可阻止因在已完成任务上循环的例程而卡住该帧（见 EngineRoutineBridge）。
     /// </summary>
     internal const int MaxStepsPerTrigger = 128;
 
     private static readonly Dictionary<string, int> _startsPerSite = [];
 
-    /// <summary>Conversions, refusals and step limits reported so far, one entry per site and kind.</summary>
+    /// <summary>到目前为止报告的转换、拒绝和步进上限，每个站点与种类一条记录。</summary>
     private static readonly HashSet<string> _reportedKinds = [];
 
-    /// <summary>Upper bound of distinct report keys; enough to name every site a raid reaches.</summary>
+    /// <summary>不同报告键的上界；足以命名一次 raid 触及的每个站点。</summary>
     private const int MaxReportedKinds = 128;
 
     /// <summary>
-    /// Wraps a managed routine for the engine and writes the line that names it. Use this instead of
-    /// <c>routine.WrapToIl2Cpp()</c> so every engine driven managed coroutine is attributable and value safe.
+    /// 为引擎包装一个托管例程，并写出命名它的那一行。请使用它而不是
+    /// <c>routine.WrapToIl2Cpp()</c>，这样每个由引擎驱动的托管协程都可归因且值安全。
     /// </summary>
     public static Il2CppSystem.Collections.IEnumerator Wrap(IEnumerator routine, string site, string host = null)
     {
@@ -69,8 +69,8 @@ public static class EngineCoroutines
     }
 
     /// <summary>
-    /// The bridge itself, unwrapped. The value boundary needs it for a nested routine (see
-    /// <see cref="EngineRoutineBridge"/>), which must be bridged before the engine can step into it.
+    /// 桥接器本身，未包装形式。值边界需要它来处理嵌套例程（见
+    /// <see cref="EngineRoutineBridge"/>），该例程必须在引擎能够步进进入之前先被桥接。
     /// </summary>
     internal static EngineRoutineBridge Bridge(IEnumerator routine, string site)
     {
@@ -97,15 +97,15 @@ public static class EngineCoroutines
     }
 
     /// <summary>
-    /// A managed wait was translated for the engine. One line per site: the site is the evidence that the
-    /// boundary is exercised, the value is the evidence that the translation kept the routine's timing.
+    /// 一次托管等待已为引擎完成转换。每个站点一行：站点是边界被行使过的
+    /// 证据，值是转换保持了例程时序的证据。
     /// </summary>
     internal static void ReportConversion(string site, string detail)
     {
         Report(site, "converted", detail);
     }
 
-    /// <summary>The engine wait object could not be built, so the wait is measured against Time.time instead.</summary>
+    /// <summary>无法构建引擎等待对象，因此改为以 Time.time 为基准来度量这次等待。</summary>
     internal static void ReportConversionFallback(string site, float seconds, Exception exception)
     {
         Report(site, "conversion-fallback", "the engine WaitForSeconds for " + seconds +
@@ -114,8 +114,8 @@ public static class EngineCoroutines
     }
 
     /// <summary>
-    /// A value with no engine counterpart was yielded by an engine driven routine. It is not handed over (the
-    /// engine's conversion of it raises), so the routine waits one frame instead and the line names both.
+    /// 由引擎驱动的例程 yield 出了一个没有引擎对应物的值。它不会被交出（
+    /// 引擎对它的转换会抛异常），因此该例程改为等待一帧，而该行会同时给出两者。
     /// </summary>
     internal static void ReportUnsupportedYield(string site, object yielded)
     {
@@ -124,7 +124,7 @@ public static class EngineCoroutines
             ", which has no il2cpp counterpart; it waits one frame instead of losing the step");
     }
 
-    /// <summary>A routine ran into the per-call step cap; the rest of it continues on the next frame.</summary>
+    /// <summary>某个例程撞上了每次调用的步进上限；其余部分在下一帧继续。</summary>
     internal static void ReportStepLimit(string site)
     {
         Report(site, "step-limit", "the routine reached the per-call step cap (" + MaxStepsPerTrigger +
@@ -144,7 +144,7 @@ public static class EngineCoroutines
         }
         catch (Exception)
         {
-            // A report must never break the coroutine it reports about.
+            // 报告绝不能弄坏它所报告的协程。
         }
     }
 }
@@ -153,8 +153,8 @@ internal static class Il2CppCoroutineExtensions
 {
     public static Coroutine StartCoroutine(this MonoBehaviour host, IEnumerator routine, [CallerMemberName] string site = null)
     {
-        // The engine drives this routine from here on; see EngineCoroutines for the one line that names it and
-        // EngineRoutineBridge for the values it may yield.
+        // 此后由引擎驱动该例程；命名它的那一行见 EngineCoroutines，
+        // 它可能 yield 的值见 EngineRoutineBridge。
         var hostDescription = NativeRefGuard.Describe(host);
         var wrapped = EngineCoroutines.Wrap(routine, site, hostDescription);
         return host.StartCoroutine(wrapped);

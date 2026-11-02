@@ -11,18 +11,18 @@ namespace Fika.Core.Main.Patches.World;
 
 // ICEBREAKER-RALLY-GATE (analysis/rally-gate-deadlock).
 //
-// Every patch in this file belongs to FikaRallyGate: the two rally counters of the native
-// EFT.GameTriggers.TriggerRallyZone (which number the gate waits for, and what the zone reports while it
-// waits), the broadcast that carries that number to a client, and the three skip signals a viewer sends.
-// Nothing here changes a native call, its arguments or its order: a count is replaced by the count of the
-// players this raid really has, and everything else only writes a [RallyDiag] line. The patches stay
-// installed when FikaRallyGate.UseFikaPlayerCount is off - they then pass the native value through and keep
-// the diagnosis, which is the one-toggle rollback described in the report.
+// 本文件中的每个补丁都属于 FikaRallyGate：原生
+// EFT.GameTriggers.TriggerRallyZone 的两个 rally 计数器（门等待的是哪个数字，以及区域在
+// 等待期间报告什么）、把该数字传给客户端的广播，以及观看者发出的三个跳过信号。
+// 这里的任何东西都不改变原生调用、其参数或其顺序：一个计数会被替换为
+// 本次 raid 真实拥有的玩家数，而其他一切都只是写一行 [RallyDiag]。当
+// FikaRallyGate.UseFikaPlayerCount 关闭时补丁仍然装载——此时它们透传原生值并保留
+// 诊断，这就是报告中描述的单开关回滚。
 
 /// <summary>
-/// The number the rally gate waits for. Written on the host and on every peer, so both machines wait for the
-/// same players: the native answer is what the "waiting for players N/M" text counts up to, and on a Fika
-/// raid it is not this raid's player count (the line names both values).
+/// rally 门等待的数字。在主机和每个对等端上写入，因此两台机器等待
+/// 相同的玩家：原生答案正是 "waiting for players N/M" 文本所计数到的数，而在 Fika
+/// raid 上它并不是本次 raid 的玩家数（该行会同时给出这两个值）。
 /// </summary>
 internal sealed class RallyZonePlayerCountPatch : ModulePatch
 {
@@ -32,9 +32,9 @@ internal sealed class RallyZonePlayerCountPatch : ModulePatch
     [PatchPostfix]
     public static void Postfix(TriggerRallyZone __instance, ref int __result)
     {
-        // AP (analysis/nonfika-raid-inertness): the line that proved this port was still acting inside a
-        // raid that was not ours came from exactly here ([RallyDiag] phase=gate:count ... side=single).
-        // Outside a Fika raid the native count is the truth and is handed back untouched.
+        // AP (analysis/nonfika-raid-inertness)：证明本移植仍在一次不属于我们的 raid 内部行动的
+        // 那行日志正是来自这里（[RallyDiag] phase=gate:count ... side=single）。
+        // 在 Fika raid 之外，原生计数就是事实，会原样交回。
         if (FikaRaidGate.Skip("TriggerRallyZone.GetAliveHumanPlayerCount postfix"))
         {
             return;
@@ -47,9 +47,9 @@ internal sealed class RallyZonePlayerCountPatch : ModulePatch
 }
 
 /// <summary>
-/// The per-change check of the zone (native <c>CheckAllPlayersInZone(Int32)</c>): the argument is the number
-/// the gate compares against, and the zone still holds the players it currently sees - together they are the
-/// one line that says whether the gate is open and who is still missing.
+/// 该区域的逐次变化检查（原生 <c>CheckAllPlayersInZone(Int32)</c>）：参数正是
+/// 门用来比较的那个数字，而区域仍持有它当前看到的玩家——两者合起来就是
+/// 唯一说明门是否打开、以及还有谁缺席的那一行。
 /// </summary>
 internal sealed class RallyZoneCheckPatch : ModulePatch
 {
@@ -69,9 +69,9 @@ internal sealed class RallyZoneCheckPatch : ModulePatch
 }
 
 /// <summary>
-/// The moment the gate opens on this machine (native <c>EmitTrigger(Int32)</c>). The host is the machine that
-/// owns the emission, and the line names the count it was emitted with and how long ago - which is how a
-/// process created right afterwards is attributed to this trigger.
+/// 门在本机打开的那一刻（原生 <c>EmitTrigger(Int32)</c>）。主机就是
+/// 掌握该发送的机器，而该行给出发送时使用的计数以及发生在多久之前——这就是
+/// 紧随其后创建的进程如何被归因到这个触发器。
 /// </summary>
 internal sealed class RallyZoneEmitPatch : ModulePatch
 {
@@ -92,10 +92,10 @@ internal sealed class RallyZoneEmitPatch : ModulePatch
 }
 
 /// <summary>
-/// The broadcast a client reads its "waiting for players" panel from
-/// (native <c>RallyZoneUpdateEvent.Invoke(Int32 zoneId, Byte playersInZone, Byte totalAlive)</c>). The prefix
-/// replaces <c>TotalAlive</c> with the same count the gate uses, and the line records the native value it
-/// replaced - the proof of which side produced a number like the reported 8.
+/// 客户端从中读取 "waiting for players" 面板的那次广播
+/// （原生 <c>RallyZoneUpdateEvent.Invoke(Int32 zoneId, Byte playersInZone, Byte totalAlive)</c>）。前缀
+/// 把 <c>TotalAlive</c> 替换为门所使用的同一计数，而该行记录它所替换的
+/// 原生值——即证明类似报告中 8 这样的数字是哪一侧产生的。
 /// </summary>
 internal sealed class RallyZoneEventCountPatch : ModulePatch
 {
@@ -115,8 +115,8 @@ internal sealed class RallyZoneEventCountPatch : ModulePatch
         {
             return;
         }
-        // This is the one behavioural patch of the file: it replaces the TotalAlive a client reads its
-        // "waiting for players" panel from. Outside a Fika raid the broadcast is left exactly as it was.
+        // 这是本文件中唯一的行为性补丁：它替换客户端读取其
+        // "waiting for players" 面板所用的 TotalAlive。在 Fika raid 之外，该广播保持完全不变。
         if (FikaRaidGate.Skip("RallyZoneUpdateEvent.Invoke prefix"))
         {
             return;
@@ -127,9 +127,9 @@ internal sealed class RallyZoneEventCountPatch : ModulePatch
 }
 
 /// <summary>
-/// A skip vote arriving from the host. Written on every peer, so a client-only log shows whether the vote of
-/// the raid ever reached this machine and how many viewers it counted - the two facts that decide whether a
-/// peer was expected to vote at all.
+/// 从主机到达的一次跳过投票。在每个对等端上写入，因此仅有客户端的日志能显示该投票
+/// 是否到达过本机、以及它计入了多少观看者——正是这两个事实决定了
+/// 某个对等端是否本应投票。
 /// </summary>
 internal sealed class CutsceneSkipIntentionReceivePatch : ModulePatch
 {
@@ -141,8 +141,8 @@ internal sealed class CutsceneSkipIntentionReceivePatch : ModulePatch
 }
 
 /// <summary>
-/// This machine completed the skip hold (native <c>SendSkipIntention(Boolean)</c>): the line names the
-/// process and whether the intention was "skip" or its retraction.
+/// 本机完成了跳过长按（原生 <c>SendSkipIntention(Boolean)</c>）：该行给出
+/// 进程，以及该意图是 "跳过" 还是其撤回。
 /// </summary>
 internal sealed class CutsceneSkipSendPatch : ModulePatch
 {
@@ -154,7 +154,7 @@ internal sealed class CutsceneSkipSendPatch : ModulePatch
 }
 
 /// <summary>
-/// The host ended a cutscene as skipped and this machine applied it (native <c>OnSkipEvent</c>).
+/// 主机以跳过方式结束了一段过场，且本机应用了它（原生 <c>OnSkipEvent</c>）。
 /// </summary>
 internal sealed class CutsceneSkipApplyPatch : ModulePatch
 {

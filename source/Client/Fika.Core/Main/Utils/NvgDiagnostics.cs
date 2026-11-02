@@ -6,11 +6,11 @@ using UnityEngine;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// (2026-10-18 refactor W1b / tracker A11) The night-vision depth of field is applied by the NVG effect
-/// itself and the component has no OnDisable: when the effect is switched off without going through
-/// NightVision.Switch (the free camera writes NightVision.On directly), nothing removes the blur and the
-/// camera keeps a "hazy, looks like depth of field" frame for the rest of the raid. That is the only job
-/// this class has left - the per-tick self-heal that used to fight the headwear device is gone.
+/// (2026-10-18 refactor W1b / tracker A11) 夜视景深是由 NVG 效果
+/// 自身施加的，而该组件没有 OnDisable：当效果在没有经过
+/// NightVision.Switch 的情况下被关闭时（自由相机直接写 NightVision.On），没有任何东西移除模糊，
+/// 相机就会在整局突袭剩下的时间里保留“雾蒙蒙、看起来像景深”的画面。这是
+/// 这个类仅剩的职责——过去与头戴设备对抗的逐 tick 自愈已经移除了。
 /// </summary>
 internal static class NvgDiagnostics
 {
@@ -18,9 +18,9 @@ internal static class NvgDiagnostics
 
     internal static void Tick()
     {
-        // (2026-10-18 refactor W2a) Called from the per-frame plugin update; the check itself is two reads,
-        // the rest runs at most twice a second - the reconcile only has to be faster than the player can
-        // notice a stuck blur, not per-frame.
+        // (2026-10-18 refactor W2a) 由逐帧的插件更新调用；检查本身只是两次读取，
+        // 其余部分最多每秒运行两次——协调只需比玩家察觉
+        // 卡住的模糊更快，而不必每帧运行。
         var now = Time.unscaledTime;
         if (now < _nextTick)
         {

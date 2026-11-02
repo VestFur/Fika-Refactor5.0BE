@@ -5,7 +5,7 @@ namespace Fika.Core;
 
 public static class NativeCollections
 {
-    // Enumerate the native collection without copying or changing its element types.
+    // 遍历 native 集合时不复制，也不改变其元素类型。
     public static IEnumerable<T> AsManaged<T>(this Il2CppSystem.Collections.Generic.IEnumerable<T> source)
     {
         ArgumentNullException.ThrowIfNull(source);

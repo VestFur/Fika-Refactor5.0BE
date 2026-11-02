@@ -5,18 +5,18 @@ using System.Runtime.CompilerServices;
 namespace Fika.Core.Networking.Pooling;
 
 /// <summary>
-/// Provides methods to rent and return pooled <see cref="ArraySegment{Byte}"/> instances
-/// backed by arrays from the shared <see cref="ArrayPool{Byte}"/>.
+/// 提供用于租用与归还池化 <see cref="ArraySegment{Byte}"/> 实例的方法，
+/// 这些实例由共享的 <see cref="ArrayPool{Byte}"/> 中的数组支撑。
 /// </summary>
 internal static class ArraySegmentPooling
 {
     /// <summary>
-    /// Rents a byte array from the shared pool with a specified minimum length
-    /// and returns it wrapped in an <see cref="ArraySegment{Byte}"/> with zero length.
+    /// 从共享池中租用一个具有指定最小长度的字节数组，
+    /// 并以长度为零的 <see cref="ArraySegment{Byte}"/> 形式返回。
     /// </summary>
-    /// <param name="bufferCount">The minimum length of the array to rent.</param>
+    /// <param name="bufferCount">要租用的数组的最小长度。</param>
     /// <returns>
-    /// An <see cref="ArraySegment{Byte}"/> wrapping the rented array with length zero.
+    /// 一个包装所租用数组且长度为零的 <see cref="ArraySegment{Byte}"/>。
     /// </returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ArraySegment<byte> Get(int bufferCount)
@@ -25,11 +25,11 @@ internal static class ArraySegmentPooling
     }
 
     /// <summary>
-    /// Copies the specified buffer into a rented array and returns it as an <see cref="ArraySegment{Byte}"/>.
+    /// 将指定缓冲区复制到租用的数组中，并以 <see cref="ArraySegment{Byte}"/> 形式返回。
     /// </summary>
-    /// <param name="buffer">The source buffer to copy from.</param>
+    /// <param name="buffer">要复制的源缓冲区。</param>
     /// <returns>
-    /// An <see cref="ArraySegment{Byte}"/> wrapping the rented array containing the copied data.
+    /// 一个包装租用数组的 <see cref="ArraySegment{Byte}"/>，其中包含已复制的数据。
     /// </returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ArraySegment<byte> Get(byte[] buffer)
@@ -38,12 +38,12 @@ internal static class ArraySegmentPooling
     }
 
     /// <summary>
-    /// Copies the contents of the specified <see cref="ArraySegment{Byte}"/> into a rented array
-    /// and returns it wrapped as a new <see cref="ArraySegment{Byte}"/>.
+    /// 将指定 <see cref="ArraySegment{Byte}"/> 的内容复制到租用的数组中，
+    /// 并以新的 <see cref="ArraySegment{Byte}"/> 形式返回。
     /// </summary>
-    /// <param name="buffer">The source array segment to copy.</param>
+    /// <param name="buffer">要复制的源数组段。</param>
     /// <returns>
-    /// An <see cref="ArraySegment{Byte}"/> wrapping the rented array containing the copied data.
+    /// 一个包装租用数组的 <see cref="ArraySegment{Byte}"/>，其中包含已复制的数据。
     /// </returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ArraySegment<byte> Get(ArraySegment<byte> buffer)
@@ -52,12 +52,12 @@ internal static class ArraySegmentPooling
     }
 
     /// <summary>
-    /// Copies the contents of the specified <see cref="ReadOnlySpan{Byte}"/> into a rented array
-    /// and returns it wrapped as a new <see cref="ArraySegment{Byte}"/>.
+    /// 将指定 <see cref="ReadOnlySpan{Byte}"/> 的内容复制到租用的数组中，
+    /// 并以新的 <see cref="ArraySegment{Byte}"/> 形式返回。
     /// </summary>
-    /// <param name="source">The source span to copy.</param>
+    /// <param name="source">要复制的源 span。</param>
     /// <returns>
-    /// An <see cref="ArraySegment{Byte}"/> wrapping the rented array containing the copied data.
+    /// 一个包装租用数组的 <see cref="ArraySegment{Byte}"/>，其中包含已复制的数据。
     /// </returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ArraySegment<byte> Get(ReadOnlySpan<byte> source)
@@ -68,13 +68,13 @@ internal static class ArraySegmentPooling
     }
 
     /// <summary>
-    /// Copies a portion of the specified buffer into a rented array and returns it as an <see cref="ArraySegment{Byte}"/>.
+    /// 将指定缓冲区的一部分复制到租用的数组中，并以 <see cref="ArraySegment{Byte}"/> 形式返回。
     /// </summary>
-    /// <param name="buffer">The source buffer to copy from.</param>
-    /// <param name="bufferOffset">The zero-based byte offset in the source buffer.</param>
-    /// <param name="bufferCount">The number of bytes to copy.</param>
+    /// <param name="buffer">要复制的源缓冲区。</param>
+    /// <param name="bufferOffset">源缓冲区中从零开始的字节偏移量。</param>
+    /// <param name="bufferCount">要复制的字节数。</param>
     /// <returns>
-    /// An <see cref="ArraySegment{Byte}"/> wrapping the rented array containing the copied data.
+    /// 一个包装租用数组的 <see cref="ArraySegment{Byte}"/>，其中包含已复制的数据。
     /// </returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ArraySegment<byte> Get(byte[] buffer, int bufferOffset, int bufferCount)
@@ -85,9 +85,9 @@ internal static class ArraySegmentPooling
     }
 
     /// <summary>
-    /// Returns a rented array back to the shared pool.
+    /// 将租用的数组归还到共享池。
     /// </summary>
-    /// <param name="buffer">The <see cref="ArraySegment{Byte}"/> whose underlying array should be returned.</param>
+    /// <param name="buffer">其底层数组应被归还的 <see cref="ArraySegment{Byte}"/>。</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Return(ArraySegment<byte> buffer)
     {

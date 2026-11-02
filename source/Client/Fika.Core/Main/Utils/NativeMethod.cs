@@ -7,7 +7,7 @@ using Il2CppInterop.Runtime.InteropTypes;
 
 namespace Fika.Core.Main.Utils;
 
-/// <summary>Invokes a specific native implementation without virtual redispatch.</summary>
+/// <summary>调用指定的原生实现，不经过虚方法重新分派。</summary>
 internal static class NativeMethod
 {
     private static readonly ConcurrentDictionary<MethodInfo, IntPtr> Methods = new();
@@ -41,7 +41,7 @@ internal static class NativeMethod
         finally { GC.KeepAlive(target); }
     }
 
-    /// <summary>Invokes a native void method with one managed IL2CPP object argument.</summary>
+    /// <summary>调用带一个托管 IL2CPP 对象参数的原生 void 方法。</summary>
     internal static unsafe void InvokeVoid(Il2CppObjectBase target, MethodInfo method, Il2CppObjectBase argument)
     {
         ArgumentNullException.ThrowIfNull(target);

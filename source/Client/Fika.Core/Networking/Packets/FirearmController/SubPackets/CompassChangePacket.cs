@@ -1,4 +1,4 @@
-﻿using Fika.Core.Main.Players;
+﻿﻿using Fika.Core.Main.Players;
 using Fika.Core.Networking.Pooling;
 
 namespace Fika.Core.Networking.Packets.FirearmController.SubPackets;
@@ -26,7 +26,7 @@ public sealed class CompassChangePacket : IPoolSubPacket
 
     public void Execute(FikaPlayer player)
     {
-        // temporarily disabled, broken in base game
+        // 暂时禁用，在原版游戏中已损坏
         /*if (player.HandsController is ItemHandsController handsController)
         {
             handsController.CompassStateHandler(Enabled);

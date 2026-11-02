@@ -3,7 +3,7 @@ using Dissonance.Integrations.MirrorIgnorance;
 
 namespace Fika.Core.Networking.VOIP;
 
-/// <summary>Managed transport adapter around the existing native voice client.</summary>
+/// <summary>围绕既有 native 语音客户端的托管传输适配器。</summary>
 public sealed class FikaVOIPClient(FikaCommsNetwork network, MirrorIgnoranceClient native) : System.IDisposable
 {
     internal MirrorIgnoranceClient Native { get; } = native;

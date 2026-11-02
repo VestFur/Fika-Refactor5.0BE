@@ -55,9 +55,9 @@ public sealed class ObservedHostBridge : Il2CppSystem.Object, BodyPartCollider.I
             return;
         }
 
-        // A hand grenade's damage type is EDamageType.GrenadeFragment (Grenade.GetDamageInfo builds it),
-        // and the stock ObserverBridge.ApplyDamageInfo is empty while the host is authoritative, so
-        // every explosion damage type must be relayed explicitly or the client never takes damage.
+        // 手雷的伤害类型是 EDamageType.GrenadeFragment（由 Grenade.GetDamageInfo 构造），
+        // 而主机权威时原版 ObserverBridge.ApplyDamageInfo 是空实现，因此
+        // 每种爆炸伤害类型都必须显式转发，否则客户端永远不会受伤。
         if (damageInfo.DamageType is EDamageType.Landmine or EDamageType.Artillery
             or EDamageType.GrenadeFragment or EDamageType.Explosion or EDamageType.ThermobaricExplosion)
         {

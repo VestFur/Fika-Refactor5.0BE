@@ -44,12 +44,12 @@ internal sealed class ObservedGrenadeController : Player.GrenadeHandsController
 
     public override void OnCanUsePropChanged(bool canUse)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public override void SetCompassState(bool active)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public override void CompassStateHandler(bool isActive)
@@ -60,7 +60,7 @@ internal sealed class ObservedGrenadeController : Player.GrenadeHandsController
     }
 
     /// <summary>
-    /// Original method to spawn a grenade, we use <see cref="SpawnGrenade(float, Vector3, Quaternion, Vector3, bool)"/> instead
+    /// 生成手雷的原始方法，我们改用 <see cref="SpawnGrenade(float, Vector3, Quaternion, Vector3, bool)"/>
     /// </summary>
     /// <param name="timeSinceSafetyLevelRemoved"></param>
     /// <param name="position"></param>
@@ -69,17 +69,17 @@ internal sealed class ObservedGrenadeController : Player.GrenadeHandsController
     /// <param name="lowThrow"></param>
     public override void ThrowGrenade(float timeSinceSafetyLevelRemoved, Vector3 position, Quaternion rotation, Vector3 force, bool lowThrow)
     {
-        // Do nothing, we use our own method
+        // 不做任何事，我们使用自己的方法
     }
 
     /// <summary>
-    /// Spawns a grenade, uses data from <see cref="SubPackets.GrenadePacket"/>
+    /// 生成一枚手雷，使用来自 <see cref="SubPackets.GrenadePacket"/> 的数据
     /// </summary>
-    /// <param name="timeSinceSafetyLevelRemoved">The time since the safety was removed, use 0f</param>
-    /// <param name="position">The <see cref="Vector3"/> position to start from</param>
-    /// <param name="rotation">The <see cref="Quaternion"/> rotation of the grenade</param>
-    /// <param name="force">The <see cref="Vector3"/> force of the grenade</param>
-    /// <param name="lowThrow">If it's a low throw or not</param>
+    /// <param name="timeSinceSafetyLevelRemoved">解除保险以来经过的时间，使用 0f</param>
+    /// <param name="position">起始的 <see cref="Vector3"/> 位置</param>
+    /// <param name="rotation">手雷的 <see cref="Quaternion"/> 旋转</param>
+    /// <param name="force">手雷的 <see cref="Vector3"/> 作用力</param>
+    /// <param name="lowThrow">是否为低抛</param>
     public void SpawnGrenade(float timeSinceSafetyLevelRemoved, Vector3 position, Quaternion rotation, Vector3 force, bool lowThrow)
     {
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call57(this, timeSinceSafetyLevelRemoved, position, rotation, force, lowThrow);
@@ -87,8 +87,8 @@ internal sealed class ObservedGrenadeController : Player.GrenadeHandsController
 }
 
 /// <summary>
-/// Remote-only behavior for the native, sealed tripwire operation. Hooks retain
-/// its native type so the game's operation factory and hide/reset paths still work.
+/// 原生 sealed 绊线操作的仅远端行为。钩子保留
+/// 其原生类型，这样游戏的操作工厂与隐藏／重置路径仍然可用。
 /// </summary>
 internal sealed class ObservedTripwireState(Player.GrenadeHandsController.PlantTripwireOperation operation)
 {
@@ -96,10 +96,10 @@ internal sealed class ObservedTripwireState(Player.GrenadeHandsController.PlantT
 
     private void Finish()
     {
-        // The remote client never owns the inventory mutation or the native
-        // tripwire spawn. It still has to finish the native operation so the
-        // hands controller can be replaced cleanly after the replicated
-        // animation reaches its end.
+        // 远端客户端从不拥有库存变更或原生
+        // 绊线生成。它仍然必须完成该原生操作，这样在复制的
+        // 动画到达结尾之后，手部控制器才能被干净地
+        // 替换。
         operation.State = Player.EOperationState.Finished;
     }
 

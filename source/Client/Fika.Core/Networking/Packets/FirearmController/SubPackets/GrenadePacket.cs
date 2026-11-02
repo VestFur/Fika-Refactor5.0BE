@@ -46,9 +46,9 @@ public sealed class GrenadePacket : IPoolSubPacket
 
     public void Execute(FikaPlayer player)
     {
-        // HandsController is an IL2CPP wrapper.  CLR pattern matching can see
-        // the generated base wrapper even when the native object is our
-        // injected subtype, so always use TryCast for the native type test.
+        // HandsController 是一个 IL2CPP 包装器。CLR 模式匹配能看到的
+        // 是生成的基类包装器，即使本机对象其实是我们的
+        // 注入子类型，所以做原生类型判断时务必使用 TryCast。
         if (player.HandsController?.TryCast<ObservedGrenadeController>() is { } controller)
         {
             switch (Type)

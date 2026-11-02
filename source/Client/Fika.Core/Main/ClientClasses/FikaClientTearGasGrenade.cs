@@ -4,9 +4,9 @@ using Fika.Core.Main.Utils;
 namespace Fika.Core.Main.ClientClasses;
 
 /// <summary>
-/// IL2CPP observed implementation for the tear-gas grenade.  SPT 5 adds a
-/// separate native type, so it must be registered with the same interpolation
-/// path as the other observed throwables.
+/// 催泪瓦斯手雷的 IL2CPP observed 实现。SPT 5 新增了一个
+/// 独立的本机（native）类型，因此它必须与其他 observed 投掷物
+/// 沿着同一条插值路径注册。
 /// </summary>
 public sealed class FikaClientTearGasGrenade : ObservedTearGasGrenade
 {

@@ -49,7 +49,7 @@ using Fika.Core.Networking.Snapshotting;
 namespace Fika.Core.Networking;
 
 /// <summary>
-/// Server used to synchronize all <see cref="FikaClient"/>s
+/// 用于同步所有 <see cref="FikaClient"/> 的服务器
 /// </summary>
 public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatPunchListener, IAirdropDataSender, IFikaNetworkManager
 {
@@ -119,7 +119,7 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
     public Stash TemporaryStash { get; set; }
     public bool StrictInventorySync { get; set; }
     /// <summary>
-    /// Max MTU used for <see cref="DeliveryMethod.Unreliable"/> batching
+    /// 用于 <see cref="DeliveryMethod.Unreliable"/> 批处理的最大 MTU
     /// </summary>
     public int MaxMTU { get; private set; }
 
@@ -149,7 +149,7 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
     private Dictionary<string, int> _cachedConnections;
     private Dictionary<NetPeer, int> _assignedPeerNetIds;
     private Dictionary<NetPeer, string> _assignedPeerProfiles;
-    /// <summary>Peers that entered a raid that was already running, as player scavs.</summary>
+    /// <summary>在本场战局已经开打之后才加入、以玩家 scav 身份入场的对等端。</summary>
     internal readonly HashSet<NetPeer> _scavLateJoinPeers = [];
     private HashSet<NetPeer> _readyPeers;
     private GenericPacket _genericPacket;
@@ -198,7 +198,7 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
 
         TemporaryStash = Singleton<ItemFactory>.Instance.CreateFakeStash(new Il2CppSystem.Nullable<MongoID>());
 
-        MaxMTU = NetConstants.PossibleMtu[0] - NetConstants.HeaderSize; // we assume minimum MTU + unreliable header size
+        MaxMTU = NetConstants.PossibleMtu[0] - NetConstants.HeaderSize; // 假设为最小 MTU + 不可靠头部大小
 
         TimeSinceLastPeerDisconnected = DateTime.Now.AddDays(1);
 
@@ -350,12 +350,12 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
 
         var useIPv6 = FikaPlugin.Instance.Settings.UseIPv6.Value;
 
-        // Only a non-blank address may enter the list. Upstream seeded this with [_externalIp] and then
-        // "repaired" the empty case with [_externalIp, ""], which is exactly what put a null/blank entry
-        // into the published record: the host reported "IPs: " (nothing usable) while the address that
-        // was actually reachable sat unread next to it. The external address stays first, and every
-        // valid local address is still appended (upstream behaviour, unchanged: the LAN list is always
-        // published and NAT punching is a separate flag on the same record).
+        // 只有非空白的地址才允许进入这个列表。上游曾用 [_externalIp] 初始化它，随后又用
+        // [_externalIp, ""] "修复"空的情况，而这正是把一条 null/空白条目放进
+        // 已发布记录的原因：主机报告 "IPs: "（没有任何可用地址），而实际上可达的
+        // 地址就摆在旁边没被读取。外部地址保持在首位，并且每个
+        // 合法的本地地址仍会被追加（上游行为，未作改动：局域网列表始终
+        // 会被发布，而 NAT 打洞是同一条记录上的一个独立标志）。
         List<string> ipAddresses = string.IsNullOrWhiteSpace(_externalIp) ? [] : [_externalIp];
         for (var i = 0; i < FikaPlugin.Instance.LocalIPs.Length; i++)
         {
@@ -375,12 +375,12 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
             }
         }
 
-        // Reachable now, and it means what it says: the external lookup failed and no local address
-        // passed ValidateIP (a pure IPv6 host with IPv6 disabled, or nothing but loopback / APIPA /
-        // link-local addresses). The old guard could never fire because the list was seeded with one
-        // element, so Count was always at least 1 - and its body re-introduced the blank entry it was
-        // supposed to repair. The record is published without blanks either way, and a raid with NAT
-        // punching enabled can still be joined through the NAT introduction.
+        // 现在可达，而且所言非虚：外部查询失败了，也没有任何本地地址
+        // 通过 ValidateIP（禁用 IPv6 的纯 IPv6 主机，或者只有 loopback / APIPA /
+        // 链路本地地址）。旧的守卫永远不会触发，因为列表用一个元素就已被初始化，
+        // 所以 Count 始终至少为 1——而它的方法体又把本应修复的空白条目
+        // 重新放了进来。无论哪种情况，记录都会在无空白条目的前提下被发布，而启用了 NAT
+        // 打洞的战局仍然可以通过 NAT 介绍加入。
         if (ipAddresses.Count == 0)
         {
             FikaNotifications.DisplayMessageNotification(LocaleUtils.NO_VALID_IP.Localized(),
@@ -396,9 +396,9 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
         }
         catch (Exception exception)
         {
-            // The room stays unpublished on the server when this request fails, so every joiner sees
-            // "the host has not published an address on that server" until the room ends. One line
-            // that names the cause, then the failure continues to the caller unchanged.
+            // 当这个请求失败时，该房间在服务器上始终不会被发布，所以每个加入者都会看到
+            // "the host has not published an address on that server"，直到房间结束。这里留一行
+            // 点明原因，然后让失败原样继续传给调用方。
             var reason = exception.GetBaseException().Message;
             _logger.LogWarning($"[HostAddress] publishing failed for serverId={body.ServerId} on {FikaRequestHandler.ServerHost}: "
                 + $"{reason}; other players will not be able to join this raid");
@@ -413,12 +413,12 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
     }
 
     /// <summary>
-    /// Reports the address this host is about to publish for its raid (one line per raid start).
+    /// 报告本主机即将为其战局发布的地址（每次战局开始一行）。
     ///
-    /// Joiners can only connect when the published record carries a usable address and a port, and the
-    /// joining side has no way to tell why a record is empty: it can only say "the host has not
-    /// published an address on that server". This is the line that explains it, so it names the values
-    /// that produced the record and the settings that feed them.
+    /// 加入者只有在已发布记录带有可用地址与端口时才能连接，而加入方
+    /// 没有办法说出记录为空的原因：它只能说 "the host has not
+    /// published an address on that server"。这一行正是解释它的地方，因此它会点明产生该记录的
+    /// 那些值，以及为它们提供输入的那些设置。
     /// </summary>
     private void LogHostAddressPublication(SetHostRequest body, List<string> ipAddresses)
     {
@@ -577,9 +577,9 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
         RaidInteractionSync.Tick();
         _netServer?.PollEvents();
 
-        // (analysis/loading-screen-peer-state) The bounded re-announcement of this machine's loading row and
-        // progress. It is pumped from here because the engine only enters LoadingScreenUI's Awake/OnDestroy,
-        // and it does nothing unless a transit re-arm armed it.
+        // （analysis/loading-screen-peer-state）本机加载行与进度的有界重新
+        // 通告。它从这里被泵动，因为引擎只会进入 LoadingScreenUI 的 Awake/OnDestroy，
+        // 而且除非一次中转重新武装了它，否则它什么也不做。
         LoadingScreenUI.TickPeerStateHeartbeat();
 
         var networkTime = NetworkTimeSync.NetworkTime;
@@ -588,8 +588,8 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
             ObservedPlayers[i].ManualStateUpdate(networkTime);
         }
 
-        // (2026-10-17) The peer -> player binding is what every request handler trusts; it is restored
-        // here once per second for peers that lost it (see RelinkUnboundPeers).
+        // （2026-10-17）对等端 -> 玩家的绑定是每个请求处理器所信任的东西；这里会为
+        // 丢失绑定的对等端每秒恢复一次（见 RelinkUnboundPeers）。
         RelinkUnboundPeers();
 
         _statisticsCounter += Time.unscaledDeltaTime;
@@ -613,14 +613,14 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
     private readonly List<NetPeer> _relinkPeers = [];
 
     /// <summary>
-    /// (2026-10-17) Re-establishes <see cref="NetPeer.Player"/> for every connected peer whose binding is
-    /// missing or points at an object this raid no longer carries. Every request handler (proceed, inventory,
-    /// player state) trusts that single field, and it is written in exactly one place - the information
-    /// exchange. A peer that stops sending information packets after a transit, or whose character
-    /// announcement was dropped, therefore stays unbound for the rest of the raid: its weapon switches are
-    /// rolled back to empty hands, its item moves are never executed, and its ObservedPlayer never moves on
-    /// this host. The binding is only ever written to a player that exists in CoopHandler.Players under the
-    /// peer's assigned net id, nothing is unbound here, and the call is idempotent.
+    /// （2026-10-17）为每个绑定缺失、或指向本场战局已不再持有对象的已连接对等端
+    /// 重新建立 <see cref="NetPeer.Player"/>。每个请求处理器（proceed、inventory、
+    /// player state）都信任那一个字段，而它只在一个地方被写入——信息
+    /// 交换。因此，在一次中转之后不再发送信息包的对等端，或其角色
+    /// 通告被丢弃的对等端，会在剩余的战局中一直保持未绑定：它的换武器被
+    /// 回滚为空手，它的物品移动从不被执行，它的 ObservedPlayer 在本主机上
+    /// 也永不移动。该绑定只会被写入 CoopHandler.Players 中存在于该对等端
+    /// 所分配 net id 之下的玩家，这里不做任何解绑，且该调用是幂等的。
     /// </summary>
     private void RelinkUnboundPeers()
     {
@@ -748,7 +748,7 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
         var writer = new NetDataWriter();
         writer.PutEnum(EPacketType.Serializable);
         _packetProcessor.WriteNetReusable(writer, ref packet);
-        // Do not clear packet: inventoryPacket is the receive path's object.
+        // 不要清空 packet：inventoryPacket 是接收路径的对象。
         return writer.CopyData();
     }
 
@@ -932,7 +932,7 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
         var loadingPacket = LoadingScreenUI.Instance.GetPlayersPacket();
         SendDataToPeer(ref loadingPacket, DeliveryMethod.ReliableUnordered, peer);
 
-        // force update
+        // 强制更新
         var updatePackets = LoadingScreenUI.Instance.GetLatestStates();
         for (var i = 0; i < updatePackets.Length; i++)
         {
@@ -1000,10 +1000,10 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
             var accepted = request.Accept();
             if (scavLateJoin && accepted != null)
             {
-                // SPT regenerates the player scav profile when its raid starts, so
-                // this peer announces a different profile id than the one it
-                // connected with. Remember it and rebind instead of rejecting the
-                // character, which would leave the host without a player for it.
+                // SPT 会在其战局开始时重新生成玩家 scav 的 profile，所以
+                // 这个对等端通告的 profile id 与它连接时所用的那个
+                // 不同。记住它并重新绑定，而不是拒绝该角色，
+                // 那会让主机没有可供其使用的玩家。
                 _scavLateJoinPeers.Add(accepted);
                 _logger.LogInfo($"Accepted a player scav into the running raid ({accepted.Address})");
             }
@@ -1016,12 +1016,12 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
     }
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
-        // A disconnected client no longer satisfies the pre-raid ready barrier.
+        // 已断开的客户端不再满足战前准备屏障。
         if (_readyPeers.Remove(peer) && ReadyClients > 0) ReadyClients--;
         _scavLateJoinPeers.Remove(peer);
 
-        // The peer is gone for good: its identity assignments go with it, so no later packet can be
-        // attributed to a connection that no longer exists.
+        // 该对等端彻底消失了：它的身份分配也随之而去，因此之后的任何数据包
+        // 都不会被归属到一个已不存在的连接上。
         _assignedPeerProfiles.Remove(peer);
         _assignedPeerNetIds.Remove(peer);
         RaidInteractionSync.OnDisconnected(peer.Player);
@@ -1051,8 +1051,8 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
 
         if (FikaBackendUtils.IsHeadless && _netServer.ConnectedPeersCount == 0)
         {
-            // The last client is gone and there is nothing to come back to: the headless session stops
-            // with it. (The five minute "waiting for reconnect" stay belonged to the removed feature.)
+            // 最后一个客户端已经离开，也没什么可回来的了：无头会话随之停止。
+            // （那五分钟的"等待重连"保活属于已被移除的功能。）
             AsyncWorker.RunInMainTread((System.Action)DisconnectHeadless);
         }
 
@@ -1076,9 +1076,9 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
 
     public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
     {
-        // One stamp per inbound packet, for the [LoadSync] barrier lines ("sinceLastInbound"): the host's
-        // barrier waits for a character announcement, and this tells apart "the peer is silent" from
-        // "the peer sends packets but has not announced a character yet".
+        // 每个入站数据包一个时间戳，用于 [LoadSync] 屏障行（"sinceLastInbound"）：主机的
+        // 屏障会等待一次角色通告，而它能把"该对等端是静默的"与
+        // "该对等端在发包但尚未通告角色"区分开。
         LoadSync.NotePeerPacket("host receive");
 
         var broadcast = reader.GetByte() == 1;
@@ -1087,8 +1087,8 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
         switch (packetType)
         {
             case EPacketType.Serializable:
-                // Inspect each message in a batch. A peer cannot turn a final
-                // mission request into a host outcome by setting broadcast=true.
+                // 逐条检查一批中的每个消息。对等端无法通过设置 broadcast=true
+                // 就把一个最终任务请求变成主机结果。
                 while (reader.AvailableBytes > 0)
                 {
                     var messageStart = reader.Position;
@@ -1097,26 +1097,26 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
                         id != NetPacketProcessor.PacketId<FinalMissionQuestPacket>() &&
                         id != NetPacketProcessor.PacketId<InRaidQuestPacket>() &&
                         id != NetPacketProcessor.PacketId<TextMessagePacket>() &&
-                        // Loading UI updates are rebroadcast by the host only
-                        // after checking the peer's assigned player ID.
+                        // 加载 UI 更新只有在主机检查过该对等端所分配的
+                        // 玩家 ID 之后才会被主机重新广播。
                         id != NetPacketProcessor.PacketId<LoadingScreenPlayersPacket>() &&
                         id != NetPacketProcessor.PacketId<LoadingScreenPacket>() &&
-                        // Clients only report that an observed bot has loaded.
-                        // Bot lifecycle changes originate on the host.
+                        // 客户端只报告某个被观察的 bot 已加载。
+                        // Bot 的生命周期变更由主机发起。
                         id != NetPacketProcessor.PacketId<BotStatePacket>() &&
-                        // The host computes and broadcasts the authoritative
-                        // interaction result. A client must not relay a forged
-                        // IsResponse packet before its callback rejects it.
+                        // 主机计算并广播权威的交互结果。
+                        // 客户端不得在其回调拒绝之前转发一个
+                        // 伪造的 IsResponse 数据包。
                         id != NetPacketProcessor.PacketId<BTRInteractionPacket>();
                     if (id == NetPacketProcessor.PacketId<WorldPacket>() && peer.Player == null)
-                        // The host callback drops unbound loot updates. Do not
-                        // relay those raw bytes to the other clients either.
+                        // 主机回调会丢弃未绑定的战利品更新。也不要把这些
+                        // 原始字节转发给其它客户端。
                         relay = false;
                     if (id == NetPacketProcessor.PacketId<QuestConditionPacket>() ||
                         id == NetPacketProcessor.PacketId<QuestItemPacket>() ||
                         id == NetPacketProcessor.PacketId<QuestDropItemPacket>())
-                        // The host validates the sender's NetId, applies the
-                        // event, then forwards the canonicalized packet.
+                        // 主机会校验发送方的 NetId，应用该事件，
+                        // 然后转发规范化后的数据包。
                         relay = false;
                     if (id == NetPacketProcessor.PacketId<WeaponPacket>())
                     {
@@ -1143,12 +1143,12 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
                         else if (subType == EGenericSubPacketType.MuffledState)
                             relay = relay && peer.Player != null && reader.GetInt() == peer.Player.NetId;
                         else if (subType == EGenericSubPacketType.InventoryOperation)
-                            // Inventory mutations are relayed by the host only
-                            // after the native operation reports success.
+                            // 物品栏变更只有在原生操作报告成功之后
+                            // 才会由主机转发。
                             relay = false;
                         else if (subType == EGenericSubPacketType.DialogEntry)
-                            // Dialog entry packets are applied and forwarded by
-                            // the host callback after validating the sender.
+                            // 对话入口数据包由主机回调在校验发送方
+                            // 之后应用并转发。
                             relay = false;
                         reader.SetPosition(messageStart);
                     }
@@ -1182,9 +1182,9 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
                 player.Snapshotter.AddSnapshot(in header);
                 if (broadcast)
                 {
-                    // Client state datagrams contain one snapshot. Relay only
-                    // the parsed frame: trailing bytes must not become extra
-                    // unverified player snapshots on receiving clients.
+                    // 客户端状态数据报只包含一个快照。只转发
+                    // 已解析的帧：尾部字节绝不能在接受端客户端上变成额外的
+                    // 未经校验的玩家快照。
                     _netServer.SendToAll(reader.RawData.AsSpan(payloadStart, reader.Position - payloadStart), deliveryMethod, peer);
                 }
                 break;
@@ -1215,8 +1215,8 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
         if (peer.Player == null) return false;
         if (peer.Player.NetId == netId) return true;
 
-        // Hits and revives address the affected player, who can differ from
-        // the sender. All other player actions must target the sender.
+        // 命中和复活针对受影响的玩家，而该玩家可能与发送方
+        // 不同。其它所有玩家动作必须以发送方为目标。
         return type is ECommonSubPacketType.Damage or ECommonSubPacketType.ArmorDamage or
             ECommonSubPacketType.RevivingPlayer or ECommonSubPacketType.RevivedPlayer;
     }
@@ -1297,10 +1297,10 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
         }
     }
 
-    // NAT Punching
+    // NAT 打洞
     public void OnNatIntroductionRequest(IPEndPoint localEndPoint, IPEndPoint remoteEndPoint, string token)
     {
-        // Do nothing
+        // 什么也不做
     }
 
     public void OnNatIntroductionSuccess(IPEndPoint targetEndPoint, NatAddressType type, string token)
@@ -1319,7 +1319,7 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
 
         _logger.LogInfo($"Received endpoint {targetEndPoint} from the NAT punching server.");*/
 
-        // todo: proper connect
+        // todo: 正确的连接方式
         //_netServer.Connect(targetEndPoint, id.ToString());
     }
 
@@ -1348,18 +1348,18 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
     }
 
     /// <summary>
-    /// Gets a pooled handler
+    /// 获取一个池化的处理器
     /// </summary>
-    /// <returns>A pooled handler</returns>
+    /// <returns>一个池化的处理器</returns>
     public InventoryOperationHandler GetHandler()
     {
         return _inventoryOperationHandlerPool.Get();
     }
 
     /// <summary>
-    /// Returns a pooled handler
+    /// 归还一个池化的处理器
     /// </summary>
-    /// <param name="handler">The handler to return</param>
+    /// <param name="handler">要归还的处理器</param>
     public void ReturnHandler(InventoryOperationHandler handler)
     {
         _inventoryOperationHandlerPool.ReturnHandler(handler);

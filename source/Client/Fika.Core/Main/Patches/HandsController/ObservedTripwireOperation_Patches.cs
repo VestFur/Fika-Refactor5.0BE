@@ -62,8 +62,8 @@ public sealed class ObservedTripwireExecutePatch : ModulePatch
     }
 }
 
-// Remote planting is driven by Fika packets. Native input and end-of-plant
-// inventory mutations must not run a second authoritative planting operation.
+// 远程安放由 Fika 包驱动。原生输入以及安放结束时的
+// 库存变更不得再执行一次权威的安放操作。
 public sealed class ObservedTripwireEndPatch : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.DeclaredMethod(typeof(Operation), nameof(Operation.OnEnd));

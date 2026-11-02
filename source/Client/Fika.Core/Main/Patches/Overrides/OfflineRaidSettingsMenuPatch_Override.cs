@@ -24,7 +24,7 @@ public sealed class OfflineRaidSettingsMenuPatch_Override : ModulePatch
     private static void PatchPostfix(RaidSettingsWindow __instance, RaidSettings raidSettings)
     {
         FikaBackendUtils.CustomRaidSettings.UseCustomWeather = false;
-        // Always disable the Coop Mode checkbox
+        // 总是禁用 Coop Mode 复选框
         __instance._coopModeBlocker.SetBlock(true, LocaleUtils.UI_FIKA_ALWAYS_COOP.Localized());
 
         var captionText = __instance.gameObject.transform.GetChild(0).GetChild(1).GetComponent<LocalizedText>();
@@ -33,7 +33,7 @@ public sealed class OfflineRaidSettingsMenuPatch_Override : ModulePatch
             captionText.SetLabelText(LocaleUtils.UI_COOP_RAID_SETTINGS.Localized());
         }
 
-        // Reset this one as otherwise it sticks
+        // 重置这一项，否则它的状态会保留下来
         var timeAndWeather = raidSettings.TimeAndWeatherSettings;
         timeAndWeather.HourOfDay = -1;
         timeAndWeather.TimeFlowType = ETimeFlowType.x1;
@@ -83,7 +83,7 @@ public sealed class OfflineRaidSettingsMenuPatch_Override : ModulePatch
             armsStaminaCheckmark.GetComponent<UpdatableToggle>().Bind((System.Action<bool>)(value => FikaBackendUtils.CustomRaidSettings.DisableArmStamina = value));
         }
 
-        // Remove redundant settings and add our own "Random" to make the setting clear, while also renaming index 0 to "Together"
+        // 移除多余的设置项，并加上我们自己的 "Random" 让该设置更明确，同时把索引 0 重命名为 "Together"
         var labelList = __instance._playersSpawnPlaceDropdown._values;
         labelList.Clear();
         labelList.Add(new()
@@ -124,7 +124,7 @@ public sealed class OfflineRaidSettingsMenuPatch_Override : ModulePatch
             }
         }
 
-        // If enforced from server, this will be true by default
+        // 若由服务器强制，则默认即为 true
         if (!raidSettings.TimeAndWeatherSettings.IsRandomWeather)
         {
             __instance._randomWeatherToggle.Bind((System.Action<bool>)ToggleWeather);

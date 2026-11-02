@@ -5,17 +5,17 @@ using Il2CppInterop.Runtime.InteropTypes;
 
 namespace Fika.Core.Main.BaseClasses;
 
-/// <summary>Associates native world controllers with their managed co-op state.</summary>
+/// <summary>把原生世界控制器与其托管协作状态关联起来。</summary>
 public static class FikaWorldControllers
 {
     private static readonly Dictionary<IntPtr, Entry> Controllers = new();
 
     /// <summary>
-    /// One registered controller plus the world generation it belongs to (analysis/transit-crash-unload).
-    /// The epoch is what makes a lookup safe across a map change: the native address of a world controller
-    /// can be handed out again by the allocator after the previous world was released, and a lookup keyed
-    /// by the raw pointer alone would then return the *old* managed controller for the *new* native object -
-    /// the shape in which a controller talks to a world that is gone.
+    /// 一个已注册的控制器，外加它所属的世界世代（analysis/transit-crash-unload）。
+    /// 正是这个世代号让查找在跨地图变更时保持安全：上一个世界释放之后，分配器
+    /// 可能把同一个世界控制器的原生地址再次分发出去，而仅以裸指针
+    /// 为键的查找届时会把*旧的*托管控制器返回给*新的*原生对象——
+    /// 这正是控制器与一个已经消失的世界对话的形态。
     /// </summary>
     private readonly struct Entry(IDisposable controller, int epoch)
     {
@@ -39,8 +39,8 @@ public static class FikaWorldControllers
 
         if (!WorldLifecycle.IsCurrent(entry.Epoch))
         {
-            // The controller belongs to a world that went down: drop it and report the first few cases, so a
-            // run in which the release of a world controller is missed says so by name.
+            // 控制器所属的世界已经销毁：丢弃它并上报最初的几例，这样
+            // 一次漏掉了世界控制器释放的运行就能被指名道姓地说出来。
             Controllers.Remove(native.Pointer);
             if (_staleReports < 8)
             {
@@ -57,10 +57,10 @@ public static class FikaWorldControllers
     }
 
     /// <summary>
-    /// Drops every entry at a world teardown and returns how many there were. The controllers are *not*
-    /// disposed here: their native owners are already gone, and a Dispose would call into the released
-    /// native object (the access violation this method exists to prevent). The managed wrappers are
-    /// collected normally once nothing references them.
+    /// 在世界拆除时丢弃所有条目，并返回原本有多少个。这些控制器*不会*
+    /// 在这里被 Dispose：它们的原生所有者已经消失，而 Dispose 会调用到已释放的
+    /// 原生对象（这正是本方法存在的目的——防止那种访问违规）。一旦没有任何东西
+    /// 再引用这些托管包装器，它们会照常被回收。
     /// </summary>
     internal static int ClearForWorldTeardown()
     {

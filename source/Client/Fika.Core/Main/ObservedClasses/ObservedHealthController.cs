@@ -40,7 +40,7 @@ public sealed class ObservedHealthController
 
     public override void CancelApplyingItem()
     {
-        // Replicated healing is applied by HandleSyncPacket, never locally.
+        // 复制的治疗效果由 HandleSyncPacket 应用，绝不在本地应用。
     }
 
     public void PauseAllEffects()
@@ -68,9 +68,9 @@ public sealed class ObservedHealthController
         {
             Profile.HealthInfo profileHealthClass2 = new()
             {
-                // The generated EnumHelper.GetDictWith wrapper incorrectly
-                // closes EnumHelper over TValue on IL2CPP. Populate the native
-                // dictionary from BodyState below, retaining each real part.
+                // 生成的 EnumHelper.GetDictWith 包装器在 IL2CPP 上会错误地
+                // 对 TValue 闭合 EnumHelper。因此在下面从 BodyState 填充
+                // 原生字典，并保留每一个真实的部位。
                 BodyParts = new Il2CppSystem.Collections.Generic.Dictionary<EBodyPart, Profile.HealthInfo.BodyPartInfo>(),
                 Energy = new Profile.HealthInfo.ValueInfo
                 {
@@ -100,8 +100,8 @@ public sealed class ObservedHealthController
             };
         }
         health = profileHealthClass;
-        // Store may be called with an existing profile. Replace transient values
-        // and effect dictionaries so removed effects cannot reappear on reconnect.
+        // Store 可能会以已有的 profile 被调用。替换瞬态值与
+        // 效果字典，使被移除的效果无法在重连时重新出现。
         health.Energy = new Profile.HealthInfo.ValueInfo { Current = _energy.Current, Minimum = _energy.Minimum, Maximum = _energy.Maximum };
         health.Hydration = new Profile.HealthInfo.ValueInfo { Current = _hydration.Current, Minimum = _hydration.Minimum, Maximum = _hydration.Maximum };
         health.Temperature = new Profile.HealthInfo.ValueInfo { Current = _temperature.Current, Minimum = _temperature.Minimum, Maximum = _temperature.Maximum };
@@ -130,9 +130,9 @@ public sealed class ObservedHealthController
             {
                 var gclass2 = health.BodyParts[gclass.BodyPart];
                 gclass2.Effects ??= new Il2CppSystem.Collections.Generic.Dictionary<string, Profile.HealthInfo.EffectInfo>();
-                // Effects are exposed through a base proxy; CLR GetType() can
-                // report "Effect" for every instance. Use the native type name
-                // consumed by health serialization and reconnect restoration.
+                // 效果通过基类代理暴露；CLR 的 GetType() 对每个实例
+                // 都可能报告 "Effect"。改用生命值序列化与重连恢复所消费的
+                // 原生类型名。
                 gclass2.Effects[gclass.GetIl2CppType().Name] = new()
                 {
                     Time = gclass.TimeLeft

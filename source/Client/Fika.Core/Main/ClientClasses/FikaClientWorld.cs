@@ -9,7 +9,7 @@ using Fika.Core.Main.Utils;
 namespace Fika.Core.Main.ClientClasses;
 
 /// <summary>
-/// <see cref="World"/> used for the client to synchronize game logic
+/// 客户端用于同步游戏逻辑的 <see cref="World"/>
 /// </summary>
 public class FikaClientWorld : World
 {
@@ -37,11 +37,11 @@ public class FikaClientWorld : World
     internal bool IsDisposed => _disposed;
 
     /// <summary>
-    /// Caps of the two receive-path lists that only the apply paths shrink. Both are appended by
-    /// FikaClient's world-packet callback and both are walked in full on every frame below, so a
-    /// packet whose loot item or corpse never materialises would otherwise be re-checked for the
-    /// rest of the raid. The caps are the same order as FikaClient's MaxPendingWorldPackets, far
-    /// above what a raid queues, so a normal raid never reaches them
+    /// 两个接收路径列表的上限，只有应用路径会收缩它们。两者都由
+    /// FikaClient 的 world 数据包回调追加，且都会在下面每一帧被完整遍历，因此一个
+    /// 战利品物品或尸体始终没有生成的包，否则会在整场 raid 的剩余时间里
+    /// 被反复检查。上限与 FikaClient 的 MaxPendingWorldPackets 处于同一量级，远
+    /// 高于一场 raid 会排入的数量，所以正常 raid 永远达不到它们。
     /// (analysis/midraid-clr-failfast/REPORT.md).
     /// </summary>
     internal const int MaxPendingLootSyncPackets = 256;
@@ -49,10 +49,10 @@ public class FikaClientWorld : World
 
     private bool _pendingTrimLogged;
 
-    // [LootDiag] counters (analysis/pickup-stuck-again). This list is the only place that
-    // sees how many remote loot position updates reached this client, how many are still
-    // waiting for their item and whether the cap ever dropped one, which is what a "cannot
-    // take ground loot" report needs to tell a desync apart from a refused interaction.
+    // [LootDiag] 计数器 (analysis/pickup-stuck-again)。这个列表是唯一能看到
+    // 有多少远程战利品位置更新到达本客户端、有多少仍在等待自己的物品、
+    // 以及上限是否曾丢弃过一条的地方，这正是「无法拿取地面战利品」
+    // 报告区分失步与交互被拒所需要的信息。
     private int _lootDiagApplied;
     private int _lootDiagTrimmed;
     private int _lootDiagPeak;
@@ -76,14 +76,14 @@ public class FikaClientWorld : World
         };
         clientWorld._client = FikaSingleton<FikaClient>.Instance;
         clientWorld._client.FikaClientWorld = clientWorld;
-        // (analysis/transit-crash-unload) A fresh world exists from here on: the teardown window of
-        // WorldLifecycle ends, the [LoadCost] window of the swap is closed with its summary line.
+        // (analysis/transit-crash-unload) 从这里起一个新的 world 已经存在：WorldLifecycle 的
+        // 拆除窗口结束，换图的 [LoadCost] 窗口以其汇总行关闭。
         WorldLifecycle.MarkWorldUp("FikaClientWorld.Create");
-        // (analysis/cutscene-world-factory, superseded by analysis/cutscene-native-registration) The two
-        // cutscene controllers used to be created here, inside the port's replacement of the native
-        // GameWorld.Create<T> body. That body never created them (4.0 EFT/GameWorld.cs:1111-1123) - the native
-        // position is the raid-start coroutine, which this port replaces with CoopGame.InitPlayer, and there
-        // they are now created AND registered on their per-frame hook. This call is the rollback path only:
+        // (analysis/cutscene-world-factory，已被 analysis/cutscene-native-registration 取代) 这两个
+        // cutscene 控制器过去在这里创建，位于本移植对原生
+        // GameWorld.Create<T> 方法体的替换实现内部。那个方法体从未创建它们 (4.0 EFT/GameWorld.cs:1111-1123) ——
+        // 原生位置是 raid 启动协程，本移植用 CoopGame.InitPlayer 替换了它，现在它们在那里
+        // 被创建并且在各自的每帧钩子上注册。此处调用只是回滚路径：
         return clientWorld;
     }
 
@@ -97,18 +97,18 @@ public class FikaClientWorld : World
         RagdollPackets?.Clear();
         WorldPacket?.Flush();
         if (ReferenceEquals(_client?.FikaClientWorld, this)) _client.FikaClientWorld = null;
-        // The world this component belongs to is going away. Everything it queued for it dies here, so a
-        // packet of the replaced raid can never be applied to the next world (analysis/transit-crash-unload).
-        // The lists stay allocated (a later handler must find an empty list, not a null one); only their
-        // content and the native-object queue behind WorldSpawns go.
+        // 这个组件所属的 world 即将消失。它为它排队的一切都在此终结，因此
+        // 被替换掉的 raid 的数据包绝不可能被应用到下一个 world (analysis/transit-crash-unload)。
+        // 这些列表保持已分配状态（后续的处理逻辑必须找到空列表，而不是 null）；只清掉
+        // 它们的内容以及 WorldSpawns 背后的原生对象队列。
         WorldSpawns?.Clear();
         NativeBaseCalls.Call75(this);
     }
 
     /// <summary>
-    /// (analysis/perf-round2) The world component's own Update is one slot of the frame-cost probe. The
-    /// measured body is the original method unchanged; the wrapper is two static bool reads while the
-    /// probe is off.
+    /// (analysis/perf-round2) world 组件自身的 Update 是帧耗时探针的一个槽位。
+    /// 被测量的方法体是原方法，未做改动；探针关闭时包装层只是两次静态 bool 读取。
+    /// 探针已关闭。
     /// </summary>
     public void Update()
     {
@@ -125,16 +125,16 @@ public class FikaClientWorld : World
 
     private void UpdateMeasured()
     {
-        // Bounded before the world is used: these two lists only shrink when a packet could be
-        // applied, and the walks below touch every entry of them on every frame.
+        // 在 world 被使用之前就限界：这两个列表只有在数据包能被应用时才会
+        // 收缩，而下面的遍历每一帧都会触及它们的每一个条目。
         TrimPending(LootSyncPackets, MaxPendingLootSyncPackets, "loot");
         TrimPending(RagdollPackets, MaxPendingRagdollPackets, "ragdoll");
 
         if (_clientGameWorld == null) return;
 
-        // Loot descriptors arrive over the network after the world component
-        // is created. Keep queued position updates until the descriptor has
-        // produced its native LootItem collection.
+        // 战利品描述符在世界组件创建之后才经由网络到达。
+        // 保留已排队的位置更新，直到该描述符生成了
+        // 自己的原生 LootItem 集合。
         if (_clientGameWorld != null)
             UpdateLootItems(_clientGameWorld.LootItems);
         var processor = _clientGameWorld.ClientSynchronizableObjectLogicProcessor;
@@ -160,12 +160,12 @@ public class FikaClientWorld : World
     }
 
     /// <summary>
-    /// Drops the oldest entries of a pending list once it is over its cap, and reports the first
-    /// trim of this world once.
+    /// 待处理列表超出上限后丢弃它最旧的条目，并只报告本 world 的第一次
+    /// 裁剪。
     /// <para>
-    /// Nothing is lost that the raid would still have applied: the list is walked every frame, so
-    /// an entry that is still unresolved after <paramref name="max"/> newer arrivals has no loot
-    /// item or corpse to be applied to - it is already never applied today, only kept.
+    /// 不会丢失 raid 仍会应用的内容：该列表每一帧都被遍历，因此一条在
+    /// <paramref name="max"/> 个更新的到达之后仍未解析的条目，已经没有可被
+    /// 应用的战利品物品或尸体 —— 它如今本就永远不会被应用，只是被保留着。
     /// </para>
     /// </summary>
     private int TrimPending<T>(List<T> pending, int max, string what)
@@ -175,9 +175,9 @@ public class FikaClientWorld : World
         pending.RemoveRange(0, excess);
         if (what == "loot")
         {
-            // Every trim is counted. The one-shot warning below only says that a cap was
-            // reached once; the [LootDiag] heartbeat carries the running total, so a cap
-            // that keeps firing in a loot-dense map cannot hide.
+            // 每次裁剪都计数。下面的一次性警告只说明上限曾被触达一次；
+            // [LootDiag] 心跳携带累计总数，所以在战利品密集的地图上
+            // 持续触发的上限无法隐藏。
             _lootDiagTrimmed += excess;
                     }
         if (!_pendingTrimLogged)
@@ -204,7 +204,7 @@ public class FikaClientWorld : World
     }
 
     /// <summary>
-    /// Marks the current <see cref="WorldPacket"/> as critical
+    /// 将当前的 <see cref="WorldPacket"/> 标记为关键
     /// </summary>
     internal void SetCritical()
     {
@@ -233,9 +233,9 @@ public class FikaClientWorld : World
             for (var i = LootSyncPackets.Count - 1; i >= 0; i--)
             {
                 var lootSyncData = LootSyncPackets[i];
-                // Values come from the IL2CPP DictionaryListHydra and may be
-                // exposed as the LootItem base wrapper. Use the native cast so a
-                // remote observed item is not missed during synchronization.
+                // 值来自 IL2CPP 的 DictionaryListHydra，可能以 LootItem 基类
+                // 包装的形式暴露。使用原生转换，以免在同步期间
+                // 漏掉远程观察到的物品。
                 if (lootItems.TryGetByKey(lootSyncData.Id, out var lootItem)
                     && lootItem?.TryCast<ObservedLootItem>() is { } observedLootItem)
                 {
@@ -250,10 +250,10 @@ public class FikaClientWorld : World
     }
 
     /// <summary>
-    /// Periodic [LootDiag] heartbeat for the receive path (analysis/pickup-stuck-again).
-    /// A pending count that keeps growing while the player cannot take items is the desync
-    /// signature; a pending count of 0 next to a refused pickup is an interaction refusal
-    /// instead, so the two causes are told apart by one grep.
+    /// 接收路径的周期性 [LootDiag] 心跳 (analysis/pickup-stuck-again)。
+    /// 玩家无法拿取物品时待处理计数持续增长，就是失步的特征；
+    /// 拾取被拒而待处理计数为 0 则是交互被拒，因此用一次 grep
+    /// 就能区分这两种原因。
     /// </summary>
     private void DiagLootSync(int applied)
     {
@@ -265,7 +265,7 @@ public class FikaClientWorld : World
             }
 
     /// <summary>
-    /// Sets up all the <see cref="BorderZone"/>s on the map
+    /// 设置地图上所有的 <see cref="BorderZone"/>
     /// </summary>
     public override void SubscribeToBorderZones(Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<BorderZone> zones)
     {

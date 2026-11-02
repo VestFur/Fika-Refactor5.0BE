@@ -32,16 +32,16 @@ public sealed class ClientInventoryOperationHandler : IDisposable
     private bool _receivedServerStatus;
     private bool _completed;
 
-    /// <summary>Whether this pooled handler is still driving an operation.</summary>
+    /// <summary>这个池化的处理器是否仍在驱动一个操作。</summary>
     internal bool IsActive => _active;
 
-    /// <summary>Whether the server has answered with any status yet.</summary>
+    /// <summary>服务器是否已经用任意状态作出过应答。</summary>
     internal bool ReceivedServerStatus => _receivedServerStatus;
 
     /// <summary>
-    /// Completes the operation with a local failure when the server never
-    /// answered. Keeps a lost acknowledgement from locking the player in the
-    /// interaction state forever.
+    /// 当服务器始终没有应答时，以本地失败结束该操作。
+    /// 避免一次丢失的确认把玩家永久锁在
+    /// 交互状态中。
     /// </summary>
     internal void FailWithoutServerStatus(string reason) => FailLocally(reason);
 
@@ -72,8 +72,8 @@ public sealed class ClientInventoryOperationHandler : IDisposable
     private void ReceiveStatusFromServer(uint generation, ServerOperationStatus serverStatus)
     {
         if (!_active || generation != _generation) return;
-        // Reliable delivery may repeat a terminal status during reconnect.
-        // Never execute the same native operation again after it has finished.
+        // 重连期间可靠投递可能重复一个终态状态。
+        // 操作结束后绝不再执行同一个原生操作。
         if (_receivedServerStatus)
         {
             if (ServerStatus.Status is EOperationStatus.Succeeded or EOperationStatus.Failed) return;
@@ -84,9 +84,9 @@ public sealed class ClientInventoryOperationHandler : IDisposable
         switch (serverStatus.Status)
         {
             case EOperationStatus.Started:
-                // A throwing native execution must never leave the player locked in
-                // the interaction state with a callback that never fires. Fail the
-                // operation locally instead and let the caller release its state.
+                // 抛异常的原生执行绝不能把玩家留在交互状态中、并伴随一个
+                // 永不触发的回调。改为在本地让该操作失败，
+                // 由调用方去释放它的状态。
                 try
                 {
                     Operation.ExecuteWithoutDispose(ExecuteResultDelegate);
@@ -103,35 +103,35 @@ public sealed class ClientInventoryOperationHandler : IDisposable
                 {
                     ConfirmCarExtractPayment(paidOperation);
                 }
-                // [QuestOp] A quest operation is normally executed locally and never
-                // answered by the host, so this line only appears if one was relayed.
+                // [QuestOp] 任务操作通常在本地执行，主机从不应答它，
+                // 因此这行只在某个任务操作被转发时才会出现。
                 if (QuestOperations.TryDescribe(Operation, out var appliedQuestDetail))
                 {
                     FikaGlobals.LogInfo($"[QuestOp] host applied {Operation.GetIl2CppType().Name} ({appliedQuestDetail})");
                 }
                 InventoryController?.SyncInventoryToProfile();
-                // (2026-10-21) THE PATH THE PLAYER ACTUALLY SEES: a *successful* operation never reaches the
-                // resync below (that half only runs when the host rejects), so the bookkeeping the native Execute
-                // wrapper would have done was never replayed for it - which is why the item diagnostics of W10 were
-                // all at zero. The registration and its before/after counts are done here, after the profile sync,
-                // on the tree the player will open next.
+                // （2026-10-21）玩家真正看到的路径：一次*成功*的操作永远走不到下面的
+                // 重新同步（那一半只在主机拒绝时才运行），所以原生 Execute 包装本应完成的
+                // 簿记从未为它重放过——这就是 W10 的物品诊断
+                // 全都是零的原因。注册及其前后计数就在这里完成，在 profile 同步之后，
+                // 作用在玩家接下来要打开的那棵树上。
                 if (InventoryController != null)
                 {
                     ReportRelayedOperationBookkeeping(InventoryController.ApplyRelayedOperationBookkeeping(Operation));
                 }
-                // (2026-10-20) The profile sync re-reads the inventory; the "known" bookkeeping the local
-                // execution registered is not part of that profile, so items created by this operation came back
-                // as unexamined the next time the inventory screen opened. The registration above is that
-                // bookkeeping (W8/W10 wired it nowhere - it had no caller until 2026-10-21).
+                // （2026-10-20）profile 同步会重新读取物品栏；本地执行所注册的 "known"
+                // 簿记并不属于那份 profile，因此本次操作创建出来的物品在下次打开物品栏界面时
+                // 又会变回未检查状态。上面那次注册就是这笔
+                // 簿记（W8/W10 都没把它接到任何地方——直到 2026-10-21 它都没有调用方）。
                 HandleResultDelegate.Invoke(SuccessfulResult.New);
                 return;
             case EOperationStatus.Failed:
                 FikaGlobals.LogError($"{InventoryController.ID} - Client operation rejected by server: {Operation.Id} - {LogSafe.Ref(Operation)}\r\nReason: {serverStatus.Error}");
-                // [CarExtract] The paid exfiltration point interaction shows its
-                // "handed over" message from TransferExitItem's return value, long
-                // before the host answers. When the host rejects the payment that
-                // prediction has to be corrected, otherwise the player believes the
-                // driver was paid while the money is still in the inventory.
+                // [CarExtract] 付费撤离点交互会根据 TransferExitItem 的返回值
+                // 显示它的 "handed over" 消息，而这远在主机应答之前。
+                // 当主机拒绝这笔付款时，必须纠正那个
+                // 预测，否则玩家会以为司机已经收到钱，
+                // 而钱其实还在物品栏里。
                 if (Operation.TryCast<TransferExfiltrationPaymentOperation>() is { } rejectedPayment)
                 {
                     var rejectedPoint = rejectedPayment._result?.PointName;
@@ -147,9 +147,9 @@ public sealed class ClientInventoryOperationHandler : IDisposable
                         $"({rejectedQuestDetail}): {serverStatus.Error}");
                 }
                 ServerStatus = serverStatus;
-                // Terminate may invoke HandleResult synchronously. Mark the
-                // resync first so that callback cannot dispose and return
-                // this handler to the pool before the snapshot arrives.
+                // Terminate 可能同步调用 HandleResult。先标记
+                // 重新同步，这样该回调就无法在快照到达之前
+                // 释放并把本处理器归还到池中。
                 _awaitingInventoryResync = true;
                 if (Operation.Status.InProgress()
                     && Operation.TryCast<IServerDependentOperation>() is { } serverDependentOperation)
@@ -170,11 +170,11 @@ public sealed class ClientInventoryOperationHandler : IDisposable
     }
 
     /// <summary>
-    /// [CarExtract] The host confirmed the payment, so this client has to report
-    /// its own player as queued on the exfiltration point. Executing the same
-    /// operation locally normally does that; when that execution was refused or
-    /// aborted the point stays unmet for the payer, which shows the countdown but
-    /// never extracts, so the native handover handling is replayed here.
+    /// [CarExtract] 主机已确认付款，因此本客户端必须把自己
+    /// 的玩家报告为已在撤离点排队。在本地执行同一个
+    /// 操作通常就能做到；当那次执行被拒绝或
+    /// 被中止时，该撤离点对付款方始终处于未满足状态——它会显示倒计时但
+    /// 从不撤离，因此这里重放原生的移交处理。
     /// </summary>
     private void ConfirmCarExtractPayment(TransferExfiltrationPaymentOperation payment)
     {
@@ -195,10 +195,10 @@ public sealed class ClientInventoryOperationHandler : IDisposable
                 return;
             }
 
-            // The host took the money from its own copy of this inventory. When the
-            // local prediction of the same operation did not apply, the two sides
-            // disagree about the stack until the next inventory resync, which only
-            // happens on a rejection - so at least make it visible.
+            // 主机已从这个物品栏它自己的副本里取走了钱。当同一操作的
+            // 本地预测没有生效时，双方在该堆叠上的认知会不一致，
+            // 直到下一次物品栏重新同步——而那只会在拒绝时发生——
+            // 所以至少让它可见。
             var localStatus = payment.Status;
             if (localStatus.Finished() && localStatus != EOperationStatus.Succeeded)
             {
@@ -226,9 +226,9 @@ public sealed class ClientInventoryOperationHandler : IDisposable
     }
 
     /// <summary>
-    /// Completes a still-pending operation with a local failure so the caller's
-    /// callback always runs. Used when the native execution throws before the
-    /// server can report a terminal status.
+    /// 以本地失败结束一个仍待处理的操作，使调用方的回调
+    /// 总能被执行。用于原生执行在服务器来得及报告
+    /// 终态状态之前就抛出异常的情况。
     /// </summary>
     private void FailLocally(string error)
     {
@@ -250,22 +250,22 @@ public sealed class ClientInventoryOperationHandler : IDisposable
 
                 ServerStatus = new ServerOperationStatus(EOperationStatus.Failed, error);
         OperationResult = new FailedResult(error ?? "The inventory operation failed locally.");
-        // Ground loot pickups run inside the native PickUpState/interaction
-        // queue. A failed operation has to release that presentation state or
-        // the player stays locked: no rotation, no movement, no interaction
-        // prompts, for the rest of the raid.
+        // 地面拾取在原生 PickUpState/交互队列内部运行。
+        // 失败的操作必须释放那份呈现状态，否则
+        // 玩家会一直被锁住：在剩余的战局中无法转身、无法移动、
+        // 也无法获得交互提示。
         Fika.Core.Main.Utils.NativeInteractionRelease.Release(InventoryController?.Player, "inventory-operation-failed");
 
-        // (2026-10-26 W26) A watchdog failure means the host never answered - but the LOCAL execution of this
-        // operation already ran (the Started branch executes it and only then waits for a terminal status). The
-        // Succeeded branch replays the native known/searched bookkeeping after that execution; this path used to
-        // skip it, so every item the operation produced stayed "unexamined / unsearched" for the rest of the raid
-        // (the reported "the item disappears, then comes back unsearched"). Only done when no status arrived at
-        // all: a host that really rejected the operation replaces the tree, and that path owns its own bookkeeping.
-        // (2026-10-26 W27) The reject path waits for the host's authoritative snapshot (_awaitingInventoryResync);
-        // if that snapshot never arrives the completion watchdog ends up here, with the local execution of the
-        // rejected operation still in the tree and nothing logged about the missing snapshot. Say so: a silent
-        // give-up is exactly the kind of blind spot that kept this chain un-diagnosable for many rounds.
+        // （2026-10-26 W26）看门狗失败意味着主机从未应答——但本次操作的本地执行
+        // 已经运行过（Started 分支会执行它，然后才等待终态状态）。Succeeded
+        // 分支会在那次执行之后重放原生的 known/searched 簿记；这条路径过去会
+        // 跳过它，于是该操作产生的每个物品在整个剩余战局中都停留在 "unexamined / unsearched"
+        // （即所报告的"物品消失，然后又回来却是未搜索"）。仅在完全没有任何状态到达时才
+        // 这样做：真正拒绝了该操作的主机会替换整棵树，而那条路径拥有它自己的簿记。
+        // （2026-10-26 W27）拒绝路径会等待主机的权威快照（_awaitingInventoryResync）；
+        // 如果那份快照始终不到达，完成看门狗就会走到这里，而被拒绝操作的本地
+        // 执行仍在树中，且关于缺失快照什么都没记录。要把这一点说出来：沉默地
+        // 放弃正是让这条链在许多轮里都无法诊断的那类盲点。
         if (_receivedServerStatus && _awaitingInventoryResync)
         {
             FikaGlobals.LogError($"{InventoryController?.ID} - [SyncDiag] op={CallbackId} resync-timeout: the host " +
@@ -317,8 +317,8 @@ public sealed class ClientInventoryOperationHandler : IDisposable
         }
         else
         {
-            // The native Execute wrapper registers the items of a move as known; the relayed local
-            // execution bypasses it (see MarkOperationItemsKnown).
+            // 原生 Execute 包装会把一次移动的物品注册为已知；而转发的本地
+            // 执行绕过了它（见 MarkOperationItemsKnown）。
         }
 
         HandleResultDelegate.Invoke(executeResult);
@@ -345,13 +345,13 @@ public sealed class ClientInventoryOperationHandler : IDisposable
         var localStatus = Operation.Status;
         if (localStatus.InProgress())
         {
-            // A discard is an EFT.InventoryLogic.Operations.ThrowOperation: an async operation
-            // that takes the item out of the inventory first and calls GameWorld.ThrowItem at
-            // the very end. The host relays the operation to every peer except the source, so
-            // this local execution is the only thing that can create the ground object for the
-            // dropper. Disposing it here removed the item and never spawned it (the discarded
-            // backpack was visible to the host only). Let it finish; the acknowledgement
-            // watchdog stays as the backstop.
+            // 一次丢弃是 EFT.InventoryLogic.Operations.ThrowOperation：一个异步操作，
+            // 它先把物品从物品栏中取出，并在最后才调用 GameWorld.ThrowItem。
+            // 主机把该操作转发给除源以外的每个对等端，所以
+            // 这次本地执行是唯一能为丢弃者创建地面对象的东西。
+            // 在这里 Dispose 它会把物品移除却从不生成它（被丢弃的
+            // 背包只有主机能看到）。让它跑完；确认
+            // 看门狗仍然是兜底手段。
             if (Operation.TryCast<ThrowOperation>() != null)
             {
                 FikaGlobals.LogWarning($"{InventoryController.ID} - The host reported {serverStatus} while the local " +
@@ -363,10 +363,10 @@ public sealed class ClientInventoryOperationHandler : IDisposable
                 ginterface.Terminate();
             }
             if (_completed || !Operation.Status.InProgress()) return;
-            // The host reported a terminal status while the local execution never
-            // finished. Returning here left the caller's callback uninvoked, which
-            // locks the player in the interaction state until the raid ends (every
-            // later ground item pickup is refused). Release the caller locally.
+            // 主机报告了终态状态，而本地执行从未完成。
+            // 在这里返回会让调用方的回调不被执行，而它会把
+            // 玩家锁在交互状态中直到战局结束（此后每一次
+            // 地面拾取都会被拒绝）。在本地释放调用方。
             FikaGlobals.LogError($"{InventoryController.ID} - Operation {Operation.Id} is still in progress " +
                 $"after the server reported {serverStatus}, completing it locally to release the interaction state");
             FailLocally($"The host reported {serverStatus} before the local operation finished.");
@@ -444,8 +444,8 @@ public sealed class ClientInventoryOperationHandler : IDisposable
         {
             if (inventory == null)
             {
-                // ReplaceInventory(null) would leave the controller with no item
-                // graph at all. Release the caller instead of breaking the raid.
+                // ReplaceInventory(null) 会让控制器完全没有物品图。
+                // 改为释放调用方，而不是把整场战局弄坏。
                 FikaGlobals.LogError($"{InventoryController?.ID} - The authoritative inventory snapshot was empty; " +
                     "keeping the local inventory");
                 OperationResult = new FailedResult(ServerStatus.Error ?? "The host sent no inventory snapshot.");
@@ -453,8 +453,8 @@ public sealed class ClientInventoryOperationHandler : IDisposable
                 return;
             }
 
-            // [SyncDiag] The snapshot rebuilds every Item, which invalidates the search controller entries (they are
-            // keyed per instance and per address). Capture the rejected operation's items while they still exist.
+            // [SyncDiag] 快照会重建每一个 Item，这会使搜索控制器的条目失效（它们
+            // 以实例和地址为键）。趁被拒绝操作的物品还存在时把它们捕获下来。
             var capturedItems = InventoryController.CaptureResyncItems(Operation);
             var keptLocalInstances = InventoryController.TryKeepLocalInstances(inventory, Operation, out var keepReason);
             FikaGlobals.LogInfo($"[SyncDiag] op={CallbackId} resync-begin items={capturedItems.Count} " +
@@ -462,18 +462,18 @@ public sealed class ClientInventoryOperationHandler : IDisposable
                 $"keepLocal={keptLocalInstances} reason={keepReason}");
 
             Operation?.Dispose();
-            // The replacement installs a brand new item graph, so an open loot or
-            // inventory screen can keep holding the old items and render empty (the
-            // reported black inventory). Force-closing the screens was tried and made it
-            // worse: a resync triggered by dragging ammo onto a weapon threw the player
-            // out of the inventory, left the drag state dangling, hid every UI element
-            // and blocked all input. Report the resync instead of touching the screens.
+            // 这次替换会装入一棵全新的物品图，因此已打开的搜刮或
+            // 物品栏界面可能仍持有旧物品并渲染成空白（即所报告的
+            // 黑屏物品栏）。曾尝试强制关闭这些界面，结果更糟：
+            // 一次由把弹药拖到武器上触发的重新同步把玩家
+            // 踢出了物品栏，留下悬空的拖拽状态，隐藏了所有 UI 元素
+            // 并阻塞了全部输入。改为报告这次重新同步，不要去动这些界面。
             FikaGlobals.LogWarning($"{InventoryController.ID} - Applying the authoritative inventory " +
                 "(an open screen may need a refresh)");
             if (keptLocalInstances)
             {
-                // [SyncDiag] Structure and ids are identical: rebuilding would only swap the instances, drop the
-                // search bookkeeping and empty whatever screen is open. Keep the local graph.
+                // [SyncDiag] 结构与 id 完全一致：重建只会替换实例、丢掉
+                // 搜索簿记并让任何已打开的界面变空。保留本地物品图。
                 FikaGlobals.LogInfo($"[SyncDiag] op={CallbackId} resync-kept-local reason={keepReason}");
                 InventoryController.SyncInventoryToProfile();
             }
@@ -482,7 +482,7 @@ public sealed class ClientInventoryOperationHandler : IDisposable
                 InventoryController.ReplaceInventoryFromNetwork(inventory);
             }
 
-            // Re-register the operation's items in whatever graph is active now, then report the outcome per item.
+            // 在当前生效的那棵物品图中重新注册该操作的物品，然后逐物品报告结果。
             InventoryController.RestoreOperationItemsAfterResync(capturedItems, keptLocalInstances, CallbackId);
             OperationResult = new FailedResult(ServerStatus.Error ?? "The server rejected the inventory operation.");
             Callback?.Invoke(OperationResult);
@@ -499,10 +499,10 @@ public sealed class ClientInventoryOperationHandler : IDisposable
     }
 
     /// <summary>
-    /// (2026-10-21) Bounded report of the item bookkeeping of one applied operation. The first
-    /// <see cref="MaxBookkeepingLines"/> operations of a session get a line each (that is what "the item I just
-    /// moved is unexamined" is read from), the rest are counted into one summary line per raid, so a full box of
-    /// looting cannot bury the log.
+    /// （2026-10-21）对一个已应用操作的物品簿记做有界报告。一个会话中前
+    /// <see cref="MaxBookkeepingLines"/> 个操作各得到一行（"我刚移动的物品未检查"
+    /// 就是从这读出来的），其余的都归入每次战局一行汇总，这样一个满背包的
+    /// 搜刮也不会把日志埋掉。
     /// </summary>
     private void ReportRelayedOperationBookkeeping(string detail)
     {
@@ -525,7 +525,7 @@ public sealed class ClientInventoryOperationHandler : IDisposable
         }
         catch (Exception)
         {
-            // A diagnostic must never break the operation callback.
+            // 诊断绝不能破坏操作回调。
         }
     }
 
@@ -534,9 +534,9 @@ public sealed class ClientInventoryOperationHandler : IDisposable
     private static int _bookkeepingSuppressed;
 
     /// <summary>
-    /// [InvDiag] (2026-10-27, T4) Reopens the bounded bookkeeping report for the next raid. The counters are static,
-    /// so without this the report goes silent for the rest of the process after <see cref="MaxBookkeepingLines"/>
-    /// operations and a later raid cannot be judged at all. Called from <c>ClientInventoryController.ClearPool</c>.
+    /// [InvDiag]（2026-10-27，T4）为下一场战局重新开启这份有界簿记报告。计数器是静态的，
+    /// 所以没有它，报告在 <see cref="MaxBookkeepingLines"/> 个操作之后就会在进程剩余时间里彻底沉默，
+    /// 之后的战局根本无法评判。由 <c>ClientInventoryController.ClearPool</c> 调用。
     /// </summary>
     internal static void ResetBookkeepingReport()
     {
@@ -555,7 +555,7 @@ public sealed class ClientInventoryOperationHandler : IDisposable
         }
         catch
         {
-            // Diagnostics must never affect the operation callback.
+            // 诊断绝不能影响操作回调。
         }
         return null;
     }

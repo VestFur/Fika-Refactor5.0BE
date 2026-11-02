@@ -7,9 +7,9 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.Quest;
 
 /// <summary>
-/// Observed players must not complete quest conditions against the local
-/// profile.  Their controller is display-only and receives quest state over
-/// Fika packets.
+/// 被观察的玩家不得针对本地的
+/// profile 完成任务条件。他们的控制器只用于显示，任务状态是通过
+/// Fika 数据包接收的。
 /// </summary>
 public sealed class QuestControllerClientLocalGame_CompleteConditionExternal_Patch : ModulePatch
 {

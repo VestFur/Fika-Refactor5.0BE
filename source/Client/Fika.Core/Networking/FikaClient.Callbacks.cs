@@ -95,9 +95,9 @@ public sealed partial class FikaClient
             (packet.Error.Contains("unbound player", StringComparison.Ordinal)
              || packet.Error.Contains("Could not find player with id", StringComparison.Ordinal)))
         {
-            // The host never received our character announcement (a player scav
-            // entering a running raid can send it before the link is up), so it
-            // has no player and rejects every proceed. Announce again.
+            // 主机从未收到我们的角色宣告(玩家 scav
+            // 进入正在进行的 raid 时可能在连接建立之前就发送),因此它
+            // 没有对应玩家,并拒绝每一次 proceed。重新宣告一次。
             if (Environment.TickCount64 - _lastCharacterReannounce >= CharacterReannounceIntervalMs)
             {
                 _lastCharacterReannounce = Environment.TickCount64;
@@ -162,8 +162,8 @@ public sealed partial class FikaClient
     {
         if (LoadingScreenUI.Instance != null)
         {
-            // (analysis/loading-screen-peer-state) ApplyPeerProgress creates the row when this machine's
-            // re-arm dropped it, instead of losing the value to the row lookup (see LoadingScreenUI).
+            // (analysis/loading-screen-peer-state)当本机的
+            // 重新装载把它丢掉时,由 ApplyPeerProgress 创建该行,而不是让值在查行时丢失(见 LoadingScreenUI)。
             LoadingScreenUI.Instance.ApplyPeerProgress(packet.NetId, packet.Progress, "host");
         }
     }
@@ -273,11 +273,11 @@ public sealed partial class FikaClient
 
         _coopHandler.CheckIds(packet.PlayerIds, _missingIds);
 
-        // (2026-10-17) The host's list is what the host has. When this machine's own net id is missing from
-        // it, the host has no player for us and every request of ours is answered with "unbound player"
-        // (weapon switches roll back to empty hands, item moves are never executed). The character is
-        // announced again; the same 3 s interval as the unbound answer bounds it, and QueueProfile
-        // deduplicates a repeated announcement, so this cannot spawn a second player.
+        // (2026-10-17)主机的列表就是主机所拥有的东西。当本机自己的 net id 不在
+        // 其中时,主机就没有我们的玩家,我们的每个请求都会被回答 "unbound player"
+        // (换武器会回滚到空手,物品移动永不执行)。角色会被
+        // 重新宣告;与 unbound 回答相同的 3 秒间隔为它设界,而 QueueProfile
+        // 会对重复宣告去重,因此这不会多生成一个玩家。
         if (NetId != 0 && !packet.PlayerIds.Contains(NetId)
             && Environment.TickCount64 - _lastCharacterReannounce >= CharacterReannounceIntervalMs)
         {
@@ -308,16 +308,16 @@ public sealed partial class FikaClient
         var gameWorld = Singleton<GameWorld>.Instance;
         if (gameWorld == null)
         {
-            // The world is replaced by a transit: keep the packet of that swap window (as bytes, see
-            // FikaClient.TryQueueWorldPacket - the receive path hands the same WorldPacket instance to
-            // every receive) so it can be replayed into the new world. Outside the swap window a world
-            // packet cannot be applied at all and is counted instead of logged once per packet.
+            // 世界被一次转发替换:保留该交换窗口的数据包(以字节保存,见
+            // FikaClient.TryQueueWorldPacket——接收路径会把同一个 WorldPacket 实例交给
+            // 每一次接收),以便它能被重放进新世界。在交换窗口之外,世界
+            // 数据包根本无法应用,因此只做计数而不是每个包记一条日志。
             if (TryQueueWorldPacket(ref packet, "OnWorldPacketReceived"))
             {
-                // The receive path keeps one WorldPacket instance for every receive
-                // (NetPacketProcessor.SubscribeReusable), and the payload was copied to bytes above, so
-                // the shared instance is flushed exactly like the applied path does. Without this the
-                // next receive would deserialize on top of this packet's lists.
+                // 接收路径对每一次接收都复用同一个 WorldPacket 实例
+                // (NetPacketProcessor.SubscribeReusable),而载荷上面已被复制成字节,因此
+                // 这个共享实例会像已应用路径那样被清空。不这样做的话,
+                // 下一次接收就会在这个数据包的列表之上反序列化。
                 packet?.Flush();
                 return;
             }
@@ -486,10 +486,10 @@ public sealed partial class FikaClient
 
     private void OnTransitEventPacketReceived(TransitEventPacket packet)
     {
-        // The reload-start signal of a transit reload is answered *before* the controller lookup: in that
-        // window this machine has no world at all and therefore no transit controller, and queueing the
-        // signal for the controller of the next raid would deliver it far too late
-        // (analysis/transit-reload-sync).
+        // 转发重载的重载开始信号会在查找控制器*之前*就得到应答:在那个
+        // 窗口里本机根本没有世界,因此也没有转发控制器,而把该信号排入
+        // 下一场 raid 的控制器队列会把它的投递拖到太晚
+        // (analysis/transit-reload-sync)。
         if (TransitReloadGate.HandlePacket(packet))
         {
             return;
@@ -608,11 +608,11 @@ public sealed partial class FikaClient
     }
 
     /// <summary>
-    /// BJ (analysis/terminal-rauf-card): the sentry access line of the terminal. The host owns the
-    /// emission of the native event, so this is where a peer learns that a player passed the card check -
-    /// and applies it through the native entry point of its own sentries
-    /// (<c>SentryBossLogic.OnTerminalAccessGained</c>), so its <c>BossSentryHostilityRule</c> answers the
-    /// same way the host's does.
+    /// BJ(analysis/terminal-rauf-card):终端的哨兵通行线。原生事件的发出归主机所有,
+    /// 因此这里是某个对端得知某名玩家通过了卡检的地方——
+    /// 并通过它自己哨兵的原生入口点应用这件事
+    /// (<c>SentryBossLogic.OnTerminalAccessGained</c>),使它自己的 <c>BossSentryHostilityRule</c>
+    /// 给出与主机相同的回答。
     /// </summary>
     private void OnSentryAccessPacketReceived(SentryAccessPacket packet)
     {
@@ -666,9 +666,9 @@ public sealed partial class FikaClient
         var fikaGame = FikaSingleton<IFikaGame>.Instance;
         if (fikaGame != null)
         {
-            // An unready host answers with an empty payload so the client polls
-            // again. Reading it as a descriptor would throw out of the packet
-            // handler and abort the rest of this receive.
+            // 未就绪的主机会回一个空载荷,以便客户端
+            // 再次轮询。若把它当成 descriptor 来读,就会从数据包
+            // 处理器中抛出,并中断本次接收的其余部分。
             if (packet.Data == null || packet.Data.Length == 0)
             {
                 _emptyLootDescriptors++;
@@ -686,10 +686,10 @@ public sealed partial class FikaClient
                 return;
             }
 
-            // The client polls for loot while the host may still be building the
-            // authoritative raid descriptor, so an empty answer is an expected
-            // intermediate state and must not abort the packet handler. Keep
-            // polling; only a host that never produces loot ends the wait.
+            // 客户端轮询战利品时,主机可能仍在构建
+            // 权威 raid descriptor,因此空回答是一种预期的
+            // 中间状态,不得中断数据包处理器。继续
+            // 轮询;只有始终不产出战利品的主机才会结束这次等待。
             if (lootItems.Count < 1)
             {
                 _emptyLootDescriptors++;
@@ -818,8 +818,8 @@ public sealed partial class FikaClient
     }
 
     /// <summary>
-    /// The last host state this client was told about, so the [LoadSync] line is written on a change
-    /// and not once per response (the loading wait polls once per second, for minutes).
+    /// 本客户端最后被告知的主机状态,这样 [LoadSync] 行只写在状态变化时,
+    /// 而不是每个响应写一次(加载等待每秒轮询一次,要持续好几分钟)。
     /// </summary>
     private bool _lastHostReceivedLocation;
     private bool _lastHostLoaded;
@@ -828,10 +828,10 @@ public sealed partial class FikaClient
 
     private void OnInformationPacketReceived(InformationPacket packet)
     {
-        // Counted before anything else: the loading wait uses this counter to tell a host that is
-        // still loading (it answers, only with HostReceivedLocation=false) from a host that is gone
-        // (no answer at all). Without that split the client aborted a perfectly healthy join after
-        // its fixed 40 s cap (analysis/loading-screen-sync).
+        // 先于其他一切进行计数:加载等待用这个计数器来区分仍在加载的主机
+        // (它会有回答,只是 HostReceivedLocation=false)与已经消失的主机
+        // (完全无回答)。没有这一区分,客户端曾在一次完全健康的加入
+        // 达到固定的 40 秒上限后中止它(analysis/loading-screen-sync)。
         NoteHostResponse();
         ReportHostState(packet);
 
@@ -858,11 +858,11 @@ public sealed partial class FikaClient
     }
 
     /// <summary>
-    /// One [LoadSync] line per *change* of the host's handshake state, i.e. the moment this client may
-    /// continue its own raid start. The four states are the whole gate between the two sides:
-    /// HostReceivedLocation (the host is at its own CreateFikaGameCore for this raid), HostLoaded
-    /// (the host finished InitPlayer), HostReady (the host's countdown runs), plus the response counter
-    /// that proves the host is still there.
+    /// 主机握手状态每*变化*一次写一行 [LoadSync],也就是本客户端可以
+    /// 继续自己 raid 启动的那一刻。这四个状态就是两侧之间的全部闸门:
+    /// HostReceivedLocation(主机正处于自己这场 raid 的 CreateFikaGameCore)、HostLoaded
+    /// (主机已完成 InitPlayer)、HostReady(主机的倒计时在跑),外加那个响应计数器
+    /// 它证明主机仍然在线。
     /// </summary>
     private void ReportHostState(InformationPacket packet)
     {
@@ -931,9 +931,9 @@ public sealed partial class FikaClient
     }
 
     /// <summary>
-    /// Used by server to notify of important events, usually errors
+    /// 供服务器通知重要事件使用,通常是错误
     /// </summary>
-    /// <param name="packet">The packet containing the data</param>
+    /// <param name="packet">携带数据的数据包</param>
     private void OnMessagePacketReceived(MessagePacket packet)
     {
             FikaNotifications.DisplayMessageNotification(packet.Message.Localized(), packet.NotificationDurationType,

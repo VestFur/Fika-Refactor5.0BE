@@ -10,7 +10,7 @@ public class MapCachingPatch : ModulePatch
 {
     protected override MethodBase GetTargetMethod()
     {
-        // The display class ordinal changed with the build (216 on the ported build, 237 on 47888).
+        // 显示类的序号随构建版本而变化（移植构建上是 216，47888 上是 237）。
         return LoadMapAndDataTargets.Resolve("_LoadMapAndData_b__0");
     }
 

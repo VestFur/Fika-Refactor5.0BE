@@ -51,10 +51,10 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// True once the panel itself exists. <see cref="Exist"/> only says "a presence reporter is
-    /// alive", which is also true while 'Coop / Enable Online Players' is off: the six non-UI
-    /// call sites use <see cref="Exist"/> and only ever report a presence, so they must keep
-    /// working without the panel. Nothing may be written into the panel unless this is true.
+    /// 面板本身一旦存在即为 true。<see cref="Exist"/> 只表示“有一个在线状态上报者
+    /// 存活”，这在 'Coop / Enable Online Players' 关闭时同样成立：那六处非 UI
+    /// 调用点使用 <see cref="Exist"/> 且只上报存在状态，因此它们必须在
+    /// 没有面板的情况下继续工作。除非此值为 true，否则不得向面板写入任何内容。
     /// </summary>
     public bool PanelReady
     {
@@ -78,10 +78,10 @@ public class MainMenuUIScript : MonoBehaviour
 
     private static MainMenuUIScript _instance;
 
-    // [fix] The panel pump. The panel used to run as managed coroutines; the engine crashed
-    // while it processed exactly that object (an Il2CppManagedEnumerator, the wrapper
-    // StartCoroutine(IEnumerator) hands the engine), so the panel is driven from Update
-    // instead and never hands the engine an enumerator to drive again.
+    // [fix] 面板泵。面板以前以托管协程方式运行；引擎在它
+    // 处理正好是那个对象时崩溃了（Il2CppManagedEnumerator，即
+    // StartCoroutine(IEnumerator) 交给引擎的包装器），因此面板改由 Update
+    // 驱动，并且不再把枚举器交给引擎去驱动。
     private bool _pumpArmed;
     private bool _pumpAttached;
     private int _pumpStage;
@@ -91,25 +91,25 @@ public class MainMenuUIScript : MonoBehaviour
     private IntPtr _lastPumpInstance;
     private IntPtr _lastPumpMenuScreen;
     private float _nextRefreshTime;
-    // True while the roster is empty *and* the notification websocket - the socket whose
-    // connection is what puts this player into the server's online list - has not connected
-    // yet. The next refresh then runs a second later instead of ten, so the local player's row
-    // appears as soon as the server knows about it instead of one tick later.
+    // 当名单为空、*而且* 通知 websocket 仍未连接时，此值为 true——该 socket 的
+    // 连接正是把本玩家加入服务器在线名单的原因。这样下一次刷新会在
+    // 一秒后而不是十秒后执行，于是本地玩家的那一行会在
+    // 服务器知道它之后立刻出现，而不是晚一个 tick。
     private bool _waitingForPresenceSocket;
 
-    // [refresh] Who asked for the refresh that is about to run: "open" when the engine
-    // re-activated the panel, "manual" for the refresh button, null for the ordinary cycle.
-    // Only the diagnostic line reads it.
+    // [refresh] 是谁请求了即将执行的这次刷新：引擎重新激活面板时为 "open"，
+    // 刷新按钮为 "manual"，普通轮询周期为 null。
+    // 只有诊断输出会读取它。
     private string _pendingRefreshSource;
 
-    // [refresh] What the panel currently shows: the identity of the roster the rows were built
-    // from (RosterSignature) and the count written into the counter label (-1 while nothing has
-    // been written). A cycle whose answer has the same identity keeps the rows instead of
-    // rebuilding them, which is what makes a short visible cycle affordable.
+    // [refresh] 面板当前显示的内容：构建这些行时所依据的名单标识
+    // （RosterSignature），以及写入计数标签的数量（尚未写入任何内容时为 -1）。
+    // 若某次轮询的应答具有相同标识，就保留现有行而不再重建，
+    // 这正是让较短的可见周期刷新变得可承受的原因。
     private string _lastRosterSignature;
     private int _labelCount = -1;
 
-    // [refresh] The previous diagnostic line, so a cycle that changed nothing does not repeat it.
+    // [refresh] 上一行诊断输出，这样没有变化的轮询就不会重复它。
     private string _lastRefreshReport;
 
     private int _watchdogStartFrame = -1;
@@ -130,8 +130,8 @@ public class MainMenuUIScript : MonoBehaviour
     private bool _joinInProgress;
     private readonly object _joinInProgressLock = new();
 
-    // Reported once each so a broken prefab reference is visible without spamming the log
-    // every refresh cycle, and so the next crash log pinpoints which reference is bad.
+    // 每项只上报一次，这样损坏的 prefab 引用能被看到，同时不会在每个刷新周期
+    // 反复刷屏，而下次崩溃日志也能指出是哪一个引用有问题。
     private bool _labelReported;
     private bool _templateReported;
     private bool _rowReported;
@@ -143,8 +143,8 @@ public class MainMenuUIScript : MonoBehaviour
     private int _refreshTick;
     private string _labelDetail = "not checked yet";
 
-    // [life] Cached native wrappers: read from the prefab once, proved again on the way out,
-    // instead of allocating a fresh wrapper through Il2CppReferenceField.Value every tick.
+    // [life] 缓存的 native 包装器：从 prefab 读取一次，在退出路径上再校验一次，
+    // 而不是每个 tick 都通过 Il2CppReferenceField.Value 新分配一个包装器。
     private GameObject _panelObject;
     private Button _refreshButton;
     private TextMeshProUGUI _label;
@@ -154,26 +154,26 @@ public class MainMenuUIScript : MonoBehaviour
     private bool _panelCreated;
     private bool _engineViewReported;
 
-    // [life] The two engine-owned objects that carry a *Fika-injected* class and used to be
-    // locals: the panel's drag component and one MainMenuUIPlayer per roster row. The engine
-    // instantiates them from the bundle, so their managed side has no GC handle of its own
-    // (FikaNativeTypes / NativeInjectedFinalizer) and is reachable only through these fields.
-    // A row the engine still holds while its managed side is collected is exactly the
-    // engine -> managed call into a dead object this build chases.
+    // [life] 两个由引擎持有、承载 *Fika 注入* 类的对象，它们以前是
+    // 局部变量：面板的拖拽组件，以及每行名单一个 MainMenuUIPlayer。引擎
+    // 从 bundle 实例化它们，因此其托管侧没有自己的 GC 句柄
+    // （FikaNativeTypes / NativeInjectedFinalizer），只能通过这些字段访问。
+    // 引擎仍持有某行、而其托管侧却已被回收，正是本次构建所追查的
+    // “引擎 -> 托管”调用进入已死对象的情形。
     private UIDragComponent _dragComponent;
     private readonly List<MainMenuUIPlayer> _rowComponents = [];
 
     /// <summary>
-    /// Strong roots for every native object this panel hands to the engine.
+    /// 为本面板交给引擎的每个 native 对象提供强引用根。
     ///
-    /// The engine holds the panel, its children, the injected MainMenuUI component and the
-    /// registered listeners as raw il2cpp pointers. A raw pointer on the native side does not
-    /// keep a managed object alive, so anything the engine can still call into has to stay
-    /// reachable from managed code as well - that is the difference between "the engine calls
-    /// my object" and "the engine calls a freed object" (the 47888 dump reads a value that is
-    /// not an object pointer at all, so at least one such handover was already lost).
-    /// Everything that is handed over goes through <see cref="Root"/> and is dropped again in
-    /// <see cref="DestroyPanel"/>, so the list cannot outlive one panel.
+    /// 引擎以裸 il2cpp 指针持有面板、其子对象、注入的 MainMenuUI 组件以及
+    /// 已注册的监听器。native 侧的裸指针并
+    /// 不能使托管对象保持存活，因此引擎仍可能调用的任何对象都必须同时
+    /// 从托管代码可达——这就是“引擎调用
+    /// 我的对象”与“引擎调用已释放对象”的区别（47888 号转储读到的是一个
+    /// 根本不是对象指针的值，说明至少有一次这样的交接已经丢失）。
+    /// 所有交接出去的对象都经过 <see cref="Root"/>，并在
+    /// <see cref="DestroyPanel"/> 中再次被移除，因此该列表不会比单个面板活得更久。
     /// </summary>
     private static readonly List<RootEntry> _roots = [];
 
@@ -190,9 +190,9 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Managed delegates that are currently registered in a *native* UnityEvent. The native
-    /// event keeps its trampoline alive; the CLR delegate behind it, and with it its target,
-    /// is kept reachable here until it is removed again.
+    /// 当前注册在 *native* UnityEvent 中的托管委托。native
+    /// 事件会让自己内部的跳板保持存活；其背后的 CLR 委托（以及随之而来的目标）
+    /// 在此保持可达，直到它被再次移除。
     /// </summary>
     private readonly List<(Button Button, Action Listener)> _rowListeners = [];
     private Action _refreshListener;
@@ -200,9 +200,9 @@ public class MainMenuUIScript : MonoBehaviour
     private const int _minSecondsToWait = 2;
 
     /// <summary>
-    /// Registers the injected component the engine calls into (Start/OnEnable/OnDisable) before
-    /// any coroutine or panel work starts. Called by the MenuScreen patch, which is the only
-    /// creator.
+    /// 在任何协程或面板工作开始之前，注册引擎会调用的注入组件
+    /// （Start/OnEnable/OnDisable）。由 MenuScreen 补丁调用，该补丁是
+    /// 唯一的创建者。
     /// </summary>
     internal static void Attach(MainMenuUIScript instance)
     {
@@ -269,18 +269,18 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Appends the concrete reason a ping could not be started to the dialog body, so the player does
-    /// not have to open the log to tell "the host never published an address" from "we cannot reach
-    /// the server". Empty when there is no extra detail.
+    /// 把无法启动 ping 的具体原因追加到对话框正文，这样玩家
+    /// 不必打开日志就能区分“主机从未公布地址”和“我们无法
+    /// 连上服务器”。没有额外细节时为空。
     /// </summary>
     private static string PingingFailureDetail(FikaPingingClient pingingClient) =>
         string.IsNullOrEmpty(pingingClient?.FailureReason) ? string.Empty : "\n\n" + pingingClient.FailureReason;
 
 
     /// <summary>
-    /// Tear-down of everything this instance handed to the engine: the listeners are removed
-    /// from the native events first (so the engine cannot call a delegate whose target is gone),
-    /// then the panel hierarchy is destroyed and every root is dropped.
+    /// 拆除本实例交给引擎的所有东西：先从 native 事件中移除
+    /// 监听器（这样引擎就不会调用目标已消失的委托），
+    /// 然后销毁面板层级并释放所有根。
     /// </summary>
     internal void DestroyPanel()
     {
@@ -288,14 +288,14 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// The one teardown path. The order is the point of it: the native listeners go first (the
-    /// engine must not be able to call a delegate whose target is on its way out), then the
-    /// coroutines are stopped (the engine must not keep driving an enumerator this script no
-    /// longer tracks), then the panel hierarchy is destroyed and every root is dropped.
+    /// 唯一的拆除路径。顺序正是关键所在：先处理 native 监听器（
+    /// 引擎不得调用目标正在销毁中的委托），然后
+    /// 停止协程（引擎不得继续驱动一个本脚本已不再
+    /// 跟踪的枚举器），最后销毁面板层级并释放所有根。
     ///
-    /// <paramref name="protecting"/> marks the self-protecting call: the panel noticed that the
-    /// engine no longer holds what it was given and destroys itself in the same frame. A broken
-    /// panel can then at worst disappear instead of making the engine call into a dead object.
+    /// <paramref name="protecting"/> 标记自我保护式调用：面板发现
+    /// 引擎已不再持有先前交给它的对象，于是它在同一帧内销毁自己。这样损坏的
+    /// 面板最坏也只是消失，而不会让引擎调用进入已死对象。
     /// </summary>
     private void TeardownPanel(string reason, bool stopCoroutines, bool protecting)
     {
@@ -320,8 +320,8 @@ public class MainMenuUIScript : MonoBehaviour
         }
         else
         {
-            // The behaviour itself is being destroyed: the pump is disarmed without touching
-            // the engine (there is no engine coroutine left, so nothing has to be stopped).
+            // 该行为本身正在被销毁：解除泵的启用状态时不会触碰
+            // 引擎（已不存在引擎协程，因此无需停止任何东西）。
             StopCoroutines();
         }
 
@@ -354,13 +354,13 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Disarms the panel pump.
+    /// 解除面板泵的启用状态。
     ///
-    /// There is no engine coroutine left to stop: the panel is driven from Update, so nothing
-    /// the engine holds has to be tracked here. That is the fix for the menu fault - the
-    /// engine crashed while it processed the wrapper of a panel coroutine and resolved its
-    /// managed object to the bogus pointer 0xA (caught in the engine's frames by the
-    /// first-chance probe).
+    /// 已没有引擎协程需要停止：面板由 Update 驱动，因此
+    /// 这里无需跟踪引擎持有的任何东西。这就是菜单故障的修复——
+    /// 引擎在处理面板协程的包装器时崩溃，并把其
+    /// 托管对象解析成了错误指针 0xA（由首次机会探测器
+    /// 在引擎自身栈帧中捕获）。
     /// </summary>
     private void StopCoroutines()
     {
@@ -370,15 +370,15 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Cheap self protection that runs on every refresh tick, whether or not the raw pointer
-    /// trace is on: are the objects this panel handed to the engine still usable? When one of
-    /// them is not, the panel is destroyed in the same frame instead of being used.
+    /// 每个刷新 tick 都会执行的廉价自我保护，无论裸指针
+    /// 追踪是否开启：本面板交给引擎的对象是否仍然可用？当其中某个
+    /// 不可用时，面板会在同一帧内被销毁，而不是继续被使用。
     /// </summary>
     private bool EnsurePanelUsable()
     {
         if (!_panelCreated)
         {
-            // Nothing handed over (or already torn down): nothing to protect.
+            // 尚未交接任何对象（或已完成拆除）：无需保护。
             return false;
         }
 
@@ -407,10 +407,10 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Gives up on building the panel. The engine already owns the instantiated objects by then,
-    /// so they are destroyed again instead of being left parented under the menu screen with no
-    /// owner (an orphan the engine still holds is exactly the state this panel must never leave
-    /// behind).
+    /// 放弃构建面板。此时引擎已持有这些已实例化的对象，
+    /// 因此它们会被再次销毁，而不是被留在菜单屏幕下且没有
+    /// 归属者（引擎仍持有的孤儿对象，正是本面板绝不允许留下的
+    /// 状态）。
     /// </summary>
     private void AbortPanelCreation(string reason)
     {
@@ -435,9 +435,9 @@ public class MainMenuUIScript : MonoBehaviour
                 
             }
 
-            // The native listener is gone, so the CLR delegate - and with it the closure that
-            // captures this behaviour and a native location object - no longer has to stay
-            // rooted. Without this the roots list grew by one delegate per refresh tick.
+            // native 监听器已移除，因此该 CLR 委托——以及随之捕获了
+            // 本行为和一个 native location 对象的闭包——不必再
+            // 保持为根。否则根列表每刷新一个 tick 就会多出一个委托。
             Release(listener);
         }
 
@@ -445,10 +445,10 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Destroys the roster rows and drops every root that belonged to them, including the
-    /// Fika-injected <see cref="MainMenuUIPlayer"/> of each row: the engine created that instance
-    /// from the bundle, so its managed side has to stay reachable for as long as the engine holds
-    /// the row.
+    /// 销毁名单行并释放属于它们的每个根，其中包括
+    /// 每行中 Fika 注入的 <see cref="MainMenuUIPlayer"/>：该实例由引擎
+    /// 从 bundle 创建，因此只要引擎持有该行，其托管侧就必须
+    /// 保持可达。
     /// </summary>
     private void DestroyRows()
     {
@@ -475,10 +475,10 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// The panel's own transform, its parent and its component, re-read from the engine on
-    /// every tick. If the engine no longer holds what this panel handed it, that has to be
-    /// visible in the log *before* the engine calls into it - this is the check that separates
-    /// "Fika wrote something bad" from "the engine lost the reference".
+    /// 面板自身的 transform、其父级及其组件，每个 tick 都从
+    /// 引擎重新读取。如果引擎已不再持有本面板交给它的对象，这一点必须
+    /// 在引擎调用它 *之前* 就出现在日志里——正是这项检查区分了
+    /// “Fika 写入了坏数据”与“引擎丢失了引用”。
     /// </summary>
     private void VerifyEngineView()
     {
@@ -510,9 +510,9 @@ public class MainMenuUIScript : MonoBehaviour
                 return;
             }
 
-            // Self protection: the engine dropped a reference this script handed it. The panel
-            // is destroyed in the same frame - before the engine gets another chance to call
-            // into it - and the line says exactly what changed.
+            // 自我保护：引擎丢弃了本脚本交给它的一个引用。面板
+            // 会在同一帧内被销毁——在引擎再次有机会调用
+            // 它之前——并且该行会准确说明发生了什么变化。
             FikaGlobals.LogWarning("[MainMenuUI] the engine no longer holds the panel this script handed it "
                 + $"(parentMatches={parentMatches}, componentMatches={componentMatches}, active={active}); "
                 + "the panel is destroyed in this frame instead of being used");
@@ -527,10 +527,10 @@ public class MainMenuUIScript : MonoBehaviour
         }
     }
 
-    // SPT 5's menu canvas applies a larger scale factor than the Mono menu
-    // used by the original Fika prefab. Keep the user setting as a relative
-    // scale, but apply the corrected prefab baseline so existing config files
-    // (which contain the old default of 1.0) are migrated automatically.
+    // SPT 5 的菜单 canvas 应用的缩放系数比原始 Fika prefab 使用的
+    // Mono 菜单更大。把用户设置保留为相对
+    // 比例，但应用修正后的 prefab 基准值，这样包含旧默认值 1.0 的
+    // 现有配置文件会被自动迁移。
     private static float GetOnlinePlayersScale()
     {
         var configured = FikaPlugin.Instance.Settings.OnlinePlayersScale.Value;
@@ -564,9 +564,9 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Engine callback: the engine's first touch of a freshly added behaviour. The step goes to
-    /// the stable file (not only to BepInEx's, which the next start truncates) so the order
-    /// "engine Awake -> patch Attach -> engine Start -> Initialize" stays provable after a fault.
+    /// 引擎回调：引擎对新添加行为的首次触碰。该步骤会写入
+    /// 稳定文件（而不只是 BepInEx 的日志，后者下次启动就会被清空），这样
+    /// “engine Awake -> patch Attach -> engine Start -> Initialize”的顺序在故障后仍可证明。
     /// </summary>
     private void Awake()
     {
@@ -576,11 +576,11 @@ public class MainMenuUIScript : MonoBehaviour
     private int _engineTicks;
 
     /// <summary>
-    /// Engine heartbeat (bounded: first frame, then every 300th), written to the stable file.
-    /// The engine calls into this injected behaviour every frame; if the heartbeat is the last
-    /// line before a fault, the engine still drives the behaviour and the panel objects are the
-    /// remaining suspects, and if it keeps ticking while the panel objects go bad, the handover
-    /// of those objects is what broke.
+    /// 引擎心跳（有界：第一帧，之后每 300 帧一次），写入稳定文件。
+    /// 引擎每帧都会调用这个注入行为；如果心跳是故障前的
+    /// 最后一行，说明引擎仍在驱动该行为，那么面板对象就是
+    /// 剩下的嫌疑对象；而如果面板对象变坏时心跳仍在继续，那么问题的关键就是
+    /// 这些对象的交接过程。
     /// </summary>
     private void Update()
     {
@@ -590,7 +590,7 @@ public class MainMenuUIScript : MonoBehaviour
             
         }
 
-        // The panel itself runs here (no engine coroutine is involved any more).
+        // 面板本身在这里运行（已不再涉及引擎协程）。
         try
         {
             Pump();
@@ -602,12 +602,12 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Native il2cpp object that cannot be dereferenced. Il2CppInterop hands these out for
-    /// unrealised Unity objects and for references wired up by a bundle or prefab, and every
-    /// member access on one faults inside GameAssembly (0xC0000005) instead of throwing a
-    /// managed exception. The 47888 dumps fault at GameAssembly+0x2BE60 ("mov rax,[rcx]")
-    /// reading address 0x0A - a small integer, not null, where an object pointer was expected -
-    /// so the guard rejects both null and those non-pointer values (NativeRefGuard).
+    /// 无法解引用的 native il2cpp 对象。Il2CppInterop 会为
+    /// 未实现的 Unity 对象，以及由 bundle 或 prefab 连好的引用返回这类对象，而对它的每次
+    /// 成员访问都会在 GameAssembly 内部触发故障（0xC0000005），而不是抛出
+    /// 托管异常。47888 系列转储在 GameAssembly+0x2BE60（"mov rax,[rcx]"）处故障，
+    /// 读取地址 0x0A——这是一个小整数而非 null，而此处本应是对象指针——
+    /// 因此该守卫同时拒绝 null 和这类非指针值（NativeRefGuard）。
     /// </summary>
     private static bool IsAlive(Il2CppInterop.Runtime.InteropTypes.Il2CppObjectBase instance)
     {
@@ -615,12 +615,12 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Panel step written to the stable diagnostics file as well as to BepInEx's log.
+    /// 同时写入稳定诊断文件和 BepInEx 日志的面板步骤。
     ///
-    /// BepInEx/LogOutput.log is truncated on every game start, so a step that was only written
-    /// there is gone by the time a crash is reported - the panel's progress therefore has to be
-    /// in Fika-diagnostics.log as well: the last line before a fault is what names the step that
-    /// broke.
+    /// BepInEx/LogOutput.log 每次游戏启动都会被清空，因此只写在那里的步骤，在
+    /// 崩溃被上报时早已消失——所以面板的进度也必须
+    /// 写入 Fika-diagnostics.log：故障前的最后一行才指明了出错的
+    /// 步骤。
     /// </summary>
     private static void PanelStep(string message)
     {
@@ -628,7 +628,7 @@ public class MainMenuUIScript : MonoBehaviour
         
     }
 
-    // A cosmetic panel must not fill the log with the same complaint every ten seconds.
+    // 纯装饰性面板不应每十秒就用同一条抱怨把日志刷满。
     private static void ReportOnce(ref bool alreadyReported, string message)
     {
         if (alreadyReported)
@@ -641,14 +641,14 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// One poll of the menu canvas, with the raw pointer of every native object it reads.
+    /// 对菜单 canvas 的一次轮询，附带它读取的每个 native 对象的裸指针。
     ///
-    /// The fault this panel chases is an engine -> il2cpp call with a bogus object pointer, so
-    /// the objects are written to the stable diagnostics file *before* they are used: the last
-    /// line before a fault then names the object the engine was holding. Nothing is cached
-    /// between polls - the singleton, the instance and the menu screen are re-read and re-proved
-    /// on every iteration, so a canvas the engine recreated is never followed: until the fresh
-    /// chain proves itself the poll answers "not ready" and says why.
+    /// 本面板追查的故障是携带错误对象指针的 engine -> il2cpp 调用，因此
+    /// 这些对象在被使用 *之前* 就写入稳定诊断文件：故障前的
+    /// 最后一行随即指明了引擎当时持有的对象。轮询之间不缓存
+    /// 任何东西——单例、实例和菜单屏幕每轮都会重新读取并重新校验，
+    /// 因此绝不会顺着引擎重建过的 canvas 走：在新链路
+    /// 自证可用之前，轮询会回答“尚未就绪”并说明原因。
     /// </summary>
     private static bool PollMenuCanvas(out string verdict, out IntPtr commonUiPointer, out IntPtr menuScreenPointer)
     {
@@ -677,9 +677,9 @@ public class MainMenuUIScript : MonoBehaviour
             commonUiPointer = commonUi.Pointer;
         }
 
-        // A null check is not enough: "destroyed but not null" is exactly the state the engine
-        // side fault produces, so the reference has to be a readable il2cpp object of the
-        // expected type before any member of it is touched.
+        // 只做 null 检查是不够的：“已销毁但非 null”正是引擎侧故障
+        // 所产生的那种状态，因此在该对象的任何成员被触碰之前，
+        // 该引用必须是预期类型的、可读的 il2cpp 对象。
         if (!NativeRefGuard.IsProvablyUsable(commonUi, "CommonUI", out string commonUiDetail))
         {
             verdict = "CommonUI instance is not provably usable: " + commonUiDetail;
@@ -713,14 +713,14 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Arms the panel pump and writes the same first step line the coroutine used to write.
+    /// 启用面板泵，并写出协程过去写的那条相同的第一步记录。
     ///
-    /// The panel deliberately does not run as a managed coroutine any more. The engine crashed
-    /// while it processed exactly that object: an <c>Il2CppManagedEnumerator</c> - the wrapper
-    /// <c>StartCoroutine(IEnumerator)</c> hands the engine for a managed coroutine - and the
-    /// first-chance probe caught it inside the engine's own frames while the engine dereferenced
-    /// the bogus object 0xA for it. Nothing the panel does needs the engine's coroutine
-    /// machinery, so the whole panel is driven by this behaviour's Update instead.
+    /// 面板刻意不再以托管协程方式运行。引擎在它
+    /// 处理正好是那个对象时崩溃了：<c>Il2CppManagedEnumerator</c>——即
+    /// <c>StartCoroutine(IEnumerator)</c> 为托管协程交给引擎的包装器——而
+    /// 首次机会探测器在引擎自身栈帧中捕获到它：当时引擎正在为它解引用
+    /// 那个错误对象 0xA。面板所做的任何事都不需要引擎的协程
+    /// 机制，因此整个面板改由本行为的 Update 驱动。
     /// </summary>
     private void PumpStart()
     {
@@ -746,12 +746,12 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// One pump step per engine frame. Stage 0 waits for the locales and the menu canvas and
-    /// builds the panel; stage 1 repeats the refresh on the panel's own cycle (see
-    /// <see cref="NextRefreshDelay"/>: a few seconds while the panel is visible, the ten seconds
-    /// it always used while it is not) and writes the watchdog marks. This is the same code the
-    /// coroutine ran - only "wait for the next frame" became "return and be called again by
-    /// Update".
+    /// 每个引擎帧执行一次泵步。阶段 0 等待本地化数据和菜单 canvas，然后
+    /// 构建面板；阶段 1 按面板自身的周期重复刷新（参见
+    /// <see cref="NextRefreshDelay"/>：面板可见时为几秒，而不可见时沿用
+    /// 一直使用的十秒），并写入看门狗标记。这与协程运行的是
+    /// 同一份代码——只是“等待下一帧”变成了“返回并再次被
+    /// Update 调用”。
     /// </summary>
     private void Pump()
     {
@@ -763,8 +763,8 @@ public class MainMenuUIScript : MonoBehaviour
         if (!_pumpAttached)
         {
             _pumpAttached = true;
-            // Root the injected behaviour before anything waits or allocates: the engine may
-            // call OnEnable/OnDisable on it at any time from now on.
+            // 在任何等待或分配发生之前先把注入行为设为根：从此刻起引擎随时可能
+            // 对它调用 OnEnable/OnDisable。
             Attach(this);
         }
 
@@ -809,15 +809,15 @@ public class MainMenuUIScript : MonoBehaviour
 
             PanelStep("[MainMenuUI] menu canvas is ready, building the online players panel");
 
-            // The class layout the reference guard reads is confirmed on a reference whose type
-            // is known before any serialized prefab reference is trusted with it.
+            // 引用守卫所读取的类布局，会先在一个类型已知的引用上确认，
+            // 之后才会用它去信任任何序列化的 prefab 引用。
             if (Singleton<CommonUI>.Instantiated)
             {
                 NativeRefGuard.VerifyTypeProbe(Singleton<CommonUI>.Instance, "CommonUI");
             }
 
-            // Coop / 'Enable Online Players' is the panel's own kill switch: with it off nothing
-            // of the prefab is instantiated and no bundle reference is touched at all.
+            // Coop / 'Enable Online Players' 是面板自己的总开关：关闭时不会实例化
+            // prefab 的任何内容，也完全不会触碰任何 bundle 引用。
             if (!(FikaPlugin.Instance.Settings.EnableOnlinePlayers?.Value ?? true))
             {
                 FikaGlobals.LogWarning("[MainMenuUI] the online players panel is disabled in the config (Coop / 'Enable Online Players' = false); the panel prefab is not created");
@@ -838,8 +838,8 @@ public class MainMenuUIScript : MonoBehaviour
             return;
         }
 
-        // Stage 1: the refresh timer and the post-refresh watchdog marks (the old watchdog
-        // coroutine) - both are plain frame counters now.
+        // 阶段 1：刷新计时器和刷新后的看门狗标记（即旧看门狗
+        // 协程）——两者现在都只是普通的帧计数器。
         if (_watchdogStartFrame >= 0 && _watchdogMark < _watchdogMarks.Length)
         {
             var elapsedFrames = Time.frameCount - _watchdogStartFrame;
@@ -859,11 +859,11 @@ public class MainMenuUIScript : MonoBehaviour
             return;
         }
 
-        // [refresh] The cycle belongs to the panel now: a few seconds while it is visible (Coop /
-        // 'Online Players Refresh Seconds', default 3) and the ten seconds it always used while it
-        // is not (Coop / 'Online Players Idle Refresh Seconds'). The timer is moved forward *before*
-        // the request, so an answer that takes a while - the funnel was measured between 12 ms and
-        // 1.6 s - cannot start a second request in the same frame.
+        // [refresh] 周期现在归面板所有：可见时为几秒（Coop /
+        // 'Online Players Refresh Seconds'，默认 3），而不可见时沿用一直使用的
+        // 十秒（Coop / 'Online Players Idle Refresh Seconds'）。计时器在发送请求 *之前* 就向前推进，
+        // 这样耗时较长的应答——实测该漏斗耗时在 12 ms 到
+        // 1.6 s 之间——无法在同一帧内启动第二次请求。
         var visible = IsPanelVisible();
         var delay = NextRefreshDelay(visible);
         var source = _pendingRefreshSource ?? "poll";
@@ -880,17 +880,17 @@ public class MainMenuUIScript : MonoBehaviour
         }
         catch (Exception exception)
         {
-            // A managed failure here (server down, missing profile) must not kill the pump.
+            // 这里的托管失败（服务器宕机、缺少存档）绝不能杀死泵。
             ReportOnce(ref _refreshReported, $"[MainMenuUI] the player list could not be refreshed: {exception}");
         }
     }
 
     /// <summary>
-    /// The presence list is the server's online list, and a player only enters that list while
-    /// the <c>/fika/notification/</c> websocket is connected (its connection handler registers
-    /// the player) - so an empty answer right after the menu opened is expected while that
-    /// socket is still connecting, and the panel must not sit on the "0 players" result for a
-    /// whole tick. Logged once: the reason is the same for every retry.
+    /// 在线状态列表就是服务器的在线名单，而玩家只有在
+    /// <c>/fika/notification/</c> websocket 已连接时才会进入该名单（其连接处理器会
+    /// 注册该玩家）——因此菜单刚打开时若该 socket 仍在连接中，
+    /// 返回空应答是正常的，面板绝不能在这个“0 名玩家”的结果上停留
+    /// 整整一个 tick。只记录一次：每次重试的原因都相同。
     /// </summary>
     private void ScheduleFasterRefreshWhenEmpty(int received)
     {
@@ -907,12 +907,12 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// True while the panel this behaviour built is on screen.
+    /// 本行为构建的面板在屏幕上时此值为 true。
     ///
-    /// Update only runs while the engine has this behaviour enabled and active, so the case left
-    /// here is the content object the engine re-activates in <see cref="OnEnable"/>: while a raid
-    /// or a loading screen is up the whole menu screen is inactive and the panel does not poll at
-    /// all - that is where the "no requests while it cannot be seen" half comes from.
+    /// Update 只在引擎启用并激活本行为时运行，因此这里剩下的一种情况，是引擎在
+    /// <see cref="OnEnable"/> 中重新激活的内容对象：当战局或加载界面
+    /// 存在时，整个菜单屏幕处于非激活状态，面板完全不会轮询——
+    /// 这就是“看不见时不发请求”那一半的由来。
     /// </summary>
     private bool IsPanelVisible()
     {
@@ -932,24 +932,24 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// The delay until the next poll.
+    /// 距离下一次轮询的延迟。
     ///
-    /// 'Coop / Online Players Refresh Seconds' (default 3) is the cycle while the panel is
-    /// visible: the list is a live roster, so a player who joins or leaves has to appear within a
-    /// few seconds. An unchanged cycle costs one HTTP GET - the rows are only rebuilt when the
-    /// roster really changed (see <see cref="ClearAndQueryPlayers"/>) - which is what keeps that
-    /// cycle cheap for the server and for the frame. 'Coop / Online Players Idle Refresh Seconds'
-    /// (default 10) is the cycle while the panel is not visible and keeps the ten seconds the
-    /// panel always used.
+    /// 'Coop / Online Players Refresh Seconds'（默认 3）是面板可见时的周期：
+    /// 该列表是实时名单，因此玩家加入或离开都必须在几秒内
+    /// 体现出来。未发生变化的周期只花费一次 HTTP GET——只有当名单确实变化时才重建行
+    /// （参见 <see cref="ClearAndQueryPlayers"/>）——这正是让该周期对服务器和帧开销
+    /// 都很低的原因。'Coop / Online Players Idle Refresh Seconds'
+    /// （默认 10）是面板不可见时的周期，并保留面板一直使用的
+    /// 十秒。
     ///
-    /// 'Coop / Online Players Fast Refresh' off returns the old fixed ten second cycle: one flip
-    /// puts the panel back on the pre-change cadence.
+    /// 关闭 'Coop / Online Players Fast Refresh' 会回到旧的固定十秒周期：一次开关
+    /// 就能把面板恢复到改动前的节奏。
     /// </summary>
     private float NextRefreshDelay(bool visible)
     {
-        // Unchanged: an empty roster while the presence websocket - the socket whose connection
-        // is what puts this player into the server's online list - has not connected yet is asked
-        // again after a second instead of after a whole cycle.
+        // 未改动：当在线状态 websocket——其连接正是把本玩家加入
+        // 服务器在线名单的那个 socket——尚未连接时的空名单，会在一秒后
+        // 再次查询，而不是等一整轮。
         if (_waitingForPresenceSocket)
         {
             return 1f;
@@ -967,9 +967,9 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// 'Coop / Online Players Fast Refresh': the one switch that puts the panel back on the
-    /// pre-change path (the fixed ten second cycle and a full rebuild on every cycle). A missing
-    /// entry - an older config file, a setting that is not bound yet - keeps the shipped default.
+    /// 'Coop / Online Players Fast Refresh'：这个开关把面板恢复为
+    /// 改动前的路径（固定十秒周期，且每轮都完整重建）。缺少该
+    /// 条目时——旧配置文件、尚未绑定的设置——保持随附的默认值。
     /// </summary>
     private static bool FastRefreshEnabled()
     {
@@ -989,14 +989,14 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// A stable identity of the roster the server just answered: everything a row of the panel
-    /// shows (who is online, their level, what they are doing and - for someone in a raid - which
-    /// raid, on which side, in which location and whether it started yet).
+    /// 服务器刚返回的名单的稳定标识：面板中每一行所显示的
+    /// 全部内容（谁在线、其等级、正在做什么，以及——对处于战局中的人——
+    /// 哪一场战局、哪一方、哪个地点，以及是否已经开始）。
     ///
-    /// The answer is a dictionary dump on the server ("/fika/presence/get" returns
-    /// PresenceService.AllPlayersPresence), so its order is not stable; the entries are sorted
-    /// before they are hashed, otherwise a reordered answer would look like a change and rebuild
-    /// every row - and re-register every join listener - for nothing.
+    /// 该应答是服务器上的字典转储（"/fika/presence/get" 返回
+    /// PresenceService.AllPlayersPresence），因此其顺序不稳定；条目在哈希之前会先排序，
+    /// 否则一个仅顺序不同的应答会被视为变化，从而白白重建
+    /// 每一行——并重新注册每个 join 监听器。
     /// </summary>
     private static string RosterSignature(FikaPlayerPresence[] responses)
     {
@@ -1030,15 +1030,15 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Whether the rows have to be built again. The rows are what the panel shows, so they are
-    /// only kept when they provably *are* the answer: the roster identity is the same, the panel
-    /// holds one row per listed player and every one of those rows is still a usable native
-    /// object. A row the engine destroyed, a row that could not be wired or a roster that was
-    /// never drawn sends the cycle through the full path.
+    /// 这些行是否必须重建。行就是面板所显示的内容，因此只有当它们可证明 *就是*
+    /// 该应答时才保留：名单标识相同、面板
+    /// 为每个列出的玩家各持有一行，且这些行中每一个仍是可用的 native
+    /// 对象。引擎已销毁的行、无法完成绑定的行，或从未绘制过的
+    /// 名单，都会让本轮走完整路径。
     /// </summary>
     private bool RebuildNeeded(bool changed, int players)
     {
-        // The pre-change path behind the master switch: every cycle rebuilds everything.
+        // 总开关背后的改动前路径：每轮都完整重建所有内容。
         if (!FastRefreshEnabled())
         {
             return true;
@@ -1061,14 +1061,14 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// One greppable line per refresh state change:
+    /// 每次刷新状态变化输出一行便于 grep 的记录：
     /// <c>[OnlinePlayers] refresh source=open|poll|change|manual players=N took=..ms next=..s render=..</c>.
     ///
-    /// It answers what the next round has to settle - is the list timely, and what costs what -
-    /// with the trigger, the roster size, the time the refresh held the main thread and the delay
-    /// scheduled for the next poll. It is written only when it differs from the previous line (the
-    /// timing is excluded from the comparison), so a steady roster on a three second cycle writes
-    /// it once instead of twenty times a minute.
+    /// 它回答了下一轮必须确定的问题——列表是否及时、什么代价由什么造成——
+    /// 给出触发器、名单大小、刷新占用主线程的时间，以及为下一次轮询
+    /// 安排的延迟。仅当它与上一行不同时才会写出（
+    /// 比较时排除时间数据），因此三秒周期下稳定的名单只会
+    /// 每分钟写一次，而不是二十次。
     /// </summary>
     private void ReportRefresh(string source, int players, long tookMs, float nextSeconds, string detail)
     {
@@ -1086,9 +1086,9 @@ public class MainMenuUIScript : MonoBehaviour
 
     protected void OnEnable()
     {
-        // Unity calls OnEnable before Start, when config/UI may not exist yet.
+        // Unity 会在 Start 之前调用 OnEnable，此时配置/UI 可能尚未就绪。
         if (!_initialized) return;
-        // Panel creation can fail (see CreateMainMenuUI); there is nothing to toggle then.
+        // 面板创建可能失败（参见 CreateMainMenuUI）；那时没有任何可切换的东西。
         if (_userInterface is null) return;
         if (!IsAlive(_userInterface))
         {
@@ -1105,8 +1105,8 @@ public class MainMenuUIScript : MonoBehaviour
         _userInterface.SetActive(true);
         
 
-        // Everything the engine now owns: the panel root, the content the engine activates, the
-        // injected component and the transform the scale is applied to.
+        // 现在归引擎所有的全部对象：面板根、引擎激活的内容、
+        // 注入的组件，以及应用缩放的那个 transform。
         Root("panel", _panelObject);
         Root("content", _userInterface);
         Root("panel component", _mainMenuUI);
@@ -1128,21 +1128,21 @@ public class MainMenuUIScript : MonoBehaviour
             return;
         }
 
-        // Arm the refresh pump: it runs from this behaviour's Update, so the panel does not
-        // hand the engine an enumerator to drive (that wrapper is the object the engine
-        // crashed on).
+        // 启用刷新泵：它由本行为的 Update 运行，因此面板不会
+        // 把枚举器交给引擎去驱动（那个包装器正是引擎
+        // 崩溃时的对象）。
         //
-        // [fix] The engine disables this behaviour whenever the menu screen it lives on leaves
-        // the screen (a raid, a loading screen, a screen switch) and re-enables it on the way
-        // back, and OnDisable had disarmed the pump: only the stage was restored here, so the
-        // panel polled until the first disable and then sat on the rows it had for the rest of
-        // the session - the reported "the online player list does not refresh". Update only runs
-        // while this behaviour is enabled and active, so re-arming it here is exactly the state
-        // the engine is asking for.
+        // [fix] 每当本行为所在的菜单屏幕离开屏幕（进入战局、加载界面、
+        // 屏幕切换）时，引擎就会禁用本行为，并在回到菜单时
+        // 重新启用它，而 OnDisable 过去会解除泵的启用：那时这里只恢复了阶段，因此
+        // 面板轮询到第一次禁用后，就在余下的整个会话里停在
+        // 已有的那些行上——即被上报的“在线玩家列表不刷新”。Update 只在
+        // 本行为被启用且激活时运行，因此在这里重新启用它，正是引擎
+        // 所要求的状态。
         _pumpArmed = true;
         _pumpStage = 1;
-        // [refresh] The panel was just (re)opened: the next pump tick refreshes it at once
-        // instead of finishing the current cycle, and the diagnostic line says so (source=open).
+        // [refresh] 面板刚刚被（重新）打开：下一个泵 tick 会立即刷新它，
+        // 而不是先把当前周期走完，诊断输出也会说明这一点（source=open）。
         _pendingRefreshSource = "open";
         _nextRefreshTime = 0f;
 
@@ -1151,27 +1151,27 @@ public class MainMenuUIScript : MonoBehaviour
 
     protected void OnDisable()
     {
-        // Disarm the pump; there is no engine coroutine to stop any more.
+        // 解除泵的启用；已没有引擎协程需要停止。
         StopCoroutines();
     }
 
     protected void OnDestroy()
     {
-        // The menu screen (and with it this behaviour) is destroyed on every screen change; 
-        // The behaviour is being destroyed: its coroutines go with it, and calling StopCoroutine
-        // here would touch a dying native object.
+        // 每次屏幕切换都会销毁菜单屏幕（以及本行为）；
+        // 该行为正在被销毁：它的协程也随之销毁，此时调用 StopCoroutine
+        // 会触碰一个正在消亡的 native 对象。
         TeardownPanel("the menu screen behaviour was destroyed", stopCoroutines: false, protecting: false);
     }
 
-    // The post-refresh watchdog marks are written by Pump (stage 1) from a frame counter; the
-    // coroutine that used to write them is gone with the rest of the engine-driven coroutines.
+    // 刷新后的看门狗标记现在由 Pump（阶段 1）依据帧计数器写入；
+    // 过去负责写它们的协程已随其余引擎驱动的协程一并移除。
 
     private void CreateMainMenuUI()
     {
-        // Every access below used to be unconditional. A missing asset or an unrealised
-        // Unity object turns into a native access violation inside il2cpp rather than a
-        // managed exception, so each step is verified, reported and allowed to fail
-        // without taking the client down: this panel is cosmetic.
+        // 下面每一处访问以前都是无条件的。缺失的资源或未实现的
+        // Unity 对象，会在 il2cpp 内部变成 native 访问违例，而不是
+        // 托管异常，因此每一步都要校验、上报，并允许其失败而
+        // 不把客户端搞崩：这个面板只是装饰性的。
         try
         {
             PanelStep("[MainMenuUI] 1/8 loading the prefab");
@@ -1185,8 +1185,8 @@ public class MainMenuUIScript : MonoBehaviour
 
             PanelStep("[MainMenuUI] 2/8 instantiating the panel");
             var mainMenuUI = GameObject.Instantiate(mainMenuUIPrefab);
-            // Keep the engine-owned panel and its content strongly rooted from the moment they
-            // exist: from here on the engine can be the only other holder.
+            // 从引擎拥有的面板及其内容存在的那一刻起，就把它们保持为强根：
+            // 从此之后，引擎可能是唯一的另一个持有者。
             _panelObject = IsAlive(mainMenuUI) ? mainMenuUI : null;
             Root("panel", _panelObject);
             
@@ -1225,17 +1225,17 @@ public class MainMenuUIScript : MonoBehaviour
             }
 
             PanelStep("[MainMenuUI] 5/8 checking the panel label");
-            // MainMenuUI.UpdateLabel writes straight into this TextMeshProUGUI. A field that
-            // holds something which is not an object pointer (the dumps show 0x0A) turns that
-            // write into a native dereference, so it is verified here - and again on every
-            // refresh - instead of being trusted.
+            // MainMenuUI.UpdateLabel 会直接写入这个 TextMeshProUGUI。某个字段若
+            // 持有的不是对象指针（转储中显示为 0x0A），就会使这次
+            // 写入变成一次 native 解引用，因此这里要校验它——并且每次
+            // 刷新时再校验一次——而不是直接信任它。
             var labelField = _mainMenuUI.Label;
             var label = labelField is null ? null : labelField.Value;
-            // Plausibility is not enough: the value has to be a readable il2cpp object of the
-            // expected type, otherwise the write corrupts whatever it really points at.
+            // 仅凭“看起来合理”是不够的：该值必须是预期类型的、可读的
+            // il2cpp 对象，否则这次写入会破坏它真正指向的任何东西。
             _labelUsable = NativeRefGuard.IsProvablyUsable(label, "TextMeshProUGUI", out _labelDetail);
-            // Cache the wrapper the count is written into, so no tick has to read the serialized
-            // reference field (and allocate a wrapper) again.
+            // 缓存写入计数的那个包装器，这样任何 tick 都不必再读取序列化的
+            // 引用字段（并再分配一个包装器）。
             _label = _labelUsable ? label : null;
             Root("label", _label);
             
@@ -1263,9 +1263,9 @@ public class MainMenuUIScript : MonoBehaviour
             _menuScreenTransform = menuScreen.gameObject.transform;
             Root("menu screen transform", _menuScreenTransform);
 
-            // Both the attachment target and the prefab hierarchy are walked one object at a
-            // time: the previous version passed menuScreen.gameObject.transform straight to
-            // SetParent and then indexed two children without checking either of them.
+            // 挂载目标和 prefab 层级都逐个对象地遍历：
+            // 上一版把 menuScreen.gameObject.transform 直接传给
+            // SetParent，随后在未检查任何一个的情况下索引了两个子对象。
             var menuScreenTransform = menuScreen.gameObject.transform;
             
             if (!IsAlive(menuScreenTransform))
@@ -1319,8 +1319,8 @@ public class MainMenuUIScript : MonoBehaviour
 
             var dragComponent = objectToAttach.AddComponent<UIDragComponent>();
             
-            // The engine owns the component; the managed side of the instance it created stays
-            // reachable through this field (see the field declaration).
+            // 组件归引擎所有；它创建的实例的托管侧通过该字段
+            // 保持可达（参见字段声明）。
             _dragComponent = dragComponent;
             Root("drag component", _dragComponent);
             if (IsAlive(dragComponent))
@@ -1348,8 +1348,8 @@ public class MainMenuUIScript : MonoBehaviour
                 return;
             }
 
-            // The engine holds this listener in a native UnityEvent: keep the CLR delegate (and
-            // therefore its target) rooted until DestroyPanel removes it again.
+            // 引擎在 native UnityEvent 中持有该监听器：让 CLR 委托（因而
+            // 其目标）保持为根，直到 DestroyPanel 再次移除它。
             _refreshButton = refreshButton;
             _refreshListener = ManualRefresh;
             Fika.Core.UnityEventCompatExtensions.AddListener(refreshButton.onClick, _refreshListener);
@@ -1374,10 +1374,10 @@ public class MainMenuUIScript : MonoBehaviour
 
         _lastRefresh = DateTime.Now;
         FikaGlobals.LogInfo("[MainMenuUI] refresh: manual refresh requested");
-        // [refresh] The click is a refresh like any other one: it does not queue a second request,
-        // and the cycle restarts from it instead of firing again a moment later. The full rebuild
-        // this button always did is kept - a manual refresh rebuilds the rows even when the answer
-        // is the one the panel already shows.
+        // [refresh] 这次点击与其他刷新并无不同：它不会排入第二个请求，
+        // 周期从它重新开始计算，而不是稍后再触发一次。该按钮一贯的
+        // 完整重建被保留——即使应答正是面板已经显示的内容，
+        // 手动刷新也会重建这些行。
         _pendingRefreshSource = null;
         var delay = NextRefreshDelay(IsPanelVisible());
         _nextRefreshTime = Time.unscaledTime + delay;
@@ -1392,25 +1392,25 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// One refresh: ask the server for the online list and put it on screen.
+    /// 一次刷新：向服务器查询在线名单并把它显示到屏幕上。
     ///
-    /// Exactly one request belongs to one refresh - <see cref="Pump"/> fires one per cycle and
-    /// <see cref="ManualRefresh"/> is the player's own click - and the pump moves its timer
-    /// forward before the request is sent, so a slow answer cannot start a second one.
+    /// 一次刷新恰好对应一个请求——<see cref="Pump"/> 每个周期触发一次，
+    /// <see cref="ManualRefresh"/> 则是玩家自己的点击——而泵在请求发出前
+    /// 就把计时器向前推进，因此较慢的应答无法启动第二个请求。
     ///
-    /// The answer is reduced to a roster identity first (<see cref="RosterSignature"/>). Building
-    /// the rows is the expensive half of a refresh (measured on 2026-10-12: 579-704 ms for the
-    /// rows, 137-172 ms for the counter write, against 11-1614 ms for the request itself,
-    /// analysis/online-players-refresh), so the rows are only rebuilt when the roster the panel
-    /// shows is not the roster the server just answered. An unchanged cycle therefore costs one
-    /// HTTP GET and keeps its rows - nobody's join button or tooltip is re-registered for a list
-    /// that did not move - while a change is rendered in the very tick it was observed, never one
-    /// cycle later.
+    /// 应答首先被归纳为一个名单标识（<see cref="RosterSignature"/>）。构建
+    /// 这些行是刷新中开销较大的一半（2026-10-12 实测：行占用 579-704 ms，
+    /// 计数写入占用 137-172 ms，而请求本身为 11-1614 ms，
+    /// 见 analysis/online-players-refresh），因此只有当面板显示的名单与服务器刚返回的
+    /// 名单不一致时才重建行。于是未发生变化的周期只花费一次
+    /// HTTP GET 并保留现有行——不会为一份没有变动的列表重新注册任何人的 join 按钮或 tooltip——
+    /// 而变化会在被观察到的那个 tick 就渲染出来，绝不延后
+    /// 一个周期。
     /// </summary>
     private void ClearAndQueryPlayers(int tick, string source, float nextSeconds, bool rebuildAlways)
     {
-        // Self protection on every tick, independent of the trace flag: a panel whose objects
-        // the engine dropped is destroyed instead of being used.
+        // 每个 tick 都做自我保护，与追踪开关无关：若面板的对象被引擎
+        // 丢弃，就销毁该面板而不是继续使用它。
         if (!EnsurePanelUsable())
         {
             return;
@@ -1430,8 +1430,8 @@ public class MainMenuUIScript : MonoBehaviour
         {
             ReportOnce(ref _refreshReported, "[MainMenuUI] the server returned no player presence list; the panel keeps the previous content");
             
-            // The rows are not touched before the answer arrives any more, so "the panel keeps the
-            // previous content" is what actually happens here.
+            // 应答到达之前不再改动这些行，因此这里实际发生的是“面板保留
+            // 原有内容”。
             ReportRefresh(source, -1, clock.ElapsedMilliseconds, nextSeconds, "render=none note=no-response");
             return;
         }
@@ -1446,24 +1446,24 @@ public class MainMenuUIScript : MonoBehaviour
         var signature = RosterSignature(response);
         var changed = signature != _lastRosterSignature;
         var rebuild = rebuildAlways || RebuildNeeded(changed, response.Length);
-        // A cycle that found a change is reported as the change it is; "open" and "manual" stay in
-        // front of it because they say who asked for the refresh in the first place.
+        // 发现变化的周期按其变化本身上报；而 "open" 和 "manual" 会保留在前面，
+        // 因为它们说明最初是谁请求了这次刷新。
         var reportedSource = changed && source == "poll" ? "change" : source;
 
         if (rebuild)
         {
             _lastRosterSignature = signature;
 
-            // Remove the native listeners first: the rows are about to be destroyed, and a native
-            // event that still holds a delegate to a destroyed row is exactly the "engine calls an
-            // object whose managed side is gone" state this build is chasing.
+            // 先移除 native 监听器：这些行即将被销毁，而仍持有指向已销毁行的委托的
+            // native 事件，正是本次构建所追查的“引擎调用一个
+            // 托管侧已消失的对象”状态。
             RemoveRowListeners();
             DestroyRows();
         }
 
-        // The counter is written when the rows are rebuilt (the previous behaviour) and when the
-        // number it shows is not the number the server just returned - a write that failed, or a
-        // roster that did not change but was never counted.
+        // 计数会在行被重建时（即原行为）写入，也会在它显示的数字与服务器刚返回的
+        // 数字不一致时写入——比如一次失败的写入，或一份没有变化但
+        // 从未被计数的名单。
         if (rebuild || _labelCount != response.Length)
         {
             _labelCount = UpdateLabel(response.Length) ? response.Length : -1;
@@ -1484,8 +1484,8 @@ public class MainMenuUIScript : MonoBehaviour
         {
             PanelStep($"[MainMenuUI] refresh: the refresh funnel returned (tick {tick}, frame {Time.frameCount}); the coroutine is about to yield");
         }
-        // The watchdog marks are driven by Pump from now on; this is still the last line of the
-        // funnel: what the *engine* still holds for this panel.
+        // 看门狗标记从此由 Pump 驱动；这仍是该漏斗的最后一行：
+        // 即 *引擎* 仍为本面板持有什么。
         VerifyEngineView();
 
         ReportRefresh(reportedSource, response.Length, clock.ElapsedMilliseconds, nextSeconds,
@@ -1493,16 +1493,16 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// Writes the online player count into the panel label. Returns false when nothing was written
-    /// (the component or the label is not usable, or the counter is switched off), so the caller
-    /// can tell "the counter shows this number" from "the counter is unknown" and writes it again
-    /// on the next cycle instead of assuming it did.
+    /// 把在线玩家数量写入面板标签。当什么都没写入时返回 false
+    /// （组件或标签不可用，或计数器被关闭），这样调用方就能
+    /// 区分“计数器显示的就是这个数字”和“计数器状态未知”，并在下一轮
+    /// 再次写入，而不是假设已经写过了。
     /// </summary>
     private bool UpdateLabel(int amount)
     {
-        // Two barriers: the component itself, then the label the write goes into. The label
-        // is re-verified on every tick - it is a serialized prefab reference and the only
-        // native write this panel performs after the prefab was instantiated.
+        // 两道屏障：组件本身，然后是写入目标标签。该标签
+        // 每个 tick 都会重新校验——它是一个序列化的 prefab 引用，也是面板在
+        // prefab 实例化之后所执行的唯一一次 native 写入。
         if (!IsAlive(_mainMenuUI))
         {
             return false;
@@ -1514,8 +1514,8 @@ public class MainMenuUIScript : MonoBehaviour
             return false;
         }
 
-        // The label wrapper is cached (read from the prefab once at creation time): reading the
-        // serialized reference field again here would allocate another wrapper every tick.
+        // 标签包装器已缓存（创建时从 prefab 读取一次）：若在此处再次读取
+        // 序列化的引用字段，就会每个 tick 多分配一个包装器。
         var label = _label;
         _labelUsable = NativeRefGuard.IsProvablyUsable(label, "TextMeshProUGUI", out _labelDetail);
         if (!_labelUsable)
@@ -1561,7 +1561,7 @@ public class MainMenuUIScript : MonoBehaviour
             return;
         }
 
-        // The label is enough when the prefab carries no player template.
+        // 当 prefab 不携带玩家模板时，只用标签就够了。
         if (!IsAlive(_playerTemplate))
         {
             ReportOnce(ref _templateReported, $"[MainMenuUI] the player template is not a usable native object ({NativeRefGuard.Describe(_playerTemplate)}); the panel shows the counter only");
@@ -1578,11 +1578,11 @@ public class MainMenuUIScript : MonoBehaviour
             GameObject newPlayer;
             try
             {
-                // Handing the old prefab parent to Instantiate is only safe once it proved to
-                // be a real object pointer. A parent reference that is not (the dumps show
-                // 0x0A) makes the engine store garbage for the new hierarchy and dereference
-                // it later, which is the 47888 crash pattern, so a broken parent is dropped
-                // instead of being passed on.
+                // 把旧的 prefab 父级交给 Instantiate，只有在它已被证明是
+                // 真正的对象指针之后才安全。若父引用不是（转储中显示
+                // 0x0A），引擎就会为新层级存下垃圾值并在之后解引用它，
+                // 这正是 47888 的崩溃模式，因此损坏的父级会被丢弃，
+                // 而不是被继续传递。
                 newPlayer = playerParent is null
                     ? GameObject.Instantiate(_playerTemplate)
                     : GameObject.Instantiate(_playerTemplate, playerParent);
@@ -1610,9 +1610,9 @@ public class MainMenuUIScript : MonoBehaviour
                 continue;
             }
 
-            // The engine created this component from the bundle, so it is a Fika-injected class
-            // instance without a GC handle of its own: without this root its managed side could
-            // be collected while the engine still holds the row.
+            // 该组件由引擎从 bundle 创建，因此它是一个 Fika 注入类的
+            // 实例，自身没有 GC 句柄：若没有这个根，其托管侧可能在引擎
+            // 仍持有该行时就被回收。
             _rowComponents.Add(mainMenuUIPlayer);
             Root("row component", mainMenuUIPlayer);
 
@@ -1669,8 +1669,8 @@ public class MainMenuUIScript : MonoBehaviour
 
                         JoinInProgress = true;
 
-                        // A new attempt starts clean; the previous attempt's failure is reported (and
-                        // logged) here instead of aborting this one at the raid start with a stale reason.
+                        // 新的尝试从干净状态开始；上次尝试的失败会在此处（并写入
+                        // 日志）上报，而不是在战局开始时用一个过期的原因中断这次尝试。
                         FikaBackendUtils.ClearLeftoverJoinFailure();
 
                         if (!TarkovApplication.Exist(out var tarkovApplication))
@@ -1751,8 +1751,8 @@ public class MainMenuUIScript : MonoBehaviour
                         }
                         else
                         {
-                            // A server that answered without a host record is the host's side (their raid
-                            // was never published); a transport failure is ours.
+                            // 返回结果中不含 host 记录的服务器属于主机那边的问题（他们的战局
+                            // 从未被发布）；而传输失败则属于我们这边。
                             Singleton<PreloaderUI>.Instance.ShowCriticalErrorScreen(
                                 LocaleUtils.UI_ERROR_CONNECTING.Localized(),
                                 (pingingClient.HostAddressMissing
@@ -1771,10 +1771,10 @@ public class MainMenuUIScript : MonoBehaviour
                             AddPlayerRequest data = new(FikaBackendUtils.GroupId, FikaBackendUtils.Profile.ProfileId, FikaBackendUtils.IsSpectator);
                             FikaRequestHandler.UpdateAddPlayer(data);
 
-                            // -1 keeps the world clock; a default struct here would
-                            // mean hour 0 (midnight) and force every joined raid to
-                            // night. The host's own choice arrives from the server a
-                            // moment later and overwrites this.
+                            // -1 表示保留世界时钟；此处若用默认结构体，
+                            // 就意味着 0 点（午夜），并会强制每个加入的战局都
+                            // 变成夜间。主机自己的选择会在片刻后从服务器
+                            // 到达并覆盖此值。
                             var hostTimeAndWeather = new TimeAndWeatherSettings
                             {
                                 HourOfDay = -1,
@@ -1831,9 +1831,9 @@ public class MainMenuUIScript : MonoBehaviour
                         JoinInProgress = false;
                     };
 
-                    // The engine holds this listener in the button's native UnityEvent. Keep the
-                    // CLR delegate rooted and remember it, so it can be removed again before the
-                    // row is destroyed.
+                    // 引擎在按钮的 native UnityEvent 中持有该监听器。让该
+                    // CLR 委托保持为根并记住它，这样就能在该行被销毁之前
+                    // 再次移除它。
                     _rowListeners.Add((joinButton, joinListener));
                     Root("row join listener", joinListener);
                     Fika.Core.UnityEventCompatExtensions.AddListener(joinButton.onClick, joinListener);
@@ -1849,8 +1849,8 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// The prefab's own parent is reused so the rows keep the template's layout, but that
-    /// reference comes out of the bundle: it is validated before Instantiate sees it.
+    /// 复用 prefab 自身的父级，好让各行保持模板的布局，但该
+    /// 引用来自 bundle：在 Instantiate 看到它之前会先做校验。
     /// </summary>
     private Transform ResolveTemplateParent()
     {
@@ -1880,8 +1880,8 @@ public class MainMenuUIScript : MonoBehaviour
     }
 
     /// <summary>
-    /// A tooltip component is added at runtime, so its own references are unwired by design.
-    /// Only a component that turned out to be a real native object is configured and used.
+    /// tooltip 组件是在运行时添加的，因此它自身的引用按设计就是未连线的。
+    /// 只有被确认是真正 native 对象的组件才会被配置和使用。
     /// </summary>
     private void AttachTooltip(GameObject target, string message)
     {
@@ -1924,7 +1924,7 @@ public class MainMenuUIScript : MonoBehaviour
 
     public void UpdatePresence(EFikaPlayerPresence presence)
     {
-        // Prevent spamming going back and forth to the main menu causing server lag for no reason
+        // 防止反复进出主菜单导致无谓的服务器卡顿
         if ((DateTime.Now - _lastSet).TotalSeconds < _minSecondsToWait)
         {
             return;

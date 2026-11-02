@@ -9,31 +9,31 @@ using Fika.Core.Main.Players;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Gives the shooter the hit feedback the game produces locally, without applying damage twice.
+/// 让开枪者获得游戏在本地产生的命中反馈，同时不重复结算伤害。
 ///
-/// Why it is needed: in a Fika raid the bullet damage of a client is applied by the machine that
-/// owns the victim - the host for a bot, the victim itself for another player - so
-/// <c>ActiveHealthController.ApplyDamage(EBodyPart, float, DamageInfo)</c> never runs on the
-/// shooter's machine with <c>damageInfo.Player.iPlayer</c> being the shooter. Every consumer of
-/// that member (hit markers, damage numbers, hit sounds - for example the SimpleHitMarker plugin,
-/// which postfixes exactly that method) therefore stays silent for the shooter even though the
-/// hit registers and is relayed to the authoritative machine.
+/// 为什么需要它：在 Fika 战局中，客户端造成的子弹伤害由拥有受害者的机器结算
+/// ——bot 由主机结算，其他玩家由受害者自身结算——因此
+/// <c>ActiveHealthController.ApplyDamage(EBodyPart, float, DamageInfo)</c> 从不会在开枪者的
+/// 机器上以 <c>damageInfo.Player.iPlayer</c> 为开枪者的方式运行。于是该成员的所有消费者
+/// （命中标记、伤害数字、命中音效——例如 SimpleHitMarker 插件，
+/// 它正好 postfix 了那个方法）对开枪者都保持沉默，尽管
+/// 命中已经登记并被转发到了权威机器。
 ///
-/// The call below re-uses the very same member the plugin listens to, on the victim's own health
-/// controller, with a damage value of 0 and a damage type that is not enemy damage:
-///  * <c>ActiveHealthController.ApplyDamage</c> is declared on the base class only (neither
-///    PlayerHealthController nor NetworkHealthController override it), so the Harmony postfix
-///    runs for an observed puppet as well;
-///  * zero damage means no health change, no destroyed body part, no OnApplyDamageByPlayer
-///    (that callback is gated on enemy damage, which is why the damage type is left undefined)
-///    and no packet: the victim's health on this machine still comes exclusively from the
-///    authoritative machine's health sync.
+/// 下面的调用在受害者自己的健康控制器上复用了插件所监听的那个成员，
+/// 伤害值为 0，伤害类型不是敌方伤害：
+///  * <c>ActiveHealthController.ApplyDamage</c> 只在基类上声明
+///    （PlayerHealthController 和 NetworkHealthController 都没有 override 它），因此该 Harmony postfix
+///    对受观察的木偶同样会运行；
+///  * 零伤害意味着没有生命值变化、没有身体部位被摧毁、没有 OnApplyDamageByPlayer
+///    （该回调以敌方伤害为条件，这也是伤害类型留空的原因）
+///    也不会发包：本机器上受害者的生命值仍然只来自
+///    权威机器的生命值同步。
 /// </summary>
 internal static class LocalHitFeedback
 {
     /// <summary>
-    /// Reports a hit the local player just registered on <paramref name="victim"/> through the
-    /// health-controller hook that hit feedback plugins patch.
+    /// 报告本地玩家刚在 <paramref name="victim"/> 上登记的一次命中，走的是
+    /// 命中反馈插件所 patch 的健康控制器钩子。
     /// </summary>
     internal static void Report(Player shooter, ObservedPlayer victim, EBodyPart bodyPart, float damage, EDamageType damageType)
     {
@@ -50,8 +50,8 @@ internal static class LocalHitFeedback
                 return;
             }
 
-            // The bridge is what DamageInfo.Player carries on the authoritative machine; the game
-            // registers one per player (keyed by raid id, and by collider as a fallback).
+            // 该 bridge 就是权威机器上 DamageInfo.Player 所承载的对象；游戏为
+            // 每个玩家登记一个（以 raid id 为键，以 collider 作为回退）。
             var world = Singleton<GameWorld>.Instance;
             if (world == null)
             {
@@ -82,8 +82,8 @@ internal static class LocalHitFeedback
                 Player = owner
             };
 
-            // Zero damage: fires the hook, changes nothing. The victim's local health is read
-            // around the call so a single raid also proves that no damage was applied here.
+            // 零伤害：触发钩子，不改变任何东西。调用前后都会读取受害者的
+            // 本地生命值，因此单次战局就能证明这里没有结算任何伤害。
             var healthBefore = healthController.GetBodyPartHealth(bodyPart, false).Current;
             healthController.ApplyDamage(bodyPart, 0f, feedback);
             var healthAfter = healthController.GetBodyPartHealth(bodyPart, false).Current;

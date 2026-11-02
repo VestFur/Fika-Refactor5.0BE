@@ -7,7 +7,7 @@ using Fika.Core.Main.Players;
 namespace Fika.Core.Main.ObservedClasses.HandsControllers;
 
 /// <summary>
-/// This is only used by AI
+/// 仅由 AI 使用
 /// </summary>
 internal sealed class ObservedQuickGrenadeController : Player.QuickGrenadeThrowHandsController
 {
@@ -39,16 +39,16 @@ internal sealed class ObservedQuickGrenadeController : Player.QuickGrenadeThrowH
 
     public override void OnCanUsePropChanged(bool canUse)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void SetCompassState(bool active)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     /// <summary>
-    /// Original method to spawn a grenade, we use <see cref="SpawnGrenade(float, Vector3, Quaternion, Vector3, bool)"/> instead
+    /// 原生的投掷手雷方法，我们改用 <see cref="SpawnGrenade(float, Vector3, Quaternion, Vector3, bool)"/>
     /// </summary>
     /// <param name="timeSinceSafetyLevelRemoved"></param>
     /// <param name="position"></param>
@@ -57,17 +57,17 @@ internal sealed class ObservedQuickGrenadeController : Player.QuickGrenadeThrowH
     /// <param name="lowThrow"></param>
     public override void ThrowGrenade(float timeSinceSafetyLevelRemoved, Vector3 position, Quaternion rotation, Vector3 force, bool lowThrow)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     /// <summary>
-    /// Spawns a grenade, uses data from <see cref="SubPackets.GrenadePacket"/>
+    /// 生成一枚手雷，使用 <see cref="SubPackets.GrenadePacket"/> 中的数据
     /// </summary>
-    /// <param name="timeSinceSafetyLevelRemoved">The time since the safety was removed, use 0f</param>
-    /// <param name="position">The <see cref="Vector3"/> position to start from</param>
-    /// <param name="rotation">The <see cref="Quaternion"/> rotation of the grenade</param>
-    /// <param name="force">The <see cref="Vector3"/> force of the grenade</param>
-    /// <param name="lowThrow">If it's a low throw or not</param>
+    /// <param name="timeSinceSafetyLevelRemoved">保险解除后经过的时间，使用 0f</param>
+    /// <param name="position">起始的 <see cref="Vector3"/> 位置</param>
+    /// <param name="rotation">手雷的 <see cref="Quaternion"/> 旋转</param>
+    /// <param name="force">施加于手雷的 <see cref="Vector3"/> 力</param>
+    /// <param name="lowThrow">是否为低抛</param>
     public void SpawnGrenade(float timeSinceSafetyLevelRemoved, Vector3 position, Quaternion rotation, Vector3 force, bool lowThrow)
     {
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call57(this, timeSinceSafetyLevelRemoved, position, rotation, force, lowThrow);

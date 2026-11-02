@@ -27,10 +27,10 @@ internal sealed class FikaNotificationManager : IDisposable
     public bool Connected => _webSocket?.State == WebSocketState.Open;
 
     /// <summary>
-    /// <see cref="Connected"/> for callers that must not care whether the manager exists yet.
-    /// The presence roster is empty until this socket is up (the server registers a player in
-    /// the socket's connection handler), so the panel asks this before it decides that "nobody
-    /// is online" is the truth.
+    /// <see cref="Connected"/> 供那些无需关心管理器是否已存在的调用方使用。
+    /// 在这个 socket 起来之前，在线名单是空的（服务器会在该 socket 的连接处理中
+    /// 注册玩家），因此面板会先询问这里，之后才判定 "nobody is online"
+    /// 是否为真相。
     /// </summary>
     public static bool IsConnected => Instance is { } instance && instance.Connected;
 
@@ -50,23 +50,23 @@ internal sealed class FikaNotificationManager : IDisposable
     }
 
     /// <summary>
-    /// Creates the single notification client and records which call site asked for it.
+    /// 创建唯一的通知客户端，并记录是哪个调用点请求了它。
     ///
-    /// This socket is the client's presence registration: the server adds the player to its
-    /// online list in the connection handler of <c>/fika/notification/</c>
-    /// (<c>FikaServer.WebSockets.NotificationWebSocket.OnConnectionAsync</c> ->
-    /// <c>PresenceService.AddPlayerPresence</c>). If it is never opened, <c>/fika/presence/get</c>
-    /// answers an empty array and the main menu roster shows no row at all - not even the local
-    /// player, which is exactly what the 47888 run showed after the application-level patch went
-    /// dead on the renamed game method.
+    /// 这个 socket 就是客户端的在线注册：服务器会把玩家加入它的在线列表，
+    /// 位置在该 socket 的连接处理中（<c>/fika/notification/</c>
+    /// 对应的 <c>FikaServer.WebSockets.NotificationWebSocket.OnConnectionAsync</c> ->
+    /// <c>PresenceService.AddPlayerPresence</c>）。如果它从未被打开，<c>/fika/presence/get</c>
+    /// 会返回一个空数组，主菜单名单一行都不显示 —— 连本地玩家也没有，
+    /// 这正是 47888 那次运行在应用层补丁因游戏方法改名而失效之后
+    /// 所呈现的情况。
     ///
-    /// Creation is asked for from two hooks (the application notification initializer and, as a
-    /// fallback, <c>MenuScreen.Awake</c>), so it has to stay idempotent: a second manager would
-    /// open a second socket and the server treats a second connection of the same session as a
-    /// reconnect, aborting the socket it already had.
+    /// 创建请求来自两处钩子（应用通知初始化器，以及作为兜底的
+    /// <c>MenuScreen.Awake</c>），因此它必须保持幂等：第二个管理器会
+    /// 打开第二个 socket，而服务器会把同一会话的第二次连接当作
+    /// 重连处理，并中止它已经持有的那个 socket。
     /// </summary>
-    /// <param name="source">The call site that asked for the manager.</param>
-    /// <returns>The manager that is now alive.</returns>
+    /// <param name="source">请求该管理器的调用点。</param>
+    /// <returns>当前已存活的管理器。</returns>
     internal static FikaNotificationManager EnsureCreated(string source)
     {
         var existing = Instance;
@@ -75,8 +75,8 @@ internal sealed class FikaNotificationManager : IDisposable
             return existing;
         }
 
-        // Called from a patch postfix, so a failure here must not travel into the game method
-        // that was patched: it is reported instead and the fallback hook gets another chance.
+        // 从补丁 postfix 调用，因此这里的失败绝不能传播进被补丁的游戏方法：
+        // 改为上报它，并让兜底钩子再获得一次机会。
         try
         {
             var created = new FikaNotificationManager();
@@ -99,8 +99,8 @@ internal sealed class FikaNotificationManager : IDisposable
 
     public void Connect()
     {
-        // Do not leak a faulted fire-and-forget task into Unity's synchronization
-        // context.  The reconnect loop owns retries; this call only nudges it.
+        // 不要把已故障的即发即忘任务泄漏进 Unity 的同步上下文。
+        // 重连循环负责重试；这次调用只是推动它一下。
         _ = EnsureConnectedAsync(TimeSpan.Zero).ContinueWith(
             task =>
             {
@@ -132,8 +132,8 @@ internal sealed class FikaNotificationManager : IDisposable
             {
                 lock (_sync)
                 {
-                    // A failed attempt must not poison the completion source used
-                    // by the next caller of EnsureConnectedAsync.
+                    // 失败的尝试不得污染下一次调用 EnsureConnectedAsync 时
+                    // 所使用的完成源。
                     if (_connected.Task.IsCompleted)
                     {
                         _connected = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -149,9 +149,9 @@ internal sealed class FikaNotificationManager : IDisposable
             catch (OperationCanceledException) when (_stop.IsCancellationRequested) { break; }
             catch (Exception ex) when (_stop.IsCancellationRequested && WebSocketShutdown.IsTeardown(ex))
             {
-                // Close() aborts the socket, and everything that was in flight on it comes back as one of
-                // these. That is the normal end of this loop and not a finding: nothing is logged, and the
-                // connection waiter is not faulted - nobody is waiting on it any more.
+                // Close() 会中止 socket，其上所有在途操作都会以这些结果之一返回。
+                // 这是本循环的正常结束，而不是一个发现：不记录任何日志，
+                // 且连接等待者不会被置为故障 —— 已经没人在等它了。
                 break;
             }
             catch (Exception ex)
@@ -187,14 +187,14 @@ internal sealed class FikaNotificationManager : IDisposable
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
-                // The manager is closing: the pending read was cancelled, which is exactly how this loop
-                // is supposed to end. It is not a warning and must not be logged as one.
+                // 管理器正在关闭：挂起的读取被取消，这正是本循环应有的结束方式。
+                // 这不是警告，绝不能按警告记录。
                 return;
             }
             catch (Exception exception) when (token.IsCancellationRequested && WebSocketShutdown.IsTeardown(exception))
             {
-                // Close() aborts the socket; the read that was in flight comes back as an aborted,
-                // disposed or failed stream instead of a clean close frame.
+                // Close() 会中止 socket；在途的读取会以已中止、已释放或
+                // 已失败的流返回，而不是一个干净的关闭帧。
                 return;
             }
 
@@ -204,8 +204,8 @@ internal sealed class FikaNotificationManager : IDisposable
             if (!result.EndOfMessage) continue;
             var json = Encoding.UTF8.GetString(message.GetBuffer(), 0, checked((int)message.Length));
             message.SetLength(0);
-            // Even notification Description getters access native localization and
-            // session time. Queue the whole dispatch, not just the final UI call.
+            // 连通知 Description 的 getter 也会访问原生本地化与
+            // 会话时间。要把整个派发过程排队，而不只是最后的 UI 调用。
             MainThreadDispatcher.Post(() => Dispatch(json), token);
         }
     }

@@ -40,7 +40,7 @@ public sealed class VaultPacket : IPoolSubPacket
 
     public void Execute(FikaPlayer player)
     {
-        // A headless client can get stuck in permanent high-velocity states due to vaulting, skip it
+        // 无头客户端可能因翻越而卡在永久的高速状态里，因此跳过它
         if (!FikaBackendUtils.IsHeadless)
         {
             player.DoObservedVault(this);

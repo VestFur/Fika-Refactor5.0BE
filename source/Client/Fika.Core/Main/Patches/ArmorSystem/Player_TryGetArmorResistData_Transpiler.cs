@@ -23,8 +23,8 @@ internal class Player_TryGetArmorResistData_Transpiler : ModulePatch
         {
             var armor = armors[i];
             if (!armor.ShotMatches(bodyPart.BodyPartColliderType, plateType)) continue;
-            // Use the game's penetration formula with the first matching armor,
-            // exactly as the native method does after rebuilding its armor list.
+            // 用第一款匹配的护甲套用游戏的穿透公式，
+            // 与原生方法重建护甲列表后的做法完全一致。
             armorResistanceData = ShotSharedMethods.RealResistance(armor.Repairable.Durability,
                 armor.Repairable.TemplateDurability, armor.ArmorClass, penetrationPower);
             __result = true;

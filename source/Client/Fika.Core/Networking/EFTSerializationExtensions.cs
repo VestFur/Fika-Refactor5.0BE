@@ -17,7 +17,7 @@ using Mirror;
 namespace Fika.Core.Networking;
 
 /// <summary>
-/// Extension methods to write/read EFT classes
+/// 用于写出/读取 EFT 类的扩展方法
 /// </summary>
 public static class EFTSerializationExtensions
 {
@@ -95,12 +95,12 @@ public static class EFTSerializationExtensions
         RegisterSerializer<ChangeItemsOperationDescriptor>((w, t) => w.PutEFTInventoryLogicOperationsChangeItemsOperationDescriptor(t));
         RegisterSerializer<ChangeWishlistItemCategoryOperationDescriptor>((w, t) => w.PutEFTInventoryLogicOperationsChangeWishlistItemCategoryOperationDescriptor(t));
         RegisterSerializer<PurchaseTraderServiceOperationDescriptor>((w, t) => w.PutEFTInventoryLogicOperationsPurchaseTraderServiceOperationDescriptor(t));
-        // Quest reading (a note, a chapter's conditions, a single condition or a
-        // note link) is profile bookkeeping the native controller of the reading
-        // player owns; the port executes it locally (see QuestOperations), but its
-        // descriptor is part of the native polymorph table, so it still needs a
-        // writer or any operation that ever reaches the packet path throws
-        // "Serializer delegate missing for registered type".
+        // 任务阅读（一条便签、一个章节的条件、单条条件或
+        // 便签链接）属于阅读端玩家原生控制器所持有的档案记录，
+        // 移植端在本地执行（见 QuestOperations），但其描述符
+        // 属于原生多态表的一部分，因此仍需要一个
+        // writer，否则任何最终到达数据包路径的操作都会抛出
+        // "Serializer delegate missing for registered type"。
         RegisterSerializer<ReadChapterConditionsOperationDescriptor>((w, t) =>
             w.PutEFTInventoryLogicOperationsReadChapterConditionsOperationDescriptor(t));
         RegisterSerializer<ReadQuestConditionOperationDescriptor>((w, t) =>
@@ -113,17 +113,17 @@ public static class EFTSerializationExtensions
         RegisterSerializer<SearchContentOperationDescriptor>((w, t) => w.PutEFTInventoryLogicOperationsSearchContentOperationDescriptor(t));
         RegisterSerializer<SearchSuboperationDescriptor>((w, t) => w.PutEFTInventoryLogicOperationsSearchSuboperationDescriptor(t));
         RegisterSerializer<SplitToNowhereDescriptor>((w, t) => w.PutEFTInventoryLogicOperationsSplitToNowhereDescriptor(t));
-        // Tape study is local playback/progress bookkeeping, handled by the same
-        // local branch as the quest reads.
+        // 磁带学习属于本地播放/进度记录，由与任务阅读相同的
+        // 本地分支处理。
         RegisterSerializer<StudyItemOperationDescriptor>((w, t) => w.PutEFTStudyItemOperationDescriptor(t));
         RegisterSerializer<StudyItemPlayerOperationDescriptor>((w, t) => w.PutEFTStudyItemPlayerOperationDescriptor(t));
         RegisterSerializer<TransferFromNowhereDescriptor>((w, t) => w.PutEFTInventoryLogicOperationsTransferFromNowhereDescriptor(t));
-        // The paid exfiltration point (car extract) hands its cash over through
-        // EFT.InventoryLogic.Operations.TransferExfiltrationPaymentOperation. Its
-        // descriptor is part of the native polymorph table, so without a
-        // serializer every payment threw "Serializer delegate missing for
-        // registered type" while the operation was being dispatched and the host
-        // never saw the money.
+        // 付费撤离点（车辆撤离）通过
+        // EFT.InventoryLogic.Operations.TransferExfiltrationPaymentOperation 交付现金。其
+        // 描述符属于原生多态表的一部分，因此缺少
+        // 序列化器时，每次付款都会抛出 "Serializer delegate missing for
+        // registered type"，操作在派发过程中即失败，主机
+        // 始终没有收到这笔钱。
         RegisterSerializer<TransferExfiltrationPaymentOperationDescriptor>((w, t) =>
             w.PutEFTInventoryLogicOperationsTransferExfiltrationPaymentOperationDescriptor(t));
         RegisterSerializer<ItemDescriptor>((w, t) => w.PutEFTItemDescriptor(t));
@@ -345,11 +345,11 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Used to register new polymorphic types without reflection. <br/>
-    /// Handles existing types bound in <see cref="_indexToType"/> or appends dynamically assigned IDs for custom types.
+    /// 用于在不使用反射的情况下注册新的多态类型。<br/>
+    /// 处理已绑定在 <see cref="_indexToType"/> 中的既有类型，或为自定义类型追加动态分配的 ID。
     /// </summary>
     /// <remarks>
-    /// See <see href="https://github.com/Lacyway/MergeConsumables/blob/master/fika/MergeConsumablesSerialization.cs">MergeConsumables reference implementation</see> for an example.
+    /// 示例参见 <see href="https://github.com/Lacyway/MergeConsumables/blob/master/fika/MergeConsumablesSerialization.cs">MergeConsumables 参考实现</see>。
     /// </remarks>
     public static void RegisterPolymorphicType<T>(
         Action<NetDataWriter, T> serializer,
@@ -357,7 +357,7 @@ public static class EFTSerializationExtensions
     {
         var type = typeof(T).FullName;
 
-        // Check if type already exists in base list
+        // 检查该类型是否已存在于基础列表中
         var index = _indexToType.IndexOf(type);
         byte id;
 
@@ -438,9 +438,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the aggressor statistics from a AggressorStats object into the writer stream.
+    /// 将来自 AggressorStats 对象的攻击者统计数据序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The AggressorStats instance containing the statistics to write.</param>
+    /// <param name="target">包含要写入的统计数据的 AggressorStats 实例。</param>
     public static void PutAggressorStats(this NetDataWriter writer, AggressorStats target)
     {
         writer.Put(target.AccountId);
@@ -448,7 +448,7 @@ public static class EFTSerializationExtensions
         writer.Put(target.MainProfileNickname);
         writer.Put(target.Name);
         writer.PutEnum(target.Side);
-            // 47888 removed ProfileInfoDescriptor.PrestigeLevel: keep the writer and reader symmetric
+            // 47888 移除了 ProfileInfoDescriptor.PrestigeLevel：保持 writer 与 reader 对称
         writer.PutEnum(target.ColliderType);
         writer.Put(target.WeaponName);
         writer.PutEnum(target.Category);
@@ -456,9 +456,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a AggressorStats object from the reader stream.
+    /// 从 reader 流反序列化并重建 AggressorStats 对象。
     /// </summary>
-    /// <returns>A new instance of AggressorStats populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 AggressorStats 实例。</returns>
     public static AggressorStats GetAggressorStats(this NetDataReader reader)
     {
         return new AggressorStats
@@ -468,7 +468,7 @@ public static class EFTSerializationExtensions
             MainProfileNickname = reader.GetString(),
             Name = reader.GetString(),
             Side = reader.GetEnum<EPlayerSide>(),
-            // PrestigeLevel: not present in the 47888 descriptor (see the matching writer change)
+            // PrestigeLevel：不存在于 47888 描述符中（参见对应的 writer 改动）
             ColliderType = reader.GetEnum<EBodyPartColliderType>(),
             WeaponName = reader.GetString(),
             Category = reader.GetEnum<EMemberCategory>(),
@@ -477,9 +477,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the add note operation descriptor into the writer stream.
+    /// 将添加便签操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The AddNoteOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 AddNoteOperationDescriptor 实例。</param>
     public static void PutEFTAddNoteOperationDescriptor(this NetDataWriter writer, AddNoteOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -488,9 +488,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs an AddNoteOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 AddNoteOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of AddNoteOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 AddNoteOperationDescriptor 实例。</returns>
     public static AddNoteOperationDescriptor GetEFTAddNoteOperationDescriptor(this NetDataReader reader)
     {
         return new AddNoteOperationDescriptor
@@ -502,9 +502,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a Note note object into the writer stream.
+    /// 将Note 便签对象序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The Note instance containing the note data to write.</param>
+    /// <param name="target">包含要写入的便签数据的 Note 实例。</param>
     public static void PutEFTNotesNote(this NetDataWriter writer, Note target)
     {
         writer.Put(target.Time);
@@ -512,10 +512,10 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a Note note object from the reader stream.
+    /// 从 reader 流反序列化并重建 Note note 对象。
     /// </summary>
-    /// <param name="reader">The reader instance.</param>
-    /// <returns>A new instance of Note populated with the stream data.</returns>
+    /// <param name="reader">reader 实例。</param>
+    /// <returns>使用流数据填充的新 Note 实例。</returns>
     public static Note GetEFTNotesNote(this NetDataReader reader)
     {
         return new Note
@@ -526,9 +526,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the key application operation descriptor into the writer stream.
+    /// 将使用钥匙操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The ApplyKeyOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 ApplyKeyOperationDescriptor 实例。</param>
     public static void PutEFTApplyKeyOperationDescriptor(this NetDataWriter writer, ApplyKeyOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -538,9 +538,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs an ApplyKeyOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ApplyKeyOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of ApplyKeyOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 ApplyKeyOperationDescriptor 实例。</returns>
     public static ApplyKeyOperationDescriptor GetEFTApplyKeyOperationDescriptor(this NetDataReader reader)
     {
         return new ApplyKeyOperationDescriptor
@@ -553,9 +553,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the item binding operation descriptor into the writer stream.
+    /// 将物品绑定操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The BindItemOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 BindItemOperationDescriptor 实例。</param>
     public static void PutEFTBindItemOperationDescriptor(this NetDataWriter writer, BindItemOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -565,9 +565,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a BindItemOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 BindItemOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of BindItemOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 BindItemOperationDescriptor 实例。</returns>
     public static BindItemOperationDescriptor GetEFTBindItemOperationDescriptor(this NetDataReader reader)
     {
         return new BindItemOperationDescriptor
@@ -580,9 +580,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the body part damage history descriptor into the writer stream.
+    /// 将身体部位伤害历史描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The BodyPartDamageHistoryDescriptor instance containing the damage history data to write.</param>
+    /// <param name="target">包含要写入的伤害历史数据的 BodyPartDamageHistoryDescriptor 实例。</param>
     public static void PutEFTBodyPartDamageHistoryDescriptor(this NetDataWriter writer, BodyPartDamageHistoryDescriptor target)
     {
         writer.Put(target.DamageList.Count);
@@ -593,9 +593,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a BodyPartDamageHistoryDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 BodyPartDamageHistoryDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of BodyPartDamageHistoryDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 BodyPartDamageHistoryDescriptor 实例。</returns>
     public static BodyPartDamageHistoryDescriptor GetEFTBodyPartDamageHistoryDescriptor(this NetDataReader reader)
     {
         var gclass = new BodyPartDamageHistoryDescriptor();
@@ -609,9 +609,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the damage statistics descriptor into the writer stream.
+    /// 将伤害统计描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The DamageStatsDescriptor instance containing the damage stats data to write.</param>
+    /// <param name="target">包含要写入的伤害统计数据的 DamageStatsDescriptor 实例。</param>
     public static void PutEFTDamageStatsDescriptor(this NetDataWriter writer, DamageStatsDescriptor target)
     {
         writer.Put(target.Amount);
@@ -631,9 +631,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a DamageStatsDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 DamageStatsDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of DamageStatsDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 DamageStatsDescriptor 实例。</returns>
     public static DamageStatsDescriptor GetEFTDamageStatsDescriptor(this NetDataReader reader)
     {
         var gclass = new DamageStatsDescriptor
@@ -652,9 +652,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the profile bonus descriptor into the writer stream.
+    /// 将档案加成描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The BonusDescriptor instance containing the bonus data to write.</param>
+    /// <param name="target">包含要写入的加成数据的 BonusDescriptor 实例。</param>
     public static void PutEFTBonusDescriptor(this NetDataWriter writer, BonusDescriptor target)
     {
         writer.PutEnum(target.BonusType);
@@ -705,9 +705,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a BonusDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 BonusDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of BonusDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 BonusDescriptor 实例。</returns>
     public static BonusDescriptor GetEFTBonusDescriptor(this NetDataReader reader)
     {
         var profileBonusesClass = new BonusDescriptor
@@ -745,9 +745,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the magazine check operation descriptor into the writer stream.
+    /// 将弹匣检查操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The CheckMagazineOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 CheckMagazineOperationDescriptor 实例。</param>
     public static void PutEFTCheckMagazineOperationDescriptor(this NetDataWriter writer, CheckMagazineOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -758,9 +758,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a CheckMagazineOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 CheckMagazineOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of CheckMagazineOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 CheckMagazineOperationDescriptor 实例。</returns>
     public static CheckMagazineOperationDescriptor GetEFTCheckMagazineOperationDescriptor(this NetDataReader reader)
     {
         return new CheckMagazineOperationDescriptor
@@ -774,9 +774,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the container descriptor into the writer stream.
+    /// 将容器描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The ContainerDescriptor instance containing the container data to write.</param>
+    /// <param name="target">包含要写入的容器数据的 ContainerDescriptor 实例。</param>
     public static void PutEFTContainerDescriptor(this NetDataWriter writer, ContainerDescriptor target)
     {
         if (NativeNullable<MongoID>.Read(target, "ParentId").HasValue)
@@ -792,9 +792,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ContainerDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ContainerDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of ContainerDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 ContainerDescriptor 实例。</returns>
     public static ContainerDescriptor GetEFTContainerDescriptor(this NetDataReader reader)
     {
         var gclass = new ContainerDescriptor();
@@ -807,9 +807,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the counter collection descriptor into the writer stream.
+    /// 将计数器集合描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The CounterCollectionDescriptor instance containing the collection items to write.</param>
+    /// <param name="target">包含要写入的集合项的 CounterCollectionDescriptor 实例。</param>
     public static void PutEFTCounterCollectionDescriptor(this NetDataWriter writer, CounterCollectionDescriptor target)
     {
         writer.Put(target.Items.Count);
@@ -820,9 +820,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a CounterCollectionDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 CounterCollectionDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of CounterCollectionDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 CounterCollectionDescriptor 实例。</returns>
     public static CounterCollectionDescriptor GetEFTCounterCollectionDescriptor(this NetDataReader reader)
     {
         var gclass = new CounterCollectionDescriptor();
@@ -836,9 +836,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a counter collection item descriptor into the writer stream.
+    /// 将计数器集合项描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The CounterCollectionItemDescriptor instance containing the item data to write.</param>
+    /// <param name="target">包含要写入的物品数据的 CounterCollectionItemDescriptor 实例。</param>
     public static void PutEFTCounterCollectionItemDescriptor(this NetDataWriter writer, CounterCollectionItemDescriptor target)
     {
         writer.Put(target.Key.Count);
@@ -850,9 +850,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a CounterCollectionItemDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 CounterCollectionItemDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of CounterCollectionItemDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 CounterCollectionItemDescriptor 实例。</returns>
     public static CounterCollectionItemDescriptor GetEFTCounterCollectionItemDescriptor(this NetDataReader reader)
     {
         var gclass = new CounterCollectionItemDescriptor();
@@ -867,9 +867,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the map marker creation operation descriptor into the writer stream.
+    /// 将地图标记创建操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The CreateMapMarkerOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 CreateMapMarkerOperationDescriptor 实例。</param>
     public static void PutEFTCreateMapMarkerOperationDescriptor(this NetDataWriter writer, CreateMapMarkerOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -879,9 +879,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a CreateMapMarkerOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 CreateMapMarkerOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of CreateMapMarkerOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 CreateMapMarkerOperationDescriptor 实例。</returns>
     public static CreateMapMarkerOperationDescriptor GetEFTCreateMapMarkerOperationDescriptor(this NetDataReader reader)
     {
         return new CreateMapMarkerOperationDescriptor
@@ -894,9 +894,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a map marker object into the writer stream.
+    /// 将地图标记对象序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The MapMarker instance containing the map marker data to write.</param>
+    /// <param name="target">包含要写入的地图标记数据的 MapMarker 实例。</param>
     public static void PutEFTInventoryLogicMapMarker(this NetDataWriter writer, MapMarker target)
     {
         writer.PutEnum(target.Type);
@@ -906,9 +906,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a MapMarker object from the reader stream.
+    /// 从 reader 流反序列化并重建 MapMarker 对象。
     /// </summary>
-    /// <returns>A new instance of MapMarker populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 MapMarker 实例。</returns>
     public static MapMarker GetEFTInventoryLogicMapMarker(this NetDataReader reader)
     {
         return new MapMarker
@@ -921,18 +921,18 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the cultist amulet component descriptor into the writer stream.
+    /// 将邪教徒护身符组件描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The CultistAmuletComponentDescriptor instance containing the component data to write.</param>
+    /// <param name="target">包含要写入的组件数据的 CultistAmuletComponentDescriptor 实例。</param>
     public static void PutEFTCultistAmuletComponentDescriptor(this NetDataWriter writer, CultistAmuletComponentDescriptor target)
     {
         writer.Put(target.NumberOfUsages);
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a CultistAmuletComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 CultistAmuletComponentDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of CultistAmuletComponentDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 CultistAmuletComponentDescriptor 实例。</returns>
     public static CultistAmuletComponentDescriptor GetEFTCultistAmuletComponentDescriptor(this NetDataReader reader)
     {
         return new CultistAmuletComponentDescriptor
@@ -942,9 +942,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the total damage history descriptor into the writer stream.
+    /// 将完整的伤害历史描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The DamageHistoryDescriptor instance containing the entire damage history data to write.</param>
+    /// <param name="target">包含要写入的完整的伤害历史数据的 DamageHistoryDescriptor 实例。</param>
     public static void PutEFTDamageHistoryDescriptor(this NetDataWriter writer, DamageHistoryDescriptor target)
     {
         writer.PutEnum(target.LethalDamagePart);
@@ -966,9 +966,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a DamageHistoryDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 DamageHistoryDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of DamageHistoryDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 DamageHistoryDescriptor 实例。</returns>
     public static DamageHistoryDescriptor GetEFTDamageHistoryDescriptor(this NetDataReader reader)
     {
         var gclass = new DamageHistoryDescriptor
@@ -989,7 +989,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes combat health depletion logs and causal weapon attributes into the writer stream.
+    /// 将战斗生命值消耗日志与致伤武器属性序列化写入 writer 流。
     /// </summary>
     public static void PutEFTDeathCause(this NetDataWriter writer, DeathCause target)
     {
@@ -1000,7 +1000,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a DeathCause object from the reader stream.
+    /// 从 reader 流反序列化并重建 DeathCause 对象。
     /// </summary>
     public static DeathCause GetEFTDeathCause(this NetDataReader reader)
     {
@@ -1014,9 +1014,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the map marker deletion operation descriptor into the writer stream.
+    /// 将地图标记删除操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The DeleteMapMarkerOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 DeleteMapMarkerOperationDescriptor 实例。</param>
     public static void PutEFTDeleteMapMarkerOperationDescriptor(this NetDataWriter writer, DeleteMapMarkerOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -1027,9 +1027,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a DeleteMapMarkerOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 DeleteMapMarkerOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of DeleteMapMarkerOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 DeleteMapMarkerOperationDescriptor 实例。</returns>
     public static DeleteMapMarkerOperationDescriptor GetEFTDeleteMapMarkerOperationDescriptor(this NetDataReader reader)
     {
         return new DeleteMapMarkerOperationDescriptor
@@ -1043,9 +1043,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the note deletion operation descriptor into the writer stream.
+    /// 将便签删除操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The DeleteNoteOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 DeleteNoteOperationDescriptor 实例。</param>
     public static void PutEFTDeleteNoteOperationDescriptor(this NetDataWriter writer, DeleteNoteOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -1054,9 +1054,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a DeleteNoteOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 DeleteNoteOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of DeleteNoteOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 DeleteNoteOperationDescriptor 实例。</returns>
     public static DeleteNoteOperationDescriptor GetEFTDeleteNoteOperationDescriptor(this NetDataReader reader)
     {
         return new DeleteNoteOperationDescriptor
@@ -1068,9 +1068,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the destroyed item details into the writer stream.
+    /// 将已销毁物品详情序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The DestroyedItem instance containing the item destruction data to write.</param>
+    /// <param name="target">包含要写入的物品销毁数据的 DestroyedItem 实例。</param>
     public static void PutEFTDestroyedItem(this NetDataWriter writer, DestroyedItem target)
     {
         writer.PutMongoID(target.ItemId);
@@ -1079,9 +1079,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a DestroyedItem object from the reader stream.
+    /// 从 reader 流反序列化并重建 DestroyedItem 对象。
     /// </summary>
-    /// <returns>A new instance of DestroyedItem populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 DestroyedItem 实例。</returns>
     public static DestroyedItem GetEFTDestroyedItem(this NetDataReader reader)
     {
         return new DestroyedItem
@@ -1093,9 +1093,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the dog tag component descriptor into the writer stream.
+    /// 将狗牌组件描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The DogTagComponentDescriptor instance containing the dog tag component data to write.</param>
+    /// <param name="target">包含要写入的狗牌组件数据的 DogTagComponentDescriptor 实例。</param>
     public static void PutEFTDogTagComponentDescriptor(this NetDataWriter writer, DogTagComponentDescriptor target)
     {
         writer.Put(target.AccountId);
@@ -1115,9 +1115,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a DogTagComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 DogTagComponentDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of DogTagComponentDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 DogTagComponentDescriptor 实例。</returns>
     public static DogTagComponentDescriptor GetEFTDogTagComponentDescriptor(this NetDataReader reader)
     {
         return new DogTagComponentDescriptor
@@ -1138,9 +1138,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the dropped item information into the writer stream.
+    /// 将掉落物品信息序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The DroppedItem instance containing the dropped item data to write.</param>
+    /// <param name="target">包含要写入的掉落物品数据的 DroppedItem 实例。</param>
     public static void PutEFTDroppedItem(this NetDataWriter writer, DroppedItem target)
     {
         writer.PutMongoID(target.QuestId);
@@ -1149,9 +1149,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a DroppedItem object from the reader stream.
+    /// 从 reader 流反序列化并重建 DroppedItem 对象。
     /// </summary>
-    /// <returns>A new instance of DroppedItem populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 DroppedItem 实例。</returns>
     public static DroppedItem GetEFTDroppedItem(this NetDataReader reader)
     {
         return new DroppedItem
@@ -1163,9 +1163,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the map marker edit operation descriptor into the writer stream.
+    /// 将地图标记编辑操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The EditMapMarkerOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 EditMapMarkerOperationDescriptor 实例。</param>
     public static void PutEFTEditMapMarkerOperationDescriptor(this NetDataWriter writer, EditMapMarkerOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -1177,9 +1177,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a EditMapMarkerOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 EditMapMarkerOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of EditMapMarkerOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 EditMapMarkerOperationDescriptor 实例。</returns>
     public static EditMapMarkerOperationDescriptor GetEFTEditMapMarkerOperationDescriptor(this NetDataReader reader)
     {
         return new EditMapMarkerOperationDescriptor
@@ -1194,9 +1194,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the note editing operation descriptor into the writer stream.
+    /// 将便签编辑操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The EditNoteOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 EditNoteOperationDescriptor 实例。</param>
     public static void PutEFTEditNoteOperationDescriptor(this NetDataWriter writer, EditNoteOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -1206,9 +1206,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs an EditNoteOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 EditNoteOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of EditNoteOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 EditNoteOperationDescriptor 实例。</returns>
     public static EditNoteOperationDescriptor GetEFTEditNoteOperationDescriptor(this NetDataReader reader)
     {
         return new EditNoteOperationDescriptor
@@ -1221,9 +1221,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the malfunction type examination operation descriptor into the writer stream.
+    /// 将故障类型检查操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The ExamineMalfTypeOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 ExamineMalfTypeOperationDescriptor 实例。</param>
     public static void PutEFTExamineMalfTypeOperationDescriptor(this NetDataWriter writer, ExamineMalfTypeOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -1232,9 +1232,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ExamineMalfTypeOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ExamineMalfTypeOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of ExamineMalfTypeOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 ExamineMalfTypeOperationDescriptor 实例。</returns>
     public static ExamineMalfTypeOperationDescriptor GetEFTExamineMalfTypeOperationDescriptor(this NetDataReader reader)
     {
         return new ExamineMalfTypeOperationDescriptor
@@ -1246,9 +1246,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the malfunction examination operation descriptor into the writer stream.
+    /// 将故障检查操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The ExamineMalfunctionOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 ExamineMalfunctionOperationDescriptor 实例。</param>
     public static void PutEFTExamineMalfunctionOperationDescriptor(this NetDataWriter writer, ExamineMalfunctionOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -1257,9 +1257,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ExamineMalfunctionOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ExamineMalfunctionOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of ExamineMalfunctionOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 ExamineMalfunctionOperationDescriptor 实例。</returns>
     public static ExamineMalfunctionOperationDescriptor GetEFTExamineMalfunctionOperationDescriptor(this NetDataReader reader)
     {
         return new ExamineMalfunctionOperationDescriptor
@@ -1271,9 +1271,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the item examination operation descriptor into the writer stream.
+    /// 将物品检查操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The ExamineOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 ExamineOperationDescriptor 实例。</param>
     public static void PutEFTExamineOperationDescriptor(this NetDataWriter writer, ExamineOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -1282,9 +1282,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ExamineOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ExamineOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of ExamineOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 ExamineOperationDescriptor 实例。</returns>
     public static ExamineOperationDescriptor GetEFTExamineOperationDescriptor(this NetDataReader reader)
     {
         return new ExamineOperationDescriptor
@@ -1296,9 +1296,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the face shield component descriptor into the writer stream.
+    /// 将面罩组件描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The FaceShieldComponentDescriptor instance containing the face shield status data to write.</param>
+    /// <param name="target">包含要写入的面罩状态数据的 FaceShieldComponentDescriptor 实例。</param>
     public static void PutEFTFaceShieldComponentDescriptor(this NetDataWriter writer, FaceShieldComponentDescriptor target)
     {
         writer.Put(target.Hits);
@@ -1306,9 +1306,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a FaceShieldComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 FaceShieldComponentDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of FaceShieldComponentDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 FaceShieldComponentDescriptor 实例。</returns>
     public static FaceShieldComponentDescriptor GetEFTFaceShieldComponentDescriptor(this NetDataReader reader)
     {
         return new FaceShieldComponentDescriptor
@@ -1319,9 +1319,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the face shield marking operation descriptor into the writer stream.
+    /// 将面罩标记操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The FaceshieldMarkOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 FaceshieldMarkOperationDescriptor 实例。</param>
     public static void PutEFTFaceshieldMarkOperationDescriptor(this NetDataWriter writer, FaceshieldMarkOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -1330,9 +1330,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a FaceshieldMarkOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 FaceshieldMarkOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of FaceshieldMarkOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 FaceshieldMarkOperationDescriptor 实例。</returns>
     public static FaceshieldMarkOperationDescriptor GetEFTFaceshieldMarkOperationDescriptor(this NetDataReader reader)
     {
         return new FaceshieldMarkOperationDescriptor
@@ -1344,18 +1344,18 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the fire mode component descriptor into the writer stream.
+    /// 将射击模式组件描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The FireModeComponentDescriptor instance containing the fire mode status data to write.</param>
+    /// <param name="target">包含要写入的射击模式状态数据的 FireModeComponentDescriptor 实例。</param>
     public static void PutEFTFireModeComponentDescriptor(this NetDataWriter writer, FireModeComponentDescriptor target)
     {
         writer.PutEnum(target.FireMode);
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a FireModeComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 FireModeComponentDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of FireModeComponentDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 FireModeComponentDescriptor 实例。</returns>
     public static FireModeComponentDescriptor GetEFTFireModeComponentDescriptor(this NetDataReader reader)
     {
         return new FireModeComponentDescriptor
@@ -1365,18 +1365,18 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the foldable component descriptor into the writer stream.
+    /// 将可折叠组件描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The FoldableComponentDescriptor instance containing the folded status data to write.</param>
+    /// <param name="target">包含要写入的折叠状态数据的 FoldableComponentDescriptor 实例。</param>
     public static void PutEFTFoldableComponentDescriptor(this NetDataWriter writer, FoldableComponentDescriptor target)
     {
         writer.Put(target.Folded);
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a FoldableComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 FoldableComponentDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of FoldableComponentDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 FoldableComponentDescriptor 实例。</returns>
     public static FoldableComponentDescriptor GetEFTFoldableComponentDescriptor(this NetDataReader reader)
     {
         return new FoldableComponentDescriptor
@@ -1386,9 +1386,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the item folding operation descriptor into the writer stream.
+    /// 将物品折叠操作描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The FoldOperationDescriptor instance containing the descriptor data to write.</param>
+    /// <param name="target">包含要写入的描述符数据的 FoldOperationDescriptor 实例。</param>
     public static void PutEFTFoldOperationDescriptor(this NetDataWriter writer, FoldOperationDescriptor target)
     {
         writer.Put(target.OperationId);
@@ -1398,9 +1398,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a FoldOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 FoldOperationDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of FoldOperationDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 FoldOperationDescriptor 实例。</returns>
     public static FoldOperationDescriptor GetEFTFoldOperationDescriptor(this NetDataReader reader)
     {
         return new FoldOperationDescriptor
@@ -1413,18 +1413,18 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the food and drink component descriptor into the writer stream.
+    /// 将食物与饮料组件描述符序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The FoodDrinkComponentDescriptor instance containing the food/drink status data to write.</param>
+    /// <param name="target">包含要写入的食物/饮料状态数据的 FoodDrinkComponentDescriptor 实例。</param>
     public static void PutEFTFoodDrinkComponentDescriptor(this NetDataWriter writer, FoodDrinkComponentDescriptor target)
     {
         writer.Put(target.HpPercent);
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a FoodDrinkComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 FoodDrinkComponentDescriptor 对象。
     /// </summary>
-    /// <returns>A new instance of FoodDrinkComponentDescriptor populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 FoodDrinkComponentDescriptor 实例。</returns>
     public static FoodDrinkComponentDescriptor GetEFTFoodDrinkComponentDescriptor(this NetDataReader reader)
     {
         return new FoodDrinkComponentDescriptor
@@ -1434,9 +1434,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the found in raid item details into the writer stream.
+    /// 将found in raid 物品详情序列化写入 writer 流。
     /// </summary>
-    /// <param name="target">The FoundInRaidItem instance containing the item raid data to write.</param>
+    /// <param name="target">包含要写入的物品战局数据的 FoundInRaidItem 实例。</param>
     public static void PutEFTFoundInRaidItem(this NetDataWriter writer, FoundInRaidItem target)
     {
         writer.PutMongoID(target.QuestId);
@@ -1444,9 +1444,9 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a FoundInRaidItem object from the reader stream.
+    /// 从 reader 流反序列化并重建 FoundInRaidItem 对象。
     /// </summary>
-    /// <returns>A new instance of FoundInRaidItem populated with the stream data.</returns>
+    /// <returns>使用流数据填充的新 FoundInRaidItem 实例。</returns>
     public static FoundInRaidItem GetEFTFoundInRaidItem(this NetDataReader reader)
     {
         return new FoundInRaidItem
@@ -1457,7 +1457,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a grid descriptor object into the writer stream.
+    /// 将网格描述符对象序列化写入 writer 流。
     /// </summary>
     public static void PutEFTGridDescriptor(this NetDataWriter writer, GridDescriptor target)
     {
@@ -1470,7 +1470,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a GridDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 GridDescriptor 对象。
     /// </summary>
     public static GridDescriptor GetEFTGridDescriptor(this NetDataReader reader)
     {
@@ -1488,7 +1488,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a grid item address descriptor object into the writer stream.
+    /// 将网格物品地址描述符对象序列化写入 writer 流。
     /// </summary>
     public static void PutEFTGridItemAddressDescriptor(this NetDataWriter writer, GridItemAddressDescriptor target)
     {
@@ -1499,7 +1499,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a GridItemAddressDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 GridItemAddressDescriptor 对象。
     /// </summary>
     public static GridItemAddressDescriptor GetEFTGridItemAddressDescriptor(this NetDataReader reader)
     {
@@ -1513,7 +1513,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the inventory descriptor state into the writer stream.
+    /// 将库存描述符状态序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryDescriptor(this NetDataWriter writer, InventoryDescriptor target)
     {
@@ -1598,7 +1598,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs an InventoryDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 InventoryDescriptor 对象。
     /// </summary>
     public static InventoryDescriptor GetEFTInventoryDescriptor(this NetDataReader reader)
     {
@@ -1658,7 +1658,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the inventory equipment descriptor into the writer stream.
+    /// 将库存装备描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryEquipmentDescriptor(this NetDataWriter writer, InventoryEquipmentDescriptor target)
     {
@@ -1666,7 +1666,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a InventoryEquipmentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 InventoryEquipmentDescriptor 对象。
     /// </summary>
     public static InventoryEquipmentDescriptor GetEFTInventoryEquipmentDescriptor(this NetDataReader reader)
     {
@@ -1677,7 +1677,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the wishlist addition operation descriptor into the writer stream.
+    /// 将愿望单添加操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsAddToWishlistOperationDescriptor(this NetDataWriter writer, AddToWishlistOperationDescriptor target)
     {
@@ -1688,7 +1688,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a AddToWishlistOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 AddToWishlistOperationDescriptor 对象。
     /// </summary>
     public static AddToWishlistOperationDescriptor GetEFTInventoryLogicOperationsAddToWishlistOperationDescriptor(this NetDataReader reader)
     {
@@ -1702,7 +1702,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the item modification and change operation descriptor into the writer stream.
+    /// 将物品修改与变更操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsChangeItemsOperationDescriptor(this NetDataWriter writer, ChangeItemsOperationDescriptor target)
     {
@@ -1771,7 +1771,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ChangeItemsOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ChangeItemsOperationDescriptor 对象。
     /// </summary>
     public static ChangeItemsOperationDescriptor GetEFTInventoryLogicOperationsChangeItemsOperationDescriptor(this NetDataReader reader)
     {
@@ -1824,7 +1824,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the wishlist item category change operation descriptor into the writer stream.
+    /// 将愿望单物品分类更改操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsChangeWishlistItemCategoryOperationDescriptor(this NetDataWriter writer, ChangeWishlistItemCategoryOperationDescriptor target)
     {
@@ -1835,7 +1835,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ChangeWishlistItemCategoryOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ChangeWishlistItemCategoryOperationDescriptor 对象。
     /// </summary>
     public static ChangeWishlistItemCategoryOperationDescriptor GetEFTInventoryLogicOperationsChangeWishlistItemCategoryOperationDescriptor(this NetDataReader reader)
     {
@@ -1849,7 +1849,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the trader service purchase operation descriptor into the writer stream.
+    /// 将商人服务购买操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsPurchaseTraderServiceOperationDescriptor(this NetDataWriter writer, PurchaseTraderServiceOperationDescriptor target)
     {
@@ -1866,7 +1866,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a PurchaseTraderServiceOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 PurchaseTraderServiceOperationDescriptor 对象。
     /// </summary>
     public static PurchaseTraderServiceOperationDescriptor GetEFTInventoryLogicOperationsPurchaseTraderServiceOperationDescriptor(this NetDataReader reader)
     {
@@ -1884,7 +1884,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the chapter condition read operation descriptor into the writer stream.
+    /// 将章节条件阅读操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsReadChapterConditionsOperationDescriptor(this NetDataWriter writer, ReadChapterConditionsOperationDescriptor target)
     {
@@ -1895,7 +1895,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ReadChapterConditionsOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ReadChapterConditionsOperationDescriptor 对象。
     /// </summary>
     public static ReadChapterConditionsOperationDescriptor GetEFTInventoryLogicOperationsReadChapterConditionsOperationDescriptor(this NetDataReader reader)
     {
@@ -1909,7 +1909,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the single quest condition read operation descriptor into the writer stream.
+    /// 将单条任务条件阅读操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsReadQuestConditionOperationDescriptor(this NetDataWriter writer, ReadQuestConditionOperationDescriptor target)
     {
@@ -1919,7 +1919,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ReadQuestConditionOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ReadQuestConditionOperationDescriptor 对象。
     /// </summary>
     public static ReadQuestConditionOperationDescriptor GetEFTInventoryLogicOperationsReadQuestConditionOperationDescriptor(this NetDataReader reader)
     {
@@ -1932,7 +1932,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the quest note link read operation descriptor into the writer stream.
+    /// 将任务便签链接阅读操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsReadQuestLinkOperationDescriptor(this NetDataWriter writer, ReadQuestLinkOperationDescriptor target)
     {
@@ -1942,7 +1942,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ReadQuestLinkOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ReadQuestLinkOperationDescriptor 对象。
     /// </summary>
     public static ReadQuestLinkOperationDescriptor GetEFTInventoryLogicOperationsReadQuestLinkOperationDescriptor(this NetDataReader reader)
     {
@@ -1955,7 +1955,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the quest note read operation descriptor into the writer stream.
+    /// 将任务便签阅读操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsReadQuestNoteOperationDescriptor(this NetDataWriter writer, ReadQuestNoteOperationDescriptor target)
     {
@@ -1965,7 +1965,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ReadQuestNoteOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ReadQuestNoteOperationDescriptor 对象。
     /// </summary>
     public static ReadQuestNoteOperationDescriptor GetEFTInventoryLogicOperationsReadQuestNoteOperationDescriptor(this NetDataReader reader)
     {
@@ -1978,7 +1978,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the wishlist removal operation descriptor into the writer stream.
+    /// 将愿望单移除操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsRemoveFromWishlistOperationDescriptor(this NetDataWriter writer, RemoveFromWishlistOperationDescriptor target)
     {
@@ -1989,7 +1989,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a RemoveFromWishlistOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 RemoveFromWishlistOperationDescriptor 对象。
     /// </summary>
     public static RemoveFromWishlistOperationDescriptor GetEFTInventoryLogicOperationsRemoveFromWishlistOperationDescriptor(this NetDataReader reader)
     {
@@ -2003,7 +2003,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the container content search operation descriptor into the writer stream.
+    /// 将容器内容搜索操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsSearchContentOperationDescriptor(this NetDataWriter writer, SearchContentOperationDescriptor target)
     {
@@ -2013,7 +2013,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SearchContentOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 SearchContentOperationDescriptor 对象。
     /// </summary>
     public static SearchContentOperationDescriptor GetEFTInventoryLogicOperationsSearchContentOperationDescriptor(this NetDataReader reader)
     {
@@ -2026,7 +2026,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the container content search suboperation descriptor into the writer stream.
+    /// 将容器内容搜索子操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsSearchSuboperationDescriptor(this NetDataWriter writer, SearchSuboperationDescriptor target)
     {
@@ -2050,7 +2050,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SearchSuboperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 SearchSuboperationDescriptor 对象。
     /// </summary>
     public static SearchSuboperationDescriptor GetEFTInventoryLogicOperationsSearchSuboperationDescriptor(this NetDataReader reader)
     {
@@ -2074,7 +2074,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the item split to nowhere operation descriptor into the writer stream.
+    /// 将item split to nowhere 操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsSplitToNowhereDescriptor(this NetDataWriter writer, SplitToNowhereDescriptor target)
     {
@@ -2085,7 +2085,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SplitToNowhereDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 SplitToNowhereDescriptor 对象。
     /// </summary>
     public static SplitToNowhereDescriptor GetEFTInventoryLogicOperationsSplitToNowhereDescriptor(this NetDataReader reader)
     {
@@ -2099,7 +2099,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the item transfer from nowhere operation descriptor into the writer stream.
+    /// 将item transfer from nowhere 操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsTransferFromNowhereDescriptor(this NetDataWriter writer, TransferFromNowhereDescriptor target)
     {
@@ -2111,7 +2111,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a TransferFromNowhereDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 TransferFromNowhereDescriptor 对象。
     /// </summary>
     public static TransferFromNowhereDescriptor GetEFTInventoryLogicOperationsTransferFromNowhereDescriptor(this NetDataReader reader)
     {
@@ -2126,7 +2126,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an inventory item descriptor into the writer stream.
+    /// 将库存物品描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTItemDescriptor(this NetDataWriter writer, ItemDescriptor target)
     {
@@ -2220,7 +2220,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs an ItemDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ItemDescriptor 对象。
     /// </summary>
     public static ItemDescriptor GetEFTItemDescriptor(this NetDataReader reader)
     {
@@ -2290,7 +2290,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes basic item informational parameters into the writer stream.
+    /// 将基础物品信息参数序列化写入 writer 流。
     /// </summary>
     public static void PutEFTItemInfoDescriptor(this NetDataWriter writer, ItemInfoDescriptor target)
     {
@@ -2302,7 +2302,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ItemInfoDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ItemInfoDescriptor 对象。
     /// </summary>
     public static ItemInfoDescriptor GetEFTItemInfoDescriptor(this NetDataReader reader)
     {
@@ -2317,7 +2317,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a descriptor mapping an item inside a parent grid layout into the writer stream.
+    /// 将描述父级网格布局内物品映射关系序列化写入 writer 流。
     /// </summary>
     public static void PutEFTItemInGridDescriptor(this NetDataWriter writer, ItemInGridDescriptor target)
     {
@@ -2328,7 +2328,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ItemInGridDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ItemInGridDescriptor 对象。
     /// </summary>
     public static ItemInGridDescriptor GetEFTItemInGridDescriptor(this NetDataReader reader)
     {
@@ -2342,7 +2342,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a detailed corpse item state and visual transform metadata mapping into the writer stream.
+    /// 将详细的尸体物品状态与可视变换元数据映射序列化写入 writer 流。
     /// </summary>
     public static void PutEFTJsonCorpseDescriptor(this NetDataWriter writer, JsonCorpseDescriptor target)
     {
@@ -2385,7 +2385,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a JsonCorpseDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 JsonCorpseDescriptor 对象。
     /// </summary>
     public static JsonCorpseDescriptor GetEFTJsonCorpseDescriptor(this NetDataReader reader)
     {
@@ -2427,7 +2427,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a loose world loot item instance descriptor into the writer stream.
+    /// 将散落的世界战利品物品实例描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTJsonLootItemDescriptor(this NetDataWriter writer, JsonLootItemDescriptor target)
     {
@@ -2456,7 +2456,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a JsonLootItemDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 JsonLootItemDescriptor 对象。
     /// </summary>
     public static JsonLootItemDescriptor GetEFTJsonLootItemDescriptor(this NetDataReader reader)
     {
@@ -2470,8 +2470,8 @@ public static class EFTSerializationExtensions
         if (reader.GetBool())
         {
             var num = reader.GetInt();
-            // MongoID is a native value type exposed as a reference wrapper.
-            // Converting an unfilled CLR array tries to unbox its null entries.
+            // MongoID 是以引用包装形式暴露的原生值类型。
+            // 转换未填充的 CLR 数组时会尝试对其空条目进行拆箱。
             gclass.ValidProfiles = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<MongoID>(num);
             for (var i = 0; i < num; i++)
             {
@@ -2487,7 +2487,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the key component descriptor into the writer stream.
+    /// 将钥匙组件描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTKeyComponentDescriptor(this NetDataWriter writer, KeyComponentDescriptor target)
     {
@@ -2495,7 +2495,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a KeyComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 KeyComponentDescriptor 对象。
     /// </summary>
     public static KeyComponentDescriptor GetEFTKeyComponentDescriptor(this NetDataReader reader)
     {
@@ -2506,7 +2506,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the light/tactical device component descriptor into the writer stream.
+    /// 将照明/战术设备组件描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTLightComponentDescriptor(this NetDataWriter writer, LightComponentDescriptor target)
     {
@@ -2515,7 +2515,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a LightComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 LightComponentDescriptor 对象。
     /// </summary>
     public static LightComponentDescriptor GetEFTLightComponentDescriptor(this NetDataReader reader)
     {
@@ -2527,7 +2527,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the magazine loading operation descriptor into the writer stream.
+    /// 将弹匣装填操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTLoadMagOperationDescriptor(this NetDataWriter writer, LoadMagOperationDescriptor target)
     {
@@ -2537,7 +2537,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a LoadMagOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 LoadMagOperationDescriptor 对象。
     /// </summary>
     public static LoadMagOperationDescriptor GetEFTLoadMagOperationDescriptor(this NetDataReader reader)
     {
@@ -2550,7 +2550,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the lockable component descriptor into the writer stream.
+    /// 将可上锁组件描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTLockableComponentDescriptor(this NetDataWriter writer, LockableComponentDescriptor target)
     {
@@ -2558,7 +2558,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a LockableComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 LockableComponentDescriptor 对象。
     /// </summary>
     public static LockableComponentDescriptor GetEFTLockableComponentDescriptor(this NetDataReader reader)
     {
@@ -2569,7 +2569,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes global loot data descriptors into the writer stream.
+    /// 将全局战利品数据描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTLootDataDescriptor(this NetDataWriter writer, LootDataDescriptor target)
     {
@@ -2581,7 +2581,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a LootDataDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 LootDataDescriptor 对象。
     /// </summary>
     public static LootDataDescriptor GetEFTLootDataDescriptor(this NetDataReader reader)
     {
@@ -2596,7 +2596,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes detailed weapon malfunction descriptor structures into the writer stream.
+    /// 将详细的武器故障描述符结构序列化写入 writer 流。
     /// </summary>
     public static void PutEFTMalfunctionDescriptor(this NetDataWriter writer, MalfunctionDescriptor target)
     {
@@ -2651,7 +2651,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a MalfunctionDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 MalfunctionDescriptor 对象。
     /// </summary>
     public static MalfunctionDescriptor GetEFTMalfunctionDescriptor(this NetDataReader reader)
     {
@@ -2696,7 +2696,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the map item component markers into the writer stream.
+    /// 将地图物品组件的标记序列化写入 writer 流。
     /// </summary>
     public static void PutEFTMapComponentDescriptor(this NetDataWriter writer, MapComponentDescriptor target)
     {
@@ -2708,7 +2708,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a MapComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 MapComponentDescriptor 对象。
     /// </summary>
     public static MapComponentDescriptor GetEFTMapComponentDescriptor(this NetDataReader reader)
     {
@@ -2723,7 +2723,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the medical kit component resource state into the writer stream.
+    /// 将医疗包组件资源状态序列化写入 writer 流。
     /// </summary>
     public static void PutEFTMedKitComponentDescriptor(this NetDataWriter writer, MedKitComponentDescriptor target)
     {
@@ -2731,7 +2731,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a MedKitComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 MedKitComponentDescriptor 对象。
     /// </summary>
     public static MedKitComponentDescriptor GetEFTMedKitComponentDescriptor(this NetDataReader reader)
     {
@@ -2742,7 +2742,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the item stack merge operation descriptor into the writer stream.
+    /// 将物品堆叠合并操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTMergeOperationDescriptor(this NetDataWriter writer, MergeOperationDescriptor target)
     {
@@ -2753,7 +2753,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a MergeOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 MergeOperationDescriptor 对象。
     /// </summary>
     public static MergeOperationDescriptor GetEFTMergeOperationDescriptor(this NetDataReader reader)
     {
@@ -2767,7 +2767,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the item structural inventory move operation descriptor into the writer stream.
+    /// 将物品库存结构移动操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTMoveOperationDescriptor(this NetDataWriter writer, MoveOperationDescriptor target)
     {
@@ -2790,7 +2790,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a MoveOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 MoveOperationDescriptor 对象。
     /// </summary>
     public static MoveOperationDescriptor GetEFTMoveOperationDescriptor(this NetDataReader reader)
     {
@@ -2815,7 +2815,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a nested item hierarchy reference mapping its parent address context into the writer stream.
+    /// 将嵌套物品层级引用及其父级地址上下文的映射序列化写入 writer 流。
     /// </summary>
     public static void PutEFTNestedItemDescriptor(this NetDataWriter writer, NestedItemDescriptor target)
     {
@@ -2824,7 +2824,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a NestedItemDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 NestedItemDescriptor 对象。
     /// </summary>
     public static NestedItemDescriptor GetEFTNestedItemDescriptor(this NetDataReader reader)
     {
@@ -2836,7 +2836,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the player profile context notes manager data arrays into the writer stream.
+    /// 将玩家档案上下文便签管理器数据数组序列化写入 writer 流。
     /// </summary>
     public static void PutEFTNotesNotesManagerNotesDescriptor(this NetDataWriter writer, NotesManager.NotesDescriptor target)
     {
@@ -2848,7 +2848,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a NotesManager.NotesDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 NotesManager.NotesDescriptor 对象。
     /// </summary>
     public static NotesManager.NotesDescriptor GetEFTNotesNotesManagerNotesDescriptor(this NetDataReader reader)
     {
@@ -2863,7 +2863,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the stationary weapon interaction/operation context descriptor into the writer stream.
+    /// 将固定武器交互/操作上下文描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTOperateStationaryWeaponOperationDescriptor(this NetDataWriter writer, OperateStationaryWeaponOperationDescriptor target)
     {
@@ -2873,7 +2873,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a OperateStationaryWeaponOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 OperateStationaryWeaponOperationDescriptor 对象。
     /// </summary>
     public static OperateStationaryWeaponOperationDescriptor GetEFTOperateStationaryWeaponOperationDescriptor(this NetDataReader reader)
     {
@@ -2886,7 +2886,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an inventory base root container self-owner tracking descriptor reference into the writer stream.
+    /// 将库存基础根容器自身归属追踪描述符引用序列化写入 writer 流。
     /// </summary>
     public static void PutEFTOwnerItselfDescriptor(this NetDataWriter writer, OwnerItselfDescriptor target)
     {
@@ -2894,7 +2894,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a OwnerItselfDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 OwnerItselfDescriptor 对象。
     /// </summary>
     public static OwnerItselfDescriptor GetEFTOwnerItselfDescriptor(this NetDataReader reader)
     {
@@ -2905,7 +2905,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a localized interactive structural tripwire deployment operation into the writer stream.
+    /// 将本地化的交互式绊雷部署操作序列化写入 writer 流。
     /// </summary>
     public static void PutEFTPlantTripwireOperationDescriptor(this NetDataWriter writer, PlantTripwireOperationDescriptor target)
     {
@@ -2926,7 +2926,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a PlantTripwireOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 PlantTripwireOperationDescriptor 对象。
     /// </summary>
     public static PlantTripwireOperationDescriptor GetEFTPlantTripwireOperationDescriptor(this NetDataReader reader)
     {
@@ -2946,7 +2946,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes entire localized dynamic player profile visual equipment layout representations into the writer stream.
+    /// 将完整的本地化玩家档案动态外观装备布局表示序列化写入 writer 流。
     /// </summary>
     public static void PutEFTPlayerVisualRepresentationDescriptor(this NetDataWriter writer, PlayerVisualRepresentationDescriptor target)
     {
@@ -2975,7 +2975,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a PlayerVisualRepresentationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 PlayerVisualRepresentationDescriptor 对象。
     /// </summary>
     public static PlayerVisualRepresentationDescriptor GetEFTPlayerVisualRepresentationDescriptor(this NetDataReader reader)
     {
@@ -3000,7 +3000,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the poison component descriptor state into the writer stream.
+    /// 将中毒组件描述符状态序列化写入 writer 流。
     /// </summary>
     public static void PutEFTPoisonComponentDescriptor(this NetDataWriter writer, PoisonComponentDescriptor target)
     {
@@ -3008,7 +3008,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a PoisonComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 PoisonComponentDescriptor 对象。
     /// </summary>
     public static PoisonComponentDescriptor GetEFTPoisonComponentDescriptor(this NetDataReader reader)
     {
@@ -3019,7 +3019,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes prestige status validation data points into the writer stream.
+    /// 将声望状态校验数据点序列化写入 writer 流。
     /// </summary>
     public static void PutEFTPrestigePrestigeStatusData(this NetDataWriter writer, PrestigeStatusData target)
     {
@@ -3028,7 +3028,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a PrestigeStatusData object from the reader stream.
+    /// 从 reader 流反序列化并重建 PrestigeStatusData 对象。
     /// </summary>
     public static PrestigeStatusData GetEFTPrestigePrestigeStatusData(this NetDataReader reader)
     {
@@ -3040,7 +3040,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes comprehensive multi-zone structural profile health data matrices into the writer stream.
+    /// 将完整的多部位档案健康数据矩阵序列化写入 writer 流。
     /// </summary>
     public static void PutEFTProfileHealthInfo(this NetDataWriter writer, Profile.HealthInfo target)
     {
@@ -3064,7 +3064,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a Profile.HealthInfo object from the reader stream.
+    /// 从 reader 流反序列化并重建 Profile.HealthInfo 对象。
     /// </summary>
     public static Profile.HealthInfo GetEFTProfileHealthInfo(this NetDataReader reader)
     {
@@ -3087,7 +3087,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes structural health values and active status side effects for a targeted body zone into the writer stream.
+    /// 将目标身体部位的结构化生命值及生效状态副作用序列化写入 writer 流。
     /// </summary>
     public static void PutEFTProfileHealthInfoBodyPartInfo(this NetDataWriter writer, Profile.HealthInfo.BodyPartInfo target)
     {
@@ -3101,7 +3101,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a Profile.HealthInfo.BodyPartInfo object from the reader stream.
+    /// 从 reader 流反序列化并重建 Profile.HealthInfo.BodyPartInfo 对象。
     /// </summary>
     public static Profile.HealthInfo.BodyPartInfo GetEFTProfileHealthInfoBodyPartInfo(this NetDataReader reader)
     {
@@ -3119,7 +3119,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a targeted health anomaly or buff context duration element into the writer stream.
+    /// 将目标健康异常或增益效果上下文持续时长元素序列化写入 writer 流。
     /// </summary>
     public static void PutEFTProfileHealthInfoEffectInfo(this NetDataWriter writer, Profile.HealthInfo.EffectInfo target)
     {
@@ -3127,7 +3127,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a Profile.HealthInfo.EffectInfo object from the reader stream.
+    /// 从 reader 流反序列化并重建 Profile.HealthInfo.EffectInfo 对象。
     /// </summary>
     public static Profile.HealthInfo.EffectInfo GetEFTProfileHealthInfoEffectInfo(this NetDataReader reader)
     {
@@ -3138,7 +3138,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes precise structural attribute parameters including maximum thresholds and external damage scale coefficients into the writer stream.
+    /// 将精确的结构属性参数，包括最大阈值与外部伤害缩放系数序列化写入 writer 流。
     /// </summary>
     public static void PutEFTProfileHealthInfoValueInfo(this NetDataWriter writer, Profile.HealthInfo.ValueInfo target)
     {
@@ -3150,7 +3150,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a Profile.HealthInfo.ValueInfo object from the reader stream.
+    /// 从 reader 流反序列化并重建 Profile.HealthInfo.ValueInfo 对象。
     /// </summary>
     public static Profile.HealthInfo.ValueInfo GetEFTProfileHealthInfoValueInfo(this NetDataReader reader)
     {
@@ -3165,7 +3165,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes safe-trade profile economy money transfer limits and remaining intervals into the writer stream.
+    /// 将安全交易档案经济转账上限与剩余间隔序列化写入 writer 流。
     /// </summary>
     public static void PutEFTProfileMoneyTransferLimitData(this NetDataWriter writer, Profile.MoneyTransferLimitData target)
     {
@@ -3176,7 +3176,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a Profile.MoneyTransferLimitData object from the reader stream.
+    /// 从 reader 流反序列化并重建 Profile.MoneyTransferLimitData 对象。
     /// </summary>
     public static Profile.MoneyTransferLimitData GetEFTProfileMoneyTransferLimitData(this NetDataReader reader)
     {
@@ -3190,7 +3190,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes profile recipe unlock structures into the writer stream.
+    /// 将档案配方解锁结构序列化写入 writer 流。
     /// </summary>
     public static void PutEFTProfileUnlockedInfo(this NetDataWriter writer, Profile.UnlockedInfo target)
     {
@@ -3202,7 +3202,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a Profile.UnlockedInfo object from the reader stream.
+    /// 从 reader 流反序列化并重建 Profile.UnlockedInfo 对象。
     /// </summary>
     public static Profile.UnlockedInfo GetEFTProfileUnlockedInfo(this NetDataReader reader)
     {
@@ -3217,7 +3217,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a profile account moderation ban entry state into the writer stream.
+    /// 将档案账号审核封禁条目状态序列化写入 writer 流。
     /// </summary>
     public static void PutEFTProfileBanDescriptor(this NetDataWriter writer, ProfileBanDescriptor target)
     {
@@ -3226,7 +3226,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ProfileBanDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ProfileBanDescriptor 对象。
     /// </summary>
     public static ProfileBanDescriptor GetEFTProfileBanDescriptor(this NetDataReader reader)
     {
@@ -3238,7 +3238,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an entire complete server profile context descriptor containing all sub-systems into the writer stream.
+    /// 将包含所有子系统的完整服务器档案上下文描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTProfileDescriptor(this NetDataWriter writer, ProfileDescriptor target)
     {
@@ -3336,7 +3336,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ProfileDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ProfileDescriptor 对象。
     /// </summary>
     public static ProfileDescriptor GetEFTProfileDescriptor(this NetDataReader reader)
     {
@@ -3642,14 +3642,14 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes fundamental metadata and setting parameters for a profile character entry into the writer stream.
+    /// 将档案角色条目的基础元数据与设置参数序列化写入 writer 流。
     /// </summary>
     public static void PutEFTProfileInfoDescriptor(this NetDataWriter writer, ProfileInfoDescriptor target)
     {
         writer.Put(target.Nickname);
         writer.Put(target.MainProfileNickname);
         writer.PutEnum(target.Side);
-            // 47888 removed ProfileInfoDescriptor.PrestigeLevel: keep the writer and reader symmetric
+            // 47888 移除了 ProfileInfoDescriptor.PrestigeLevel：保持 writer 与 reader 对称
         writer.Put(target.RegistrationDate);
         writer.Put(target.SavageLockTime);
         writer.Put(target.GroupId);
@@ -3676,7 +3676,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ProfileInfoDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ProfileInfoDescriptor 对象。
     /// </summary>
     public static ProfileInfoDescriptor GetEFTProfileInfoDescriptor(this NetDataReader reader)
     {
@@ -3685,7 +3685,7 @@ public static class EFTSerializationExtensions
             Nickname = reader.GetString(),
             MainProfileNickname = reader.GetString(),
             Side = reader.GetEnum<EPlayerSide>(),
-            // PrestigeLevel: not present in the 47888 descriptor (see the matching writer change)
+            // PrestigeLevel：不存在于 47888 描述符中（参见对应的 writer 改动）
             RegistrationDate = reader.GetInt(),
             SavageLockTime = reader.GetDouble(),
             GroupId = reader.GetString(),
@@ -3715,7 +3715,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes contextual internal AI bot matching structure configuration fields into the writer stream.
+    /// 将上下文化的内部 AI bot 匹配结构配置字段序列化写入 writer 流。
     /// </summary>
     public static void PutEFTProfileSettings(this NetDataWriter writer, ProfileSettings target)
     {
@@ -3728,7 +3728,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ProfileSettings object from the reader stream.
+    /// 从 reader 流反序列化并重建 ProfileSettings 对象。
     /// </summary>
     public static ProfileSettings GetEFTProfileSettings(this NetDataReader reader)
     {
@@ -3744,7 +3744,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes session persistent stats metrics, combat actions history records, and raid logs into the writer stream.
+    /// 将会话持久统计指标、战斗操作历史记录与战局日志序列化写入 writer 流。
     /// </summary>
     public static void PutEFTProfileStatsDescriptor(this NetDataWriter writer, ProfileStatsDescriptor target)
     {
@@ -3752,10 +3752,10 @@ public static class EFTSerializationExtensions
         writer.PutEFTCounterCollectionDescriptor(target.OverallCounters);
         writer.Put(target.SessionExperienceMult);
         writer.Put(target.ExperienceBonusMult);
-        // SPT 5.0 inserted the edition-specific experience bonus between the
-        // general multiplier and the session total. Keep this in the managed
-        // codec so profile snapshots have the same layout as the native 5.0
-        // serializer.
+        // SPT 5.0 在通用倍率与会话总计之间插入了
+        // 版本专属经验加成。请在托管
+        // codec 中保留该顺序，使档案快照与原生 5.0
+        // 序列化器保持一致。
         writer.Put(target.GameEditionExperienceBonus != null);
         if (target.GameEditionExperienceBonus != null)
         {
@@ -3825,7 +3825,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ProfileStatsDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ProfileStatsDescriptor 对象。
     /// </summary>
     public static ProfileStatsDescriptor GetEFTProfileStatsDescriptor(this NetDataReader reader)
     {
@@ -3892,7 +3892,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes divided statistics profiles for separate game environments into the writer stream.
+    /// 将按游戏环境划分的统计档案序列化写入 writer 流。
     /// </summary>
     public static void PutEFTProfileStatsSeparatorDescriptor(this NetDataWriter writer, ProfileStatsSeparatorDescriptor target)
     {
@@ -3915,7 +3915,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ProfileStatsSeparatorDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ProfileStatsSeparatorDescriptor 对象。
     /// </summary>
     public static ProfileStatsSeparatorDescriptor GetEFTProfileStatsSeparatorDescriptor(this NetDataReader reader)
     {
@@ -3932,7 +3932,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a quest acceptance operation descriptor into the writer stream.
+    /// 将任务接受操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTQuestAcceptDescriptor(this NetDataWriter writer, QuestAcceptDescriptor target)
     {
@@ -3942,7 +3942,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a QuestAcceptDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 QuestAcceptDescriptor 对象。
     /// </summary>
     public static QuestAcceptDescriptor GetEFTQuestAcceptDescriptor(this NetDataReader reader)
     {
@@ -3955,7 +3955,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a quest finalization/finish operation descriptor into the writer stream.
+    /// 将任务结算/完成操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTQuestFinishDescriptor(this NetDataWriter writer, QuestFinishDescriptor target)
     {
@@ -3965,7 +3965,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a QuestFinishDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 QuestFinishDescriptor 对象。
     /// </summary>
     public static QuestFinishDescriptor GetEFTQuestFinishDescriptor(this NetDataReader reader)
     {
@@ -3978,7 +3978,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a quest condition items handover operation descriptor into the writer stream.
+    /// 将任务条件物品交付操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTQuestHandoverDescriptor(this NetDataWriter writer, QuestHandoverDescriptor target)
     {
@@ -3994,7 +3994,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a QuestHandoverDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 QuestHandoverDescriptor 对象。
     /// </summary>
     public static QuestHandoverDescriptor GetEFTQuestHandoverDescriptor(this NetDataReader reader)
     {
@@ -4015,7 +4015,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes historical quest state timeline logs and objective progress mappings into the writer stream.
+    /// 将历史任务状态时间线日志与目标进度映射序列化写入 writer 流。
     /// </summary>
     public static void PutEFTQuestsQuestStatusData(this NetDataWriter writer, QuestStatusData target)
     {
@@ -4037,7 +4037,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a QuestStatusData object from the reader stream.
+    /// 从 reader 流反序列化并重建 QuestStatusData 对象。
     /// </summary>
     public static QuestStatusData GetEFTQuestsQuestStatusData(this NetDataReader reader)
     {
@@ -4064,7 +4064,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the recodable/encoded item status state component into the writer stream.
+    /// 将可重编码/已编码物品状态组件序列化写入 writer 流。
     /// </summary>
     public static void PutEFTRecodableComponentDescriptor(this NetDataWriter writer, RecodableComponentDescriptor target)
     {
@@ -4072,7 +4072,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a RecodableComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 RecodableComponentDescriptor 对象。
     /// </summary>
     public static RecodableComponentDescriptor GetEFTRecodableComponentDescriptor(this NetDataReader reader)
     {
@@ -4083,7 +4083,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an inventory item removal operation descriptor into the writer stream.
+    /// 将库存物品移除操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTRemoveOperationDescriptor(this NetDataWriter writer, RemoveOperationDescriptor target)
     {
@@ -4093,7 +4093,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a RemoveOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 RemoveOperationDescriptor 对象。
     /// </summary>
     public static RemoveOperationDescriptor GetEFTRemoveOperationDescriptor(this NetDataReader reader)
     {
@@ -4106,7 +4106,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the repairable item status parameters into the writer stream.
+    /// 将可修理物品状态参数序列化写入 writer 流。
     /// </summary>
     public static void PutEFTRepairableComponentDescriptor(this NetDataWriter writer, RepairableComponentDescriptor target)
     {
@@ -4115,7 +4115,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a RepairableComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 RepairableComponentDescriptor 对象。
     /// </summary>
     public static RepairableComponentDescriptor GetEFTRepairableComponentDescriptor(this NetDataReader reader)
     {
@@ -4127,7 +4127,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the repair enhancement state attributes and modifiers into the writer stream.
+    /// 将修理增强状态属性与修正值序列化写入 writer 流。
     /// </summary>
     public static void PutEFTRepairEnhancementComponentDescriptor(this NetDataWriter writer, RepairEnhancementComponentDescriptor target)
     {
@@ -4154,7 +4154,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a RepairEnhancementComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 RepairEnhancementComponentDescriptor 对象。
     /// </summary>
     public static RepairEnhancementComponentDescriptor GetEFTRepairEnhancementComponentDescriptor(this NetDataReader reader)
     {
@@ -4173,7 +4173,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the repair kit resource points component data into the writer stream.
+    /// 将修理工具包资源点数组件数据序列化写入 writer 流。
     /// </summary>
     public static void PutEFTRepairKitComponentDescriptor(this NetDataWriter writer, RepairKitComponentDescriptor target)
     {
@@ -4181,7 +4181,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a RepairKitComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 RepairKitComponentDescriptor 对象。
     /// </summary>
     public static RepairKitComponentDescriptor GetEFTRepairKitComponentDescriptor(this NetDataReader reader)
     {
@@ -4192,7 +4192,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes general item resource usage levels into the writer stream.
+    /// 将物品通用资源使用量序列化写入 writer 流。
     /// </summary>
     public static void PutEFTResourceItemComponentDescriptor(this NetDataWriter writer, ResourceItemComponentDescriptor target)
     {
@@ -4200,7 +4200,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ResourceItemComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ResourceItemComponentDescriptor 对象。
     /// </summary>
     public static ResourceItemComponentDescriptor GetEFTResourceItemComponentDescriptor(this NetDataReader reader)
     {
@@ -4211,7 +4211,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the asset reference manifest indices for a scene context into the writer stream.
+    /// 将场景上下文的资源引用清单索引序列化写入 writer 流。
     /// </summary>
     public static void PutEFTSceneResourceKey(this NetDataWriter writer, SceneResourceKey target)
     {
@@ -4234,7 +4234,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SceneResourceKey object from the reader stream.
+    /// 从 reader 流反序列化并重建 SceneResourceKey 对象。
     /// </summary>
     public static SceneResourceKey GetEFTSceneResourceKey(this NetDataReader reader)
     {
@@ -4251,7 +4251,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes standard system asset dependency lookup keys into the writer stream.
+    /// 将标准系统资源依赖查找键序列化写入 writer 流。
     /// </summary>
     public static void PutEFTResourceKey(this NetDataWriter writer, ResourceKey target)
     {
@@ -4274,7 +4274,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ResourceKey object from the reader stream.
+    /// 从 reader 流反序列化并重建 ResourceKey 对象。
     /// </summary>
     public static ResourceKey GetEFTResourceKey(this NetDataReader reader)
     {
@@ -4291,7 +4291,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a localized story dialog narrative advancement event into the writer stream.
+    /// 将本地化的剧情对话叙事推进事件序列化写入 writer 流。
     /// </summary>
     public static void PutEFTSetDialogProgressOperationDescriptor(this NetDataWriter writer, SetDialogProgressOperationDescriptor target)
     {
@@ -4304,7 +4304,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SetDialogProgressOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 SetDialogProgressOperationDescriptor 对象。
     /// </summary>
     public static SetDialogProgressOperationDescriptor GetEFTSetDialogProgressOperationDescriptor(this NetDataReader reader)
     {
@@ -4320,7 +4320,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an item placement/setup operation descriptor into the writer stream.
+    /// 将物品放置/设置操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTSetupItemOperationDescriptor(this NetDataWriter writer, SetupItemOperationDescriptor target)
     {
@@ -4334,7 +4334,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SetupItemOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 SetupItemOperationDescriptor 对象。
     /// </summary>
     public static SetupItemOperationDescriptor GetEFTSetupItemOperationDescriptor(this NetDataReader reader)
     {
@@ -4351,7 +4351,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a weapon cartridge shell template reference mapping into the writer stream.
+    /// 将武器弹壳模板引用映射序列化写入 writer 流。
     /// </summary>
     public static void PutEFTShellTemplateDescriptor(this NetDataWriter writer, ShellTemplateDescriptor target)
     {
@@ -4359,7 +4359,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ShellTemplateDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ShellTemplateDescriptor 对象。
     /// </summary>
     public static ShellTemplateDescriptor GetEFTShellTemplateDescriptor(this NetDataReader reader)
     {
@@ -4370,7 +4370,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes complex structural firearm sight calibration and scope multi-mode arrays into the writer stream.
+    /// 将复杂的枪械瞄具校准与倍镜多模式数组序列化写入 writer 流。
     /// </summary>
     public static void PutEFTSightComponentDescriptor(this NetDataWriter writer, SightComponentDescriptor target)
     {
@@ -4389,7 +4389,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SightComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 SightComponentDescriptor 对象。
     /// </summary>
     public static SightComponentDescriptor GetEFTSightComponentDescriptor(this NetDataReader reader)
     {
@@ -4414,7 +4414,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes separate progression blocks covering both common attributes and mastering stats into the writer stream.
+    /// 将分别涵盖通用属性与专精统计的独立进度块序列化写入 writer 流。
     /// </summary>
     public static void PutEFTSkillsDescriptor(this NetDataWriter writer, SkillsDescriptor target)
     {
@@ -4431,7 +4431,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SkillsDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 SkillsDescriptor 对象。
     /// </summary>
     public static SkillsDescriptor GetEFTSkillsDescriptor(this NetDataReader reader)
     {
@@ -4452,7 +4452,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a specified weapon mastery identifier alongside its progression metric into the writer stream.
+    /// 将指定的武器专精标识及其进度指标序列化写入 writer 流。
     /// </summary>
     public static void PutEFTSkillsDescriptorMasteringInfoDescriptor(this NetDataWriter writer, SkillsDescriptor.MasteringInfoDescriptor target)
     {
@@ -4461,7 +4461,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SkillsDescriptor.MasteringInfoDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 SkillsDescriptor.MasteringInfoDescriptor 对象。
     /// </summary>
     public static SkillsDescriptor.MasteringInfoDescriptor GetEFTSkillsDescriptorMasteringInfoDescriptor(this NetDataReader reader)
     {
@@ -4473,7 +4473,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an isolated character skill item encompassing session gain records and temporal markers into the writer stream.
+    /// 将包含会话增益记录与时间标记的单个角色技能项序列化写入 writer 流。
     /// </summary>
     public static void PutEFTSkillsDescriptorSkillInfoDescriptor(this NetDataWriter writer, SkillsDescriptor.SkillInfoDescriptor target)
     {
@@ -4484,7 +4484,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SkillsDescriptor.SkillInfoDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 SkillsDescriptor.SkillInfoDescriptor 对象。
     /// </summary>
     public static SkillsDescriptor.SkillInfoDescriptor GetEFTSkillsDescriptorSkillInfoDescriptor(this NetDataReader reader)
     {
@@ -4498,7 +4498,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a single inventory slot descriptor into the writer stream.
+    /// 将单个库存槽位描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTSlotDescriptor(this NetDataWriter writer, SlotDescriptor target)
     {
@@ -4507,7 +4507,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SlotDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 SlotDescriptor 对象。
     /// </summary>
     public static SlotDescriptor GetEFTSlotDescriptor(this NetDataReader reader)
     {
@@ -4519,7 +4519,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a slot item address container reference mapping into the writer stream.
+    /// 将槽位物品地址容器引用映射序列化写入 writer 流。
     /// </summary>
     public static void PutEFTSlotItemAddressDescriptor(this NetDataWriter writer, SlotItemAddressDescriptor target)
     {
@@ -4527,7 +4527,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SlotItemAddressDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 SlotItemAddressDescriptor 对象。
     /// </summary>
     public static SlotItemAddressDescriptor GetEFTSlotItemAddressDescriptor(this NetDataReader reader)
     {
@@ -4538,7 +4538,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an item stack partition split operation descriptor into the writer stream.
+    /// 将物品堆叠拆分操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTSplitOperationDescriptor(this NetDataWriter writer, SplitOperationDescriptor target)
     {
@@ -4552,7 +4552,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SplitOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 SplitOperationDescriptor 对象。
     /// </summary>
     public static SplitOperationDescriptor GetEFTSplitOperationDescriptor(this NetDataReader reader)
     {
@@ -4569,7 +4569,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an inventory multi-item stack slot layout block into the writer stream.
+    /// 将库存多物品堆叠槽位布局块序列化写入 writer 流。
     /// </summary>
     public static void PutEFTStackSlotDescriptor(this NetDataWriter writer, StackSlotDescriptor target)
     {
@@ -4582,7 +4582,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a StackSlotDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 StackSlotDescriptor 对象。
     /// </summary>
     public static StackSlotDescriptor GetEFTStackSlotDescriptor(this NetDataReader reader)
     {
@@ -4600,7 +4600,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a stack slot structural layout item address mapping descriptor into the writer stream.
+    /// 将堆叠槽位结构布局物品地址映射描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTStackSlotItemAddressDescriptor(this NetDataWriter writer, StackSlotItemAddressDescriptor target)
     {
@@ -4608,7 +4608,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a StackSlotItemAddressDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 StackSlotItemAddressDescriptor 对象。
     /// </summary>
     public static StackSlotItemAddressDescriptor GetEFTStackSlotItemAddressDescriptor(this NetDataReader reader)
     {
@@ -4619,7 +4619,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a complex item layout positional swap exchange operation descriptor into the writer stream.
+    /// 将复杂物品布局位置交换操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTSwapOperationDescriptor(this NetDataWriter writer, SwapOperationDescriptor target)
     {
@@ -4643,7 +4643,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a SwapOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 SwapOperationDescriptor 对象。
     /// </summary>
     public static SwapOperationDescriptor GetEFTSwapOperationDescriptor(this NetDataReader reader)
     {
@@ -4669,7 +4669,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an interactive item status tag component entry into the writer stream.
+    /// 将交互式物品状态标签组件条目序列化写入 writer 流。
     /// </summary>
     public static void PutEFTTagComponentDescriptor(this NetDataWriter writer, TagComponentDescriptor target)
     {
@@ -4678,7 +4678,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a TagComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 TagComponentDescriptor 对象。
     /// </summary>
     public static TagComponentDescriptor GetEFTTagComponentDescriptor(this NetDataReader reader)
     {
@@ -4690,7 +4690,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an individual item label tag alteration operation descriptor into the writer stream.
+    /// 将单个物品标签变更操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTTagOperationDescriptor(this NetDataWriter writer, TagOperationDescriptor target)
     {
@@ -4702,7 +4702,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a TagOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 TagOperationDescriptor 对象。
     /// </summary>
     public static TagOperationDescriptor GetEFTTagOperationDescriptor(this NetDataReader reader)
     {
@@ -4717,7 +4717,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a targeted profile progression task condition monitoring tracker element into the writer stream.
+    /// 将目标档案进度任务条件监控追踪元素序列化写入 writer 流。
     /// </summary>
     public static void PutEFTTaskConditionCounterDescriptor(this NetDataWriter writer, TaskConditionCounterDescriptor target)
     {
@@ -4728,7 +4728,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a TaskConditionCounterDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 TaskConditionCounterDescriptor 对象。
     /// </summary>
     public static TaskConditionCounterDescriptor GetEFTTaskConditionCounterDescriptor(this NetDataReader reader)
     {
@@ -4742,7 +4742,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an environmental item discard/throw physical physics operation descriptor into the writer stream.
+    /// 将环境物品丢弃/投掷物理操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTThrowOperationDescriptor(this NetDataWriter writer, ThrowOperationDescriptor target)
     {
@@ -4764,7 +4764,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ThrowOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ThrowOperationDescriptor 对象。
     /// </summary>
     public static ThrowOperationDescriptor GetEFTThrowOperationDescriptor(this NetDataReader reader)
     {
@@ -4788,7 +4788,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the togglable component descriptor state into the writer stream.
+    /// 将可切换组件描述符状态序列化写入 writer 流。
     /// </summary>
     public static void PutEFTTogglableComponentDescriptor(this NetDataWriter writer, TogglableComponentDescriptor target)
     {
@@ -4796,7 +4796,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a TogglableComponentDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 TogglableComponentDescriptor 对象。
     /// </summary>
     public static TogglableComponentDescriptor GetEFTTogglableComponentDescriptor(this NetDataReader reader)
     {
@@ -4807,7 +4807,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an inventory item toggle action operation descriptor into the writer stream.
+    /// 将库存物品开关操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTToggleOperationDescriptor(this NetDataWriter writer, ToggleOperationDescriptor target)
     {
@@ -4818,7 +4818,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ToggleOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 ToggleOperationDescriptor 对象。
     /// </summary>
     public static ToggleOperationDescriptor GetEFTToggleOperationDescriptor(this NetDataReader reader)
     {
@@ -4832,7 +4832,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the loyalty level, standing, and threshold metadata for a trader instance into the writer stream.
+    /// 将商人实例的忠诚等级、声望与阈值元数据序列化写入 writer 流。
     /// </summary>
     public static void PutEFTTraderInfoDescriptor(this NetDataWriter writer, TraderInfoDescriptor target)
     {
@@ -4845,7 +4845,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a TraderInfoDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 TraderInfoDescriptor 对象。
     /// </summary>
     public static TraderInfoDescriptor GetEFTTraderInfoDescriptor(this NetDataReader reader)
     {
@@ -4861,7 +4861,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes commercial trader services cost listings and eligibility validation states into the writer stream.
+    /// 将商人服务商业费用列表与资格校验状态序列化写入 writer 流。
     /// </summary>
     public static void PutEFTTraderServiceAvailabilityData(this NetDataWriter writer, TraderServiceAvailabilityData target)
     {
@@ -4889,7 +4889,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a TraderServiceAvailabilityData object from the reader stream.
+    /// 从 reader 流反序列化并重建 TraderServiceAvailabilityData 对象。
     /// </summary>
     public static TraderServiceAvailabilityData GetEFTTraderServiceAvailabilityData(this NetDataReader reader)
     {
@@ -4922,10 +4922,10 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the paid exfiltration point (car extract) cash handover operation
-    /// descriptor into the writer stream. The point is identified by its trigger
-    /// name and every item to hand over by its id, so the host can rebuild the
-    /// operation against its own authoritative item graph.
+    /// 将付费撤离点（车辆撤离）现金交付操作
+    /// 描述符序列化写入 writer 流。该撤离点通过其触发
+    /// 名称标识，每件待交付物品通过其 id 标识，主机因此可以
+    /// 基于自身的权威物品图重建该操作。
     /// </summary>
     public static void PutEFTInventoryLogicOperationsTransferExfiltrationPaymentOperationDescriptor(
         this NetDataWriter writer, TransferExfiltrationPaymentOperationDescriptor target)
@@ -4943,8 +4943,8 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a paid exfiltration point cash handover
-    /// operation descriptor from the reader stream.
+    /// 从 reader 流反序列化并重建付费撤离点现金交付
+    /// 操作描述符。
     /// </summary>
     public static TransferExfiltrationPaymentOperationDescriptor GetEFTInventoryLogicOperationsTransferExfiltrationPaymentOperationDescriptor(
         this NetDataReader reader)
@@ -4965,7 +4965,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the tape study operation descriptor into the writer stream.
+    /// 将磁带学习（tape study）操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTStudyItemOperationDescriptor(this NetDataWriter writer, StudyItemOperationDescriptor target)
     {
@@ -4975,7 +4975,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a StudyItemOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 StudyItemOperationDescriptor 对象。
     /// </summary>
     public static StudyItemOperationDescriptor GetEFTStudyItemOperationDescriptor(this NetDataReader reader)
     {
@@ -4988,17 +4988,17 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes the tape study (playback through a recorder) operation descriptor
-    /// into the writer stream. The recorder is optional, so it is written as a flag
-    /// followed by its id.
+    /// 将磁带学习（通过录像机回放）操作描述符
+    /// 序列化写入 writer 流。录像机是可选的，因此以一个标志
+    /// 后接其 id 的形式写入。
     /// </summary>
     public static void PutEFTStudyItemPlayerOperationDescriptor(this NetDataWriter writer, StudyItemPlayerOperationDescriptor target)
     {
         writer.Put(target.OperationId);
         writer.PutMongoID(target.OwnerId);
         writer.PutMongoID(target.ItemId);
-        // The generated getter boxes the inline Nullable field, so read it through
-        // the field, exactly like ProfileDescriptor.PetId.
+        // 生成的 getter 会装箱内联的 Nullable 字段，因此需通过
+        // 该字段读取，方式与 ProfileDescriptor.PetId 完全一致。
         var recorderId = NativeNullable<MongoID>.Read(target, nameof(StudyItemPlayerOperationDescriptor.RecorderId));
         if (recorderId.HasValue)
         {
@@ -5010,7 +5010,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a StudyItemPlayerOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 StudyItemPlayerOperationDescriptor 对象。
     /// </summary>
     public static StudyItemPlayerOperationDescriptor GetEFTStudyItemPlayerOperationDescriptor(this NetDataReader reader)
     {
@@ -5029,7 +5029,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an inventory item numeric element transfer operation descriptor into the writer stream.
+    /// 将库存物品数值元素转移操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTTransferOperationDescriptor(this NetDataWriter writer, TransferOperationDescriptor target)
     {
@@ -5041,7 +5041,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a TransferOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 TransferOperationDescriptor 对象。
     /// </summary>
     public static TransferOperationDescriptor GetEFTTransferOperationDescriptor(this NetDataReader reader)
     {
@@ -5056,7 +5056,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a fast-access hotkey structural item unbind operation descriptor into the writer stream.
+    /// 将快捷栏热键物品解绑操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTUnbindItemOperationDescriptor(this NetDataWriter writer, UnbindItemOperationDescriptor target)
     {
@@ -5067,7 +5067,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a UnbindItemOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 UnbindItemOperationDescriptor 对象。
     /// </summary>
     public static UnbindItemOperationDescriptor GetEFTUnbindItemOperationDescriptor(this NetDataReader reader)
     {
@@ -5081,7 +5081,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a weapon magazine emptying or unload operation descriptor into the writer stream.
+    /// 将武器弹匣清空/卸载操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTUnloadMagOperationDescriptor(this NetDataWriter writer, UnloadMagOperationDescriptor target)
     {
@@ -5091,7 +5091,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a UnloadMagOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 UnloadMagOperationDescriptor 对象。
     /// </summary>
     public static UnloadMagOperationDescriptor GetEFTUnloadMagOperationDescriptor(this NetDataReader reader)
     {
@@ -5104,7 +5104,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes kill tracking victim profile context attributes and range metrics logs into the writer stream.
+    /// 将击杀追踪受害者的档案上下文属性与距离指标日志序列化写入 writer 流。
     /// </summary>
     public static void PutEFTVictimStats(this NetDataWriter writer, VictimStats target)
     {
@@ -5114,7 +5114,7 @@ public static class EFTSerializationExtensions
         writer.PutEnum(target.Side);
         writer.PutTimeSpan(new System.TimeSpan(target.Time.Ticks));
         writer.Put(target.Level);
-            // 47888 removed ProfileInfoDescriptor.PrestigeLevel: keep the writer and reader symmetric
+            // 47888 移除了 ProfileInfoDescriptor.PrestigeLevel：保持 writer 与 reader 对称
         writer.PutEnum(target.BodyPart);
         writer.Put(target.Weapon);
         writer.Put(target.Distance);
@@ -5123,7 +5123,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a VictimStats object from the reader stream.
+    /// 从 reader 流反序列化并重建 VictimStats 对象。
     /// </summary>
     public static VictimStats GetEFTVictimStats(this NetDataReader reader)
     {
@@ -5135,7 +5135,7 @@ public static class EFTSerializationExtensions
             Side = reader.GetEnum<EPlayerSide>(),
             Time = new Il2CppSystem.TimeSpan(reader.GetTimeSpan().Ticks),
             Level = reader.GetInt(),
-            // PrestigeLevel: not present in the 47888 descriptor (see the matching writer change)
+            // PrestigeLevel：不存在于 47888 描述符中（参见对应的 writer 改动）
             BodyPart = reader.GetEnum<EBodyPart>(),
             Weapon = reader.GetString(),
             Distance = reader.GetFloat(),
@@ -5145,7 +5145,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a internal firearm bolt/rechamber interaction action operation descriptor into the writer stream.
+    /// 将枪械枪机/上膛交互动作操作描述符序列化写入 writer 流。
     /// </summary>
     public static void PutEFTWeaponRechamberOperationDescriptor(this NetDataWriter writer, WeaponRechamberOperationDescriptor target)
     {
@@ -5155,7 +5155,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a WeaponRechamberOperationDescriptor object from the reader stream.
+    /// 从 reader 流反序列化并重建 WeaponRechamberOperationDescriptor 对象。
     /// </summary>
     public static WeaponRechamberOperationDescriptor GetEFTWeaponRechamberOperationDescriptor(this NetDataReader reader)
     {
@@ -5168,7 +5168,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes item identity string associations for insurance tracking records into the writer stream.
+    /// 将保险追踪记录中的物品标识字符串关联序列化写入 writer 流。
     /// </summary>
     public static void PutJsonTypeInsuredProfileItems(this NetDataWriter writer, InsuredProfileItems target)
     {
@@ -5177,7 +5177,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs an InsuredProfileItems object from the reader stream.
+    /// 从 reader 流反序列化并重建 InsuredProfileItems 对象。
     /// </summary>
     public static InsuredProfileItems GetJsonTypeInsuredProfileItems(this NetDataReader reader)
     {
@@ -5189,14 +5189,14 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes visual identity parameters and comprehensive health state values for player profile models into the writer stream.
+    /// 将玩家档案模型的外观标识参数与完整健康状态值序列化写入 writer 流。
     /// </summary>
     public static void PutJsonTypePlayerInfo(this NetDataWriter writer, PlayerInfo target)
     {
         writer.Put(target.Nickname);
         writer.PutEnum(target.Side);
         writer.Put(target.Level);
-            // 47888 removed ProfileInfoDescriptor.PrestigeLevel: keep the writer and reader symmetric
+            // 47888 移除了 ProfileInfoDescriptor.PrestigeLevel：保持 writer 与 reader 对称
         writer.PutEnum(target.MemberCategory);
         writer.PutEnum(target.SelectedMemberCategory);
         writer.Put(target.SavageLockTime);
@@ -5207,7 +5207,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a PlayerInfo object from the reader stream.
+    /// 从 reader 流反序列化并重建 PlayerInfo 对象。
     /// </summary>
     public static PlayerInfo GetJsonTypePlayerInfo(this NetDataReader reader)
     {
@@ -5216,7 +5216,7 @@ public static class EFTSerializationExtensions
             Nickname = reader.GetString(),
             Side = reader.GetEnum<EPlayerSide>(),
             Level = reader.GetInt(),
-            // PrestigeLevel: not present in the 47888 descriptor (see the matching writer change)
+            // PrestigeLevel：不存在于 47888 描述符中（参见对应的 writer 改动）
             MemberCategory = reader.GetEnum<EMemberCategory>(),
             SelectedMemberCategory = reader.GetEnum<EMemberCategory>(),
             SavageLockTime = reader.GetDouble(),
@@ -5228,7 +5228,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a spawn node configuration position and generation probability weights factor into the writer stream.
+    /// 将出生点配置位置与生成概率权重系数序列化写入 writer 流。
     /// </summary>
     public static void PutWeightedLootPointSpawnPosition(this NetDataWriter writer, WeightedLootPointSpawnPosition target)
     {
@@ -5239,7 +5239,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a WeightedLootPointSpawnPosition object from the reader stream.
+    /// 从 reader 流反序列化并重建 WeightedLootPointSpawnPosition 对象。
     /// </summary>
     public static WeightedLootPointSpawnPosition GetWeightedLootPointSpawnPosition(this NetDataReader reader)
     {
@@ -5253,7 +5253,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a four-component mathematical quaternion rotation structure into the writer stream.
+    /// 将四分量数学四元数旋转结构序列化写入 writer 流。
     /// </summary>
     public static void PutClassQuaternion(this NetDataWriter writer, ClassQuaternion target)
     {
@@ -5264,7 +5264,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ClassQuaternion object from the reader stream.
+    /// 从 reader 流反序列化并重建 ClassQuaternion 对象。
     /// </summary>
     public static ClassQuaternion GetClassQuaternion(this NetDataReader reader)
     {
@@ -5278,7 +5278,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes synchronized physical object coordinates and raw rotational state bounds into the writer stream.
+    /// 将同步的物理对象坐标与原始旋转状态范围序列化写入 writer 流。
     /// </summary>
     public static void PutClassTransformSync(this NetDataWriter writer, ClassTransformSync target)
     {
@@ -5287,7 +5287,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ClassTransformSync object from the reader stream.
+    /// 从 reader 流反序列化并重建 ClassTransformSync 对象。
     /// </summary>
     public static ClassTransformSync GetClassTransformSync(this NetDataReader reader)
     {
@@ -5299,7 +5299,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a standard dimensional three-element vector coordinate position mapping into the writer stream.
+    /// 将标准三维三元素向量坐标位置映射序列化写入 writer 流。
     /// </summary>
     public static void PutClassVector3(this NetDataWriter writer, ClassVector3 target)
     {
@@ -5309,7 +5309,7 @@ public static class EFTSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and reconstructs a ClassVector3 object from the reader stream.
+    /// 从 reader 流反序列化并重建 ClassVector3 对象。
     /// </summary>
     public static ClassVector3 GetClassVector3(this NetDataReader reader)
     {

@@ -76,7 +76,7 @@ public class SpawnSyncObjectSubPackets
                 processor.TripwireManager ??= new TripwireManager(Singleton<GameWorld>.Instance);
                 if (processor.TripwireManager.GetTripwireById(ObjectId) == null)
                     processor.TripwireManager.AddTripwire(syncObject);
-                // Preserve inert/triggered state for a late join instead of rearming it.
+                // 为迟到的加入者保留未激活/已触发状态，而不是重新把它设为待触发。
                 if (State != ETripwireState.Wait && State != ETripwireState.None)
                 {
                     var update = new SynchronizableObjectPacket
@@ -220,7 +220,7 @@ public class SpawnSyncObjectSubPackets
                 }
                 syncObject.AirdropType = AirdropType;
                 syncObject.Logic?.TryCast<ClientAirDrop>()?.UpdateContainerType(AirdropType);
-                // SPT 5 keeps the loot collider/container under an inactive view while falling.
+                // SPT 5 在物体下落时会把战利品碰撞体/容器置于未激活的 view 之下。
                 var container = syncObject.GetComponentInChildren<LootableContainer>(true);
                 if (container == null)
                 {

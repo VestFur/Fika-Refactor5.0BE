@@ -9,8 +9,8 @@ using Fika.Core.Main.Utils;
 namespace Fika.Core.Bundles;
 
 /// <summary>
-/// Created by Nexus / pandahhcorp <br/>
-/// Refactored by Lacyway to load bundles directly from memory
+/// 创建者：Nexus / pandahhcorp <br/>
+/// 由 Lacyway 重构为直接从内存加载 bundle
 /// </summary>
 internal class InternalBundleLoader
 {
@@ -20,8 +20,8 @@ internal class InternalBundleLoader
 
     public InternalBundleLoader()
     {
-        // Plugin.Load runs on Unity's main thread. Finish loading before any
-        // patches or UI consumers can request an asset from this bundle.
+        // Plugin.Load 运行在 Unity 主线程上。要在任何补丁或 UI 消费方
+        // 能从该 bundle 请求资源之前完成加载。
         LoadBundles();
         Instance = this;
     }
@@ -40,12 +40,12 @@ internal class InternalBundleLoader
     }
 
     /// <summary>
-    /// Loads a Fika asset from the Master Bundle
+    /// 从 Master Bundle 加载一个 Fika 资源
     /// </summary>
-    /// <param name="asset">The <see cref="EFikaAsset"/> type to load</param>
+    /// <param name="asset">要加载的 <see cref="EFikaAsset"/> 类型</param>
     /// <returns></returns>
-    /// <exception cref="NullReferenceException">Master Bundle could not be found</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><see cref="EFikaAsset"/> was out of range</exception>
+    /// <exception cref="NullReferenceException">找不到 Master Bundle</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><see cref="EFikaAsset"/> 超出范围</exception>
     internal GameObject GetFikaAsset(EFikaAsset asset)
     {
         if (_masterBundle == null)
@@ -72,15 +72,15 @@ internal class InternalBundleLoader
     }
 
     /// <summary>
-    /// Loads a prefab and reports a missing asset instead of forwarding it to
-    /// <c>Cast&lt;T&gt;()</c>.
+    /// 加载一个 prefab，并在资源缺失时报告，而不是把它转交给
+    /// <c>Cast&lt;T&gt;()</c>。
     /// </summary>
     /// <remarks>
-    /// <c>Cast&lt;T&gt;()</c> resolves the il2cpp class of the wrapped pointer. When the bundle
-    /// does not contain the asset the returned wrapper carries a null native pointer, and that
-    /// class lookup faults inside GameAssembly (0xC0000005, read at address 0x0) instead of
-    /// throwing a managed exception - it is not a CLR NullReferenceException and cannot be
-    /// caught by the callers. Returning null makes the consumer skip its own feature.
+    /// <c>Cast&lt;T&gt;()</c> 会解析被包装指针的 il2cpp 类。当 bundle
+    /// 不包含该资源时，返回的包装器携带空的原生指针，而该
+    /// 类查找会在 GameAssembly 内部出错（0xC0000005，读取地址 0x0），而不会
+    /// 抛出托管异常——它不是 CLR 的 NullReferenceException，调用方
+    /// 无法捕获它。返回 null 可让消费方跳过自己的功能。
     /// </remarks>
     private GameObject LoadPrefab(string name)
     {
@@ -95,7 +95,7 @@ internal class InternalBundleLoader
     }
 
     /// <summary>
-    /// Sprite counterpart of <see cref="LoadPrefab(string)"/>.
+    /// <see cref="LoadPrefab(string)"/> 的 Sprite 对应版本。
     /// </summary>
     private Sprite LoadSprite(string name)
     {
@@ -110,9 +110,9 @@ internal class InternalBundleLoader
     }
 
     /// <summary>
-    /// Loads all <see cref="EFikaSprite"/> into memory and caches them
+    /// 将所有 <see cref="EFikaSprite"/> 加载到内存并缓存
     /// </summary>
-    /// <returns>All sprites in a <see cref="Dictionary{TKey, TValue}"/></returns>
+    /// <returns>以 <see cref="Dictionary{TKey, TValue}"/> 存放的所有 sprite</returns>
     internal Dictionary<EFikaSprite, Sprite> GetFikaSprites()
     {
         Dictionary<EFikaSprite, Sprite> sprites = [];

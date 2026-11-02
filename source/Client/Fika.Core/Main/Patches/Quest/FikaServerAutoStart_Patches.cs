@@ -44,9 +44,9 @@ public sealed class FikaServerAutoStartTransactionPatch : ModulePatch
         if (operationResult.Failed ||
             !ServerAutoStartQuests.Contains(__instance, operationResult.Value?.TryCast<QuestAcceptResult>())) return true;
 
-        // A backend-confirmed quest accept is profile bookkeeping, including after
-        // death. Keep the native transaction's validation, operation, callback and
-        // failure handling; do not open the player's other inventory transactions.
+        // 后端确认的任务接受属于 profile 记账，死亡之后也一样。请保留
+        // 原生事务的校验、操作、回调与
+        // 失败处理；不要开启玩家其他的物品栏事务。
         __result = NativeBaseCalls.CallServerQuestTransaction(__instance, operationResult, callback);
         return false;
     }

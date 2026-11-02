@@ -142,11 +142,11 @@ public static class PingFactory
             var cam = CameraManager.Instance.Camera;
             var targetPos = _hitPoint;
 
-            // vector from camera to target
+            // 从摄像机指向目标的向量
             var toTarget = targetPos - cam.transform.position;
             var behindCamera = Vector3.Dot(cam.transform.forward, toTarget.normalized) <= 0f;
 
-            // project normally if in front
+            // 位于前方时按正常方式投影
             Vector2 canvasPos;
             if (!behindCamera)
             {
@@ -155,21 +155,21 @@ public static class PingFactory
             }
             else
             {
-                // compute direction in camera plane if behind
+                // 位于后方时在摄像机平面内计算方向
                 var local = cam.transform.InverseTransformPoint(targetPos);
-                var dir = new Vector2(local.x, local.y); // X=horizontal, Y=vertical
+                var dir = new Vector2(local.x, local.y); // X=水平，Y=垂直
                 if (dir.sqrMagnitude < 0.001f)
                 {
-                    dir = Vector2.up; // fallback to avoid zero vector
+                    dir = Vector2.up; // 兜底，避免零向量
                 }
 
                 dir.Normalize();
 
-                // clamp to canvas edge
+                // 钳制到画布边缘
                 var halfWidth = (_canvasRect.sizeDelta.x / 2f) - edgePadding;
                 var halfHeight = (_canvasRect.sizeDelta.y / 2f) - edgePadding;
 
-                // scale so the ping sits on the edge
+                // 缩放使标记贴住边缘
                 var scaleX = halfWidth / Mathf.Abs(dir.x);
                 var scaleY = halfHeight / Mathf.Abs(dir.y);
                 var scale = Mathf.Min(scaleX, scaleY);
@@ -177,7 +177,7 @@ public static class PingFactory
                 canvasPos = dir * scale;
             }
 
-            // distance-based alpha
+            // 基于距离的透明度
             var distanceToCenter = canvasPos.magnitude;
             var alpha = distanceToCenter < 200f
                 ? Mathf.Max(FikaPlugin.Instance.Settings.PingMinimumOpacity.Value, distanceToCenter / 200f)
@@ -189,7 +189,7 @@ public static class PingFactory
                 _rangeText.color = Color.white.SetAlpha(alpha);
             }
 
-            // clamp to canvas edges (safety)
+            // 钳制到画布边缘（安全兜底）
             var halfW = (_canvasRect.sizeDelta.x / 2f) - edgePadding;
             var halfH = (_canvasRect.sizeDelta.y / 2f) - edgePadding;
             canvasPos.x = Mathf.Clamp(canvasPos.x, -halfW, halfW);
@@ -321,7 +321,7 @@ public static class PingFactory
 
         public override void Initialize(ref Vector3 point, Object userObject, Color pingColor)
         {
-            base.Initialize(ref point, userObject, Color.white); // White since this icon is already red...
+            base.Initialize(ref point, userObject, Color.white); // 白色，因为该图标本身已经是红色...
             transform.localScale *= 0.5f;
             _image.sprite = sprites[InternalBundleLoader.EFikaSprite.PingDeadBody];
         }

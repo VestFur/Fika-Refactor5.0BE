@@ -90,10 +90,10 @@ public sealed class FikaTransitInteractPatch : ModulePatch
 }
 
 /// <summary>
-/// (2026-10-19) A Fika client does not own the transit bookkeeping the native requirements read (group size,
-/// party members), so every point answered "this transit point cannot be used right now" and the interact
-/// prompt never became usable. The host validates the interaction itself (<c>InteractWithTransit</c>), so the
-/// client-side requirement check is answered true and the existing packet does the rest.
+/// (2026-10-19) Fika 客户端并不拥有原生需求所读取的过境记录（队伍人数、
+/// 小队成员），于是每个过境点都回答“这个过境点现在无法使用”，交互
+/// 提示始终不可用。主机自己会校验这次交互（<c>InteractWithTransit</c>），因此
+/// 客户端侧的需求检查一律回答 true，其余交给现有的数据包完成。
 /// </summary>
 public sealed class FikaTransitClientRequirementsPatch : ModulePatch
 {

@@ -4,62 +4,62 @@ using System.Collections.Generic;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// BB (analysis/icebreaker-keypad-door): one grep-able line per passcode-door decision, written by the
-/// machine that makes the decision. The family answers the questions the icebreaker report cannot be
-/// judged from a client-only log without:
+/// BB (analysis/icebreaker-keypad-door)：为每次密码门判定写一行可 grep 的记录，由做出该判定的
+/// 机器负责写出。这一族记录回答了只凭客户端日志无法判定的以下问题，而这正是 icebreaker 报告
+/// 所欠缺的：
 ///
-///   stage=menu        did the native interaction dispatcher offer an action for this PasscodeTerminal
-///                     (the names are the native, localized ones - this is the "which interaction was
-///                     eaten" line);
-///   stage=panel       did the native PasscodeInputPanel open, and with which controller;
-///   stage=submit      did the native submit pass the game's own guard, or was it refused with
-///                     "Tried to enter code on location without passcodes" (and relayed to the host);
-///   stage=init        did the host's passcode snapshot arrive here, and were its hints applied;
-///   stage=attempt     (host) what happened to a peer's attempt, and whether the peer got an answer;
-///   stage=result      (client) the host's answer reached this machine's panel;
-///   stage=controller  which controller this client's world holds and whether the location carries
-///                     passcode entries at all. BO (analysis/icebreaker-keypad-2) extended this stage with the
-///                     three states of a client world that has NO controller: waiting (inside the print-free
-///                     grace window), client-created (this port built the network controller itself, out of the
-///                     ids of its own location scene), and kept-native (even that failed - the menu stays empty).
-///                     'waited=' in every line of the family is the age of the raid when the decision was made.
-///                     BU (analysis/icebreaker-keypad-3) added the host's own half of it (result=host-created).
-///   stage=codes       BU: the raid's code table. One line says how the HOST got it (result=kept-native from
-///                     the game's own controller, result=generated from the game's own PasscodeGenerator, or
-///                     result=no-entries/no-codes when the location of that machine carries nothing to draw
-///                     from), one says that a CLIENT received it (result=received/waiting) and one says that the
-///                     client built the game's own local controller around it (result=local-native). With that
-///                     line present, 'settings=' and 'terminals=' of the submit stage are the numbers to read.
-///   stage=keys        BU: the keypads and hint groups of this machine's scene were bound to its controller
-///                     (terminals=N hintGroups=M). A client's scene loads after its world, so a zero here at
-///                     raid start is a timing fact and not a verdict - the binding is retried.
+///   stage=menu        原生交互分发器是否为这个 PasscodeTerminal 提供了可执行动作
+///                     （这里的名称是原生的、已本地化的名称 —— 这就是那句「哪个交互
+///                     被吃掉了」的记录）；
+///   stage=panel       原生 PasscodeInputPanel 是否打开，以及由哪个 controller 打开；
+///   stage=submit      原生 submit 是否通过了游戏自身的校验，还是被以
+///                     "Tried to enter code on location without passcodes" 拒绝（并转发给了主机）；
+///   stage=init        主机的 passcode 快照是否到达本机，以及它的提示是否被应用；
+///   stage=attempt     （host）对端的一次尝试发生了什么，以及这个对端是否得到了答复；
+///   stage=result      （client）主机的答复是否到达了本机的面板；
+///   stage=controller  本客户端的世界持有的是哪个 controller，以及该地点是否承载
+///                     passcode 条目。BO (analysis/icebreaker-keypad-2) 扩展了这一阶段，加入了
+///                     一个没有 controller 的客户端世界的三种状态：waiting（处于不含打印的
+///                     宽限窗口内）、client-created（本移植自己构建了网络 controller，用的是
+///                     它自己地点场景的 id）、以及 kept-native（连这个也失败了 —— 菜单保持为空）。
+///                     'waited=' 在本族每一行中表示做出判定时 raid 已进行的时长。
+///                     BU (analysis/icebreaker-keypad-3) 补上了主机自己那一半（result=host-created）。
+///   stage=codes       BU：本次 raid 的密码表。一行说明 HOST 是怎么拿到它的（result=kept-native，来自
+///                     游戏自身的 controller；result=generated，来自游戏自身的 PasscodeGenerator；或
+///                     result=no-entries/no-codes，表示该机器所属地点没有任何可取的
+///                     来源）、一行说明某个 CLIENT 收到了它（result=received/waiting）、还有一行说明
+///                     客户端围绕它构建了游戏自身的本地 controller（result=local-native）。有了这一行
+///                     之后，submit 阶段的 'settings=' 与 'terminals=' 就是该读的数字。
+///   stage=keys        BU：本机场景中的键盘与提示分组已绑定到它的 controller
+///                     （terminals=N hintGroups=M）。客户端场景在其世界之后加载，因此 raid 开始时这里的零值
+///                     只是时序事实而非结论 —— 绑定会被重试。
 ///
-/// Every line is written once per distinct text and the family stops after <see cref="MaxLines"/> lines
-/// per raid, so a whole raid costs a handful of dictionary hits and one grep for KeypadDiag in
-/// LogOutput.log is the evidence. Nothing here ever throws into the native path it is called from.
+/// 每一行对每个不同的文本只写一次，且本族记录达到 <see cref="MaxLines"/> 行后即停止，
+/// 按每场 raid 计，因此一整场 raid 只耗费几次字典命中，而在
+/// LogOutput.log 中 grep 一次 KeypadDiag 就是证据。这里的任何东西都不会向调用它的原生路径抛出异常。
 /// </summary>
 internal static class KeypadDiag
 {
     /// <summary>
-    /// Master switch of the keypad repair (analysis/icebreaker-keypad-door). With it off, neither the
-    /// host relay of a submit the game refused nor the retry of the passcode snapshot request runs, and
-    /// the port behaves exactly as it did before this round. It lives here - and not in FikaConfig.cs,
-    /// which another agent owns - until the main agent wires it to a config entry of its own.
+    /// 键盘修复的总开关（analysis/icebreaker-keypad-door）。关闭它时，既不会发生
+    /// 主机对游戏所拒绝的 submit 的中继，也不会重试 passcode 快照请求，
+    /// 本移植的行为与这一轮之前完全一致。它放在这里 —— 而不是 FikaConfig.cs，
+    /// 那个文件属于另一个 agent —— 直到主 agent 把它接到自己的配置项上。
     /// </summary>
     internal static bool RepairEnabled = true;
 
-    /// <summary>The diagnostic family itself. The lines are rare, so it is on by default.</summary>
-    // (2026-10-18 refactor W1b / tracker A21) Diagnostic family switched off: the repair switch below is the only behaviour this class still carries.
+    /// <summary>诊断族本身。这类记录很少出现，因此默认开启。</summary>
+    // (2026-10-18 refactor W1b / tracker A21) 诊断族已关闭：下方的修复开关是本类目前唯一保留的行为。
     internal static bool Enabled = false;
 
     private const int MaxLines = 400;
 
     private static readonly HashSet<string> Written = new(StringComparer.Ordinal);
 
-    /// <summary>host / client / headless / single - the vocabulary every line of this port uses.</summary>
+    /// <summary>host / client / headless / single —— 本移植每一行记录所用的词汇。</summary>
     internal static string Side => FikaRaidGate.Side;
 
-    /// <summary>"yes" while this machine is outside a Fika raid and therefore stays out of the native flow.</summary>
+    /// <summary>当本机不在 Fika raid 中、因而脱离原生流程时，值为 "yes"。</summary>
     internal static string Gated => FikaRaidGate.Inert ? "yes" : "no";
 
     internal static void Line(string stage, string detail)
@@ -84,7 +84,7 @@ internal static class KeypadDiag
         }
         catch (Exception)
         {
-            // A diagnostic must never be the reason a native interaction fails.
+            // 诊断绝不能成为原生交互失败的原因。
         }
     }
 

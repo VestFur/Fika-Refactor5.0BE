@@ -6,7 +6,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.AI;
 
 /// <summary>
-/// This patch aims to alleviate problems with bots refilling mags too quickly causing a desync on <see cref="Item.Id"/>s by blocking firing for 0.7s
+/// 此补丁通过阻止开火 0.7s，缓解 bot 过快补充弹匣导致 <see cref="Item.Id"/> 失步的问题
 /// </summary>
 public class BotReload_AddAmmoToMagazines_Patch : ModulePatch
 {

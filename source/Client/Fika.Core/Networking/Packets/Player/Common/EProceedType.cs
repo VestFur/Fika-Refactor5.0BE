@@ -1,67 +1,67 @@
 ﻿namespace Fika.Core.Networking.Packets.Player.Common;
 
 /// <summary>
-/// Represents the type of context-sensitive interaction (proceed action).
+/// 表示上下文相关交互（proceed 动作）的类型。
 /// </summary>
 public enum EProceedType : byte
 {
     /// <summary>
-    /// No item held (empty hands).
+    /// 未持有物品（空手）。
     /// </summary>
     EmptyHands,
 
     /// <summary>
-    /// Food class item.
+    /// 食物类物品。
     /// </summary>
     FoodClass,
 
     /// <summary>
-    /// Grenade class item.
+    /// 手雷类物品。
     /// </summary>
     GrenadeClass,
 
     /// <summary>
-    /// Meds class item.
+    /// 药品类物品。
     /// </summary>
     MedsClass,
 
     /// <summary>
-    /// Quick grenade throw action.
+    /// 快速投掷手雷动作。
     /// </summary>
     QuickGrenadeThrow,
 
     /// <summary>
-    /// Quick knife kick action.
+    /// 快速刀击动作。
     /// </summary>
     QuickKnifeKick,
 
     /// <summary>
-    /// Quick use action of an item.
+    /// 物品的快速使用动作。
     /// </summary>
     QuickUse,
 
     /// <summary>
-    /// Usable item interaction.
+    /// 可使用物品交互。
     /// </summary>
     UsableItem,
 
     /// <summary>
-    /// Weapon held.
+    /// 持有武器。
     /// </summary>
     Weapon,
 
     /// <summary>
-    /// Stationary held (turret).
+    /// 持有固定武器（炮塔）。
     /// </summary>
     Stationary,
 
     /// <summary>
-    /// Knife held.
+    /// 持有刀。
     /// </summary>
     Knife,
 
     /// <summary>
-    /// Attempt to proceed action.
+    /// 尝试执行 proceed 动作。
     /// </summary>
     TryProceed
 }

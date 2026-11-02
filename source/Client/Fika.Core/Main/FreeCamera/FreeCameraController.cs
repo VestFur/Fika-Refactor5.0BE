@@ -19,7 +19,7 @@ using TMPro;
 namespace Fika.Core.Main.FreeCamera;
 
 /// <summary>
-/// This is HEAVILY based on Terkoiz's work found here. Thanks for your work Terkoiz! <br/>
+/// 本实现极大程度上基于 Terkoiz 在此处的工作。感谢你的工作，Terkoiz！<br/>
 /// <see href="https://dev.sp-tarkov.com/Terkoiz/Freecam/raw/branch/master/project/Terkoiz.Freecam/FreecamController.cs"/>
 /// </summary>
 
@@ -110,21 +110,21 @@ public class FreeCameraController : MonoBehaviour
 
     protected void Start()
     {
-        // Find Main Camera
+        // 查找主相机
         CameraMain = CameraManager.Instance.Camera;
         if (CameraMain == null)
         {
             return;
         }
 
-        // Add Freecam script to main camera in scene
+        // 将 Freecam 脚本添加到场景中的主相机
         _freeCamScript = CameraMain.gameObject.AddComponent<FreeCamera>();
         if (_freeCamScript == null)
         {
             return;
         }
 
-        // Get GamePlayerOwner component
+        // 获取 GamePlayerOwner 组件
         _gamePlayerOwner = GetLocalPlayerFromWorld().GetComponentInChildren<GamePlayerOwner>();
         if (_gamePlayerOwner == null)
         {
@@ -132,11 +132,11 @@ public class FreeCameraController : MonoBehaviour
         }
 
         _deathFade = CameraManager.Instance.Camera.GetComponent<DeathFade>();
-        // DeathFade is a camera post-process effect. It must stay disabled
-        // during normal raid startup; enabling it here makes the countdown
-        // leave the first-person view blurred after Fika skips LocalGame's
-        // native deployment sequence. DeathMainPlayer_DiedEvent enables it
-        // only when the player actually dies.
+        // DeathFade 是一个相机后处理效果。它必须在
+        // 正常 raid 启动期间保持禁用；在此处启用它会让倒计时
+        // 在 Fika 跳过 LocalGame 的原生部署流程之后仍让第一人称视角
+        // 保持模糊。DeathMainPlayer_DiedEvent 只在玩家真正死亡时
+        // 才启用它。
         if (_deathFade != null)
         {
             _deathFade.DisableEffectInstant();
@@ -300,7 +300,7 @@ public class FreeCameraController : MonoBehaviour
             cameraClassInstance.Camera.fieldOfView = Singleton<SettingsManager>.Instance.Game.Settings.FieldOfView;
         }
 
-        // Disable the DeathFade effect & Toggle the Camera
+        // 禁用 DeathFade 效果并切换相机
         _deathFade.DisableEffect();
         if (!_freeCamScript.IsActive)
         {
@@ -311,7 +311,7 @@ public class FreeCameraController : MonoBehaviour
 
                 if (_isSpectator)
                 {
-                    // Cycle camera to any alive player
+                    // 把相机循环切换到任意存活玩家
                     _freeCamScript.CycleSpectatePlayers();
                 }
             }
@@ -410,11 +410,11 @@ public class FreeCameraController : MonoBehaviour
     }
 
     /// <summary>
-    /// Toggles the Freecam mode
+    /// 切换 Freecam 模式
     /// </summary>
     public void ToggleCamera()
     {
-        // Get our own Player instance. Null means we're not in a raid
+        // 获取我们自己的 Player 实例。为 null 表示我们不在 raid 中
         if (Player == null)
         {
             return;
@@ -431,10 +431,10 @@ public class FreeCameraController : MonoBehaviour
     }
 
     /// <summary>
-    /// Restores the normal local-player camera after raid deployment.  This is
-    /// used by the SPT 5 Fika countdown path, which does not pass through the
-    /// stock LocalGame camera teardown and can leave the free-camera owner
-    /// disabled even while the player is alive.
+    /// 在 raid 部署后恢复正常的本地玩家相机。它被
+    /// SPT 5 的 Fika 倒计时路径使用，该路径不经过
+    /// 原版 LocalGame 的相机拆除流程，可能使自由相机所有者
+    /// 即使在玩家存活时也处于禁用状态。
     /// </summary>
     public void ForceFirstPersonView()
     {
@@ -511,11 +511,11 @@ public class FreeCameraController : MonoBehaviour
     }
 
     /// <summary>
-    /// Hides the main UI (health, stamina, stance, hotbar, etc.)
+    /// 隐藏主界面（生命、耐力、姿态、快捷栏等）
     /// </summary>
     private void ToggleUI()
     {
-        // Check if we're currently in a raid
+        // 检查我们当前是否在 raid 中
         if (Player == null)
         {
             return;
@@ -531,13 +531,13 @@ public class FreeCameraController : MonoBehaviour
     }
 
     /// <summary>
-    /// A helper method to set the Player into Freecam mode
+    /// 一个把 Player 置于 Freecam 模式的辅助方法
     /// </summary>
     /// <param name="localPlayer"></param>
     private void SetPlayerToFreecamMode(Player localPlayer)
     {
-        // We set the player to third person mode
-        // This means our character will be fully visible, while letting the camera move freely
+        // 我们把玩家设置为第三人称模式
+        // 这意味着我们的角色将完全可见，同时让相机自由移动
         localPlayer.PointOfView = EPointOfView.ThirdPerson;
 
         if (localPlayer.PlayerBody != null)
@@ -551,7 +551,7 @@ public class FreeCameraController : MonoBehaviour
         _freeCamScript.SetActive(true, _extracted);
     }
 
-    // BetterCamController otherwise snaps the camera to the player each LateUpdate.
+    // 否则 BetterCamController 会在每次 LateUpdate 时把相机吸附到玩家身上。
     private static void SetExternalCameraControl(Player localPlayer, bool external)
     {
         var controller = localPlayer.GetComponent<PlayerCameraController>();
@@ -562,12 +562,12 @@ public class FreeCameraController : MonoBehaviour
     }
 
     /// <summary>
-    /// A helper method to reset the player view back to First Person
+    /// 一个把玩家视图重置回第一人称的辅助方法
     /// </summary>
     /// <param name="localPlayer"></param>
     private void SetPlayerToFirstPersonMode(Player localPlayer)
     {
-        // re-enable _gamePlayerOwner
+        // 重新启用 _gamePlayerOwner
         _gamePlayerOwner.enabled = true;
         _freeCamScript.SetActive(false, _extracted);
         SetExternalCameraControl(localPlayer, false);
@@ -668,19 +668,19 @@ public class FreeCameraController : MonoBehaviour
     }
 
     /// <summary>
-    /// Gets the current <see cref="EFT.Player"/> instance if it's available
+    /// 若可用，获取当前的 <see cref="EFT.Player"/> 实例
     /// </summary>
-    /// <returns>Local <see cref="EFT.Player"/> instance; returns null if the game is not in raid</returns>
+    /// <returns>本地 <see cref="EFT.Player"/> 实例；若游戏不在 raid 中则返回 null</returns>
     private Player GetLocalPlayerFromWorld()
     {
-        // If the GameWorld instance is null or has no RegisteredPlayers, it most likely means we're not in a raid
+        // 如果 GameWorld 实例为 null 或没有 RegisteredPlayers，最可能意味着我们不在 raid 中
         var gameWorld = Singleton<GameWorld>.Instance;
         if (gameWorld == null || gameWorld.MainPlayer == null)
         {
             return null;
         }
 
-        // One of the RegisteredPlayers will have the IsYourPlayer flag set, which will be our own Player instance
+        // RegisteredPlayers 中的一个会带有 IsYourPlayer 标志，那就是我们自己的 Player 实例
         return gameWorld.MainPlayer;
     }
 
@@ -693,7 +693,7 @@ public class FreeCameraController : MonoBehaviour
         }
         Destroy(_cameraParent);
 
-        // Destroy FreeCamScript before FreeCamController if exists
+        // 如果存在，先销毁 FreeCamScript 再销毁 FreeCamController
         Destroy(_freeCamScript);
         if (_extractText != null)
         {

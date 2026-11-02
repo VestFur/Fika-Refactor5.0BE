@@ -8,27 +8,27 @@ using UnityEngine;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Update driven driver for managed <see cref="IEnumerator"/> routines, plus the native
-/// <see cref="Il2CppSystem.Collections.IEnumerator"/> Fika hands to the engine where a native caller
-/// insists on an enumerator.
+/// 托管 <see cref="IEnumerator"/> 例程的 Update 驱动式驱动器，外加一个原生
+/// <see cref="Il2CppSystem.Collections.IEnumerator"/>，用于 Fika 需要交给引擎、而原生调用方
+/// 坚持要一个枚举器的场合。
 ///
-/// Why this exists (read analysis/host-raid-coroutine before changing it):
-/// handing the engine a managed enumerator (<c>StartCoroutine(IEnumerator)</c> /
-/// <c>WrapToIl2Cpp()</c>) makes it hold - and later release - an
-/// <c>BepInEx.Unity.IL2CPP.Utils.Collections.Il2CppManagedEnumerator</c>. That release path is where the
-/// engine dereferenced the bogus pointer 0xA twice on this build: once for the main-menu online players
-/// panel (analysis/panel-crash-round7) and once during the host raid start, one frame after
-/// <c>BaseLocalGame.SessionRun</c> was entered and in the frame the Fika loading screen was hidden
-/// (analysis/host-raid-coroutine: the wrapper pointer named by the first-chance probe).
+/// 为什么需要它（改动之前请先读 analysis/host-raid-coroutine）：
+/// 把托管枚举器交给引擎（<c>StartCoroutine(IEnumerator)</c> /
+/// <c>WrapToIl2Cpp()</c>）会让引擎持有——并在之后释放——一个
+/// <c>BepInEx.Unity.IL2CPP.Utils.Collections.Il2CppManagedEnumerator</c>。正是在那条释放路径上，
+/// 引擎在这个构建上两次解引用了无效指针 0xA：一次在主菜单在线玩家
+/// 面板（analysis/panel-crash-round7），一次在主机战局启动期间，发生在刚刚进入
+/// <c>BaseLocalGame.SessionRun</c> 的下一帧、也就是 Fika 加载界面被隐藏的那一帧
+/// （analysis/host-raid-coroutine：first-chance 探针所指认的那个 wrapper 指针）。
 ///
-/// A routine that runs here keeps the exact shape it had as a coroutine - nesting, <c>WaitForSeconds</c>,
-/// per-frame yields, <c>WaitForEndOfFrame</c> - but the engine never receives it, so it cannot be released
-/// badly. A routine that has to stay a coroutine (because the engine itself drives it) keeps using
-/// <c>EngineCoroutines.Wrap</c>, which writes the line that names it.
+/// 在这里运行的例程保持它作为协程时的确切形态——嵌套、<c>WaitForSeconds</c>、
+/// 逐帧 yield、<c>WaitForEndOfFrame</c>——但引擎永远收不到它，因此它不会被
+/// 错误地释放。必须保持协程的例程（因为引擎自己驱动它）继续使用
+/// <c>EngineCoroutines.Wrap</c>，它会写出指明该例程的那一行。
 /// </summary>
 internal sealed class FikaRoutinePump
 {
-    /// <summary>One pump per process: routines are registered by the raid flow and ticked by the plugin Update.</summary>
+    /// <summary>每个进程一个泵：例程由战局流程注册，并由插件的 Update 驱动。</summary>
     internal static readonly FikaRoutinePump Instance = new();
 
     private readonly List<Routine> _routines = [];
@@ -36,10 +36,10 @@ internal sealed class FikaRoutinePump
     private int _lastTickFrame = -1;
 
     /// <summary>
-    /// A frame longer than this is reported by name (round 3). The 13:45 run froze <c>Time.frameCount</c> at
-    /// 17849 for 3.1 s - three heartbeats read the same frame while the main thread wrote nothing - so the
-    /// pump was not ticked for 3.1 s and no line said what that frame was doing. The stall report turns that
-    /// into a named event: the gap, the two frame numbers it spans and the last boundary crossed before it.
+    /// 超过此长度的帧会按名字被上报（第 3 轮）。13:45 那次运行让 <c>Time.frameCount</c> 冻结在
+    /// 17849 达 3.1 秒——三次心跳读到同一帧，而主线程什么都没有写——因此
+    /// 泵在 3.1 秒内没有被 tick，也没有任何行说明那一帧在做什么。卡顿报告把这
+    /// 变成一个有名有姓的事件：间隙、它跨越的两个帧号，以及它之前最后跨过的边界。
     /// </summary>
     private const int StallReportMillis = 1000;
 
@@ -59,8 +59,8 @@ internal sealed class FikaRoutinePump
     }
 
     /// <summary>
-    /// Registers a managed routine. Its first <c>MoveNext</c> runs on the next frame tick (one frame later than
-    /// <c>StartCoroutine</c>, which runs the first step immediately) and it is ticked once per frame from then on.
+    /// 注册一个托管例程。它的第一次 <c>MoveNext</c> 在下一个帧 tick 上运行（比
+    /// <c>StartCoroutine</c> 晚一帧，后者会立即执行第一步），此后每帧被 tick 一次。
     /// </summary>
     internal RoutineHandle Start(IEnumerator routine, string label, Action completed = null, Action<Exception> failed = null)
     {
@@ -68,12 +68,12 @@ internal sealed class FikaRoutinePump
     }
 
     /// <summary>
-    /// Registers a routine that belongs to the world that is up right now
-    /// (analysis/transit-crash-unload). A world-bound routine is stopped by <see cref="StopWorldBound"/>
-    /// as soon as that world is torn down; one that drives a *native* enumerator is stopped no matter
-    /// which epoch it was started in, because such an enumerator belongs to the world that owns the
-    /// coroutine - stepping it after that world went down is the shape of the 0xc0000005 crashes of
-    /// 2026-10-12 (UnityPlayer.dll; see WorldLifecycle).
+    /// 注册一个属于此刻正在运行的那个世界的例程
+    /// （analysis/transit-crash-unload）。绑定世界的例程会在该世界被拆除时立即由 <see cref="StopWorldBound"/>
+    /// 停止；而驱动 *原生* 枚举器的例程，无论在哪个纪元启动都会被停止，
+    /// 因为这样的枚举器属于拥有该协程的那个世界——在那个世界倒下之后继续步进它，
+    /// 正是 2026-10-12 那批 0xc0000005 崩溃的形态
+    /// （UnityPlayer.dll；见 WorldLifecycle）。
     /// </summary>
     internal RoutineHandle StartWorldBound(IEnumerator routine, string label, bool drivesNativeObject = false,
         Action completed = null, Action<Exception> failed = null)
@@ -92,9 +92,9 @@ internal sealed class FikaRoutinePump
     }
 
     /// <summary>
-    /// Stops every routine that cannot survive the world it was started in: the ones that drive a native
-    /// object (their enumerator dies with its owner) and the ones started in an older epoch. Returns the
-    /// number of routines stopped; WorldLifecycle puts it on the teardown judgement line.
+    /// 停止每一个无法在它启动时所在的世界中存活的例程：驱动原生
+    /// 对象的那些（它们的枚举器会随其所有者一起消亡），以及更早纪元中启动的那些。返回
+    /// 被停止的例程数；WorldLifecycle 会把它放到拆除判定行上。
     /// </summary>
     internal int StopWorldBound(string reason)
     {
@@ -126,7 +126,7 @@ internal sealed class FikaRoutinePump
         return stopped;
     }
 
-    /// <summary>The labels of the running routines, for a teardown or load-cost line.</summary>
+    /// <summary>正在运行的例程的标签，用于拆除行或加载开销行。</summary>
     internal string DescribeActive()
     {
         if (_routines.Count == 0)
@@ -148,7 +148,7 @@ internal sealed class FikaRoutinePump
         return builder.ToString();
     }
 
-    /// <summary>Stops a routine without running its completion handler.</summary>
+    /// <summary>停止一个例程，但不运行它的完成处理器。</summary>
     internal void Stop(RoutineHandle handle, string reason)
     {
         if (handle == null || handle.State == null)
@@ -184,9 +184,9 @@ internal sealed class FikaRoutinePump
     }
 
     /// <summary>
-    /// Drives every registered routine by one frame. Called from the plugin's Unity Update (the same place
-    /// the main-thread dispatcher is drained) and, as a fallback, from the game's FixedUpdate - hence the
-    /// frame guard, so a frame is never advanced twice.
+    /// 把每个已注册的例程推进一帧。由插件的 Unity Update 调用（与
+    /// 主线程派发器被排空的是同一处），并作为兜底由游戏的 FixedUpdate 调用——因此有
+    /// 帧守卫，一帧绝不会被推进两次。
     /// </summary>
     internal void Tick()
     {
@@ -206,16 +206,16 @@ internal sealed class FikaRoutinePump
     }
 
     /// <summary>
-    /// Writes the frame-stall label when the main thread was away longer than <see cref="StallReportMillis"/>
-    /// (round 3). One unbuffered WriteFile on this thread, and only when a stall really happened: a frame
-    /// that is on time costs one subtraction and one comparison.
+    /// 当主线程离开的时间超过 <see cref="StallReportMillis"/> 时写入帧卡顿标签
+    /// （第 3 轮）。在此线程上执行一次无缓冲的 WriteFile，且只在真的发生卡顿时：
+    /// 准时的一帧只花一次减法加一次比较。
     /// </summary>
     private void ReportStallIfAny()
     {
-        // (analysis/perf-diagnostics-cleanup) Purely a trail label (one unbuffered WriteFile through the crash
-        // trail). With the master switch off the whole report is skipped - including its per-frame
-        // Time.frameCount read - which is what "no per-frame boundary crossing while off" means. With the
-        // switch on (Coop / Diagnostics) the stall trail is exactly what it was.
+        // （analysis/perf-diagnostics-cleanup）纯粹是一个 trail 标签（经由崩溃
+        // trail 的一次无缓冲 WriteFile）。总开关关闭时整份报告都被跳过——包括它每帧的
+        // Time.frameCount 读取——这正是“关闭时没有逐帧边界穿越”的含义。开关
+        // 打开时（Coop / Diagnostics），卡顿 trail 与原先完全一致。
         
 
         try
@@ -242,11 +242,11 @@ internal sealed class FikaRoutinePump
         }
         catch (Exception)
         {
-            // A report must never break the tick it reports about.
+            // 报告绝不能破坏它所报告的那次 tick。
         }
     }
 
-    /// <summary>Journal label of the pump tick; a constant so the journal never allocates for it.</summary>
+    /// <summary>泵 tick 的 journal 标签；用常量，这样 journal 永远不必为它分配内存。</summary>
     internal const string BoundaryTick = "FikaRoutinePump.Tick (Update/FixedUpdate -> managed)";
 
     private void TickCore()
@@ -301,7 +301,7 @@ internal sealed class FikaRoutinePump
         
     }
 
-    /// <summary>Opaque handle of a running routine.</summary>
+    /// <summary>正在运行的例程的不透明句柄。</summary>
     internal sealed class RoutineHandle
     {
         internal RoutineHandle(Routine state)
@@ -329,21 +329,21 @@ internal sealed class FikaRoutinePump
     }
 
     /// <summary>
-    /// One routine: a stack of nested iterators (the outermost is the one that was started), the wait it is
-    /// currently in, and the step count. All of it is plain managed state.
+    /// 一个例程：嵌套迭代器的栈（最外层就是被启动的那一个）、它当前所处的
+    /// 等待，以及步进计数。这一切都是纯托管状态。
     /// </summary>
     internal sealed class Routine
     {
         private const int MaxStepsPerRoutinePerFrame = 128;
 
         /// <summary>
-        /// Waits shorter than this are not traced (round 3). A routine that polls with a 0.5 s wait
-        /// (CreateStashes, SyncTraps) must not turn the trail into a metronome; the countdown's deploy wait
-        /// is 10 s and is traced.
+        /// 短于此值的等待不会被追踪（第 3 轮）。以 0.5 秒等待轮询的例程
+        /// （CreateStashes、SyncTraps）不能把 trail 变成节拍器；倒计时的部署等待
+        /// 是 10 秒，会被追踪。
         /// </summary>
         private const float MinTracedWaitSeconds = 1f;
 
-        /// <summary>Upper bound of the traced waits per routine; past it the trace mutes itself once.</summary>
+        /// <summary>每个例程被追踪等待的上限；超过后追踪会自行静音一次。</summary>
         private const int MaxTracedWaits = 32;
 
         private readonly List<IEnumerator> _stack = [];
@@ -372,16 +372,16 @@ internal sealed class FikaRoutinePump
             _startTime = Time.time;
             Epoch = WorldLifecycle.Epoch;
             DrivesNativeObject = drivesNativeObject;
-            // Built once: the journal only ever stores the reference, so stepping a routine never allocates.
+            // 只构建一次：journal 只保存引用，因此步进例程永远不会分配内存。
             _journalLabel = "pump routine: '" + label + "'";
         }
 
         internal string Label { get; }
 
-        /// <summary>The world generation this routine was started in (see WorldLifecycle).</summary>
+        /// <summary>该例程启动时所在的世界代号（见 WorldLifecycle）。</summary>
         internal int Epoch { get; }
 
-        /// <summary>True when this routine steps a native object (an il2cpp enumerator) that dies with its world.</summary>
+        /// <summary>当该例程步进的原生对象（il2cpp 枚举器）会随其世界消亡时为 true。</summary>
         internal bool DrivesNativeObject { get; }
 
         internal bool IsRunning { get; private set; } = true;
@@ -393,11 +393,11 @@ internal sealed class FikaRoutinePump
                 return;
             }
 
-            // Breadcrumb: if the process dies inside this step (a runtime fail fast cannot be caught),
-            // this is the line that names what was running.
+            // 面包屑：如果进程在这一次步进中死亡（运行时 fail fast 无法被捕获），
+            // 这就是指明当时在运行什么的那一行。
             if (_waitForInstruction != null)
             {
-                // WaitForSecondsRealtime, WaitUntil, WaitWhile and friends answer "keepWaiting" themselves.
+                // WaitForSecondsRealtime、WaitUntil、WaitWhile 之类会自己回答 "keepWaiting"。
                 if (_waitForInstruction.keepWaiting)
                 {
                     return;
@@ -435,8 +435,8 @@ internal sealed class FikaRoutinePump
 
                 if (!moved)
                 {
-                    // A nested iterator ended: its parent continues in this frame, exactly like Unity's
-                    // scheduler does. Only the outermost iterator ends the routine.
+                    // 嵌套迭代器结束：它的父级在同一帧继续，与 Unity 调度器的
+                    // 行为完全一致。只有最外层迭代器才结束例程。
                     _stack.RemoveAt(_stack.Count - 1);
                     if (_stack.Count == 0)
                     {
@@ -468,8 +468,8 @@ internal sealed class FikaRoutinePump
         }
 
         /// <summary>
-        /// A wait object this port did not create. Reading its m_Seconds is the fatal read, so the routine
-        /// degrades to a single frame and the diagnostics say which routine did it.
+        /// 本移植没有创建的等待对象。读取它的 m_Seconds 就是那次致命读取，因此该例程
+        /// 退化为单帧，诊断会说明是哪个例程这么做的。
         /// </summary>
         private void ReportForeignWait(WaitForSeconds seconds)
         {
@@ -489,10 +489,10 @@ internal sealed class FikaRoutinePump
         private static IntPtr _foreignSecondsField;
 
         /// <summary>
-        /// Reads the duration of a foreign <c>WaitForSeconds</c> straight out of il2cpp memory. The field
-        /// handle is resolved once; this never calls the generated property that ended the 2026-10-10 host
-        /// raids (its last diagnostics line was "read WaitForSeconds.m_Seconds") and it cannot throw into
-        /// the caller.
+        /// 直接从 il2cpp 内存读出外部 <c>WaitForSeconds</c> 的时长。字段
+        /// 句柄只解析一次；这里绝不调用那个终结了 2026-10-10 主机
+        /// 战局的生成属性（它最后一条诊断行是 "read WaitForSeconds.m_Seconds"），并且它不会把异常抛进
+        /// 调用方。
         /// </summary>
         private static unsafe bool TryReadForeignSeconds(WaitForSeconds seconds, out float value)
         {
@@ -519,7 +519,7 @@ internal sealed class FikaRoutinePump
             }
         }
 
-        /// <summary>Returns true when the routine may continue in this frame.</summary>
+        /// <summary>当例程可以在本帧继续时返回 true。</summary>
         private bool HandleYielded(object yielded)
         {
             switch (yielded)
@@ -528,18 +528,18 @@ internal sealed class FikaRoutinePump
                     WaitOneFrame();
                     return false;
                 case WaitSeconds managedWait:
-                    // The port's own waits never touch an engine object: reading the engine
-                    // WaitForSeconds.m_Seconds from this thread is what killed the 2026-10-10 host
-                    // raids (the last diagnostics line was "read WaitForSeconds.m_Seconds", then
-                    // coreclr raised its uncatchable 0x80131506).
+                    // 本移植自己的等待对象从不触碰引擎对象：从该线程读取引擎的
+                    // WaitForSeconds.m_Seconds 正是终结 2026-10-10 主机
+                    // 战局的原因（最后一条诊断行是 "read WaitForSeconds.m_Seconds"，随后
+                    // coreclr 抛出了它那不可捕获的 0x80131506）。
                     _waitUntilScaled = Time.time + managedWait.Seconds;
                     TraceWaitEntered(managedWait.Seconds);
                     return false;
                 case WaitForSeconds seconds:
-                    // A wait object this port did not create (usually yielded by a native coroutine this
-                    // pump is driving). Its generated m_Seconds property is the read that killed the
-                    // 2026-10-10 host raids, so the duration comes from the field API instead - that
-                    // touches il2cpp memory and never enters a managed entry from this thread.
+                    // 本移植没有创建的等待对象（通常由本泵正在驱动的原生协程
+                    // yield 出来）。它生成的 m_Seconds 属性就是那记让
+                    // 2026-10-10 主机战局终结的读取，所以时长改由字段 API 提供——那条路径
+                    // 触碰 il2cpp 内存，并且绝不会从这个线程进入托管入口。
                     if (TryReadForeignSeconds(seconds, out var foreignSeconds))
                     {
                         _waitUntilScaled = Time.time + foreignSeconds;
@@ -557,22 +557,22 @@ internal sealed class FikaRoutinePump
                     _waitForInstruction = custom;
                     return false;
                 case WaitForFixedUpdate:
-                    // Round 9 (pumpfix): a WaitForFixedUpdate resumes at Unity's next fixed step, which is at
-                    // most one frame away, and this pump is ticked once per frame from the plugin Update and
-                    // from CoopGame.FixedUpdate - so "next frame" is the closest equivalent it can express.
+                    // 第 9 轮（pumpfix）：WaitForFixedUpdate 会在 Unity 的下一个固定步恢复，最多
+                    // 只有一帧之隔，而本泵每帧由插件的 Update 以及
+                    // CoopGame.FixedUpdate 各 tick 一次——因此“下一帧”是它能表达的最接近的等价物。
                     WaitOneFrame();
                     return false;
                 case YieldInstruction:
-                    // WaitForEndOfFrame / AsyncOperation: the pump is frame bound, so "next frame" is the
-                    // honest answer (the port's routines only use it that way).
+                    // WaitForEndOfFrame / AsyncOperation：本泵是帧绑定的，因此“下一帧”是
+                    // 最诚实的答案（本移植的例程只用它做这件事）。
                     WaitOneFrame();
                     return false;
                 case Il2CppSystem.Collections.IEnumerator nativeNested:
-                    // Round 9 (pumpfix): a *native* enumerator (an il2cpp object, e.g. the one the game's own
-                    // session coroutine returns) is stepped by this pump instead of the engine. The pump is
-                    // frame grained, which is exactly the granularity MonoBehaviour.StartCoroutine ran it at,
-                    // and this is the only shape in which Fika can drive a native routine without calling
-                    // MonoBehaviour.StartCoroutine from managed code - see SessionPump for what that call did.
+                    // 第 9 轮（pumpfix）：*原生* 枚举器（一个 il2cpp 对象，例如游戏自身
+                    // 会话协程返回的那个）由本泵而不是引擎来步进。本泵是
+                    // 帧粒度的，而这正是 MonoBehaviour.StartCoroutine 驱动它时的粒度，
+                    // 并且这是 Fika 能够在不从托管代码调用
+                    // MonoBehaviour.StartCoroutine 的前提下驱动原生例程的唯一形态——那次调用干了什么见 SessionPump。
                     _stack.Add(NativeRoutines.Adapt(nativeNested));
                     return true;
                 case IEnumerator nested:
@@ -608,10 +608,10 @@ internal sealed class FikaRoutinePump
         }
 
         /// <summary>
-        /// Round 3 - the two ends of a timed wait, written immediately on the thread that owns the routine.
-        /// The pump implements <c>WaitForSeconds</c> itself, so it can name the routine as parked before the
-        /// wait and as resumed after it. That pair is what separates "died while the routine was parked"
-        /// from "died in the first statement after the wait": the 13:45 death could not be told apart.
+        /// 第 3 轮——定时等待的两端，在拥有该例程的线程上立即写出。
+        /// 泵自己实现了 <c>WaitForSeconds</c>，因此它可以在等待之前把例程记为 parked，
+        /// 在等待之后记为 resumed。正是这一对把“在例程停驻时死亡”与
+        /// “在等待之后的第一条语句中死亡”区分开来：13:45 那次死亡无法被区分。
         /// </summary>
         private void TraceWaitEntered(float seconds)
         {
@@ -631,7 +631,7 @@ internal sealed class FikaRoutinePump
             _waitTraceStartedAt = Time.time;
         }
 
-        /// <summary>The other end: the routine is running again (this is the first step after the wait).</summary>
+        /// <summary>另一端：例程又运行起来了（这是等待之后的第一步）。</summary>
         private void TraceWaitReturned()
         {
             if (!_waitTraceActive)
@@ -642,7 +642,7 @@ internal sealed class FikaRoutinePump
             _waitTraceActive = false;
         }
 
-        /// <summary>Whole milliseconds, culture free, so a label reads the same in every locale.</summary>
+        /// <summary>整毫秒、与区域设置无关，这样一个标签在任何语言环境下读起来都相同。</summary>
         private static string Millis(float seconds)
         {
             return ((int)(seconds * 1000f)) + " ms";
@@ -684,28 +684,28 @@ internal sealed class FikaRoutinePump
 }
 
 /// <summary>
-/// The enumerators Fika hands to native callers. Both are real il2cpp objects (never
-/// <c>Il2CppManagedEnumerator</c>), so the engine can release them on its own native path.
+/// Fika 交给原生调用方的枚举器。两者都是真实的 il2cpp 对象（绝不是
+/// <c>Il2CppManagedEnumerator</c>），因此引擎可以在它自己的原生路径上释放它们。
 /// </summary>
 internal static class NativeRoutines
 {
     /// <summary>
-    /// Makes a <em>native</em> enumerator (an il2cpp object the game owns, returned by one of its own
-    /// coroutine methods) readable by the managed pump. Round 9 (pumpfix).
+    /// 让一个<em>原生</em>枚举器（游戏拥有的 il2cpp 对象，由它自己的某个
+    /// 协程方法返回）可以被托管泵读取。第 9 轮（pumpfix）。
     /// <para>
-    /// The pump cannot take the native object directly: <c>Il2CppSystem.Collections.IEnumerator</c> is an
-    /// il2cpp interface, so <c>Current</c> would come back as a raw <c>IntPtr</c> that the pump's yield
-    /// switch cannot classify. The adapter forwards <c>MoveNext</c> to the native object and converts
-    /// <c>Current</c> through the interop wrapper of the declared slot type
-    /// (<c>Il2CppSystem.Object</c>, which already covers the <c>WaitForSeconds</c>,
-    /// <c>WaitForEndOfFrame</c>, <c>null</c> and nested-enumerator cases the pump handles), so the yielded
-    /// value arrives at <see cref="FikaRoutinePump"/> exactly as it would from a managed iterator.
+    /// 泵不能直接接收原生对象：<c>Il2CppSystem.Collections.IEnumerator</c> 是一个
+    /// il2cpp 接口，因此 <c>Current</c> 会以裸 <c>IntPtr</c> 的形式从泵的 yield
+    /// switch 中返回，且无法被分类。适配器把 <c>MoveNext</c> 转发给原生对象，并
+    /// 通过所声明槽位类型的 interop wrapper 转换 <c>Current</c>
+    /// （<c>Il2CppSystem.Object</c>，它已经覆盖了 <c>WaitForSeconds</c>、
+    /// <c>WaitForEndOfFrame</c>、<c>null</c> 以及泵会处理的嵌套枚举器情形），于是被 yield 的
+    /// 值会完全像来自托管迭代器那样到达 <see cref="FikaRoutinePump"/>。
     /// </para>
     /// <para>
-    /// This is the counterpart of <see cref="Completed"/>: that one lets a native caller drive a flow Fika
-    /// owns, this one lets Fika drive a flow the game owns - without either side creating a managed
-    /// enumerator for the engine to hold and release (the fault class of analysis/panel-crash-round7 and
-    /// analysis/host-raid-coroutine).
+    /// 这是 <see cref="Completed"/> 的对偶：那个让原生调用方驱动 Fika
+    /// 拥有的流程，这个让 Fika 驱动游戏拥有的流程——两边都不会为引擎创建
+    /// 一个需要它持有并释放的托管枚举器（analysis/panel-crash-round7 与
+    /// analysis/host-raid-coroutine 的故障类别）。
     /// </para>
     /// </summary>
     internal static IEnumerator Adapt(Il2CppSystem.Collections.IEnumerator native)
@@ -722,9 +722,9 @@ internal static class NativeRoutines
     }
 
     /// <summary>
-    /// An already finished enumerator: the engine calls <c>MoveNext</c> once, sees false and releases the
-    /// object through its normal path. Used where the engine (or a native caller) demands an enumerator for
-    /// a flow Fika owns on <see cref="FikaRoutinePump"/>.
+    /// 一个已经结束的枚举器：引擎调用一次 <c>MoveNext</c>，看到 false，然后通过它的正常
+    /// 路径释放该对象。用于引擎（或某个原生调用方）为 Fika 在
+    /// 上拥有的流程索要一个枚举器的场合（<see cref="FikaRoutinePump"/>）。
     /// </summary>
     internal static Il2CppSystem.Collections.IEnumerator Completed()
     {

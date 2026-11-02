@@ -25,9 +25,9 @@ internal sealed class InteractionContextHelper_GetAvailableActions_Patch : Modul
     [PatchPrefix]
     public static bool Prefix(GamePlayerOwner owner, IInteractive interactive, ref AvailableInteractionState __result)
     {
-        // AP (analysis/nonfika-raid-inertness): this is the interaction menu of the local player, i.e. the
-        // hot path a "which actions can I run on this thing" question takes. A ReviveInteractable only
-        // exists in a raid of ours, but the guard keeps the port out of the native raid's own menu as well.
+        // AP (analysis/nonfika-raid-inertness)：这是本地玩家的交互菜单，也就是
+        // “我能对这个东西执行哪些操作”这一问题的热路径。ReviveInteractable 只
+        // 存在于我们自己的突袭中，但该守卫也能让本移植避开原生突袭自己的菜单。
         if (FikaRaidGate.Skip("InteractionContextHelper.GetAvailableActions prefix"))
         {
             return true;

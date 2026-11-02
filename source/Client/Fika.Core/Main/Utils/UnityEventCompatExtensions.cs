@@ -4,10 +4,10 @@ using UnityEngine.Events;
 namespace Fika.Core;
 
 /// <summary>
-/// Il2CppInterop generates UnityAction as a managed proxy type, so C# method
-/// groups and lambdas cannot bind to UnityEvent.AddListener directly.  These
-/// overloads keep call sites idiomatic while performing the native delegate
-/// conversion at one boundary.
+/// Il2CppInterop 把 UnityAction 生成为一个托管代理类型，因此 C# 方法
+/// 组和 lambda 无法直接绑定到 UnityEvent.AddListener。这些
+/// 重载在保持调用点地道写法的同时，在一处边界上
+/// 完成原生委托转换。
 internal static class UnityEventCompatExtensions
 {
     public static void AddListener(this UnityEvent evt, Action listener)
@@ -17,14 +17,14 @@ internal static class UnityEventCompatExtensions
     }
 
     /// <summary>
-    /// Counterpart of <see cref="AddListener(UnityEvent, Action)"/>.
+    /// <see cref="AddListener(UnityEvent, Action)"/> 的对应物。
     ///
-    /// The conversion is cached per managed delegate (Il2CppInterop keeps a
-    /// ConditionalWeakTable keyed by the CLR delegate), so converting the *same* delegate
-    /// instance again yields the same native listener and the removal actually finds it.
-    /// Passing a fresh method group would create a second, different listener and leave the
-    /// first one registered - which is how a native event ends up holding a delegate whose
-    /// target the managed side has already dropped.
+    /// 转换按托管委托缓存（Il2CppInterop 维护一个以 CLR 委托为键的
+    /// ConditionalWeakTable），所以把*同一个*委托实例再转换一次会
+    /// 得到同一个原生监听器，移除操作才能真正找到它。
+    /// 传入一个新的方法组则会创建第二个不同的监听器，并让
+    /// 第一个继续注册着——原生事件最终持有一个其目标已被托管侧
+    /// 丢弃的委托，就是这样发生的。
     /// </summary>
     public static void RemoveListener(this UnityEvent evt, Action listener)
     {

@@ -6,7 +6,7 @@ namespace Fika.Core.Networking.Packets.World;
 
 public enum FinalMissionMessage : byte { State, Outcome, Complete, ExitAuthorized }
 
-/// <summary>Host decisions and an authenticated acknowledgement of a player's own ending.</summary>
+/// <summary>主机决策，以及对玩家自身结局的已认证确认。</summary>
 public struct FinalMissionPacket : INetSerializable
 {
     public FinalMissionMessage Message;

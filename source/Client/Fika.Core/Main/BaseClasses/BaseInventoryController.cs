@@ -14,7 +14,7 @@ using Diz.Utils;
 namespace Fika.Core.Main.BaseClasses;
 
 /// <summary>
-/// Base inventory controller made for Fika
+/// 为 Fika 制作的基础物品栏控制器
 /// </summary>
 public class BaseInventoryController : Player.PlayerOwnerInventoryController
 {
@@ -22,7 +22,7 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
 
 
     /// <summary>
-    /// Whether strict inventory syncing is active
+    /// 严格物品栏同步是否启用
     /// </summary>
     public bool StrictSync { get; }
 
@@ -43,22 +43,22 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
 
     public override SearchContentOperation CreateSearchOperation(SearchableItem item)
     {
-        // SPT 5 still uses the native single-player search operation for
-        // local, host and bot inventories.  The old Mono port left this base
-        // method as a guard because every concrete controller overrode it;
-        // IL2CPP can legitimately dispatch through the base wrapper during
-        // item-search setup, so returning the native-compatible operation is
-        // required here as well.
+        // SPT 5 对本地、主机与 bot 的物品栏仍然使用原生的单人搜索
+        // 操作。旧的 Mono 移植版把这个基类方法留作守卫，因为每个
+        // 具体控制器都重写了它；而在物品搜索初始化期间，IL2CPP
+        // 可能合法地通过基类包装来派发，
+        // 因此在这里同样必须返回与原生兼容的
+        // 操作。
         return new SinglePlayerSearchContentOperation(GetAndIncrementNextOperationId(), this,
             PlayerSearchController, Profile, item);
     }
 
-    /// <summary>Applies an authoritative inventory received from the Fika server.</summary>
+    /// <summary>应用从 Fika 服务器收到的权威物品栏。</summary>
     internal void ReplaceInventoryFromNetwork(Inventory inventory)
     {
-        // The instances of the rebuilt tree are new, so the search controller knows none of them. Only
-        // the items that were known before the replacement are registered again, at their new addresses:
-        // a container the player had not searched yet must not become searched through a resync.
+        // 重建后的树中的实例都是新的，所以搜索控制器一个都不认识。只有
+        // 替换之前已知的那些物品会在它们的新地址上被重新注册：
+        // 玩家尚未搜索过的容器不能因一次重新同步而变成已搜索。
         var knownBeforeReplace = CollectKnownItemIds();
         ReplaceInventory(inventory);
         SyncInventoryToProfile();
@@ -66,8 +66,8 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
     }
 
     /// <summary>
-    /// (2026-10-17) The ids of the items the current tree has registered as known. Read before a network
-    /// replacement, so the same items can be registered again in the rebuilt tree.
+    /// （2026-10-17）当前树已注册为已知的条目 id。在网络替换之前读取，
+    /// 以便同样的物品能在重建后的树中被重新注册。
     /// </summary>
     private System.Collections.Generic.HashSet<string> CollectKnownItemIds()
     {
@@ -109,7 +109,7 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
                 }
                 catch (Exception)
                 {
-                    // One unreadable item must not stop the others from being preserved.
+                    // 一个无法读取的物品不得阻止其它物品被保留。
                 }
             }
         }
@@ -122,7 +122,7 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
     }
 
     /// <summary>
-    /// Registers the items that were known before a network replacement again, at their new addresses.
+    /// 把网络替换之前已知的物品在新地址上重新注册。
     /// </summary>
     private void RestoreKnownItemIds(System.Collections.Generic.HashSet<string> known)
     {
@@ -161,11 +161,11 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
     }
 
     /// <summary>
-    /// Keeps the profile object used by SPT's raid-end serializer in step with
-    /// the inventory object owned by this controller.  SPT 5's IL2CPP
-    /// <c>ReplaceInventory</c> updates the controller backing field only; it
-    /// does not write the new object back through <see cref="Profile.Inventory"/>
-    /// when a network resync replaces the tree.
+    /// 让 SPT 战局结束序列化器所使用的 profile 对象与
+    /// 本控制器所拥有的物品栏对象保持同步。SPT 5 的 IL2CPP
+    /// <c>ReplaceInventory</c> 只更新控制器背后的字段；当一次网络
+    /// 重新同步替换了整棵树时，它不会把新对象写回
+    /// <see cref="Profile.Inventory"/>。
     /// </summary>
     internal void SyncInventoryToProfile()
     {
@@ -187,19 +187,19 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
 
 
     /// <summary>
-    /// Whether the native inventory gate is closed
-    /// (<c>EFT.InventoryLogic.ItemController.Locked</c>). This is the only flag
-    /// that refuses item actions for the whole inventory:
-    /// <c>Player.PlayerInventoryController.CheckItemAction</c> returns an error
-    /// while it is set, and every drag-and-drop view
-    /// (<c>EFT.UI.DragAndDrop.GridView/SlotView.CanDrag/CanAccept</c>) plus
-    /// <c>Player.SetItemInHands</c>/<c>SetQuickSlotItem</c> go through
-    /// <c>Item.CheckAction</c>. A gate that stays closed therefore makes every
-    /// inventory drag and every weapon switch fail while movement keeps working.
-    /// The only native writer is <c>MovementContext.StateLocksInventory</c>
-    /// (set from <c>MovementState.Enter</c> = true and <c>Exit</c> = false by the
-    /// door/approach and stationary states); when that Exit never runs, nothing
-    /// else ever clears it.
+    /// 原生物品栏闸门是否处于关闭状态
+    /// （<c>EFT.InventoryLogic.ItemController.Locked</c>）。这是唯一一个会拒绝
+    /// 整个物品栏的物品动作的标志：
+    /// 当它被置位时，
+    /// <c>Player.PlayerInventoryController.CheckItemAction</c> 会返回错误，并且每个拖放视图
+    /// （<c>EFT.UI.DragAndDrop.GridView/SlotView.CanDrag/CanAccept</c>）以及
+    /// <c>Player.SetItemInHands</c>/<c>SetQuickSlotItem</c> 都会经过
+    /// <c>Item.CheckAction</c>。因此一道一直关闭的闸门会让每一次
+    /// 物品栏拖拽和每一次换武器都失败，而移动却仍然正常。
+    /// 唯一的原生写入者是 <c>MovementContext.StateLocksInventory</c>
+    /// （由门/靠近与静止状态把 <c>MovementState.Enter</c> 置为 true、
+    /// <c>Exit</c> 置为 false）；当那次 Exit 从未执行时，
+    /// 再没有别的东西会清除它。
     /// </summary>
     internal bool IsInventoryGateLocked
     {
@@ -218,11 +218,11 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
     }
 
     /// <summary>
-    /// Whether an unfinished item event still marks an item as busy.
-    /// <c>ItemController.CheckItemAction</c> refuses an item (and its parents)
-    /// while one of these events is registered, and
-    /// <c>IsChangingWeapon</c> additionally blocks
-    /// <c>Player.SetItemInHands</c>/<c>SetQuickSlotItem</c>.
+    /// 未完成的物品事件是否仍把某个物品标记为忙碌。
+    /// 当其中一个事件仍被注册时，<c>ItemController.CheckItemAction</c>
+    /// 会拒绝该物品（及其父级），而
+    /// <c>IsChangingWeapon</c> 还会额外阻止
+    /// <c>Player.SetItemInHands</c>/<c>SetQuickSlotItem</c>。
     /// </summary>
     internal bool IsChangingWeaponState
     {
@@ -241,14 +241,14 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
     }
 
     /// <summary>
-    /// When the native gate last refused an operation the port dispatched. Only
-    /// a refused attempt arms the watchdog: a player who never touched the
-    /// inventory is never repaired.
+    /// 原生闸门最后一次拒绝本移植版所派发操作的时间。只有
+    /// 被拒绝的一次尝试才会武装看门狗：从未触碰物品栏的玩家
+    /// 永远不会被修复。
     /// </summary>
     internal float LastGateRefusalTime { get; private set; }
 
     /// <summary>
-    /// Records that the native gate refused an action the player asked for.
+    /// 记录原生闸门拒绝了玩家所请求的一个动作。
     /// </summary>
     internal void NoteGateRefusal(string detail)
     {
@@ -261,16 +261,16 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
         }
     }
 
-    /// <summary>Whether an action was refused by the gate within the last seconds.</summary>
+    /// <summary>最近几秒内是否有动作被该闸门拒绝过。</summary>
     internal bool HadGateRefusalWithin(float seconds)
     {
         return LastGateRefusalTime > 0f && Time.time - LastGateRefusalTime <= seconds;
     }
 
     /// <summary>
-    /// Unlocks the inventory the same way the movement state that locked it
-    /// would have unlocked it. Only call this while the player is idle: a
-    /// running door/approach/stationary interaction owns the lock legitimately.
+    /// 以与当初锁定它的移动状态会采用的方式解锁物品栏。
+    /// 只在玩家空闲时调用它：正在进行的门/靠近/静止交互
+    /// 是合法地持有该锁的。
     /// </summary>
     internal bool ReleaseStuckInventoryLock(string reason)
     {
@@ -281,9 +281,9 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
 
         try
         {
-            // StateLocksInventory is the native setter the movement states use
-            // (Enter => true, Exit => false), so writing false here repeats
-            // exactly the unlock the stuck state never performed.
+            // StateLocksInventory 是移动状态所用的原生设值器
+            // （Enter => true，Exit => false），因此这里写入 false 正好重复了
+            // 那个卡住的状态从未执行过的解锁。
             var movementContext = this.Player?.MovementContext;
             if (movementContext != null)
             {
@@ -314,25 +314,25 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
         return unlocked;
     }
 
-    /// <summary>Operations this controller dispatched and has not finished yet.</summary>
+    /// <summary>本控制器已派发但尚未完成的操作。</summary>
     internal virtual int PendingOperationCount => 0;
 
     /// <summary>
-    /// Drops server callback registrations that no dispatched operation owns.
-    /// Only the client controller has any; the host answers its own operations.
+    /// 丢弃没有任何已派发操作所拥有的服务器回调注册。
+    /// 只有客户端控制器会有这类注册；主机自己应答自己的操作。
     /// </summary>
     internal virtual int ReleaseStaleServerCallbacks(string reason) => 0;
 
-    /// <summary>How many server callback registrations no live handler owns.</summary>
+    /// <summary>有多少服务器回调注册没有活跃处理器所拥有。</summary>
     internal virtual int CountStaleServerCallbacks() => 0;
 
     /// <summary>
-    /// Releases an inventory gate that stayed closed although nothing can still
-    /// own it. Only the watchdog in <c>CoopGame</c> calls this, and only after a
-    /// player attempt followed by an idle player with a closed gate.
-    /// <paramref name="escalate"/> additionally drops the item events the native
-    /// runtime itself reports as outdated, which is what keeps a single item
-    /// busy after an aborted operation.
+    /// 释放一道在已不可能有谁拥有它时却仍然关闭的物品栏闸门。
+    /// 只有 <c>CoopGame</c> 里的看门狗会调用它，且只在一次玩家尝试
+    /// 之后、接着出现一个闸门关闭的空闲玩家时调用。
+    /// <paramref name="escalate"/> 还会额外丢弃原生运行时自己报告的
+    /// 已过期物品事件，正是这些事件让一件物品在一次被中止的操作
+    /// 之后一直处于忙碌状态。
     /// </summary>
     internal virtual void RepairBlockedInventory(string reason, bool escalate)
     {
@@ -340,8 +340,8 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
         var lockReleased = ReleaseStuckInventoryLock(reason);
         var outdatedEvents = escalate ? ReleaseOutdatedItemEvents(reason) : 0;
 
-        // The inventory lock and the interaction state are set by the same
-        // native flows, so release both.
+        // 物品栏锁与交互状态由同一批原生流程设置，
+        // 因此两者都要释放。
         NativeInteractionRelease.Release(this.Player, "inventory-gate-stuck");
 
         FikaGlobals.LogWarning($"[InventoryRepair] {ID} - inventory recovery ran (reason={reason}, " +
@@ -351,10 +351,10 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
     }
 
     /// <summary>
-    /// Removes the item events the native runtime itself considers outdated
-    /// (<c>ItemEventArgs.IsOutdated()</c>). A failed or aborted operation whose
-    /// Dispose threw leaves its "Begin" event registered, and every later
-    /// CheckItemAction for that item is then refused with a busy error.
+    /// 移除原生运行时自己认为已过期的物品事件
+    /// （<c>ItemEventArgs.IsOutdated()</c>）。一次失败或被中止的操作如果其
+    /// Dispose 抛出过异常，就会留下它已注册的 "Begin" 事件，此后针对该物品的
+    /// 每一次 CheckItemAction 都会以忙碌错误被拒绝。
     /// </summary>
     internal int ReleaseOutdatedItemEvents(string reason)
     {
@@ -515,10 +515,10 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
     }
 
     /// <summary>
-    /// Returns how many bullets should be loaded per tick into the <paramref name="magazine"/>
+    /// 返回每个 tick 应向 <paramref name="magazine"/> 中装入多少发子弹
     /// </summary>
-    /// <param name="magazine">The magazine to check the <see cref="Magazine.MaxCount"/> on</param>
-    /// <returns>The amount of bullets to load per tick</returns>
+    /// <param name="magazine">要检查其 <see cref="Magazine.MaxCount"/> 的弹匣</param>
+    /// <returns>每个 tick 要装入的子弹数量</returns>
     private static int GetLoadPerTick(Magazine magazine)
     {
         var maxCount = magazine.MaxCount;
@@ -702,7 +702,7 @@ public class BaseInventoryController : Player.PlayerOwnerInventoryController
                     break;
                 }
 
-                // increment loop by the amount loaded per tick instead of single units
+                // 循环按每 tick 装入的数量递增，而不是按单个单位递增
                 loadedCount += count;
             }
             return SuccessfulResult.New;
