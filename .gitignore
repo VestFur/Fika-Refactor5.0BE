@@ -29,4 +29,5 @@ source/*/References/
 
 **/obj-*/
 **/bin-*/
+.idea/
 

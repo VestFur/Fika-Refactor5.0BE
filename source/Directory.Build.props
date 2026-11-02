@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <GameDir Condition="'$(GameDir)' == ''">$(MSBuildThisFileDirectory)..\SPT5.0</GameDir>
+    <GameDir Condition="'$(GameDir)' == ''">D:\EFT</GameDir>
     <SptRuntimeDir>$(GameDir)\SPT_Runtime</SptRuntimeDir>
     <BepInExCore>$(GameDir)\BepInEx\core</BepInExCore>
     <InteropDir>$(GameDir)\BepInEx\interop</InteropDir>
