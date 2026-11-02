@@ -13,7 +13,7 @@ public class NotificationCallbacks(NotificationWebSocket notificationWebSocket,
     ISptLogger<NotificationWebSocket> logger, HttpResponseUtil httpResponseUtil)
 {
     /// <summary>
-    /// Handle /fika/notification/push
+    /// 处理 /fika/notification/push
     /// </summary>
     public async ValueTask<string> HandlePushNotification(string url, PushNotification info, MongoId sessionID)
     {
@@ -22,13 +22,13 @@ public class NotificationCallbacks(NotificationWebSocket notificationWebSocket,
             return httpResponseUtil.NullResponse();
         }
 
-        // Do some exception handling for the client, icon 6 seems to cause an exception as well as going out of the enum's bounds.
+        // 为客户端做一些异常处理：图标 6 似乎会引发异常，超出枚举边界时同样会。
         if (info.NotificationIcon == EEFTNotificationIconType.Achievement || (int)info.NotificationIcon > 14)
         {
             info.NotificationIcon = EEFTNotificationIconType.Default;
         }
 
-        //Todo: Debug log
+        //Todo: 调试日志
         logger.Error("broadcasting");
         await notificationWebSocket.BroadcastAsync(info);
 

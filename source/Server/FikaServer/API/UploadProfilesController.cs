@@ -34,13 +34,13 @@ public class UploadProfilesController(JsonUtil jsonUtil,
                     var existingProfile = saveServer.GetProfiles().Values;
                     if (existingProfile.Any(p => p.HasProfileData() && p.ProfileInfo.ProfileId == profileId))
                     {
-                        // profile is active, we cannot update it
+                        // profile 处于活动状态，无法更新它
                         if (profileActivityService.ActiveWithinLastMinutes(profileId, 5))
                         {
                             return StatusCode(StatusCodes.Status423Locked, $"'{profileId}' has been logged in within the last 5 minutes, cannot update");
                         }
 
-                        // profile already exists, update it, and exit on failure
+                        // profile 已存在，更新它，失败则退出
                         if (!saveServer.RemoveProfile(profileId))
                         {
                             return StatusCode(StatusCodes.Status500InternalServerError, $"'{profileId}' already exists but could not be removed");

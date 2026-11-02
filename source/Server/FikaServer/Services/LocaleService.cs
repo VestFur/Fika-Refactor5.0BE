@@ -47,7 +47,7 @@ public class LocaleService(FileUtil fileUtil, FikaPaths fikaPaths, LocaleTable l
 
     private void LoadServerLocales()
     {
-        // This is not necessary.. For now..
+        // 目前这没有必要……
     }
 
     private async Task<Dictionary<string, Dictionary<string, string>>> RecursiveLoadFiles(string path)

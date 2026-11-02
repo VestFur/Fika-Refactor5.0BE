@@ -31,27 +31,27 @@ public class FikaDialogueController(ISptLogger<FikaDialogueController> logger,
     protected readonly List<IDialogueChatBot> _dialogueChatBots = [.. dialogueChatBots];
 
     /// <summary>
-    /// Gets a list of all friends for the specified profileId
+    /// 获取指定 profileId 的全部好友列表
     /// </summary>
-    /// <param name="sessionId">The profile id to get the list for</param>
-    /// <returns>A new <see cref="GetFriendListDataResponse"/></returns>
+    /// <param name="sessionId">要获取好友列表的 profile id</param>
+    /// <returns>新建的 <see cref="GetFriendListDataResponse"/></returns>
     public GetFriendListDataResponse GetFriendsList(MongoId sessionId)
     {
         List<UserDialogInfo> botsAndFriends = [];
         foreach (var item in _dialogueChatBots)
         {
             var chatBot = item.GetChatBot();
-            // Match SPT's active-bot filter. Fika's own bot has no entry in
-            // SPT's bot settings and remains available for Fika commands.
+            // 与 SPT 的活跃 bot 过滤保持一致。Fika 自有的 bot 在
+            // SPT 的 bot 设置中没有条目，仍可供 Fika 命令使用。
             if (item is FikaChatBot || coreConfig.Features.ChatbotFeatures.EnabledBots.GetValueOrDefault(chatBot.Id))
             {
                 botsAndFriends.Add(chatBot);
             }
         }
 
-        // SPT 5's GetPmcProfile calls SaveServer.GetProfile, which throws for
-        // deleted accounts. Check the current profile snapshot first so a
-        // stale relation cannot break the entire friends-list response.
+        // SPT 5 的 GetPmcProfile 会调用 SaveServer.GetProfile，已删除的
+        // 账号会在那里抛异常。先检查当前 profile 快照，这样过期的
+        // 关系也不会让整个好友列表响应失败。
         var profiles = saveServer.GetProfiles();
         foreach (var friend in playerRelationsHelper.GetFriendsList(sessionId))
         {
@@ -79,8 +79,8 @@ public class FikaDialogueController(ISptLogger<FikaDialogueController> logger,
                 {
                     Nickname = profile.Info.Nickname,
                     Level = profile.Info.Level,
-                    // Same prestige payload SPT's GetChatRoomMemberFromPmcProfile now returns,
-                    // so Fika's friend list keeps matching SPT's DialogueController.GetFriendList.
+                    // 与 SPT 的 GetChatRoomMemberFromPmcProfile 现在返回的声望载荷一致，
+                    // 使 Fika 的好友列表始终与 SPT 的 DialogueController.GetFriendList 相符。
                     PrestigeLevel = profile.Info.PrestigeLevel,
                     PrestigeGameMode = profile.Info.PrestigeGameMode,
                     Side = profile.Info.Side,
@@ -117,7 +117,7 @@ public class FikaDialogueController(ISptLogger<FikaDialogueController> logger,
             return null;
         }
 
-        // todo: fix async
+        // todo: 修复异步问题
         friendRequestsService.AddFriendRequest(new()
         {
             Id = new MongoId(),
@@ -146,11 +146,11 @@ public class FikaDialogueController(ISptLogger<FikaDialogueController> logger,
     }
 
     /// <summary>
-    /// Sends a message to another player
+    /// 向另一位玩家发送消息
     /// </summary>
-    /// <param name="sessionId">The profile id to send from</param>
-    /// <param name="request">The request to handle</param>
-    /// <returns>The id of the message sent</returns>
+    /// <param name="sessionId">发送方的 profile id</param>
+    /// <param name="request">待处理的请求</param>
+    /// <returns>已发送消息的 id</returns>
     public string SendMessage(MongoId sessionId, SendMessageRequest request, Dictionary<MongoId, SptProfile> profiles)
     {
         var receiverProfile = profiles[request.DialogId];
@@ -181,8 +181,8 @@ public class FikaDialogueController(ISptLogger<FikaDialogueController> logger,
                     Nickname = receiverProfile.CharacterData.PmcData.Info.Nickname,
                     Side = receiverProfile.CharacterData.PmcData.Info.Side,
                     Level = receiverProfile.CharacterData.PmcData.Info.Level,
-                    // SPT's GetProfilesForMail/GetDialogueUsers fill these from the same Info
-                    // object; keep the replicated dialogue user list identical.
+                    // SPT 的 GetProfilesForMail/GetDialogueUsers 用同一个 Info 对象
+                    // 填充这些内容；复制的对话用户列表必须保持一致。
                     PrestigeLevel = receiverProfile.CharacterData.PmcData.Info.PrestigeLevel,
                     PrestigeGameMode = receiverProfile.CharacterData.PmcData.Info.PrestigeGameMode,
                     MemberCategory = receiverProfile.CharacterData.PmcData.Info.MemberCategory,
@@ -247,8 +247,8 @@ public class FikaDialogueController(ISptLogger<FikaDialogueController> logger,
                     Nickname = receiverProfile.CharacterData.PmcData.Info.Nickname,
                     Side = receiverProfile.CharacterData.PmcData.Info.Side,
                     Level = receiverProfile.CharacterData.PmcData.Info.Level,
-                    // SPT's GetProfilesForMail/GetDialogueUsers fill these from the same Info
-                    // object; keep the replicated dialogue user list identical.
+                    // SPT 的 GetProfilesForMail/GetDialogueUsers 用同一个 Info 对象
+                    // 填充这些内容；复制的对话用户列表必须保持一致。
                     PrestigeLevel = receiverProfile.CharacterData.PmcData.Info.PrestigeLevel,
                     PrestigeGameMode = receiverProfile.CharacterData.PmcData.Info.PrestigeGameMode,
                     MemberCategory = receiverProfile.CharacterData.PmcData.Info.MemberCategory,
@@ -302,12 +302,12 @@ public class FikaDialogueController(ISptLogger<FikaDialogueController> logger,
     }
 
     /// <summary>
-    /// Checks if there is a message to reply to
+    /// 检查是否存在可回复的消息
     /// </summary>
-    /// <param name="recipientId">The id of the recipient</param>
-    /// <param name="replyToId">The id of the message to reply to</param>
-    /// <param name="dialogueId">The id of the dialogue, should be the other sender's profile id</param>
-    /// <returns>A new <see cref="ReplyTo"/> containing data for the message to reply to</returns>
+    /// <param name="recipientId">接收方的 id</param>
+    /// <param name="replyToId">被回复消息的 id</param>
+    /// <param name="dialogueId">对话的 id，应为对方发送者的 profile id</param>
+    /// <returns>新建的 <see cref="ReplyTo"/>，包含被回复消息的数据</returns>
     private ReplyTo? GetMessageToReplyTo(string recipientId, string replyToId, string dialogueId)
     {
         var currentDialogue = dialogueHelper.GetDialogueFromProfile(recipientId, dialogueId);
@@ -405,7 +405,7 @@ public class FikaDialogueController(ISptLogger<FikaDialogueController> logger,
     }
 
     /// <summary>
-    /// Accepts a friend request
+    /// 接受好友请求
     /// </summary>
     /// <param name="sessionID"></param>
     /// <param name="request"></param>

@@ -9,7 +9,7 @@ namespace Microsoft.AspNetCore.Routing;
 
 internal static class IdentityComponentsEndpointRouteBuilderExtensions
 {
-    // These endpoints are required by the Identity Razor components defined in the /Components/Account/Pages directory of this project.
+    // 这些终结点是本项目 /Components/Account/Pages 目录中定义的 Identity Razor 组件所必需的。
     public static IEndpointConventionBuilder MapAdditionalIdentityEndpoints(this IEndpointRouteBuilder endpoints)
     {
         ArgumentNullException.ThrowIfNull(endpoints);
@@ -51,7 +51,7 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
             [FromServices] SignInManager<ApplicationUser> signInManager,
             [FromForm] string provider) =>
         {
-            // Clear the existing external cookie to ensure a clean login process
+            // 清除现有的外部 cookie，以确保登录过程干净
             await context.SignOutAsync(IdentityConstants.ExternalScheme);
 
             var redirectUrl = UriHelper.BuildRelative(
@@ -80,7 +80,7 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
             var userId = await userManager.GetUserIdAsync(user);
             downloadLogger.LogInformation("User with ID '{UserId}' asked for their personal data.", userId);
 
-            // Only include personal data for download
+            // 仅包含用于下载的个人数据
             var personalData = new Dictionary<string, string>();
             var personalDataProps = typeof(ApplicationUser).GetProperties().Where(
                 prop => Attribute.IsDefined(prop, typeof(PersonalDataAttribute)));

@@ -23,14 +23,14 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     public ConcurrentDictionary<MongoId, FikaMatch> Matches { get; set; } = [];
 
     protected readonly ConcurrentDictionary<MongoId, Timer> _timeoutIntervals = [];
-    // Retained for the service lifetime so an old waiter can never acquire a
-    // different gate when the same headless profile starts another raid.
+    // 在整个服务生命周期内保留，使旧的等待者永远不会在同一个
+    // headless profile 开启另一场战局时获取到不同的闸门。
     private readonly ConcurrentDictionary<MongoId, SemaphoreSlim> _matchGates = [];
 
     /// <summary>
-    /// Adds a timeout interval for the given match
+    /// 为指定战局添加超时时间间隔
     /// </summary>
-    /// <param name="matchId">The match ID to add a timeout for</param>
+    /// <param name="matchId">要为其添加超时的战局 ID</param>
     private void AddTimeoutInterval(MongoId matchId, FikaMatch expectedMatch)
     {
         if (_timeoutIntervals.ContainsKey(matchId))
@@ -42,8 +42,8 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
         {
             try
             {
-                // Disposed timer callbacks can run after the next raid has
-                // reused this profile ID. They must never end the new match.
+                // 已释放的计时器回调可能在下一场战局已经
+                // 复用该 profile ID 之后才运行。它们绝不能结束新的战局。
                 if (!ReferenceEquals(GetMatch(matchId), expectedMatch)) return;
 
                 bool timedOut;
@@ -70,9 +70,9 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Removes the timeout interval for the given match
+    /// 移除指定战局的超时时间间隔
     /// </summary>
-    /// <param name="matchId">The match ID to remove a timeout for</param>
+    /// <param name="matchId">要为其移除超时的战局 ID</param>
     private void RemoveTimeoutInterval(MongoId matchId)
     {
         if (_timeoutIntervals.TryRemove(matchId, out var timer))
@@ -86,10 +86,10 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Get an ongoing match
+    /// 获取进行中的战局
     /// </summary>
-    /// <param name="matchId">The match ID of the match to get</param>
-    /// <returns>Returns the match object if a match is found with this match ID, returns null if not.</returns>
+    /// <param name="matchId">要获取的战局的 match ID</param>
+    /// <returns>若找到该 match ID 对应的战局则返回战局对象，否则返回 null。</returns>
     public FikaMatch? GetMatch(MongoId? matchId)
     {
         if (!matchId.HasValue)
@@ -106,11 +106,11 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Gets a player in an ongoing match
+    /// 获取进行中战局里的某个玩家
     /// </summary>
-    /// <param name="matchId">The match ID of what match the player is in</param>
-    /// <param name="playerId">The player ID to look for</param>
-    /// <returns>Returns a FikaPlayer object if the player is found, returns null if not.</returns>
+    /// <param name="matchId">该玩家所在战局的 match ID</param>
+    /// <param name="playerId">要查找的玩家 ID</param>
+    /// <returns>若找到该玩家则返回 FikaPlayer 对象，否则返回 null。</returns>
     public FikaPlayer? GetPlayerInMatch(MongoId matchId, MongoId playerId)
     {
         if (!Matches.TryGetValue(matchId, out var match))
@@ -125,20 +125,20 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Returns the match ID that has a player with the given player ID.
+    /// 返回含有指定玩家 ID 的战局 ID。
     /// </summary>
-    /// <param name="playerId">The ID of the player whose match ID is to be found.</param>
-    /// <returns>The match ID containing the player, or null if the player isn't in a match.</returns>
+    /// <param name="playerId">要查找其所在战局 ID 的玩家 ID。</param>
+    /// <returns>包含该玩家的战局 ID；若该玩家不在任何战局中则为 null。</returns>
     public MongoId? GetMatchIdByPlayer(MongoId playerId)
     {
         foreach ((var matchId, var match) in Matches)
         {
             lock (match)
             {
-                // A match remains in the dictionary while its insurance
-                // snapshot drains. Do not expose that ending match to new
-                // StartLocalRaid/Headless callers; late EndLocalRaid uses
-                // InsuranceService's retained token lookup instead.
+                // 战局在其保险快照排空期间仍会留在字典中。不要把这个
+                // 正在结束的战局暴露给新的 StartLocalRaid/Headless 调用方；
+                // 迟到的 EndLocalRaid 会改用 InsuranceService 保留的
+                // token 查询。
                 if (!match.IsEnding && match.Players.ContainsKey(playerId)) return matchId;
             }
         }
@@ -147,14 +147,14 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Retrieves the match identifier associated with the specified profile session.
+    /// 获取与指定 profile 会话关联的战局标识符。
     /// </summary>
-    /// <param name="sessionId">The unique identifier of the profile session for which to retrieve the match ID.</param>
-    /// <returns>A nullable match identifier associated with the profile, or null if no match is found or the profile does exist.</returns>
+    /// <param name="sessionId">要为其获取 match ID 的 profile 会话的唯一标识符。</param>
+    /// <returns>与该 profile 关联的可空战局标识符；若未找到战局或该 profile 不存在则为 null。</returns>
     public MongoId? GetMatchIdByProfile(MongoId sessionId)
     {
-        // Fika stores profile/session IDs as match player keys. Check that key
-        // before falling back to character IDs used by older callers.
+        // Fika 把 profile/会话 ID 存为战局玩家的键。先检查该键，
+        // 再退回使用旧版调用方所使用的角色 ID。
         var matchId = GetMatchIdByPlayer(sessionId);
         if (matchId.HasValue)
         {
@@ -188,19 +188,19 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Atomically reserves a live match for a StartLocalRaid request.
+    /// 以原子方式为一个 StartLocalRaid 请求预留活跃战局。
     ///
-    /// The reservation closes the gap between looking up a profile's match
-    /// and registering the ServerId token in InsuranceService. EndMatch marks
-    /// the same match as ending under its lock and waits for reservations
-    /// that won this race. Requests arriving after IsEnding are rejected and
-    /// may continue as ordinary SPT local raids.
+    /// 该预留填补了从查找 profile 所属战局到在 InsuranceService 中
+    /// 注册 ServerId token 之间的间隙。EndMatch 会在其锁内把
+    /// 同一战局标记为正在结束，并等待在此竞态中胜出的
+    /// 预留。在 IsEnding 之后到达的请求会被拒绝，
+    /// 并可继续作为普通的 SPT 本地战局进行。
     /// </summary>
     public bool TryBeginLocalRaid(MongoId sessionId, out MongoId matchId, out FikaMatch? expectedMatch)
     {
-        // Preserve the same session/PMC/Scav identity fallback used by the
-        // original StartLocalRaid path. Some older clients identify the
-        // participant by character id rather than the profile session id.
+        // 保留原 StartLocalRaid 路径所使用的 session/PMC/Scav
+        // 身份回退逻辑。一些旧版客户端用角色 id 而不是
+        // profile 会话 id 来标识参与者。
         var candidateId = GetMatchIdByProfile(sessionId);
         if (candidateId is { } resolvedMatchId &&
             Matches.TryGetValue(resolvedMatchId, out var candidateMatch))
@@ -233,9 +233,9 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Releases a StartLocalRaid reservation. The expected object check is
-    /// required because a host profile id can be reused by a replacement
-    /// match after the old match has been removed.
+    /// 释放一个 StartLocalRaid 预留。之所以需要做预期的对象检查，
+    /// 是因为旧战局被移除后，主机 profile id 可能被替换的
+    /// 战局重新复用。
     /// </summary>
     public void EndLocalRaidStart(MongoId matchId, FikaMatch expectedMatch)
     {
@@ -249,9 +249,9 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Waits for reservations that were admitted before a match began
-    /// ending. A bounded wait mirrors insurance settlement and prevents a
-    /// permanently faulted request from blocking server teardown forever.
+    /// 等待在战局开始收尾之前被准入的预留。
+    /// 有界等待与保险结算保持一致，并可防止永久出错的
+    /// 请求永远阻塞服务器拆除。
     /// </summary>
     private async Task WaitForLocalRaidStartsAsync(MongoId matchId, FikaMatch expectedMatch)
     {
@@ -263,15 +263,15 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Creates a new match with the specified configuration and associates it with the given session.
+    /// 以指定配置创建新战局，并将其与给定会话关联。
     /// </summary>
-    /// <remarks>If a match with the same server ID already exists, it is deleted before creating the new
-    /// match. The method also initializes the match with the provided settings and adds the host player to the
-    /// match.</remarks>
-    /// <param name="data">The configuration data for the match to be created, including server information, host details, and raid
-    /// settings. Cannot be null.</param>
-    /// <param name="sessionId">The unique identifier of the session to associate with the new match.</param>
-    /// <returns>true if the match was successfully created and registered; otherwise, false.</returns>
+    /// <remarks>若已存在相同 server ID 的战局，则在创建新战局
+    /// 之前将其删除。该方法还会用提供的设置初始化战局，并把主机玩家
+    /// 加入战局。</remarks>
+    /// <param name="data">待创建战局的配置数据，包括服务器信息、主机详情与战局
+    /// 设置。不可为 null。</param>
+    /// <param name="sessionId">要与新战局关联的会话的唯一标识符。</param>
+    /// <returns>若战局成功创建并注册则为 true，否则为 false。</returns>
     public async Task<bool> CreateMatch(FikaRaidCreateRequestData data, MongoId sessionId)
     {
         var matchGate = _matchGates.GetOrAdd(data.ServerId, _ => new SemaphoreSlim(1, 1));
@@ -279,9 +279,9 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
         FikaServer.Models.Fika.Headless.HeadlessClientInfo? lockedHeadlessOwner = null;
         try
         {
-            // Bind the room to the exact headless connection/reservation that
-            // created it. A replacement socket can become READY while this
-            // room's raid-end callbacks are still draining.
+            // 把房间绑定到创建它的确切 headless 连接/预留上。
+            // 一个替换用的 socket 可能在本房间的战局结束回调仍在
+            // 排空时变为 READY。
             FikaServer.Models.Fika.Headless.HeadlessClientInfo? headlessOwner = null;
             long? headlessReservationVersion = null;
             var isHeadlessHost = headlessHelper.IsHeadlessClient(data.ServerId);
@@ -298,9 +298,9 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
                 lock (headlessOwner) headlessReservationVersion = headlessOwner.ReservationVersion;
             }
 
-            // An old /raid/create must be rejected before it can tear down a
-            // newer room. Keep the owner gate through the old-room cleanup,
-            // location generation, publication, and host registration.
+            // 旧的 /raid/create 必须在它能拆除较新的房间之前被拒绝。
+            // 从旧房间清理、位置生成、发布到主机注册的整个过程
+            // 都要保持所有者闸门。
             if (isHeadlessHost && (headlessOwner == null ||
                 !headlessReservationVersion.HasValue ||
                 !headlessService.IsCurrentReservation(data.ServerId, headlessOwner,
@@ -316,8 +316,8 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
 
             if (Matches.TryGetValue(data.ServerId, out var previousMatch))
             {
-                // The same reservation can replace its room during transit.
-                // A late create from a prior reservation cannot end it.
+                // 同一预留可以在中转期间替换自己的房间。
+                // 来自先前预留的迟到创建请求无法结束它。
                 if (isHeadlessHost &&
                     (previousMatch.ServerGuid == data.ServerGuid ||
                      !ReferenceEquals(previousMatch.HeadlessReservationOwner, headlessOwner) ||
@@ -398,9 +398,9 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Deletes a coop match and removes the timeout interval
+    /// 删除合作战局并移除超时时间间隔
     /// </summary>
-    /// <param name="matchId">The match Id to remove</param>
+    /// <param name="matchId">要移除的战局 Id</param>
     public ValueTask DeleteMatch(MongoId matchId)
     {
         var expectedMatch = GetMatch(matchId);
@@ -429,9 +429,9 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
 
     private async ValueTask DeleteMatchCore(MongoId matchId, FikaMatch expectedMatch)
     {
-        // Mutations on this match lock the same object and verify it is still
-        // current. Removing under the lock prevents a late join from writing
-        // player and insurance state after this raid has ended.
+        // 对该战局的变更会锁定同一个对象，并校验它仍是当前对象。
+        // 在锁内移除可防止迟到的加入在本场战局结束后
+        // 写入玩家与保险状态。
         bool removed;
         lock (expectedMatch)
         {
@@ -450,7 +450,7 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Ends the given match, logs a reason and removes the timeout interval
+    /// 结束指定战局、记录原因并移除超时时间间隔
     /// </summary>
     /// <param name="matchId"></param>
     /// <param name="reason"></param>
@@ -480,13 +480,13 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     private async ValueTask EndMatchCore(MongoId matchId, FikaMatch match,
         EFikaMatchEndSessionMessage reason, bool resetHeadless)
     {
-        // Close admission before awaiting insurance persistence. Otherwise a
-        // late join can recreate an insurance record after it was finalized.
+        // 在等待保险持久化之前关闭准入。否则一个迟到的加入请求
+        // 可能在保险记录已定稿后重新创建它。
         lock (match) match.IsEnding = true;
-        // A StartLocalRaid request admitted before IsEnding may still be
-        // assembling its response. Let it register its token before the
-        // insurance snapshot closes; requests admitted afterwards are
-        // rejected by TryBeginLocalRaid and fall back to normal SPT.
+        // 在 IsEnding 之前被准入的 StartLocalRaid 请求可能仍在
+        // 组装响应。应让它在其保险快照关闭之前注册 token；
+        // 此后被准入的请求会被 TryBeginLocalRaid 拒绝，
+        // 并回退为普通 SPT 行为。
         await WaitForLocalRaidStartsAsync(matchId, match);
         logger.Info($"Coop session {matchId} has ended {Enum.GetName(reason)}");
         try
@@ -495,16 +495,16 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
         }
         finally
         {
-            // Keep the headless reserved until the match is gone. Deleting
-            // first preserves the requester name for the webhook.
+            // 在战局消失之前保持 headless 的预留状态。先执行删除
+            // 可以保留请求方名称供 webhook 使用。
             try
             {
                 await DeleteMatchCore(matchId, match);
             }
             finally
             {
-                // During CreateMatch the headless may already have a new
-                // requester reservation. That request owns the new match.
+                // 在 CreateMatch 期间，该 headless 可能已有新的请求方
+                // 预留。那个请求才拥有新战局。
                 if (resetHeadless && match.HeadlessReservationOwner != null)
                     headlessService.EndHeadlessRaid(matchId, match.HeadlessReservationOwner,
                         match.HeadlessReservationVersion);
@@ -513,7 +513,7 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Updates the status of the given match
+    /// 更新指定战局的状态
     /// </summary>
     /// <param name="matchId"></param>
     /// <param name="status"></param>
@@ -544,7 +544,7 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Sets the ip and port for the given match
+    /// 设置指定战局的 ip 与端口
     /// </summary>
     /// <param name="matchId"></param>
     /// <param name="ips"></param>
@@ -569,9 +569,9 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
             return;
         }
 
-        // The room does not exist (yet): /fika/raid/create either has not run or has already replaced
-        // it. Dropping the address silently is what made the joiners report "IPs: , Port: 0" with no
-        // way to tell whether the host never published or the record was discarded here.
+        // 房间（还）不存在：/fika/raid/create 要么尚未执行，要么已经替换
+        // 了它。静默丢弃地址正是让加入方报告 "IPs: , Port: 0" 却无法
+        // 判断是主机从未发布、还是记录在此处被丢弃的原因。
         var published = 0;
         if (ips != null)
         {
@@ -589,7 +589,7 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Resets the timeout of the given match
+    /// 重置指定战局的超时
     /// </summary>
     /// <param name="matchId"></param>
     public void ResetTimeout(MongoId matchId)
@@ -604,8 +604,8 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
 
                 if (_timeoutIntervals.TryGetValue(matchId, out var timer))
                 {
-                    // Restart the 1-minute countdown. A disposed timer can
-                    // race this request while a raid is ending.
+                    // 重新开始 1 分钟倒计时。已释放的计时器可能
+                    // 在战局结束期间与此请求并发。
                     try { timer.Change(TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1)); }
                     catch (ObjectDisposedException) { }
                 }
@@ -614,11 +614,11 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Adds a player to a match
+    /// 将玩家添加到战局
     /// </summary>
-    /// <param name="matchId">The match id</param>
-    /// <param name="playerId">The player id to add to the match</param>
-    /// <param name="data">Data for the player</param>
+    /// <param name="matchId">战局 id</param>
+    /// <param name="playerId">要加入战局的玩家 id</param>
+    /// <param name="data">该玩家的数据</param>
     public bool AddPlayerToMatch(MongoId matchId, MongoId playerId, FikaPlayer data)
     {
         if (!Matches.TryGetValue(matchId, out var match))
@@ -632,9 +632,9 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
             if (!ReferenceEquals(GetMatch(matchId), match) || match.IsEnding) return false;
             if (!match.Players.TryAdd(playerId, data))
             {
-                // Already a participant: a duplicate announcement, not an error. Refresh the flags the
-                // new request carries and keep the rest of the record, which is what the raid host's
-                // own character state hangs off.
+                // 已经是参与者：这是重复通告，并非错误。刷新新请求
+                // 携带的标志，并保留记录的其余部分，因为战局主机自身的
+                // 角色状态依附于此。
                 var existing = match.Players[playerId];
                 existing.IsSpectator = data.IsSpectator;
                 if (!string.IsNullOrEmpty(data.GroupId))
@@ -682,10 +682,10 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Sets a player to dead
+    /// 将玩家设为死亡
     /// </summary>
-    /// <param name="matchId">The match id</param>
-    /// <param name="playerId">The player id to set as dead</param>
+    /// <param name="matchId">战局 id</param>
+    /// <param name="playerId">要设为已死亡的玩家 id</param>
     public void SetPlayerDead(MongoId matchId, MongoId playerId)
     {
         if (Matches.TryGetValue(matchId, out var match))
@@ -700,11 +700,11 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Sets the groupId for a player
+    /// 设置某个玩家的 groupId
     /// </summary>
-    /// <param name="matchId">The match id</param>
-    /// <param name="playerId">The player id</param>
-    /// <param name="groupId">The group to add <paramref name="playerId"/> to</param>
+    /// <param name="matchId">战局 id</param>
+    /// <param name="playerId">玩家 id</param>
+    /// <param name="groupId">要将 <paramref name="playerId"/> 加入的队伍</param>
     public void SetPlayerGroup(MongoId matchId, MongoId playerId, string groupId)
     {
         if (Matches.TryGetValue(matchId, out var match))
@@ -719,10 +719,10 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
     }
 
     /// <summary>
-    /// Removes a player from a match
+    /// 从战局中移除玩家
     /// </summary>
-    /// <param name="matchId">The match to remove the player from</param>
-    /// <param name="playerId">The player id to remove</param>
+    /// <param name="matchId">要从中移除玩家的战局</param>
+    /// <param name="playerId">要移除的玩家 id</param>
     public void RemovePlayerFromMatch(MongoId matchId, MongoId playerId)
     {
         if (Matches.TryGetValue(matchId, out var match))

@@ -48,20 +48,20 @@ public class HeadlessProfileService(ISptLogger<HeadlessProfileService> logger, S
             }
         }
 
-        // Stop headless from adding up to the percentage of achievements unlocked
+        // 避免 headless 抬高已解锁成就的百分比
         foreach (var headlessProfile in HeadlessProfiles)
         {
             coreConfig.Features.AchievementProfileIdBlacklist.Add(headlessProfile.ProfileInfo.ProfileId);
 
-            // Existing headless profiles must bypass the SPT 5.0 first-launch tutorial too.
+            // 已有的 headless profile 同样必须跳过 SPT 5.0 的首次启动教程。
             if (headlessProfile.SptData.TutorialCompleted != true)
             {
                 headlessProfile.SptData.TutorialCompleted = true;
                 await saveServer.SaveProfileAsync(headlessProfile.ProfileInfo.ProfileId.Value);
             }
 
-            // Keep the double-clickable launch helper next to HeadlessConfig.json in sync, including
-            // for profiles that were created before the helper existed. Regenerating it is idempotent.
+            // 保持 HeadlessConfig.json 旁边那个可双击的启动辅助脚本同步更新，包括
+            // 那些在辅助脚本存在之前就已创建的 profile。重新生成它是幂等的。
             GenerateLaunchScript(headlessProfile.ProfileInfo.ProfileId.Value);
         }
     }
@@ -90,19 +90,19 @@ public class HeadlessProfileService(ISptLogger<HeadlessProfileService> logger, S
 
     private async Task<SptProfile> CreateHeadlessProfile()
     {
-        // Generate a unique username
+        // 生成唯一的用户名
         var username = $"headless_{new MongoId()}";
-        // Random edition. Doesn't matter
+        // 随机版本。无所谓
         const string edition = "Standard";
 
-        // Create mini profile
+        // 创建 mini profile
         string profileId = await CreateMiniProfile(username, edition);
 
-        // Random character configs. Doesn't matter.
+        // 随机角色配置。无所谓。
         ProfileCreateRequestData newProfileData = new()
         {
             Side = "usec",
-            Nickname = username, // Use the username as the nickname to ensure it is unique.
+            Nickname = username, // 用用户名作为昵称，确保其唯一。
             HeadId = HEAD_USEC_4,
             VoiceId = VOICE_USEC_4
         };
@@ -158,11 +158,11 @@ public class HeadlessProfileService(ISptLogger<HeadlessProfileService> logger, S
     }
 
     /// <summary>
-    /// Resolves whether this profile's dedicated host comes up minimised.
-    /// An existing <c>HeadlessConfig.json</c> wins, so an operator who edited the value keeps it
-    /// across server restarts; every other case - a new profile, a missing file, an unreadable
-    /// file, or a file written by an older server build without the property - defaults to
-    /// minimised, which is also what <see cref="HeadlessLaunchSettings.StartMinimized"/> declares.
+    /// 判定该 profile 的专用主机是否以最小化方式启动。
+    /// 已存在的 <c>HeadlessConfig.json</c> 优先，因此运维人员修改过的值会在
+    /// 服务器重启后继续生效；其他所有情况 —— 新建 profile、文件缺失、文件不可读，
+    /// 或由缺少该属性的旧版本服务器写出的文件 —— 都默认为
+    /// 最小化，这也正是 <see cref="HeadlessLaunchSettings.StartMinimized"/> 所声明的。
     /// </summary>
     private (bool Value, string Source) ResolveStartMinimized(string folderPath)
     {
@@ -178,9 +178,9 @@ public class HeadlessProfileService(ISptLogger<HeadlessProfileService> logger, S
             var existing = jsonUtil.Deserialize<HeadlessLaunchSettings>(File.ReadAllText(configFile));
             if (existing is not null)
             {
-                // Only a file this schema wrote carries a deliberate choice. Older builds wrote
-                // StartMinimized=false unconditionally, so honouring it would keep every existing
-                // profile restored forever.
+                // 只有本 schema 写出的文件才携带明确的选择。旧版本构建会
+                // 无条件写入 StartMinimized=false，若遵从它会让所有已有
+                // profile 永久保持还原状态。
                 if (existing.SettingsVersion >= HeadlessLaunchSettings.CurrentSettingsVersion)
                 {
                     return (existing.StartMinimized, $"kept from {relative}");
@@ -198,11 +198,11 @@ public class HeadlessProfileService(ISptLogger<HeadlessProfileService> logger, S
     }
 
     /// <summary>
-    /// Resolves how this profile's host presents itself. <c>headless.display.mode</c> wins when it
-    /// is present, so editing <c>fika.jsonc</c> and restarting the server rewrites every profile's
-    /// <c>StartHeadless.cmd</c> (this method runs from the same place the profile and its helper
-    /// are created). A file that already names a mode is only honoured while the key is absent, so
-    /// an operator can also pin one profile by deleting the server wide value.
+    /// 判定该 profile 的主机以何种方式呈现。<c>headless.display.mode</c> 存在时优先，
+    /// 因此修改 <c>fika.jsonc</c> 并重启服务器会重写每个 profile 的
+    /// <c>StartHeadless.cmd</c>（本方法与创建 profile 及其辅助脚本的
+    /// 位置相同）。已指定模式的配置文件仅在键缺失时才会被遵从，
+    /// 因此运维人员也可以通过删除服务器级的值来固定单个 profile。
     /// </summary>
     private (string Value, string Source) ResolveDisplay(string folderPath)
     {
@@ -244,10 +244,10 @@ public class HeadlessProfileService(ISptLogger<HeadlessProfileService> logger, S
     }
 
     /// <summary>
-    /// Writes the double-clickable <c>StartHeadless.cmd</c> next to HeadlessConfig.json. The SPT
-    /// launcher never lists headless profiles, so this helper is the supported way to start a
-    /// dedicated host: it runs the exact command line the launcher uses for a normal profile, plus
-    /// <c>-batchmode -nographics</c> in Console display mode.
+    /// 在 HeadlessConfig.json 旁边写入可双击运行的 <c>StartHeadless.cmd</c>。SPT
+    /// 启动器从不列出 headless profile，因此该辅助脚本是启动
+    /// 专用主机受支持的方式：它执行启动器为普通 profile 使用的完全相同的命令行，外加
+    /// Console 显示模式下的 <c>-batchmode -nographics</c>。
     /// </summary>
     private void WriteLaunchHelper(string folderPath, MongoId profileId, Uri backendUrl, bool startMinimized, string displayMode)
     {
@@ -255,13 +255,13 @@ public class HeadlessProfileService(ISptLogger<HeadlessProfileService> logger, S
 
         try
         {
-            // Uri.ToString() always renders an authority-only url with a trailing slash
-            // ("https://host:port/"), and the game appends its own "/singleplayer/..." to the
-            // BackendUrl, so passing it through unchanged produced requests like
-            // "//singleplayer/bundles" that the server answers with 404 - which is exactly the
-            // error storm a fresh headless host used to produce. HeadlessConfig.json never had
-            // this problem because the json serializer writes the Uri without the slash, so trim
-            // it here as well to keep both files identical.
+            // Uri.ToString() 总是把仅含 authority 的 url 渲染为带结尾斜杠的形式
+            // （"https://host:port/"），而游戏会自行把 "/singleplayer/..." 追加到
+            // BackendUrl 之后，因此原样传递会产生类似
+            // "//singleplayer/bundles" 的请求，服务器以 404 响应 —— 这正是
+            // 新建 headless 主机过去会产生的错误风暴。HeadlessConfig.json 从不存在
+            // 此问题，因为 json 序列化器写入 Uri 时不带斜杠，所以此处
+            // 也去掉它，以保持两个文件一致。
             File.WriteAllText(newFile, HeadlessLaunchHelper.Build(profileId, backendUrl.ToString().TrimEnd('/'), startMinimized, displayMode));
         }
         catch (Exception ex)
@@ -275,8 +275,8 @@ public class HeadlessProfileService(ISptLogger<HeadlessProfileService> logger, S
     }
 
     /// <summary>
-    /// Renders a path relative to the mod root with forward slashes, so log lines never leak the
-    /// machine specific install location.
+    /// 以正斜杠形式渲染相对于 mod 根目录的路径，使日志行永不泄露
+    /// 与具体机器相关的安装位置。
     /// </summary>
     private string ToModRelativePath(string path)
     {

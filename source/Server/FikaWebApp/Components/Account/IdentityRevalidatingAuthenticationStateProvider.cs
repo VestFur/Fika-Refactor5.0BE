@@ -7,8 +7,8 @@ using System.Security.Claims;
 
 namespace FikaWebApp.Components.Account;
 
-// This is a server-side AuthenticationStateProvider that revalidates the security stamp for the connected user
-// every 30 minutes an interactive circuit is connected.
+// 这是一个服务端 AuthenticationStateProvider，会为已连接的用户重新验证安全戳
+// 只要交互式线路处于连接状态，就每 30 分钟执行一次。
 internal sealed class IdentityRevalidatingAuthenticationStateProvider(
         ILoggerFactory loggerFactory,
         IServiceScopeFactory scopeFactory,
@@ -20,7 +20,7 @@ internal sealed class IdentityRevalidatingAuthenticationStateProvider(
     protected override async Task<bool> ValidateAuthenticationStateAsync(
         AuthenticationState authenticationState, CancellationToken cancellationToken)
     {
-        // Get the user manager from a new scope to ensure it fetches fresh data
+        // 从一个新的作用域获取用户管理器，以确保取到的是最新数据
         await using var scope = scopeFactory.CreateAsyncScope();
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         return await ValidateSecurityStampAsync(userManager, authenticationState.User);

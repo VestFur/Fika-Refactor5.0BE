@@ -2,19 +2,19 @@ using FikaServer;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
-// In SDK-style projects such as this one, several assembly attributes that were historically
-// defined in this file are now automatically added during build and populated with
-// values defined in project properties. For details of which attributes are included
-// and how to customise this process see: https://aka.ms/assembly-info-properties
+// 在像本项目这样的 SDK 风格项目中，历史上定义在此文件中的若干程序集特性
+// 现在会在构建期间自动添加，并填充以
+// 项目属性中定义的值。关于包含哪些特性
+// 以及如何自定义该过程的详细信息，请参见：https://aka.ms/assembly-info-properties
 
 
-// Setting ComVisible to false makes the types in this assembly not visible to COM
-// components.  If you need to access a type in this assembly from COM, set the ComVisible
-// attribute to true on that type.
+// 将 ComVisible 设为 false 会使本程序集中的类型对 COM
+// 组件不可见。如果需要从 COM 访问本程序集中的某个类型，
+// 请在该类型上把 ComVisible 特性设为 true。
 
 [assembly: ComVisible(false)]
 
-// The following GUID is for the ID of the typelib if this project is exposed to COM.
+// 若本项目向 COM 公开，则以下 GUID 用于类型库的 ID。
 
 [assembly: Guid("97e4e53b-117b-48c5-965f-dc6ce02ede3d")]
 [assembly: AssemblyVersion(FikaModMetadata.FikaVersion)]

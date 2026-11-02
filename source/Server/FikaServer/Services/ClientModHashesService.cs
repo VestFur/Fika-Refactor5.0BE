@@ -9,8 +9,8 @@ public class ClientModHashesService
 
     public bool MatchesOrAdd(string pluginId, uint hash)
     {
-        // The first concurrent request establishes the baseline. Every other
-        // request must compare with that same value, including a losing insert.
+        // 第一个并发请求会建立基线。其余每个
+        // 请求都必须与同一个值比较，包括插入失败的那个请求。
         return _hashes.GetOrAdd(pluginId, hash) == hash;
     }
 

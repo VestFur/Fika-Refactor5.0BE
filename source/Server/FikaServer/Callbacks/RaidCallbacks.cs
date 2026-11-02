@@ -15,7 +15,7 @@ namespace FikaServer.Callbacks;
 public class RaidCallbacks(HttpResponseUtil httpResponseUtil, RaidController raidController)
 {
     /// <summary>
-    /// Handle /fika/raid/create
+    /// 处理 /fika/raid/create
     /// </summary>
     /// <param name="url"></param>
     /// <param name="info"></param>
@@ -27,7 +27,7 @@ public class RaidCallbacks(HttpResponseUtil httpResponseUtil, RaidController rai
     }
 
     /// <summary>
-    /// Handle /fika/raid/join
+    /// 处理 /fika/raid/join
     /// </summary>
     /// <param name="url"></param>
     /// <param name="info"></param>
@@ -39,7 +39,7 @@ public class RaidCallbacks(HttpResponseUtil httpResponseUtil, RaidController rai
     }
 
     /// <summary>
-    /// Handle /fika/raid/leave
+    /// 处理 /fika/raid/leave
     /// </summary>
     /// <param name="url"></param>
     /// <param name="info"></param>
@@ -53,7 +53,7 @@ public class RaidCallbacks(HttpResponseUtil httpResponseUtil, RaidController rai
     }
 
     /// <summary>
-    /// Handle /fika/raid/gethost
+    /// 处理 /fika/raid/gethost
     /// </summary>
     /// <param name="url"></param>
     /// <param name="info"></param>
@@ -65,7 +65,7 @@ public class RaidCallbacks(HttpResponseUtil httpResponseUtil, RaidController rai
     }
 
     /// <summary>
-    /// Handle /fika/raid/getsettings
+    /// 处理 /fika/raid/getsettings
     /// </summary>
     /// <param name="url"></param>
     /// <param name="info"></param>
@@ -77,7 +77,7 @@ public class RaidCallbacks(HttpResponseUtil httpResponseUtil, RaidController rai
     }
 
     /// <summary>
-    /// Handle /fika/raid/headless/start
+    /// 处理 /fika/raid/headless/start
     /// </summary>
     /// <param name="url"></param>
     /// <param name="info"></param>
@@ -89,7 +89,7 @@ public class RaidCallbacks(HttpResponseUtil httpResponseUtil, RaidController rai
     }
 
     /// <summary>
-    /// Handle /fika/raid/registerPlayer
+    /// 处理 /fika/raid/registerPlayer
     /// </summary>
     /// <param name="url"></param>
     /// <param name="info"></param>

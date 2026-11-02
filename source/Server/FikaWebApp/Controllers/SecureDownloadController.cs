@@ -16,13 +16,13 @@ public class SecureDownloadController : ControllerBase
             return BadRequest("Filename is required.");
         }
 
-        // Root directory where secure files are stored
+        // 存放受保护文件的根目录
         var rootPath = Path.GetFullPath("data/protectedfiles");
 
-        // Combine root path with requested filename
+        // 把根路径与请求的文件名组合起来
         var fullPath = Path.GetFullPath(Path.Combine(rootPath, filename));
 
-        // Prevent access outside of ProtectedFiles
+        // 阻止访问 ProtectedFiles 之外的路径
         if (!fullPath.StartsWith(rootPath, StringComparison.OrdinalIgnoreCase))
         {
             return BadRequest("Invalid path");
@@ -35,7 +35,7 @@ public class SecureDownloadController : ControllerBase
 
         const string contentType = "application/octet-stream";
 
-        // Only return the actual filename, not the full relative path
+        // 只返回真正的文件名，而不是完整的相对路径
         return PhysicalFile(fullPath, contentType, Path.GetFileName(fullPath));
     }
 }

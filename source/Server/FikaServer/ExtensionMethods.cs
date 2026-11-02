@@ -9,10 +9,10 @@ namespace FikaServer;
 public static class ExtensionMethods
 {
     /// <summary>
-    /// Generates from a <see cref="SptProfile"/>
+    /// 从 <see cref="SptProfile"/> 生成
     /// </summary>
     /// <param name="profile"></param>
-    /// <returns>A new <see cref="FriendData"/></returns>
+    /// <returns>新的 <see cref="FriendData"/></returns>
     public static FriendData ToFriendData(this SptProfile profile)
     {
         return new()
@@ -31,10 +31,10 @@ public static class ExtensionMethods
     }
 
     /// <summary>
-    /// Generates from a <see cref="PmcData"/>
+    /// 从 <see cref="PmcData"/> 生成
     /// </summary>
     /// <param name="profile"></param>
-    /// <returns>A new <see cref="FriendData"/></returns>
+    /// <returns>新的 <see cref="FriendData"/></returns>
     public static FriendData ToFriendData(this PmcData pmcData)
     {
         return new()
@@ -53,7 +53,7 @@ public static class ExtensionMethods
     }
 
     /// <summary>
-    /// Checks if the profile has valid data to get the <see cref="Info.ProfileId"/>
+    /// 检查该档案是否拥有可用于获取 <see cref="Info.ProfileId"/> 的有效数据
     /// </summary>
     /// <param name="profile"></param>
     /// <returns></returns>
@@ -82,10 +82,10 @@ public static class ExtensionMethods
     }
 
     /// <summary>
-    /// Checks if the given profile is a headless profile
+    /// 检查给定档案是否为 headless 档案
     /// </summary>
-    /// <param name="profile">The profile to check</param>
-    /// <returns><see langword="true"/> if it's a headless profile</returns>
+    /// <param name="profile">要检查的档案</param>
+    /// <returns>若为 headless 档案则为 <see langword="true"/></returns>
     public static bool IsHeadlessProfile(this SptProfile profile)
     {
         return profile?.CharacterData?.PmcData?.Info?.MemberCategory is MemberCategory.UnitTest;

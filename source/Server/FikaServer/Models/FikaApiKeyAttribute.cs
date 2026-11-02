@@ -1,4 +1,4 @@
-﻿using FikaServer.Models.Fika.Config;
+﻿﻿using FikaServer.Models.Fika.Config;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -42,7 +42,7 @@ public class RequireApiKeyAttribute : Attribute, IAsyncAuthorizationFilter
         var fikaServerConfig = services.GetRequiredService<FikaServerConfig>();
         var apiKey = fikaServerConfig.Server.ApiKey.AsSpan();
 
-        // Span-based equality check — avoids string allocation
+        // 基于 Span 的相等比较 — 避免字符串分配
         if (!extractedToken.Equals(apiKey, StringComparison.Ordinal))
         {
             context.Result = new ContentResult

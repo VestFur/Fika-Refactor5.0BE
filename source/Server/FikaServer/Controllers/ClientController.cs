@@ -13,15 +13,15 @@ namespace FikaServer.Controllers;
 public class ClientController(ClientService fikaClientService)
 {
     /// <summary>
-    /// Handle /fika/client/config
+    /// 处理 /fika/client/config
     /// </summary>
     public string HandleClientConfig()
     {
         var clientConfig = fikaClientService.GetClientConfig();
 
-        // Here be dragons, this is technically not in the client config, or well it was.. But it was decided it was better for this configuration
-        // To be together with 'sentItemsLoseFIR' so users could find both options easier.
-        // Keep this here as this is really only supposed to be a 'client' config and it's really only used on the client.
+        // 此处有坑，严格来说它并不在客户端配置里，嗯，它以前是在的……但最终决定还是让这项配置
+        // 与 'sentItemsLoseFIR' 放在一起，这样用户更容易找到这两个选项。
+        // 把它留在这里，因为它本来就只应作为 'client' 配置，而且确实只在客户端使用。
         string config = JsonSerializer.Serialize(clientConfig);
         JsonNode configObject = JsonNode.Parse(config)!.AsObject();
         configObject["allowItemSending"] = fikaClientService.GetIsItemSendingAllowed();
@@ -30,7 +30,7 @@ public class ClientController(ClientService fikaClientService)
     }
 
     /// <summary>
-    /// Handle /fika/natpunchserver/config
+    /// 处理 /fika/natpunchserver/config
     /// </summary>
     public FikaConfigNatPunchServer HandleNatPunchServerConfig()
     {
@@ -38,7 +38,7 @@ public class ClientController(ClientService fikaClientService)
     }
 
     /// <summary>
-    /// Handle /fika/client/check/mods
+    /// 处理 /fika/client/check/mods
     /// </summary>
     public FikaCheckModResponse HandleCheckMods(FikaCheckModRequestData request, MongoId sessionId)
     {
@@ -46,7 +46,7 @@ public class ClientController(ClientService fikaClientService)
     }
 
     /// <summary>
-    /// Handle /fika/profile/download
+    /// 处理 /fika/profile/download
     /// </summary>
     public DownloadProfileResponse? HandleProfileDownload(MongoId sessionId)
     {
@@ -54,7 +54,7 @@ public class ClientController(ClientService fikaClientService)
     }
 
     /// <summary>
-    /// Handle /fika/client/check/version
+    /// 处理 /fika/client/check/version
     /// </summary>
     public VersionCheckResponse HandleVersionCheck()
     {

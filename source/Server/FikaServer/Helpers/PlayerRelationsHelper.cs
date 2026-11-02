@@ -15,13 +15,13 @@ public class PlayerRelationsHelper(ISptLogger<PlayerRelationsHelper> logger,
     SptWebSocketConnectionHandler webSocketHandler, FriendRequestsService friendRequestsService)
 {
     /// <summary>
-    /// Gets the friends list of a player
+    /// 获取玩家的好友列表
     /// </summary>
     /// <param name="profileId"></param>
-    /// <returns>Friends list</returns>
+    /// <returns>好友列表</returns>
     public List<string> GetFriendsList(MongoId profileId)
     {
-        // Callers may prune stale friends while iterating the returned list.
+        // 调用方可能在遍历返回的列表时剔除过期好友。
         return [.. playerRelationsService.GetStoredValue(profileId).Friends];
     }
 
@@ -35,10 +35,10 @@ public class PlayerRelationsHelper(ISptLogger<PlayerRelationsHelper> logger,
     }
 
     /// <summary>
-    /// Removes a friend relation
+    /// 移除一条好友关系
     /// </summary>
-    /// <param name="fromProfileId">Requesting profileId</param>
-    /// <param name="toProfileId">Target profileId</param>
+    /// <param name="fromProfileId">发起请求的 profileId</param>
+    /// <param name="toProfileId">目标 profileId</param>
     /// <exception cref="NotImplementedException"></exception>
     public void RemoveFriend(MongoId fromProfileId, MongoId toProfileId)
     {
@@ -50,8 +50,8 @@ public class PlayerRelationsHelper(ISptLogger<PlayerRelationsHelper> logger,
             logger.Warning($"{fromProfileId} tried to remove {toProfileId} from their friend list unsuccessfully");
         }
 
-        // The other profile may have been deleted. Removing a stale friend
-        // from the caller must not create a ghost record for that profile.
+        // 另一个档案可能已被删除。从调用方移除过期好友
+        // 不得为该档案创建幽灵记录。
         var removedTo = playerRelationsService.TryGetStoredValue(toProfileId, out var toRelations) &&
             toRelations!.Friends.Remove(fromProfileId);
         if (toRelations != null && !removedTo)
@@ -77,20 +77,20 @@ public class PlayerRelationsHelper(ISptLogger<PlayerRelationsHelper> logger,
     }
 
     /// <summary>
-    /// Gets the ignore list of a player
+    /// 获取玩家的屏蔽列表
     /// </summary>
     /// <param name="profileId"></param>
-    /// <returns>Ignore list</returns>
+    /// <returns>屏蔽列表</returns>
     public List<string> GetIgnoreList(MongoId profileId)
     {
         return [.. playerRelationsService.GetStoredValue(profileId).Ignore];
     }
 
     /// <summary>
-    /// Returns a list of players ignoring this player
+    /// 返回屏蔽了该玩家的玩家列表
     /// </summary>
-    /// <param name="profileId">The player to check for</param>
-    /// <returns>List of players ignoring the player</returns>
+    /// <param name="profileId">要检查的玩家</param>
+    /// <returns>屏蔽该玩家的玩家列表</returns>
     /// <exception cref="NotImplementedException"></exception>
     public List<string> GetInIgnoreList(MongoId profileId)
     {
@@ -150,7 +150,7 @@ public class PlayerRelationsHelper(ISptLogger<PlayerRelationsHelper> logger,
     }
 
     /// <summary>
-    /// Adds new relations to the cache and saves
+    /// 将新关系加入缓存并保存
     /// </summary>
     /// <param name="from"></param>
     /// <param name="to"></param>

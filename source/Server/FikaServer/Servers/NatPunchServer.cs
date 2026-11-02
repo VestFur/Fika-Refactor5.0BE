@@ -30,10 +30,10 @@ public class NatPunchServer(FikaServerConfig fikaServerConfig, ISptLogger<NatPun
 
         try
         {
-            // The IPv6 bind address must be a real address: an empty string goes
-            // through NetUtils.ResolveAddress -> Dns.GetHostEntry(""), whose result
-            // depends on the resolver (single link local address or a throw that is
-            // swallowed below, leaving the punch server silently dead).
+            // IPv6 绑定地址必须是一个真实地址：空字符串会走
+            // NetUtils.ResolveAddress -> Dns.GetHostEntry("")，其结果
+            // 取决于解析器（要么只得到单个链路本地地址，要么抛出一个被
+            // 下方吞掉的异常，让打洞服务器静默失效）。
             _netServer.Start(fikaServerConfig.Server.SPT.Http.Ip, "::", fikaServerConfig.NatPunchServer.Port);
             _netServer.NatPunchModule.Init(this);
 
@@ -108,47 +108,47 @@ public class NatPunchServer(FikaServerConfig fikaServerConfig, ISptLogger<NatPun
 
     public void OnNatIntroductionResponse(IPEndPoint localEndPoint, IPEndPoint remoteEndPoint, string token)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void OnNatIntroductionSuccess(IPEndPoint targetEndPoint, NatAddressType type, string token)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void OnConnectionRequest(ConnectionRequest request)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void OnNetworkError(IPEndPoint endPoint, SocketError socketError)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void OnNetworkLatencyUpdate(NetPeer peer, int latency)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void OnNetworkReceiveUnconnected(IPEndPoint remoteEndPoint, NetPacketReader reader, UnconnectedMessageType messageType)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void OnPeerConnected(NetPeer peer)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void OnPeerDisconnected(NetPeer peer, DisconnectInfo disconnectInfo)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     private void CleanupPeers()

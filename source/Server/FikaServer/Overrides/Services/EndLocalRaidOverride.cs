@@ -40,21 +40,21 @@ public sealed class EndLocalRaidOverride : AbstractPatch
     {
         __state = null;
 
-        // The original SPT handler must finish first: it applies insured-item
-        // loss to InsuranceList and persists the raid profile. Recording the
-        // inventory in a prefix can make Fika settle insurance before SPT has
-        // added those lost items.
-        // /fika/raid/leave removes the player from the live match roster before
-        // SPT receives the native raid-end request.  InsuranceService keeps the
-        // entry deliberately so the request can still carry the final
-        // inventory snapshot.  Use that retained state when the roster lookup
-        // has already gone empty.
-        // EndLocalRaid carries the ServerId returned by StartLocalRaid. A
-        // profile can already be present in a new match while the previous
-        // match is still draining, so a profile-only lookup can attach the
-        // late callback to the wrong insurance snapshot. Prefer the exact
-        // raid token and only use the legacy profile lookup when the native
-        // request did not provide one.
+        // 原始的 SPT 处理器必须先行完成：它会把投保物品的
+        // 损失应用到 InsuranceList 并持久化 raid 档案。在 prefix 中
+        // 记录库存，可能让 Fika 在 SPT 尚未把这些丢失物品加入之前
+        // 就结算保险。
+        // /fika/raid/leave 会在 SPT 收到原生 raid 结束请求之前，把玩家从
+        // 在线比赛名单中移除。InsuranceService 会刻意保留该条目，
+        // 以便该请求仍能携带最终的
+        // 库存快照。当名单查找已经返回空时，
+        // 就使用这份保留下来的状态。
+        // EndLocalRaid 携带由 StartLocalRaid 返回的 ServerId。在一场比赛
+        // 仍在收尾时，同一份档案可能已经出现在新的比赛中，因此仅按 profile
+        // 查找可能把这个迟到的回调挂到错误的保险快照上。应优先使用精确的
+        // raid token，只有当中途的原生请求没有提供它时，
+        // 才使用旧的 profile 查找
+        // 方式。
         var raidToken = request?.ServerId;
         var matchId = _insuranceService.GetMatchId(sessionId, raidToken);
         if (!matchId.HasValue && string.IsNullOrWhiteSpace(raidToken))
@@ -67,20 +67,20 @@ public sealed class EndLocalRaidOverride : AbstractPatch
             return true;
         }
 
-        // Find player that exited the raid
+        // 查找离开该 raid 的玩家
         var player = _matchService.GetPlayerInMatch(matchId.Value, sessionId);
 
-        // A player can leave the Fika match before SPT processes the raid-end
-        // request. Only a confirmed spectator should bypass profile saving.
-        // When the live roster is already gone, the insurance match is the
-        // authoritative non-spectator marker and must still reserve a pending
-        // settlement slot.
+        // 玩家可能在 SPT 处理 raid 结束请求之前就离开 Fika 比赛。
+        // 只有已确认的观察者才应绕过档案保存。
+        // 当在线名单已经不存在时，保险比赛记录就是
+        // 权威的非观察者标记，仍必须预留一个待处理的
+        // 结算槽位。
         if (player == null)
         {
             if (_insuranceService.IsSpectator(matchId.Value, sessionId))
             {
-                // Preserve the original Fika spectator bypass even when the
-                // roster entry was removed before the native callback arrived.
+                // 即使在原生回调到达之前名单条目已被移除，
+                // 也要保留原有的 Fika 观察者绕过逻辑。
                 __result = Task.CompletedTask;
                 return false;
             }
@@ -107,7 +107,7 @@ public sealed class EndLocalRaidOverride : AbstractPatch
             return true;
         }
 
-        // Spectators do not have a raid profile to save.
+        // 观察者没有可保存的 raid 档案。
         __result = Task.CompletedTask;
 
         return false;
@@ -132,10 +132,10 @@ public sealed class EndLocalRaidOverride : AbstractPatch
                 return;
             }
 
-            // A leave callback may have removed the roster entry while the
-            // SPT request was running. Use the match captured before the
-            // asynchronous request started; lookups by profile can already
-            // be empty at this point and would lose the inventory snapshot.
+            // leave 回调可能在 SPT 请求仍在运行时移除了名单条目。
+            // 使用在异步请求开始之前捕获的那场比赛；此时
+            // 按 profile 查找可能已经为空，
+            // 那样就会丢失库存快照。
             _insuranceService.CompleteRaidEnd(sessionId, state.MatchId, state.RaidToken, request);
         }, TaskScheduler.Default);
     }

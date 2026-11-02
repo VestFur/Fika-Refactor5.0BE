@@ -3,45 +3,45 @@ using System.Text;
 namespace FikaServer.Services.Headless;
 
 /// <summary>
-/// Builds the double-clickable <c>StartHeadless.cmd</c> that the server writes next to
-/// <c>HeadlessConfig.json</c> for every headless profile, so a dedicated host can be started
-/// without the SPT launcher - which never lists headless profiles.
+/// 构建可双击运行的 <c>StartHeadless.cmd</c>，服务器会把它写到
+/// <c>HeadlessConfig.json</c> 旁边供每个 headless profile 使用，从而无需 SPT 启动器
+/// 即可启动专用主机 —— SPT 启动器从不列出 headless profile。
 /// </summary>
 /// <remarks>
-/// The generated file stores no absolute path: it finds the game folder by walking up from its
-/// own location. Only the values that belong to the profile are embedded: the profile id
-/// (the launcher's <c>-token</c>), the backend url (the launcher's <c>BackendUrl</c>), the
-/// window state from <c>HeadlessConfig.StartMinimized</c> and the display mode from
-/// <c>HeadlessConfig.Display</c>.
+/// 生成的文件不保存任何绝对路径：它从自身位置向上遍历
+/// 来定位游戏目录。只嵌入属于该 profile 的值：profile id
+/// （即启动器中的 <c>-token</c>）、backend url（即启动器中的 <c>BackendUrl</c>）、
+/// 来自 <c>HeadlessConfig.StartMinimized</c> 的窗口状态，以及来自
+/// <c>HeadlessConfig.Display</c> 的显示模式。
 /// <para>
-/// Two command lines exist, both of which keep the SPT launcher's arguments:
+/// 存在两种命令行，二者都保留 SPT 启动器的参数：
 /// </para>
 /// <list type="bullet">
 /// <item><description>
 /// <c>Console</c>: <c>EscapeFromTarkov.exe -force-gfx-jobs native -batchmode -nographics
-/// -token=... -config=...</c> inside its own console window. Unity creates a Null graphics
-/// device, so no shader is compiled, no swapchain exists and no draw call is submitted; the
-/// game's own stdout and the log are the only output.
+/// -token=... -config=...</c>，在独立的控制台窗口中运行。Unity 会创建一个 Null 图形
+/// 设备，因此不会编译 shader、不存在 swapchain、也不会提交 draw call；
+/// 游戏自身的 stdout 和日志是唯一的输出。
 /// </description></item>
 /// <item><description>
 /// <c>Hidden</c>: <c>EscapeFromTarkov.exe -force-gfx-jobs native -token=... -config=...</c>
-/// started with <c>start /min</c>; the Fika.Headless graphics patches tear the scene down.
+/// 以 <c>start /min</c> 启动；Fika.Headless 的图形补丁会拆除场景。
 /// </description></item>
 /// </list>
 /// </remarks>
 internal static class HeadlessLaunchHelper
 {
-    /// <summary>Name of the generated helper, written next to HeadlessConfig.json.</summary>
+    /// <summary>生成的辅助脚本名称，写在 HeadlessConfig.json 旁边。</summary>
     public const string FileName = "StartHeadless.cmd";
 
-    /// <summary>How many parent folders the helper checks for EscapeFromTarkov.exe.</summary>
+    /// <summary>辅助脚本向上检查多少级父目录以查找 EscapeFromTarkov.exe。</summary>
     public const int SearchDepth = 8;
 
     /// <summary>
-    /// Builds the JSON value the launcher hands to the game through <c>-config=</c>. These are
-    /// exactly the launcher's three fields: <c>BackendUrl</c> is the server url this mod already
-    /// publishes as HeadlessConfig.BackendUrl, while <c>Version</c> and <c>MatchingVersion</c>
-    /// are the launcher's fixed <c>live</c> markers.
+    /// 构建启动器通过 <c>-config=</c> 交给游戏的 JSON 值。这些
+    /// 正是启动器的三个字段：<c>BackendUrl</c> 是本 mod 已经
+    /// 以 HeadlessConfig.BackendUrl 发布的服务器 url，而 <c>Version</c> 与 <c>MatchingVersion</c>
+    /// 是启动器固定的 <c>live</c> 标记。
     /// </summary>
     public static string BuildLaunchConfig(string backendUrl)
     {
@@ -49,8 +49,8 @@ internal static class HeadlessLaunchHelper
     }
 
     /// <summary>
-    /// The graphics flags for a display mode. <c>Console</c> is the only mode that removes the
-    /// graphics device; everything else keeps the historical windowed host.
+    /// 某显示模式对应的图形标志。<c>Console</c> 是唯一会移除
+    /// 图形设备的模式；其他模式都保留历史上带窗口的主机形态。
     /// </summary>
     public static string BuildDisplayArguments(string displayMode)
     {
@@ -60,10 +60,10 @@ internal static class HeadlessLaunchHelper
     }
 
     /// <summary>
-    /// Escapes a value so cmd.exe passes it to the game unchanged while it is written unquoted,
-    /// which is the form the SPT launcher uses for <c>-config=</c>. Characters cmd.exe gives a
-    /// meaning to are caret escaped, percent is doubled, and double quotes - which cannot survive
-    /// an unquoted cmd argument - are dropped.
+    /// 转义一个值，使其在不加引号写出时仍能被 cmd.exe 原样传给游戏，
+    /// 这正是 SPT 启动器为 <c>-config=</c> 使用的形式。cmd.exe 赋予了
+    /// 含义的字符用脱字符转义，百分号写两次，而双引号 —— 它无法在
+    /// 未加引号的 cmd 参数中存活 —— 会被丢弃。
     /// </summary>
     public static string EscapeForCmd(string value)
     {
@@ -95,18 +95,18 @@ internal static class HeadlessLaunchHelper
     }
 
     /// <summary>
-    /// Builds the complete contents of the launch helper. The file is pure ASCII with CRLF line
-    /// endings, so cmd.exe parses it identically on every machine.
+    /// 构建启动辅助脚本的完整内容。该文件是纯 ASCII，使用 CRLF
+    /// 换行，因此 cmd.exe 在任何机器上的解析结果都相同。
     /// </summary>
     /// <param name="startMinimized">
-    /// The value of <c>HeadlessConfig.StartMinimized</c> for this profile. When it is true the
-    /// game is started with <c>start /min</c>, so the host never steals the desktop; the Fika
-    /// client plugin reads the same file and minimises its own window as well, which covers hosts
-    /// that were not started through this helper. Unused in <c>Console</c> mode: that host has no
-    /// window at all.
+    /// 该 profile 的 <c>HeadlessConfig.StartMinimized</c> 值。为 true 时
+    /// 游戏会以 <c>start /min</c> 启动，因此主机不会抢占桌面；Fika
+    /// 客户端插件会读取同一文件并同样最小化自己的窗口，从而也覆盖那些
+    /// 不是通过本辅助脚本启动的主机。在 <c>Console</c> 模式下未使用：该主机根本没有
+    /// 窗口。
     /// </param>
     /// <param name="displayMode">
-    /// <c>Console</c> (no client picture, no shaders, no GPU) or <c>Hidden</c> (windowed host).
+    /// <c>Console</c>（无客户端画面、无 shader、不使用 GPU）或 <c>Hidden</c>（带窗口的主机）。
     /// </param>
     public static string Build(string profileId, string backendUrl, bool startMinimized, string displayMode = "Hidden")
     {

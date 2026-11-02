@@ -28,14 +28,14 @@ public class RaidController(MatchService matchService, HeadlessHelper headlessHe
     WebhookService webhookService)
 {
     /// <summary>
-    /// Handle /fika/raid/create
+    /// 处理 /fika/raid/create
     /// </summary>
     /// <param name="request"></param>
     /// <returns></returns>
     public async Task<FikaRaidCreateResponse> HandleRaidCreate(FikaRaidCreateRequestData request, MongoId sessionId)
     {
-        // The server id is the authenticated host profile/session id.  Do not
-        // allow a client to create a room on behalf of another profile.
+        // 服务器 id 就是通过认证的主机 profile/会话 id。不要让
+        // 客户端替另一个 profile 创建房间。
         if (request.ServerId != sessionId)
         {
             logger.Warning($"Rejected raid create for {request.ServerId} from session {sessionId}");
@@ -45,9 +45,9 @@ public class RaidController(MatchService matchService, HeadlessHelper headlessHe
         var success = await matchService.CreateMatch(request, sessionId);
         if (!success)
         {
-            // Only announce a room after it was actually registered.  This
-            // keeps lobby notifications and webhooks consistent with the
-            // response returned to the host.
+            // 只有房间真正注册之后才广播它。这样
+            // 能让大厅通知与 webhook 跟返回给主机的响应
+            // 保持一致。
             return new FikaRaidCreateResponse { Success = false };
         }
 
@@ -61,10 +61,10 @@ public class RaidController(MatchService matchService, HeadlessHelper headlessHe
         var requesterName = headlessHelper.GetRequesterUsername(request.ServerId)
             ?? hostUsername;
 
-        // The match has already been published. A disconnected notification
-        // subscriber or unavailable webhook must not turn a successful create
-        // into an HTTP failure: the host would believe creation failed while
-        // the server retained its room and (for Headless) its reservation.
+        // 对局已经公布。一个断开的通知
+        // 订阅者或不可用的 webhook 不得把一次成功的创建
+        // 变成 HTTP 失败:否则主机会以为创建失败,而服务器
+        // 却保留了它的房间,以及(对 Headless 而言)它的预留。
         try
         {
             await notificationWebSocket.BroadcastAsync(new StartRaidNotification
@@ -97,14 +97,14 @@ public class RaidController(MatchService matchService, HeadlessHelper headlessHe
     }
 
     /// <summary>
-    /// Handle /fika/raid/join
+    /// 处理 /fika/raid/join
     /// </summary>
-    /// <param name="request">The join request data</param>
-    /// <returns>A new <see cref="FikaRaidJoinResponse"/></returns>
+    /// <param name="request">加入请求的数据</param>
+    /// <returns>一个新的 <see cref="FikaRaidJoinResponse"/></returns>
     public FikaRaidJoinResponse HandleRaidJoin(FikaRaidJoinRequestData request, MongoId sessionId)
     {
-        // A join request carries the joining profile id.  It must agree with
-        // the authenticated SPT session before any room metadata is returned.
+        // 加入请求携带加入方的 profile id。它必须与通过认证的
+        // SPT 会话一致,然后才能返回任何房间元数据。
         if (!string.Equals(request.ProfileId, sessionId.ToString(), StringComparison.OrdinalIgnoreCase))
         {
             logger.Warning($"Rejected raid join for profile {request.ProfileId} from session {sessionId}");
@@ -114,8 +114,8 @@ public class RaidController(MatchService matchService, HeadlessHelper headlessHe
         var match = matchService.GetMatch(request.ServerId);
         if (match == null)
         {
-            // The lobby can become stale between listing and joining.  Return
-            // a safe empty payload instead of dereferencing a missing room.
+            // 大厅在列出与加入之间可能变旧。此时返回
+            // 一个安全的空载荷,而不是去解引用一个不存在的房间。
             return new FikaRaidJoinResponse();
         }
 
@@ -137,15 +137,15 @@ public class RaidController(MatchService matchService, HeadlessHelper headlessHe
     }
 
     /// <summary>
-    /// Handle /fika/raid/leave
+    /// 处理 /fika/raid/leave
     /// </summary>
     /// <param name="request"></param>
     public async Task HandleRaidLeave(FikaRaidLeaveRequestData request, MongoId sessionId)
     {
         if (request.ServerId == request.ProfileId)
         {
-            // Only the authenticated host may terminate the room.  A guest
-            // must never be able to spoof the host's profile id in this path.
+            // 只有通过认证的主机才能终止房间。访客
+            // 绝不能在这条路径上伪造主机的 profile id。
             if (!string.Equals(request.ServerId, sessionId.ToString(), StringComparison.OrdinalIgnoreCase))
             {
                 logger.Warning($"Rejected host raid leave for {request.ServerId} from session {sessionId}");
@@ -156,7 +156,7 @@ public class RaidController(MatchService matchService, HeadlessHelper headlessHe
             return;
         }
 
-        // Guests may leave their own slot, but cannot remove another profile.
+        // 访客可以离开自己的槽位,但不能移除另一个 profile。
         if (!string.Equals(request.ProfileId, sessionId.ToString(), StringComparison.OrdinalIgnoreCase))
         {
             logger.Warning($"Rejected raid leave for profile {request.ProfileId} from session {sessionId}");
@@ -167,7 +167,7 @@ public class RaidController(MatchService matchService, HeadlessHelper headlessHe
     }
 
     /// <summary>
-    /// Handle /fika/raid/gethost
+    /// 处理 /fika/raid/gethost
     /// </summary>
     /// <param name="request"></param>
     /// <returns></returns>
@@ -192,7 +192,7 @@ public class RaidController(MatchService matchService, HeadlessHelper headlessHe
     }
 
     /// <summary>
-    /// Handle /fika/raid/getsettings
+    /// 处理 /fika/raid/getsettings
     /// </summary>
     /// <param name="request"></param>
     /// <returns></returns>
@@ -218,16 +218,16 @@ public class RaidController(MatchService matchService, HeadlessHelper headlessHe
     }
 
     /// <summary>
-    /// Handle /fika/raid/headless/start
+    /// 处理 /fika/raid/headless/start
     /// </summary>
     /// <param name="sessionID"></param>
     /// <param name="info"></param>
     /// <returns></returns>
     public async Task<StartHeadlessResponse> HandleRaidStartHeadless(MongoId sessionID, StartHeadlessRequest info)
     {
-        // SPT 5 derives the HTTP session from the PHPSESSID cookie. An
-        // unauthenticated request otherwise reserves a Headless socket with
-        // an empty requester ID, which cannot own the resulting room.
+        // SPT 5 从 PHPSESSID cookie 推导 HTTP 会话。未经认证的请求
+        // 否则会用一个空的请求方 ID 预留一个 Headless socket,
+        // 而这样的 ID 无法拥有由此产生的房间。
         if (sessionID.IsEmpty)
         {
             logger.Warning("Rejected Headless raid start without a session cookie");
@@ -260,10 +260,10 @@ public class RaidController(MatchService matchService, HeadlessHelper headlessHe
 
         if (string.IsNullOrEmpty(headlessClientId))
         {
-            // Availability is only a snapshot. A concurrent requester or a
-            // reconnect can win the reservation between the check above and
-            // StartHeadlessRaid; return a useful response instead of a null
-            // match id with no error, which leaves the client waiting forever.
+            // 可用性只是一个快照。并发的请求方或一次重连
+            // 可能在上面的检查与 StartHeadlessRaid 之间抢走这次预留;
+            // 此时应返回一个有意义的响应,而不是一个既为 null
+            // 又无错误的 match id,那会让客户端永远等下去。
             return new StartHeadlessResponse
             {
                 MatchId = null,
@@ -275,14 +275,14 @@ public class RaidController(MatchService matchService, HeadlessHelper headlessHe
 
         return new StartHeadlessResponse
         {
-            // This really isn't required, I just want to make sure on the client
+            // 这其实并不必需,我只是想在客户端上确认一下
             MatchId = headlessClientId,
             Error = null
         };
     }
 
     /// <summary>
-    /// Handle /fika/raid/registerPlayer
+    /// 处理 /fika/raid/registerPlayer
     /// </summary>
     /// <param name="SessionID"></param>
     /// <param name="info"></param>

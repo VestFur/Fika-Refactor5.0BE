@@ -73,8 +73,8 @@ public record FikaMatch
     [JsonIgnore]
     public bool IsEnding { get; set; }
 
-    // Retain the reservation that created this match. A reconnect replaces
-    // HeadlessClientInfo while the old match may still be settling insurance.
+    // 保留创建该 match 的预留。重连会替换
+    // HeadlessClientInfo，而旧的 match 可能仍在结算保险。
     [JsonIgnore]
     public HeadlessClientInfo? HeadlessReservationOwner { get; set; }
 
@@ -82,9 +82,9 @@ public record FikaMatch
     public long? HeadlessReservationVersion { get; set; }
 
     /// <summary>
-    /// Per-match barrier for StartLocalRaid requests admitted before
-    /// IsEnding. It is ignored by match JSON and survives until the exact
-    /// match object is fully torn down.
+    /// 针对在 IsEnding 之前放行的 StartLocalRaid 请求的逐 match 屏障。
+    /// 它不会进入 match JSON，并且一直存活到该 match 对象
+    /// 被完全销毁。
     /// </summary>
     [JsonIgnore]
     public FikaServer.Services.LocalRaidStartBarrier LocalRaidStarts { get; } = new();

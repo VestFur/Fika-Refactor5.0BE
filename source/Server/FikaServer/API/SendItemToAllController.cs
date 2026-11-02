@@ -59,10 +59,10 @@ public class SendItemToAllController(MailSendService mailSendService, ItemHelper
                     List<Item> ammoBoxArray =
                     [
                         new() { Id = new MongoId(), Template = checkedItem.Value.Id },
-                            // DO NOT generate the ammo box cartridges, the mail service does it for us! :)
+                            // 不要生成弹药箱的子弹，邮件服务会替我们完成！ :)
                             // _itemHelper.addCartridgesToAmmoBox(ammoBoxArray, checkedItem[1]);
                         ];
-                    // DO NOT generate the ammo box cartridges, the mail service does it for us! :)
+                    // 不要生成弹药箱的子弹，邮件服务会替我们完成！ :)
                     // _itemHelper.addCartridgesToAmmoBox(ammoBoxArray, checkedItem[1]);
                     itemsToSend.AddRange(ammoBoxArray);
                 }
@@ -104,10 +104,10 @@ public class SendItemToAllController(MailSendService mailSendService, ItemHelper
 
             if (request.FoundInRaid)
             {
-                // Flag the items as FiR
+                // 把这些物品标记为 FiR
                 itemHelper.SetFoundInRaid(itemsToSend);
             }
-            mailSendService.SendSystemMessageToPlayer(profileId, message, itemsToSend, request.ExpirationDays * 86400); // days * seconds per day
+            mailSendService.SendSystemMessageToPlayer(profileId, message, itemsToSend, request.ExpirationDays * 86400); // 天数 * 每天的秒数
         }
 
         return Ok();

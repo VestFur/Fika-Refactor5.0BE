@@ -22,8 +22,8 @@ public sealed class FikaDIConstruct : IOnDIConstruct
 
         EnforceReviveValues(config);
 
-        // No need to do any fancyness around sorting properties and writing them if they weren't set before here
-        // We store default values in the config models, and if one is missing this will write it to the file in the correct place
+        // 无需为属性的排序、以及此前未被设置过时的写入做任何花哨处理
+        // 我们把默认值保存在配置模型中，若有缺失，这里会把它写到文件中的正确位置
         await FikaConfigFile.SaveAsync(config, paths.ConfigFilePath);
 
 #if DEBUG

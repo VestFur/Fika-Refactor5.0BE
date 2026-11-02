@@ -77,9 +77,9 @@ public sealed class GetFriendsOverride : AbstractPatch
                             Nickname = profile.CharacterData.PmcData.Info.Nickname,
                             Side = profile.CharacterData.PmcData.Info.Side,
                             Level = profile.CharacterData.PmcData.Info.Level,
-                            // SPT 20261009 UserDialogDetails carries the prestige shown next to a
-                            // nickname; the friend search result must fill them like
-                            // ProfileHelper.GetChatRoomMemberFromPmcProfile does.
+                            // SPT 20261009 的 UserDialogDetails 带有显示在
+                            // 昵称旁的声望；好友搜索结果必须像
+                            // ProfileHelper.GetChatRoomMemberFromPmcProfile 那样填充它们。
                             PrestigeLevel = profile.CharacterData.PmcData.Info.PrestigeLevel,
                             PrestigeGameMode = profile.CharacterData.PmcData.Info.PrestigeGameMode,
                             MemberCategory = profile.CharacterData.PmcData.Info.MemberCategory,

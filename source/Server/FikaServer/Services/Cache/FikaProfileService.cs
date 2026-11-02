@@ -7,7 +7,7 @@ using SPTarkov.Server.Core.Servers;
 namespace FikaServer.Services.Cache;
 
 /// <summary>
-/// Used to cache profiles by nicknames
+/// 用于按昵称缓存 profile
 /// </summary>
 /// <param name="saveServer"></param>
 [Injectable(InjectionType.Singleton)]
@@ -20,9 +20,9 @@ public class FikaProfileService(ISptLogger<FikaProfileService> logger, SaveServe
     {
         lock (_profilesLock)
         {
-            // Names can change without changing the number of profiles. A
-            // fresh mapping also prevents callers from observing a cache
-            // while another request is rebuilding it.
+            // 名称可能改变而 profile 数量不变。每次重建
+            // 全新的映射还能避免调用方在另一个请求
+            // 正在重建缓存时观察到该缓存。
             RefreshProfiles();
             return new Dictionary<string, MongoId>(_profiles);
         }
@@ -69,8 +69,8 @@ public class FikaProfileService(ISptLogger<FikaProfileService> logger, SaveServe
 
                 if (!_profiles.TryAdd(nick, id))
                 {
-                    // Nickname-only commands cannot safely choose either
-                    // profile when two players share the same nickname.
+                    // 当两名玩家使用相同昵称时，仅凭昵称的
+                    // 命令无法安全地在两个 profile 之间做出选择。
                     _profiles.Remove(nick);
                     duplicateNicknames.Add(nick);
                     logger.Error($"Nickname {nick} is shared by multiple profiles; nickname lookup is disabled for it");

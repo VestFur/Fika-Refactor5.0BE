@@ -1,9 +1,9 @@
-﻿using System.Text.Json.Serialization;
+﻿﻿using System.Text.Json.Serialization;
 
 namespace FikaShared.Requests;
 
 /// <summary>
-/// Request where the ProfileId is used
+/// 使用 ProfileId 的请求
 /// </summary>
 public record ProfileIdRequest
 {

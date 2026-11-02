@@ -7,18 +7,18 @@ public sealed record FikaInsurancePlayer
     public required MongoId SessionID { get; init; }
     public bool IsSpectator { get; init; }
     /// <summary>
-    /// ServerId values returned by StartLocalRaid for this participant.
-    /// EndLocalRaid is allowed to arrive after the live Fika roster has moved
-    /// on to another match, so the value is the only request-side identity
-    /// that lets us associate the callback with the correct raid snapshot.
-    /// Keep all values for a match because transit raids can produce more than
-    /// one local raid before the Fika match is closed.
+    /// StartLocalRaid 为该参与者返回的 ServerId 值。
+    /// EndLocalRaid 允许在实时 Fika 成员名单已经
+    /// 转到另一场比赛之后才到达，因此该值是请求侧唯一
+    /// 能把回调与正确的战局快照关联起来的身份标识。
+    /// 为一场比赛保留所有值，因为中转战局可能在 Fika 比赛关闭前
+    /// 产生不止一个本地战局。
     /// </summary>
     public HashSet<string> RaidTokens { get; init; } = [];
     /// <summary>
-    /// Monotonic order assigned when a local raid token is registered. The
-    /// order lets a late callback from an earlier transit raid avoid replacing
-    /// the final inventory captured by a newer raid.
+    /// 注册本地战局令牌时分配的单调顺序。该
+    /// 顺序可让较早中转战局的迟到回调避免覆盖
+    /// 较新战局捕获的最终库存。
     /// </summary>
     public Dictionary<string, long> RaidTokenOrder { get; init; } = new(StringComparer.Ordinal);
     public HashSet<string> RaidEndAttemptedTokens { get; init; } = new(StringComparer.Ordinal);
@@ -26,16 +26,16 @@ public sealed record FikaInsurancePlayer
     public long NextRaidTokenSequence { get; set; }
     public long LastCompletedRaidSequence { get; set; } = -1;
     /// <summary>
-    /// True once the native raid-end request has reached Fika, either through
-    /// a successful completion or a cancellation/fault.  Match teardown may
-    /// begin before that request arrives; keeping this marker separate from
-    /// <see cref="EndedRaid"/> lets the service wait for the late request
-    /// without treating a failed save as a successful inventory snapshot.
+    /// 原生战局结束请求已到达 Fika 时为 true，无论是通过
+    /// 成功完成还是取消／故障。比赛拆除可能在该
+    /// 请求到达之前就开始；将该标记与
+    /// <see cref="EndedRaid"/> 分开，可让服务等待迟到的请求，
+    /// 而不会把失败的保存当作成功的库存快照。
     /// </summary>
     public bool RaidEndAttempted { get; set; }
     /// <summary>
-    /// True while the native EndLocalRaid task owns a settlement slot. This
-    /// participant-level marker makes completion and fault callbacks idempotent.
+    /// 原生 EndLocalRaid 任务持有结算槽位时为 true。该
+    /// 参与者级标记使完成与故障回调保持幂等。
     /// </summary>
     public bool RaidEndPending { get; set; }
     public bool EndedRaid { get; set; }
