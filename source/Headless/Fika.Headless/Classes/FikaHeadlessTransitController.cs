@@ -23,7 +23,7 @@ using JsonType;
 namespace Fika.Headless.Classes;
 
 /// <summary>
-/// Transit controller for the <see cref="GameMode.HeadlessGame"/>
+/// 用于 <see cref="GameMode.HeadlessGame"/> 的交运控制器
 /// </summary>
 public class FikaHeadlessTransitController : TransitController
 {
@@ -41,8 +41,8 @@ public class FikaHeadlessTransitController : TransitController
         ClassInjector.InvokeBaseConstructor<TransitController>(this, settings, parameters);
         _localRaidSettings = localRaidSettings;
         IsEvent = localRaidSettings.transitionType.HasFlagNoBox(ELocationTransition.Event);
-        // The visited-location chain is derived in one place for every machine (FikaTransitHistory), so a
-        // dedicated host and a playable host cannot disagree about the maps of a transfer history.
+        // 已访问地点链对所有机器都在同一处推导（FikaTransitHistory），因此专用
+        // 主机与可玩主机不会就某次转移历史的各个地图产生分歧。
         var maps = FikaTransitHistory.AppendLocation(localRaidSettings);
         if (TarkovApplication.Exist(out var app) && app.Session?.Profile is { } profile)
         {
@@ -73,56 +73,56 @@ public class FikaHeadlessTransitController : TransitController
     private readonly Il2CppSystem.Action<TransitPoint, Player> _onHeadlessPlayerExit;
     private readonly Dictionary<string, int> _playersInTransitZone;
     /// <summary>
-    /// Point ids whose "not everyone is here yet" answer was already reported for the
-    /// player that was interacting, so a retry does not repeat the same line.
+    /// “还没到齐”这一回答已对当时交互的玩家报告过的
+    /// 点位 id，这样重试不会重复同一行日志。
     /// </summary>
     private readonly HashSet<string> _zoneCheckLogged = [];
     /// <summary>
-    /// Zone-exit reports already explained once per player and point; a repeated spurious "left"
-    /// from the client's geometric fallback is then one line instead of one per report.
+    /// 已按玩家与点位解释过一次的离区报告；客户端几何兜底重复给出的虚假“离开”
+    /// 因此只占一行，而不是每次报告一行。
     /// </summary>
     private readonly HashSet<string> _zoneExitLogged = [];
     private bool _headlessTransit;
     private readonly List<int> _transittedPlayers;
     private string _usedPoint;
     /// <summary>
-    /// Profile id -> point id of every player whose transit interaction this host accepted. The strict
-    /// start gate reads it (see <see cref="EveryoneInteracted"/>): a press of a player whose team is not
-    /// complete yet is remembered, nothing is registered and no countdown runs.
+    /// 本主机已接受其交运交互的每个玩家的 profile id -> 点位 id。严格
+    /// 启动门槛会读它（见 <see cref="EveryoneInteracted"/>）：队伍尚未到齐时某玩家的
+    /// 按键会被记住，但什么也不注册、也不启动倒计时。
     /// </summary>
     private readonly Dictionary<string, int> _interactedPlayers = [];
-    /// <summary>One accepted-interaction line per player and point, so a retry does not repeat it.</summary>
+    /// <summary>每个玩家与点位只写一行的“已接受交互”日志，这样重试不会重复它。</summary>
     private readonly HashSet<string> _interactionLogged = [];
-    /// <summary>Players this host already pushed a transfer for; keeps the drivers from double-sending.</summary>
+    /// <summary>本主机已为其推送过转移的玩家；避免各个驱动重复发送。</summary>
     private readonly HashSet<int> _transferIssued = [];
     /// <summary>
-    /// Why a registered player of the last transfer round did not get his transfer, one entry per player;
-    /// the countdown-end report prints it (mirror of the playable host's ledger).
+    /// 上一轮转移中某个已注册玩家为何没拿到转移，每个玩家一条记录；
+    /// 倒计时结束时的报告会打印它（与可玩主机的账本对应）。
     /// </summary>
     private readonly List<string> _transferFailures = [];
-    /// <summary>Point the countdown currently runs for, or -1.</summary>
+    /// <summary>当前倒计时所服务的点位，或 -1。</summary>
     private int _countdownPointId = -1;
-    /// <summary>Unscaled time the running countdown reaches zero.</summary>
+    /// <summary>运行中的倒计时归零时的非缩放时间。</summary>
     private float _countdownEndsAt;
-    /// <summary>Length of the running countdown in seconds (the point's own time).</summary>
+    /// <summary>运行中倒计时的长度（秒，取该点位自身的时长）。</summary>
     private int _countdownSeconds;
-    /// <summary>Last second that was broadcast, so one packet and one line per second.</summary>
+    /// <summary>最后一次广播的秒数，这样每秒只有一个包、一行日志。</summary>
     private int _lastBroadcastSecond = -1;
-    /// <summary>Countdown generation: an old async clock of a previous raid stops on the next step.</summary>
+    /// <summary>倒计时代号：上一场突袭的旧异步时钟会在下一步停下。</summary>
     private int _countdownGeneration;
-    /// <summary>True while the countdown clock of this controller runs.</summary>
+    /// <summary>当本控制器的倒计时时钟运行时为 true。</summary>
     private bool _countdownLoopRunning;
-    /// <summary>Hash, keys and player count of the last native Transit call, reused for the transfers this host issues itself.</summary>
+    /// <summary>最近一次原生 Transit 调用的 hash、keys 与玩家数，供本主机自己发出的转移复用。</summary>
     private string _lastTransitHash;
     private Il2CppSystem.Collections.Generic.Dictionary<string, ProfileKey> _lastTransitKeys;
     private int _lastTransitPlayersCount;
-    /// <summary>Mirror of the playable host's per-raid interaction characters, so a retry does not repeat a line.</summary>
+    /// <summary>与可玩主机每场突袭的交互角色表对应，这样重试不会重复一行日志。</summary>
     private readonly HashSet<string> _gateLogged = [];
-    /// <summary>Last gate-recheck line of the running countdown, so one line appears per verdict change.</summary>
+    /// <summary>运行中倒计时最后一次门槛复查的日志行，这样每次结论变化只出现一行。</summary>
     private string _recheckLoggedSignature;
-    /// <summary>Gate rechecks of the running countdown, for the cancel line.</summary>
+    /// <summary>运行中倒计时的门槛复查次数，供取消时的日志行使用。</summary>
     private int _recheckCount;
-    /// <summary>Failed gate rechecks of this raid, reported at most a few times.</summary>
+    /// <summary>本场突袭中失败的门槛复查次数，最多只报告几次。</summary>
     private int _recheckFailures;
 
     public int AliveTransitPlayers
@@ -144,13 +144,13 @@ public class FikaHeadlessTransitController : TransitController
 #if DEBUG
             FikaGlobals.LogWarning("Player is not eligible for this transit point");
 #endif
-            // An early exit of the entry path, named for every player (the DEBUG line above is not built
-            // in a release build): without access no countdown can start for this player.
+            // 入口路径的提前退出，按每个玩家点名（上面那行 DEBUG 在发行版中不会
+            // 被构建）：没有权限时该玩家无法启动任何倒计时。
             return;
         }
 
-        // Recorded through the shared helper so the headless log uses the same wording as a
-        // player-hosted raid, and the dedup table covers both.
+        // 通过共享辅助记录，好让 headless 日志与由玩家主办突袭时的措辞一致，
+        // 并让去重表同时覆盖两者。
         TransitZonePresence.RecordInZone(_playersInTransitZone, player.ProfileId, point.parameters.id, "player entered the zone");
 
         if (!transitPlayers.ContainsKey(player.ProfileId))
@@ -211,10 +211,10 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// Applies a zone report from a client. The headless controller also gates its transit on
-    /// <see cref="CheckForPlayers"/>, and the same asymmetry applies: the native trigger only
-    /// drives the local callbacks, so a client's player can be missing from the zone map even
-    /// though he is standing in the point.
+    /// 应用来自客户端的区域报告。headless 控制器同样用
+    /// <see cref="CheckForPlayers"/> 为其交运设门槛，同样的不对称依然成立：原生触发器只
+    /// 驱动本地回调，因此客户端上的玩家即便人就在点位里，
+    /// 也可能缺失于区域映射中。
     /// </summary>
     internal void OnRemotePlayerZonePresence(string profileId, int pointId,
         TransitZonePresencePacket.ETransitZonePresenceKind kind)
@@ -225,10 +225,10 @@ public class FikaHeadlessTransitController : TransitController
         }
         if (kind == TransitZonePresencePacket.ETransitZonePresenceKind.Left)
         {
-            // Applies even without a point id: the client's death path only knows its profile.
-            // The packet carries no reason and the client-side senders are not equivalent, so the
-            // removal is confirmed against this machine before the entry is dropped - see
-            // OnRemotePlayerLeftZone.
+            // 即使没有点位 id 也适用：客户端的死亡路径只知道它自己的 profile。
+            // 该包不携带原因，而客户端侧的各个发送者也并不等价，因此在丢弃条目之前
+            // 会先在本机确认这次移除——见
+            // OnRemotePlayerLeftZone。
             OnRemotePlayerLeftZone(profileId, pointId);
             return;
         }
@@ -240,20 +240,20 @@ public class FikaHeadlessTransitController : TransitController
 
         var reason = kind == TransitZonePresencePacket.ETransitZonePresenceKind.In
             ? "client reported entering the zone" : "client interaction fallback";
-        // RecordInZone answers true exactly when this profile was not known at this point, so the offer
-        // below happens once per entry and a repeated report cannot re-send it.
+        // RecordInZone 恰在该 profile 此前未登记在此点位时返回 true，因此下面的投递
+        // 每次进入只发生一次，重复的报告无法再次发送它。
         if (!TransitZonePresence.RecordInZone(_playersInTransitZone, profileId, pointId, reason)) return;
         SendInteractionShow(profileId, pointId, reason);
     }
 
     /// <summary>
-    /// Mirror of the playable host's <c>FikaHostTransitController.SendInteractionShow</c>: the transit
-    /// prompt is authoritative, and a remote player never reaches this machine's native <c>PlayerEnter</c>
-    /// (a dedicated host has no local prompt to fall back on either), so the prompt has to be pushed to
-    /// the client as <c>TransitInteractionEvent{Show}</c> at the moment his presence report is accepted.
-    /// Without it the client never sees a prompt and therefore never sends an interact request. The packet
-    /// is built exactly like the playable host's remote branch; only remote players are addressed here -
-    /// the headless machine's own player has no client to receive it.
+    /// 与可玩主机的 <c>FikaHostTransitController.SendInteractionShow</c> 对应：交运
+    /// 提示是权威的，而远程玩家永远不会触达本机的原生 <c>PlayerEnter</c>
+    /// （专用主机也没有本地提示可退而依赖），因此必须在该玩家的到场报告被接受的
+    /// 那一刻，以 <c>TransitInteractionEvent{Show}</c> 的形式把提示推给客户端。
+    /// 没有它，客户端永远看不到提示，也就永远不会发出交互请求。该包的
+    /// 构造与可玩主机的远程分支完全一致；此处只面向远程玩家——
+    /// headless 机器自己的玩家没有可接收它的客户端。
     /// </summary>
     private void SendInteractionShow(string profileId, int pointId, string reason)
     {
@@ -280,13 +280,13 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// A client reported that its player left the transit zone. Mirror of the playable host's check
-    /// (<c>FikaHostTransitController.OnRemotePlayerLeftZone</c>): the report is not taken at face value,
-    /// because a real step out of the trigger, a death, an extract and the client's 0.25 s geometric
-    /// fallback all arrive as the same "left", and only the last one can be wrong while the player is
-    /// still standing in the point. The player has to be gone for a reason this machine can confirm -
-    /// dead, extracted, already transferred, or outside the point's own trigger volume. A confirmed
-    /// removal keeps the existing reason string and log format.
+    /// 某客户端报告其玩家离开了交运区域。与可玩主机的检查对应
+    /// （<c>FikaHostTransitController.OnRemotePlayerLeftZone</c>）：该报告不会被照单全收，
+    /// 因为真正走出触发器、死亡、撤离以及客户端 0.25 秒的几何
+    /// 兜底都会以同一个“离开”到达，而只有最后一种会在玩家仍站在点位里时
+    /// 判断错误。玩家必须因本机可确认的某个原因而确实不在——死亡、
+    /// 已撤离、已被转移，或不在该点位自身的触发器体积内。确认后的
+    /// 移除保留既有的原因字符串与日志格式。
     /// </summary>
     private void OnRemotePlayerLeftZone(string profileId, int reportedPointId)
     {
@@ -313,7 +313,7 @@ public class FikaHeadlessTransitController : TransitController
 
         if (inside)
         {
-            // Only the first one is reported; the client's fallback can repeat the same verdict.
+            // 只报告第一次；客户端的兜底可能重复同一结论。
             if (_zoneExitLogged.Add(profileId + "@" + registeredPoint))
             {
             }
@@ -323,7 +323,7 @@ public class FikaHeadlessTransitController : TransitController
         TransitZonePresence.RemoveFromZone(_playersInTransitZone, profileId, "client left the zone");
     }
 
-    /// <summary>Same lookup <see cref="PruneStaleZoneRegistrations"/> performs inline.</summary>
+    /// <summary>与 <see cref="PruneStaleZoneRegistrations"/> 内联执行的同一查找。</summary>
     private FikaPlayer FindHumanPlayer(string profileId)
     {
         var players = FikaSingleton<IFikaNetworkManager>.Instance?.CoopHandler?.HumanPlayers;
@@ -343,11 +343,11 @@ public class FikaHeadlessTransitController : TransitController
         pointsById != null && pointsById.TryGetValue(pointId, out var point) ? point : null;
 
     /// <summary>
-    /// Whether the player still stands at the point, judged by every collider the point owns. Testing
-    /// only the first collider found would reproduce the very mis-evaluation this check exists to catch
-    /// (the trigger volume can sit on a child of the point), and a hit on any collider counts - a
-    /// superset of the trigger volume, the safe direction for a veto, because it can only keep a
-    /// registration this host already counted.
+    /// 玩家是否仍站在该点位，按该点位拥有的每一个碰撞体判定。只检测
+    /// 找到的第一个碰撞体会重现本检查正是要捕捉的那种误判
+    /// （触发器体积可能挂在该点位的子物体上），而命中任一碰撞体都计入——这是
+    /// 触发器体积的超集，也是否决方向上的安全选择，因为它只可能保留一个
+    /// 本主机已经计入的注册。
     /// </summary>
     private bool IsInsidePointBounds(int pointId, Player player)
     {
@@ -369,7 +369,7 @@ public class FikaHeadlessTransitController : TransitController
         return false;
     }
 
-    /// <summary>Player position plus the point anchor, so a geometric verdict can be re-derived from the log.</summary>
+    /// <summary>玩家位置加点位锚点，这样几何结论可以从日志中重新推导。</summary>
     private string DescribePlayerPlacement(int pointId, Player player)
     {
         var position = player.Position;
@@ -398,8 +398,8 @@ public class FikaHeadlessTransitController : TransitController
         FikaGlobals.LogInfo($"{player.Profile.Info.Nickname} left transit point {point.Description}");
 #endif
 
-        // Whether this leave ends the transfer of the whole group is decided below, but the answer has to be
-        // read before the registration is removed here.
+        // 这次离开是否会终结整组的转移，在下面才决定，但这个答案必须在此处
+        // 移除注册之前先读出来。
         var registeredForThisPoint = transitPlayers != null &&
             transitPlayers.TryGetValue(player.ProfileId, out var registeredPoint) &&
             // (2026-10-27 W42 / T2-B) transitPlayers 有两种取值形状：原生与 RegisterTransitParticipant 写 raid id，
@@ -417,8 +417,8 @@ public class FikaHeadlessTransitController : TransitController
         if (registeredForThisPoint && _countdownPointId == point.parameters.id &&
             TransitCountdownGuard.AbortWhenSomeoneLeaves)
         {
-            // A registered player left the point while its countdown runs (user requirement 1): the whole
-            // transfer is cancelled, and the cancellation applies the native half of this leave for him.
+            // 一个已注册玩家在点位倒计时运行期间离开了点位（用户需求 1）：整个
+            // 转移被取消，而取消会为他应用这次离开的原生那一半处理。
             CancelCountdown("a registered teammate left the point",
                 " player=" + player.ProfileId + " " + DescribePlayerPlacement(point.parameters.id, player));
             return;
@@ -427,15 +427,15 @@ public class FikaHeadlessTransitController : TransitController
         if (transitPlayers.ContainsKey(player.ProfileId))
         {
             point.GroupExit(player);
-            // Dropping the native group stops the countdown that carries this player out of the raid; a
-            // co-located exit makes the trigger flip and shows up here.
+            // 丢弃原生分组会停掉那个把该玩家送出突袭的倒计时；同位置的
+            // 退出会让触发器翻转并在此处显现。
         }
 
-        // Same rule as the playable host's OnHostPlayerExit: a player who leaves the point without a
-        // started transfer has the accepted interaction undone, ban included, or he can never extract
-        // again in this raid. A leave that happens after the transfer started keeps the ban, which is
-        // what stops a pending transit from being turned into a normal exit. A dedicated host has no
-        // local player, so this runs for whoever the native exit hook reports.
+        // 与可玩主机的 OnHostPlayerExit 规则相同：玩家在转移尚未开始时离开
+        // 点位，已接受的交互会被撤销（包括封禁），否则他在这场突袭中再也无法
+        // 撤离。转移开始之后才发生的离开会保留封禁，正是它阻止
+        // 未完成的交运被变成一个普通退出。专用主机没有本地
+        // 玩家，因此这里对原生退出钩子报告的任何人执行。
         if (_transittedPlayers.Contains(player.RaidId))
         {
         }
@@ -479,12 +479,12 @@ public class FikaHeadlessTransitController : TransitController
     public override void Sizes(int pointId, Il2CppSystem.Collections.Generic.Dictionary<int, byte> sizes)
     {
         _currentTransitPointId = pointId;
-        // Mirror of the playable host's Sizes: the native dictionary is the point's own bookkeeping
-        // (group size over the point's player groups), and a remote player only enters it through
-        // InteractWithTransit - so it announced the players whose interact request had already been
-        // accepted, while CheckForPlayers - which reads _playersInTransitZone - counted everyone
-        // standing in the point. The numbers are rebuilt from that same map with the predicate this
-        // controller's CheckForPlayers applies. No native bookkeeping is written here.
+        // 与可玩主机的 Sizes 对应：原生字典是该点位自身的账目
+        // （针对点位各玩家分组的分组大小），而远程玩家只能通过
+        // InteractWithTransit 进入它——所以它宣告的是交互请求已被接受的
+        // 玩家，而读取 _playersInTransitZone 的 CheckForPlayers 统计的是所有
+        // 站在点位里的玩家。这些数字由同一张映射、用本控制器
+        // CheckForPlayers 所使用的谓词重建。此处不写入任何原生账目。
         var shown = BuildZoneSizes(pointId, sizes);
 
         TransitEventPacket packet = new()
@@ -501,10 +501,10 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// The players this controller counts as standing in a point: the same predicate
-    /// <see cref="CheckForPlayers"/> applies (alive, not the headless machine's own player, not already
-    /// transferred, not extracted), read from the same map - so the announced group size cannot
-    /// disagree with the gate that decides whether a transit may start.
+    /// 本控制器视作“站在点位里”的玩家：与
+    /// <see cref="CheckForPlayers"/> 所用的同一谓词（存活、不是 headless 机器自己的玩家、尚未
+    /// 转移、尚未撤离），从同一张映射读取——因此宣告出去的分组大小不会与
+    /// 决定交运能否启动的那道门槛产生分歧。
     /// </summary>
     private List<FikaPlayer> CollectZonePlayers(int pointId)
     {
@@ -528,10 +528,10 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// Replaces the native group-size numbers with the observed in-zone count, once per player that is
-    /// in the point, so every machine finds its own raid id in the dictionary and all of them show the
-    /// same number. The native dictionary is handed through unchanged when nothing is observed, and the
-    /// slots it defined are kept, so a display this map cannot account for never disappears.
+    /// 用观测到的区内数量替换原生分组大小数字，每个位于该点位中的玩家各一次，
+    /// 这样每台机器都能在字典中找到自己的 raid id，并都显示
+    /// 同一个数字。什么都没观测到时，原生字典原样传递，
+    /// 它定义的槽位也被保留，因此本映射无法解释的显示永远不会消失。
     /// </summary>
     private Il2CppSystem.Collections.Generic.Dictionary<int, byte> BuildZoneSizes(int pointId,
         Il2CppSystem.Collections.Generic.Dictionary<int, byte> nativeSizes)
@@ -558,8 +558,8 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// The teammates standing in a point, as the shared start-gate helper expects them. The collector of
-    /// this controller returns the concrete Fika type, the helper works on EFT.Player for both hosts.
+    /// 站在某点位中的队友，形状符合共享启动门槛辅助的预期。本控制器的收集器
+    /// 返回具体的 Fika 类型，而该辅助在两个主机上都作用于 EFT.Player。
     /// </summary>
     private List<Player> ZonePlayersAsPlayers(int pointId)
     {
@@ -572,7 +572,7 @@ public class FikaHeadlessTransitController : TransitController
         return result;
     }
 
-    /// <summary>Compact view of a raid-id to count dictionary for the diagnostics.</summary>
+    /// <summary>供诊断使用的 raid-id 到计数映射的紧凑视图。</summary>
     private static string DescribeSizes(Il2CppSystem.Collections.Generic.Dictionary<int, byte> sizes)
     {
         if (sizes == null) return "null";
@@ -586,9 +586,9 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// The native point bookkeeping the native number used to be built from: which profile belongs to
-    /// which group, and each group's size. Evidence for whether a remote player ever reached the
-    /// point's own groups on this machine.
+    /// 原生数字过去所依据的原生点位账目：哪个 profile 属于
+    /// 哪个分组，以及每个分组的大小。用于判断远程玩家是否真的在本机上
+    /// 进入过该点位自身的分组。
     /// </summary>
     private string DescribePointGroups(int pointId)
     {
@@ -611,8 +611,8 @@ public class FikaHeadlessTransitController : TransitController
             }
         }
 
-        // The native countdown of the point (group -> seconds left) and the confirmed set: the two pieces
-        // the native transfer of a group is built from.
+        // 该点位的原生倒计时（分组 -> 剩余秒数）与已确认集合：一个分组的原生转移
+        // 正是由这两部分构成的。
         builder.Append("] timers[");
         if (point._groupTimers != null)
         {
@@ -636,10 +636,10 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// The native timer notification, forwarded to the clients with one addition: every player the native
-    /// dictionary does not carry gets an entry keyed by his raid id, because both timer panels look the
-    /// local player up by raid id and the native bookkeeping describes the local group only
-    /// (see <c>TransitStartGate.BuildTimers</c> and the playable host's twin method).
+    /// 原生定时器通知，在转发给客户端时多一步：凡是原生字典未携带的玩家，
+    /// 都会得到一个以其 raid id 为键的条目，因为两块定时器面板都按 raid id
+    /// 查找本地玩家，而原生账目只描述本地分组
+    /// （见 <c>TransitStartGate.BuildTimers</c> 与可玩主机中对应的方法）。
     /// </summary>
     public override void Timers(int pointId, Il2CppSystem.Collections.Generic.Dictionary<int, ushort> timers)
     {
@@ -673,9 +673,9 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// The teammates this machine still counts for the gates and the panels: alive, not already
-    /// transferred, not extracted, and not its own player (a dedicated host has no transit entry of its
-    /// own). The same predicate <see cref="CheckForPlayers"/> and <see cref="CollectZonePlayers"/> apply.
+    /// 本机仍计入门槛与面板的队友：存活、尚未
+    /// 转移、尚未撤离，也不是它自己的玩家（专用主机没有它自己的
+    /// 交运入口）。<see cref="CheckForPlayers"/> 与 <see cref="CollectZonePlayers"/> 使用同一谓词。
     /// </summary>
     private List<Player> EligibleMembers()
     {
@@ -697,21 +697,21 @@ public class FikaHeadlessTransitController : TransitController
         return result;
     }
 
-    /// <summary>Records an accepted interaction; the strict gate below needs it as the player's proof.</summary>
+    /// <summary>记录一次已接受的交互；下面的严格门槛需要它作为该玩家的凭据。</summary>
     private void RecordInteraction(Player player, int pointId)
     {
         _interactedPlayers[player.ProfileId] = pointId;
         if (!_interactionLogged.Add(player.ProfileId + "@" + pointId)) return;
             }
 
-    /// <summary>Point's own "wait for the whole party" flag, read for the diagnostics only.</summary>
+    /// <summary>点位自身的“等待全队”标志，仅供诊断读取。</summary>
     private string ReadWaitForAllParty(int pointId)
     {
         var point = FindPoint(pointId);
         return point == null ? "point-unknown" : point.parameters.waitForAllParty.ToString();
     }
 
-    /// <summary>Strict start gate: every eligible teammate interacted at this point and stands inside it.</summary>
+    /// <summary>严格启动门槛：每个合格队友都在此点位交互过，并且身在其中。</summary>
     private bool EveryoneInteracted(Player player, int pointId)
     {
         if (!TransitStartGate.RequireAllTeammatesInteracted) return true;
@@ -731,7 +731,7 @@ public class FikaHeadlessTransitController : TransitController
         return false;
     }
 
-    /// <summary>Tells the waiting player that the countdown has not started (one message, no local player here).</summary>
+    /// <summary>告知等候中的玩家倒计时尚未启动（只有一条消息，这里没有本地玩家）。</summary>
     private void NotifyTeammatesNotReady(Player player)
     {
         try
@@ -754,7 +754,7 @@ public class FikaHeadlessTransitController : TransitController
                     }
     }
 
-    /// <summary>Compact view of the interaction ledger, one entry per profile, the current point marked.</summary>
+    /// <summary>交互账本的紧凑视图，每个 profile 一条，并标出当前点位。</summary>
     private string DescribeInteractions(int pointId)
     {
         var builder = new System.Text.StringBuilder();
@@ -767,7 +767,7 @@ public class FikaHeadlessTransitController : TransitController
         return builder.Length == 0 ? "empty" : builder.ToString();
     }
 
-    /// <summary>Teammates a point's countdown speaks for, as profile/raid-id pairs.</summary>
+    /// <summary>某点位倒计时所代表的队友，以 profile/raid-id 对表示。</summary>
     private string DescribeParticipants(int pointId)
     {
         var builder = new System.Text.StringBuilder();
@@ -780,7 +780,7 @@ public class FikaHeadlessTransitController : TransitController
         return builder.Length == 0 ? "none" : builder.ToString();
     }
 
-    /// <summary>The native transit registry of this host.</summary>
+    /// <summary>本主机的原生交运注册表。</summary>
     private string DescribeNativeRegistry()
     {
         var builder = new System.Text.StringBuilder();
@@ -793,8 +793,8 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// Registers every teammate standing in the point and answers each with the Confirm its controller
-    /// waits for. Runs only after both gates passed, so the countdown starts for the whole group at once.
+    /// 注册站在该点位中的每个队友，并向各自的控制器回以它等待的
+    /// Confirm。只有在两道门槛都通过后才执行，因此倒计时对整组同时启动。
     /// </summary>
     private bool RegisterTransitParticipants(TransitPoint point, Player interacting, string keyId, EDateTime time)
     {
@@ -816,13 +816,13 @@ public class FikaHeadlessTransitController : TransitController
                         return false;
         }
 
-                // The point is activated by this registration: the exits at its own position are taken out of the
-        // interaction until the transfer is through, so the two cannot compete for the same press.
+                // 该注册会激活点位：其自身位置上的出口在转移完成之前被移出
+        // 交互，这样两者不会争抢同一次按键。
         TransitCoLocatedExits.Suppress(point, $"the point registered {registered} player(s)");
         return true;
     }
 
-    /// <summary>Registers one player, guarded: one failing teammate never breaks the others or this call.</summary>
+    /// <summary>注册单个玩家，带守卫：某个队友失败绝不会影响其他队友或本次调用。</summary>
     private bool RegisterTransitParticipant(Player member, TransitPoint point, string preferredKeyId, EDateTime time)
     {
         var pointId = point.parameters.id;
@@ -873,8 +873,8 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// Starts the countdown of a point whose gate passed: length from the point, announcements from this
-    /// controller's own clock (a dedicated host has no player-driven native tick to rely on).
+    /// 启动门槛已通过的点位的倒计时：时长取自该点位，广播则来自本控制器
+    /// 自己的时钟（专用主机没有可依赖的、由玩家驱动的原生 tick）。
     /// </summary>
     private void BeginCountdown(TransitPoint point)
     {
@@ -890,15 +890,15 @@ public class FikaHeadlessTransitController : TransitController
         StartCountdownLoop();
     }
 
-    /// <summary>One step of the countdown clock; also called by every native <see cref="Timers"/> call.</summary>
+    /// <summary>倒计时时钟的一步；每次原生 <see cref="Timers"/> 调用也会调用它。</summary>
     private void HeadlessCountdownTick()
     {
         try
         {
             if (_countdownPointId < 0) return;
 
-            // The continuous half of the rule: the participant list is re-checked on every tick of the
-            // dedicated host's clock, not only when the countdown started.
+            // 规则的连续那一半：参与者列表在专用主机时钟的每一次 tick 上都会
+            // 重新检查，而不只在倒计时启动时检查。
             if (RecheckCountdownParticipants()) return;
 
             var remaining = System.Math.Max(0, (int)System.Math.Ceiling(_countdownEndsAt - Time.unscaledTime));
@@ -917,9 +917,9 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// The clock of this controller: one step every 250 ms on the game update thread, stopped with the
-    /// countdown. A dedicated host has no GameWorld.Update poll of its own driver, so the loop is owned
-    /// here; the generation makes a step of an old raid a no-op.
+    /// 本控制器的时钟：在游戏更新线程上每 250 ms 走一步，随倒计时一起停止。
+    /// 专用主机没有它自己驱动的 GameWorld.Update 轮询，因此这个循环由这里
+    /// 拥有；代号机制让上一场突袭的一步成为空操作。
     /// </summary>
     private void StartCountdownLoop()
     {
@@ -950,7 +950,7 @@ public class FikaHeadlessTransitController : TransitController
         }).Forget();
     }
 
-    /// <summary>Announces the running countdown to every client, one group-timer packet per step.</summary>
+    /// <summary>把运行中的倒计时通告给每个客户端，每步一个分组定时器包。</summary>
     private void BroadcastCountdown(bool force)
     {
         var pointId = _countdownPointId;
@@ -978,7 +978,7 @@ public class FikaHeadlessTransitController : TransitController
                     }
     }
 
-    /// <summary>The countdown reached zero: every registered client gets a transfer, each one at most once.</summary>
+    /// <summary>倒计时归零：每个已注册客户端都得到一次转移，每人最多一次。</summary>
     private void FinishCountdown()
     {
         var pointId = _countdownPointId;
@@ -990,9 +990,9 @@ public class FikaHeadlessTransitController : TransitController
             }
 
     /// <summary>
-    /// Stops a running countdown that failed (the tick threw) and gives the players it registered their exit
-    /// interaction back. It uses the same release as a cancellation, so an abort cannot leave a registration,
-    /// a native group membership or a transit ban behind either.
+    /// 停止一个失败的运行中倒计时（tick 抛出异常），并把它注册过的玩家们的退出
+    /// 交互还回去。它使用与取消相同的释放流程，因此一次中止同样不会留下注册、
+    /// 原生分组归属或交运封禁。
     /// </summary>
     private void AbortCountdown(string reason)
     {
@@ -1006,9 +1006,9 @@ public class FikaHeadlessTransitController : TransitController
             }
 
     /// <summary>
-    /// The profiles this machine has registered for a point - the participant list of the running countdown,
-    /// read from the native registry (the same registry <see cref="IssueTransferForClients"/> requires, so
-    /// both sides speak about one set). Mirror of the playable host's method of the same name.
+    /// 本机为某个点位注册过的 profile——即运行中倒计时的参与者列表，
+    /// 从原生注册表读取（与 <see cref="IssueTransferForClients"/> 所需的注册表相同，因此
+    /// 两侧谈的是同一个集合）。与可玩主机同名方法对应。
     /// </summary>
     private List<(string ProfileId, int RaidId)> RegisteredParticipants(int pointId)
     {
@@ -1033,7 +1033,7 @@ public class FikaHeadlessTransitController : TransitController
         return result;
     }
 
-    /// <summary>True when this player has already extracted from this raid.</summary>
+    /// <summary>当该玩家已从本场突袭撤离时为 true。</summary>
     private bool IsExtractedFromThisRaid(Player member)
     {
         try
@@ -1049,11 +1049,11 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// The continuous half of the start rule (user requirement 1): while the countdown of a point runs, its
-    /// participant list is re-checked on every tick of the clock instead of once when it started. The
-    /// verdicts come from <see cref="TransitCountdownGuard.Classify"/> and every verdict change writes one
-    /// criterion line. Returns true when the countdown was cancelled, i.e. when the caller must not continue
-    /// this tick; it never throws, because a broken check must not break the transfer it observes.
+    /// 启动规则的连续那一半（用户需求 1）：某点位倒计时运行期间，它的
+    /// 参与者列表在时钟的每一次 tick 上重新检查，而不是只在启动时检查一次。
+    /// 结论来自 <see cref="TransitCountdownGuard.Classify"/>，每次结论变化都会写一行
+    /// 判据日志。倒计时被取消时返回 true，即调用者不得继续
+    /// 本次 tick；它绝不抛出，因为一个坏掉的检查不能弄坏它所观察的转移。
     /// </summary>
     private bool RecheckCountdownParticipants()
     {
@@ -1094,8 +1094,8 @@ public class FikaHeadlessTransitController : TransitController
                         inside.Add(profileId);
                         break;
                     case ETransitMemberState.Missing:
-                        // Still inside the point, only the zone report of this host is missing: the entry is
-                        // restored from the point's own colliders instead of dropping a player who is there.
+                        // 仍在点位内，只是本主机的区域报告缺失：该条目会
+                        // 从点位自身的碰撞体恢复，而不是丢弃一个确实在那里的玩家。
                         inside.Add(profileId);
                         missing.Add(profileId);
                         TransitZonePresence.RecordInZone(_playersInTransitZone, profileId, pointId,
@@ -1165,7 +1165,7 @@ public class FikaHeadlessTransitController : TransitController
 
         if (members > 0 && toDrop.Count >= members)
         {
-            // Every registered teammate is gone: there is nobody left for this transfer to carry.
+            // 所有已注册队友都已不在：这次转移已无人可载。
             CancelCountdown("no registered teammate is left in this raid",
                 $" (checked {_recheckCount}x, switches: {TransitCountdownGuard.DescribeSwitches()})");
             return true;
@@ -1175,10 +1175,10 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// Removes one participant from a running countdown without cancelling it: the registration, the native
-    /// group membership of the point and - for a player who is not already on his way out - his transit ban.
-    /// Used for a teammate who died (with the death switch off) and for every teammate who left this raid,
-    /// which is the bug fix of user requirement 3.
+    /// 从运行中的倒计时里移除一个参与者而不取消它：注册、该点位的原生
+    /// 分组归属，以及——对尚未处于离开途中的玩家——他的交运封禁。
+    /// 用于已死亡（死亡开关关闭时）的队友，以及每个离开本场突袭的队友，
+    /// 这正是用户需求 3 的缺陷修复。
     /// </summary>
     private bool DropCountdownParticipant(int pointId, string profileId, bool releaseBan, string reason)
     {
@@ -1219,12 +1219,12 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// Ends the countdown of a point and the transfer it was preparing (user requirement 1), the mirror of
-    /// the playable host's method of the same name: every registered player leaves the point's native group
-    /// and loses its confirmed flag, the native registry and the interaction ledger drop him, his transit ban
-    /// is lifted and the exits at the point's position react again. Every client is told about it - which makes
-    /// its own controller drop the local registration, re-enable its exits and close its countdown panel.
-    /// A dedicated host has no panel and no local player of its own.
+    /// 结束某点位的倒计时以及它正在准备的转移（用户需求 1），与可玩主机
+    /// 同名方法对应：每个已注册玩家都离开该点位的原生分组
+    /// 并失去其已确认标志，原生注册表与交互账本把他移除，他的交运封禁
+    /// 解除，该点位位置上的出口重新响应。每个客户端都会被告知——这让
+    /// 它自己的控制器丢弃本地注册、重新启用出口并关闭它的倒计时面板。
+    /// 专用主机没有面板，也没有它自己的本地玩家。
     /// </summary>
     private void CancelCountdown(string reason, string detail)
     {
@@ -1242,10 +1242,10 @@ public class FikaHeadlessTransitController : TransitController
             }
 
     /// <summary>
-    /// Releases every player a cancelled countdown registered: the native group membership (through the same
-    /// <c>point.GroupExit</c> the native exit path uses), the confirmed flag, the native registry entry, his
-    /// transit ban, and the message that tells the client to do the same locally. Returns the detail fragment
-    /// of the confirmation line.
+    /// 释放被取消的倒计时所注册的每个玩家：原生分组归属（经由原生退出路径
+    /// 所用的同一个 <c>point.GroupExit</c>）、已确认标志、原生注册表条目、他的
+    /// 交运封禁，以及告知客户端在本地做同样处理的消息。返回确认日志行中的
+    /// 细节片段。
     /// </summary>
     private string ReleaseParticipantsOfCancelledCountdown(int pointId, string reason)
     {
@@ -1300,7 +1300,7 @@ public class FikaHeadlessTransitController : TransitController
         return $"participants={released} nativeGroupsExited={groupsExited} remoteClientsTold={clientsTold} failed=[{failed}]";
     }
 
-    /// <summary>One native interaction event of this host to all clients (the Hide of a cancelled countdown).</summary>
+    /// <summary>本主机发给所有客户端的一次原生交互事件（已取消倒计时的 Hide）。</summary>
     private void SendTransitInteraction(int playerRaidId, int pointId, TransitInteractionEvent.EType type)
     {
         try
@@ -1324,8 +1324,8 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// Tells one client that the transfer of his point was cancelled, with the message the native zone check
-    /// uses for the same fact ("not all teammates are at the point").
+    /// 告知某个客户端他所在点位的转移已被取消，所用的消息与原生区域检查
+    /// 表达同一事实时相同（“并非所有队友都在点位上”）。
     /// </summary>
     private void NotifyTransitCancelled(int playerRaidId, string profileId)
     {
@@ -1350,9 +1350,9 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// Sends the transfer to every remote teammate registered for this point. The native tick may already
-    /// have driven some of them (its own calls land in <see cref="Transit"/>), and the issued set keeps
-    /// this method from sending the same player twice.
+    /// 把转移发送给为该点位注册的每个远程队友。原生 tick 可能已经
+    /// 驱动了其中一些人（它自己的调用会进入 <see cref="Transit"/>），而已发出集合让
+    /// 本方法不会把同一个玩家发送两次。
     /// </summary>
     private int IssueTransferForClients(int pointId, string source)
     {
@@ -1384,7 +1384,7 @@ public class FikaHeadlessTransitController : TransitController
                 return issued;
     }
 
-    /// <summary>Sends one client its transit, guarded and idempotent (see the playable host's twin method).</summary>
+    /// <summary>向单个客户端发送它的交运，带守卫且幂等（见可玩主机中对应的方法）。</summary>
     private bool IssueClientTransfer(Player member, TransitPoint point, string source)
     {
         if (!_transferIssued.Add(member.RaidId))
@@ -1422,7 +1422,7 @@ public class FikaHeadlessTransitController : TransitController
         }
     }
 
-    /// <summary>Players this host counts as registered for a point, as the transfer's player count.</summary>
+    /// <summary>本主机视作已为该点位注册的玩家，用作转移包中的玩家数。</summary>
     private int CountRegisteredParticipants(int pointId)
     {
         var count = 0;
@@ -1447,7 +1447,7 @@ public class FikaHeadlessTransitController : TransitController
         return count > 0 ? count : 1;
     }
 
-    /// <summary>Creates the transit history of a profile this host has none for yet.</summary>
+    /// <summary>为某个本主机尚无交运历史的 profile 创建它。</summary>
     private bool EnsureSummonedTransit(string profileId)
     {
         try
@@ -1463,7 +1463,7 @@ public class FikaHeadlessTransitController : TransitController
         }
     }
 
-    /// <summary>The destination of one player's transfer (mirror of the playable host's builder).</summary>
+    /// <summary>某个玩家转移的目的地（与可玩主机构建器的对应实现）。</summary>
     private LocationTransit BuildDestination(Player player, TransitPoint point, string hash,
         Il2CppSystem.Collections.Generic.Dictionary<string, ProfileKey> keys, int playersCount)
     {
@@ -1498,13 +1498,13 @@ public class FikaHeadlessTransitController : TransitController
 
     public override void InteractWithTransit(Player player, InteractWithTransitPacket packet)
     {
-        // Match the host's native eligibility checks before mutating transit
-        // state. A remote request can arrive after a point has been disabled,
-        // or carry a stale/mismatched key and time selection.
-        // Self-healing: an interact request that reaches this controller proves the sender is
-        // standing at the point, so it registers him as well. Everything after this point
-        // (access, entry requirements, completed quest, group size gate) is unchanged, so the
-        // fallback cannot move a player who is somewhere else.
+        // 在改动交运状态之前，先符合主机的原生资格检查。
+        // 远程请求可能在某个点位已被禁用之后到达，
+        // 也可能携带过时/不匹配的 key 与时间选择。
+        // 自愈：能到达本控制器的交互请求就证明发送者
+        // 正站在该点位上，因此也为他注册。此后的所有环节
+        // （权限、进入条件、已完成任务、分组大小门槛）均不变，因此这条
+        // 兜底不会移动一个身处他处的玩家。
         if (player != null && packet != null && packet.hasInteraction &&
             player.HealthController?.IsAlive == true && pointsById.TryGetValue(packet.pointId, out _))
         {
@@ -1529,15 +1529,15 @@ public class FikaHeadlessTransitController : TransitController
 
         if (_countdownPointId == packet.pointId)
         {
-            // The group is at the point and the countdown runs; a repeated press must not start a second one.
+            // 整组已到点位且倒计时正在运行；重复的按键不得再启动第二个倒计时。
             FikaGlobals.LogWarning($"[TransitDiag] InteractWithTransit ignored for {player.ProfileId}: the countdown of point " +
                 $"{packet.pointId} is already running ({_countdownSeconds}s in total)");
             return;
         }
 
 
-        // The press is remembered first: the strict gate needs it as this player's proof, and nothing is
-        // registered before the whole team has done its part and stands inside the point.
+        // 先记住这次按键：严格门槛需要它作为该玩家的凭据，而在整队都
+        // 完成各自动作并站在点位内之前，什么都不会注册。
         RecordInteraction(player, packet.pointId);
         if (!CheckForPlayers(player, packet.pointId)) return;
         if (!EveryoneInteracted(player, packet.pointId)) return;
@@ -1548,8 +1548,8 @@ public class FikaHeadlessTransitController : TransitController
 
     private bool CheckForPlayers(Player player, int pointId)
     {
-        // Dead, extracted and transferred players are excluded by both loops below, so their
-        // zone entries only darken the map; drop them here.
+        // 已死亡、已撤离与已转移的玩家都被下面两个循环排除，因此他们的
+        // 区域条目只会让映射变暗；在此丢弃它们。
         PruneStaleZoneRegistrations();
 
         var humanPlayers = 0;
@@ -1611,7 +1611,7 @@ public class FikaHeadlessTransitController : TransitController
                 return true;
     }
 
-    /// <summary>Compact view of the zone map for the diagnostics: one entry per known player.</summary>
+    /// <summary>供诊断使用的区域映射紧凑视图：每个已知玩家一条。</summary>
     private string DescribeZoneMap(int pointId)
     {
         var builder = new System.Text.StringBuilder();
@@ -1624,7 +1624,7 @@ public class FikaHeadlessTransitController : TransitController
         return builder.Length == 0 ? "empty" : builder.ToString();
     }
 
-    /// <summary>Drops registrations of players that can never transfer again.</summary>
+    /// <summary>丢弃那些再也不可能转移的玩家的注册。</summary>
     private void PruneStaleZoneRegistrations()
     {
         if (_playersInTransitZone.Count == 0) return;
@@ -1644,8 +1644,8 @@ public class FikaHeadlessTransitController : TransitController
                 }
             }
 
-            // Not in HumanPlayers any more: the profile left the raid and neither loop above
-            // counts it, so the entry can stay until the raid ends.
+            // 已不在 HumanPlayers 中：该 profile 离开了突袭，上面两个循环都不会
+            // 统计它，因此该条目可以留到突袭结束。
             if (member == null) continue;
             if (TransitDropouts.IsDropped(member) ||
                 member.HealthController?.IsAlive != true ||
@@ -1665,9 +1665,9 @@ public class FikaHeadlessTransitController : TransitController
     }
 
     /// <summary>
-    /// The native transfer entry point of this raid plus everything this host issues itself. The native
-    /// calls carry the players it knows; the countdown end of this controller covers the rest, and the
-    /// issued set keeps a player from being transferred twice.
+    /// 本场突袭的原生转移入口，外加本主机自己发出的一切。原生
+    /// 调用只携带它知道的玩家；本控制器的倒计时结束覆盖其余玩家，而
+    /// 已发出集合防止一个玩家被转移两次。
     /// </summary>
     public override Il2CppSystem.Threading.Tasks.Task Transit(TransitPoint point, int playersCount, string hash,
         Il2CppSystem.Collections.Generic.Dictionary<string, ProfileKey> keys, Player player)
@@ -1683,16 +1683,16 @@ public class FikaHeadlessTransitController : TransitController
                                     return Il2CppSystem.Threading.Tasks.Task.CompletedTask;
         }
 
-        // The native arguments are kept for the transfers this host issues itself.
+        // 保留原生参数，供本主机自己发出的转移使用。
         _lastTransitHash = hash;
         _lastTransitKeys = keys;
         _lastTransitPlayersCount = playersCount;
 
         if (keys == null || !keys.ContainsKey(player.ProfileId))
         {
-            // The native call may carry the key set of another group; the transfer itself does not depend
-            // on this machine's entry (the client validates the destination against its own profile), so
-            // this is reported instead of dropping the player.
+            // 原生调用可能携带另一分组的 key 集合；转移本身并不依赖
+            // 本机的条目（客户端会对照自己的 profile 校验目的地），因此
+            // 这里选择报告，而不是丢弃该玩家。
             FikaGlobals.LogWarning($"[TransitDiag] Transit for {player.ProfileId}: the native key set did not contain this profile");
         }
 
@@ -1740,15 +1740,15 @@ public class FikaHeadlessTransitController : TransitController
 
         if (TarkovApplication.Exist(out var tarkovApplication))
         {
-            // A dedicated host has no local player transit entry. Follow the
-            // first remote player's validated destination for the next raid.
+            // 专用主机没有本地玩家的交运条目。对下一场突袭沿用
+            // 第一个远程玩家经校验的目的地。
             tarkovApplication.TransitionStatus = new TransitionStatus(destination.location, false,
                 destination.side, destination.raidMode, destination.dayTime);
         }
 
         FikaBackendUtils.IsTransit = true;
-        // Keep every continuation on Unity's update thread while checking
-        // native player state across the transit wait.
+        // 在跨交运等待检查原生玩家状态期间，把每个续延都保持在
+        // Unity 的更新线程上。
         MainThreadDispatcher.RunAsync(DelayHeadlessExtract).Forget();
     }
 
@@ -1773,9 +1773,9 @@ public class FikaHeadlessTransitController : TransitController
             }
         }
 
-        // Task.Delay resumes on a pool thread. Game teardown touches Unity and
-        // native EFT objects, so hand it back to the game update thread. A
-        // delayed completion from an old raid must not stop a newer raid.
+        // Task.Delay 在线程池线程上恢复。游戏销毁会触碰 Unity 与
+        // 原生 EFT 对象，因此要把它交回游戏更新线程。上一场突袭
+        // 延迟到达的完成不得停掉更新的突袭。
         MainThreadDispatcher.Post(() =>
         {
             if (ReferenceEquals(FikaSingleton<IFikaGame>.Instance, game))
@@ -1784,27 +1784,27 @@ public class FikaHeadlessTransitController : TransitController
                 return;
             }
 
-            // The raid that should have ended is not the running one any more, so the players this raid
-            // registered for a transfer are still in a raid while the ban keeps them from extracting:
-            // lift it for each of them, exactly like the playable host does for its own player.
+            // 本该结束的那场突袭已不再是正在运行的那场，因此本场突袭为转移
+            // 注册过的玩家仍在一场突袭中，而封禁让他们无法撤离：
+            // 为他们逐人解除，与可玩主机对待自己的玩家完全一样。
             ReleaseTransitBansOfThisRaid("headless raid was replaced before its transit stop");
         });
     }
 
     /// <summary>
-    /// Lifts the transit ban an accepted interaction applied (see <see cref="InteractWithTransit"/>) when
-    /// the transfer is not going to happen after all. Mirror of the playable host's
-    /// <c>FikaHostTransitController.ReleaseTransitBanFor</c> (this controller is a native
-    /// <see cref="TransitController"/>, so the state lives on the shared <c>ExfiltrationController</c>).
+    /// 解除一次已接受交互所施加的交运封禁（见 <see cref="InteractWithTransit"/>），用于
+    /// 转移最终并不会发生的情形。与可玩主机的
+    /// <c>FikaHostTransitController.ReleaseTransitBanFor</c> 对应（本控制器是原生
+    /// <see cref="TransitController"/>，因此状态位于共享的 <c>ExfiltrationController</c> 上）。
     /// <para>
-    /// The accept path adds the player to <c>ExfiltrationController.BannedPlayers</c> and cancels his
-    /// extraction, while the only native release runs on the way out through
-    /// <c>TransitController.EnableExits(player)</c> - an aborted transit therefore left the player unable
-    /// to extract for the rest of the raid.
+    /// 接受路径会把玩家加入 <c>ExfiltrationController.BannedPlayers</c> 并取消他的
+    /// 撤离，而唯一的原生解除只在离开途中经由
+    /// <c>TransitController.EnableExits(player)</c> 执行——因此一次被中止的交运会
+    /// 让该玩家在本场突袭余下的时间里无法撤离。
     /// </para>
-    /// Idempotent: removing an id that is not banned changes nothing, and exit interaction is re-enabled
-    /// only when no banned player is left, so a player still waiting for his own transit is never
-    /// unblocked.
+    /// 幂等：移除一个未被封禁的 id 不会改变任何东西，而退出交互只会在
+    /// 不再有任何被封禁玩家时重新启用，因此仍在等待自己交运的玩家
+    /// 绝不会被解除阻塞。
     /// </summary>
     private void ReleaseTransitBanFor(int raidId, string profileId, string reason)
     {
@@ -1818,9 +1818,9 @@ public class FikaHeadlessTransitController : TransitController
         var remaining = exfiltration.BannedPlayers.Count;
         if (remaining == 0)
         {
-            // Only the empty set re-opens the exits; another player's ban stays enforced.
+            // 只有集合为空时才重新开放出口；其他玩家的封禁依然生效。
             exfiltration.EnableExitsInteraction();
-            // Nobody waits for a transit any more, so the exits at the point react again as well.
+            // 不再有人等待交运，因此该点位上的出口也重新响应。
             TransitCoLocatedExits.Release("no player waits for a transit any more");
         }
 
@@ -1828,9 +1828,9 @@ public class FikaHeadlessTransitController : TransitController
             }
 
     /// <summary>
-    /// Releases the transit ban of every player this raid registered for a transfer. Used when the raid
-    /// that should have ended is not the running one any more: its players are still in a raid, and the
-    /// ban would keep them from extracting for good.
+    /// 解除本场突袭为转移注册过的每个玩家的交运封禁。用于本该结束的那场
+    /// 突袭已不再是正在运行的那场的情形：它的玩家仍在一场突袭中，而封禁
+    /// 会让他们永远无法撤离。
     /// </summary>
     private void ReleaseTransitBansOfThisRaid(string reason)
     {
@@ -1841,7 +1841,7 @@ public class FikaHeadlessTransitController : TransitController
         }
     }
 
-    /// <summary>Profile that owns a raid id in this raid, or null when that player is already gone.</summary>
+    /// <summary>本场突袭中拥有某个 raid id 的 profile，该玩家已不在时为 null。</summary>
     private string ProfileIdForRaidId(int raidId)
     {
         var players = FikaSingleton<IFikaNetworkManager>.Instance?.CoopHandler?.HumanPlayers;
@@ -1870,13 +1870,13 @@ public class FikaHeadlessTransitController : TransitController
         _recheckLoggedSignature = null;
         _recheckCount = 0;
         TransitDropouts.Forget();
-        // Stops the clock of the old raid: its next step sees another generation and returns.
+        // 停掉旧突袭的时钟：它的下一步会看到另一个代号并直接返回。
         _countdownGeneration++;
         _lastTransitHash = null;
         _lastTransitKeys = null;
         _lastTransitPlayersCount = 0;
-        // Give the exits of the point their interaction back (a destroyed point is skipped), then close the
-        // ledger: the next raid starts with an empty suppression list.
+        // 把点位的出口交互还回去（已销毁的点位跳过），然后关闭账本：
+        // 下一场突袭从空的抑制列表开始。
         TransitCoLocatedExits.Release("the raid ended");
         TransitCoLocatedExits.Forget();
         _transferFailures.Clear();
@@ -1884,13 +1884,13 @@ public class FikaHeadlessTransitController : TransitController
 
     public void Init()
     {
-        // A new raid: nothing of the world that ended may survive in a static of this chain. The teardown
-        // sequence of WorldLifecycle clears both ledgers as well (TransitCoLocatedExits and TransitDropouts
-        // expose ForceResetForWorldTeardown for it); these calls are the self-healing half that also covers a
-        // teardown which never reached this class, and they touch no native object at all.
+        // 新的突袭：已结束世界的任何东西都不得留存在这条链的静态成员中。WorldLifecycle 的
+        // 销毁序列也会清空两个账本（TransitCoLocatedExits 与 TransitDropouts
+        // 为此暴露了 ForceResetForWorldTeardown）；这些调用属于自愈的那一半，还覆盖了
+        // 从未到达本类的销毁流程，而且它们完全不触碰任何原生对象。
         TransitCoLocatedExits.ForceResetForWorldTeardown("a new raid starts");
         TransitDropouts.ForceResetForWorldTeardown("a new raid starts");
-        // The one subscription that feeds the dropout registry is armed once per process (idempotent).
+        // 为 dropout 注册表供数的那唯一一个订阅每个进程只挂载一次（幂等）。
         TransitDropouts.Arm();
         EnablePoints(true);
     }

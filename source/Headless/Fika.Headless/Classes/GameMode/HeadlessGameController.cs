@@ -29,15 +29,15 @@ internal class HeadlessGameController : HostGameController
 
     public override void SetupEventsAndExfils(Player player)
     {
-        // SelectSpawnPoint can return null (no spawn point for the requested
-        // side on this location). The client host path logs "unknown" in that
-        // case; dereferencing it here would abort the raid setup coroutine.
+        // SelectSpawnPoint 可能返回 null（该地点没有为所请求的一方
+        // 提供出生点）。客户端主机路径在这种情况下会记录 "unknown"；
+        // 此处解引用它会中断战局设置协程。
         Logger.LogInfo("[Headless] Stage: raid started at spawn point: " + (_spawnPoint?.Id ?? "unknown") +
             ", InfiltrationPoint: " + (InfiltrationPoint ?? "unknown"));
         _abstractGame.GameTimer.Start(GameTime.ToNative(), SessionTime.ToNative());
 
-        // Headless has no profile or local player. Bind all initialized exits;
-        // each remote client applies its own eligibility and performs its own extract.
+        // 无头模式没有 profile，也没有本地玩家。绑定所有已初始化的出口；
+        // 每个远程客户端自行应用其资格判定并执行自己的撤离。
         var exfilController = ExfiltrationController.Instance;
         HeadlessExfilManager ??= _abstractGame.gameObject.AddComponent<HeadlessExfilManager>();
         if (exfilController != null)
@@ -56,9 +56,9 @@ internal class HeadlessGameController : HostGameController
             transitController.Init();
             foreach (var activePlayer in CoopHandler.HumanPlayers)
             {
-                // Transit history belongs to each remote player. The
-                // dedicated host's LocalRaidSettings describe only the host
-                // profile and can diverge after players cross maps.
+                // 中转历史属于每个远程玩家。专用主机的
+                // LocalRaidSettings 只描述主机 profile，在玩家
+                // 跨地图之后可能产生分歧。
                 ushort transitionCount;
                 bool eventPlayer;
                 if (transitController.summonedTransits.TryGetValue(activePlayer.ProfileId, out var history))
@@ -68,12 +68,12 @@ internal class HeadlessGameController : HostGameController
                 }
                 else
                 {
-                    // Same fallback as FikaServer.CreateNativeTransitInitialization. A peer
-                    // without a host side history keeps the count it built from the raid
-                    // settings it received, so report the raid wide transition state (the
-                    // object LocalRaidSettings.transition points at, see
-                    // Headless_LocalGameCreator_Patch) instead of skipping the snapshot:
-                    // skipping it left the peer without any transit initialization.
+                    // 与 FikaServer.CreateNativeTransitInitialization 相同的回退。一个没有
+                    // 主机侧历史记录的对端会保留它以收到的战局设置为基础
+                    // 构建的计数，因此要报告全战局的中转状态（即
+                    // LocalRaidSettings.transition 所指向的对象，参见
+                    // Headless_LocalGameCreator_Patch），而不是跳过该快照：
+                    // 跳过它会让对端完全没有中转初始化。
                     var transitData = FikaBackendUtils.TransitData;
                     transitionCount = (ushort)System.Math.Clamp(transitData?.transitionCount ?? 0, 0, ushort.MaxValue);
                     eventPlayer = transitData != null && transitData.transitionType.HasFlagNoBox(ELocationTransition.Event);
@@ -126,9 +126,9 @@ internal class HeadlessGameController : HostGameController
         _abstractGame.Status = GameStatus.Started;
         Logger.LogInfo("[Headless] Stage: game status is Started");
 
-        // The start-command console screen is a UI object. A headless host can
-        // run without it, and this hook runs inside the raid setup coroutine,
-        // so a UI failure here must not prevent the raid from starting.
+        // 启动命令控制台界面是一个 UI 对象。无头主机可以在没有它的
+        // 情况下运行，而本钩子运行在战局设置协程内，
+        // 因此这里的 UI 失败不得阻止战局启动。
         try
         {
             ConsoleScreen.ApplyStartCommands();
@@ -162,9 +162,9 @@ internal class HeadlessGameController : HostGameController
             null, null, null, null, null);
         if (_spawnPoint == null)
         {
-            // A missing spawn point is not fatal for a dedicated host: it has
-            // no local player to place, and the spawn point is only used for
-            // the native spawn system and the first player's camera anchor.
+            // 缺失出生点对专用主机并不致命：它没有
+            // 需要放置的本地玩家，而且出生点只用于
+            // 原生生成系统和第一位玩家的摄像机锚点。
             Logger.LogWarning($"[Headless] No player spawn point was available for side {side} on {Location?.Id}");
             InfiltrationPoint = "MissingInfiltration";
             return;

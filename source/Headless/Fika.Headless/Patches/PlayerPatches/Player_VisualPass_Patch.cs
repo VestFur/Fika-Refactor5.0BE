@@ -6,7 +6,7 @@ using UnityEngine;
 namespace Fika.Headless.Patches.PlayerPatches
 {
     /// <summary>
-    /// This patch aims to decrease the amount of CPU cycles spent updating data the headless does not see
+    /// 本补丁旨在减少用于更新 headless 看不到的数据所消耗的 CPU 周期数
     /// </summary>
     public class Player_VisualPass_Patch : ModulePatch
     {

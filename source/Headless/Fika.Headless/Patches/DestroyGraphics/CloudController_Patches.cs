@@ -4,8 +4,8 @@ using System.Reflection;
 
 namespace Fika.Headless.Patches.DestroyGraphics;
 
-// Keep CloudController alive: WeatherController.ControlClouds still uses it on
-// outdoor maps, even when the Headless host does not render the sky.
+// 保留 CloudController：即使在 Headless 主机不渲染天空的情况下，
+// WeatherController.ControlClouds 在室外地图上仍会使用它。
 public class CloudController_UpdateAmbient_Patch : ModulePatch
 {
     protected override MethodBase GetTargetMethod()

@@ -1,4 +1,4 @@
-﻿using Comfort.Common;
+﻿﻿using Comfort.Common;
 using EFT;
 using EFT.Airdrop;
 using SPTushonka.Reflection.Patching;
@@ -7,7 +7,7 @@ using System.Reflection;
 namespace Fika.Headless.Patches.Airdrop;
 
 /// <summary>
-/// Prevents a nullref on headless due to having no player
+/// 防止无头端因没有玩家而出现空引用
 /// </summary>
 public class ServerAirdropManager_FlareSuccessEventHandler_Patch : ModulePatch
 {

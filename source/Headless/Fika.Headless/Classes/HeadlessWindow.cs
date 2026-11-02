@@ -12,29 +12,29 @@ using BepInEx.Logging;
 namespace Fika.Headless.Classes;
 
 /// <summary>
-/// Brings the dedicated host's own game window up minimised.
+/// 以最小化方式启动专用主机自己的游戏窗口。
 /// <para>
-/// The decision lives in the server generated <c>HeadlessConfig.json</c> of the
-/// selected profile (<c>StartMinimized</c>), which is the same file the
-/// generated <c>StartHeadless.cmd</c> is rendered from - so the launcher and the
-/// game agree on one value. A dedicated host is never watched, so the documented
-/// default is <c>true</c>: an absent file, an absent property or an unreadable
-/// file all start the host minimised. Only an explicit <c>false</c> restores the
-/// window.
+/// 这个决定存在于服务器为所选 profile 生成的 <c>HeadlessConfig.json</c> 中，
+/// 也就是 <c>StartMinimized</c>，它与生成的
+/// <c>StartHeadless.cmd</c> 来自同一个文件 —— 因此启动器与
+/// 游戏对同一个值保持一致。专用主机从不被人观看，所以文档化的
+/// 默认值是 <c>true</c>：文件缺失、属性缺失或文件不可读
+/// 都会让主机以最小化方式启动。只有显式的 <c>false</c> 才恢复
+/// 窗口。
 /// </para>
 /// <para>
-/// Both halves are deliberately independent: <c>start /min</c> in the launcher
-/// covers a host that is started from the .cmd, and the Win32 call below covers
-/// every other way of starting one (shortcut, SPT launcher, another script). It
-/// is Windows only, guarded and logged, and can never fail the plugin load.
+/// 两半是刻意独立的：启动器中的 <c>start /min</c>
+/// 覆盖从 .cmd 启动的主机，而下面的 Win32 调用覆盖
+/// 其他每一种启动方式（快捷方式、SPT 启动器、另一个脚本）。
+/// 它仅限 Windows，带守卫且有日志，且绝不能让插件加载失败。
 /// </para>
 /// </summary>
 internal static class HeadlessWindow
 {
-    /// <summary>Win32 <c>SW_MINIMIZE</c>.</summary>
+    /// <summary>Win32 <c>SW_MINIMIZE</c>。</summary>
     private const int SwMinimize = 6;
 
-    /// <summary>Win32 <c>SW_HIDE</c>.</summary>
+    /// <summary>Win32 <c>SW_HIDE</c>。</summary>
     private const int SwHide = 0;
 
     /// <summary>
@@ -44,18 +44,18 @@ internal static class HeadlessWindow
     /// </summary>
     internal static bool HideInsteadOfMinimize = true;
 
-    /// <summary>Unity's player window class, preferred when several windows qualify.</summary>
+    /// <summary>Unity 的播放器窗口类，有多个窗口符合条件时优先使用。</summary>
     private const string UnityWindowClass = "UnityWndClass";
 
-    /// <summary>How often the window is looked for before giving up. One attempt per second.</summary>
+    /// <summary>放弃之前查找窗口的次数。每秒尝试一次。</summary>
     private const int MaxAttempts = 15;
 
     /// <summary>
-    /// HeadlessConfig schema that first carried a meaningful <c>StartMinimized</c>.
-    /// Must match <c>HeadlessLaunchSettings.CurrentSettingsVersion</c> in the server:
-    /// server builds before it wrote <c>StartMinimized: false</c> unconditionally, so
-    /// their file cannot be told apart from a deliberate choice and is treated as if
-    /// the property were absent.
+    /// 第一个带有有意义的 <c>StartMinimized</c> 的 HeadlessConfig schema。
+    /// 必须与服务器中的 <c>HeadlessLaunchSettings.CurrentSettingsVersion</c> 一致：
+    /// 早于它的服务器构建会无条件写入 <c>StartMinimized: false</c>，所以
+    /// 它们的文件无法与一次刻意的选择区分开，会被当作
+    /// 该属性不存在来处理。
     /// </summary>
     private const int SettingsVersionThatCarriesTheWindowState = 2;
 
@@ -69,8 +69,8 @@ internal static class HeadlessWindow
     private static readonly StringBuilder _className = new(256);
 
     /// <summary>
-    /// Reads the profile's launch settings, logs the decision once, and starts
-    /// the window minimisation when it says so. Safe to call more than once.
+    /// 读取该 profile 的启动设置，把决定记录一次，并在它要求时
+    /// 开始窗口最小化。可以安全地多次调用。
     /// </summary>
     internal static void ApplyStartMinimized(ManualLogSource log)
     {
@@ -105,8 +105,8 @@ internal static class HeadlessWindow
     }
 
     /// <summary>
-    /// The StartMinimized value together with where it came from, so the log
-    /// line explains the decision without anyone having to open the file.
+    /// StartMinimized 的取值连同它的来源，这样日志行
+    /// 就能解释这个决定，而无需任何人去打开那个文件。
     /// </summary>
     internal readonly struct Decision
     {
@@ -118,14 +118,14 @@ internal static class HeadlessWindow
 
         internal bool StartMinimized { get; }
 
-        /// <summary>Relative path of the file the value was read from, or why the default applies.</summary>
+        /// <summary>读取该值的文件的相对路径，或默认值适用的原因。</summary>
         internal string Source { get; }
     }
 
     /// <summary>
-    /// Resolves the setting for the profile this process was started for.
-    /// Everything is looked up relative to the current directory and the folder
-    /// holding the executable; no install path is stored anywhere.
+    /// 为本进程所启动的那个 profile 解析该设置。
+    /// 一切查找都相对于当前目录和存放可执行文件的文件夹
+    /// 进行；任何地方都不存储安装路径。
     /// </summary>
     internal static Decision ReadLaunchSettings()
     {
@@ -163,9 +163,9 @@ internal static class HeadlessWindow
                     return new Decision(element.GetBoolean(), candidate.Display);
                 }
 
-                // The file exists but carries no usable value: the documented
-                // default is "minimised", so an older file cannot silently bring
-                // the window back.
+                // 文件存在但没有可用的值：文档化的默认值是
+                // 「最小化」，因此较旧的文件无法悄悄把
+                // 窗口带回来。
                 return new Decision(true, carriesTheWindowState
                     ? candidate.Display + " (no StartMinimized value, using the default)"
                     : candidate.Display + $" (SettingsVersion {version}, written before the window state was consumed, using the default)");
@@ -182,7 +182,7 @@ internal static class HeadlessWindow
         return new Decision(true, $"default (no HeadlessConfig.json for profile {profileId})");
     }
 
-    /// <summary>The launcher's <c>-token=PROFILE_ID</c>, which names the profile folder.</summary>
+    /// <summary>启动器传入的 <c>-token=PROFILE_ID</c>，它指定 profile 文件夹。</summary>
     private static string ProfileIdFromCommandLine()
     {
         foreach (var argument in Environment.GetCommandLineArgs() ?? [])
@@ -209,8 +209,8 @@ internal static class HeadlessWindow
     }
 
     /// <summary>
-    /// The known locations of the server's per-profile scripts folder, relative
-    /// to every folder a headless host can be started from.
+    /// 服务器按 profile 划分的脚本文件夹的已知位置，相对于
+    /// 无头主机可能从其启动的每一个文件夹。
     /// </summary>
     private static IEnumerable<Candidate> CandidateConfigFiles(string profileId)
     {
@@ -233,8 +233,8 @@ internal static class HeadlessWindow
     }
 
     /// <summary>
-    /// The working directory (the launcher starts the game in its own folder)
-    /// and the folder holding the executable, each used once.
+    /// 工作目录（启动器在它自己的文件夹里启动游戏）
+    /// 与存放可执行文件的文件夹，各使用一次。
     /// </summary>
     private static IEnumerable<string> SearchRoots()
     {
@@ -327,7 +327,7 @@ internal static class HeadlessWindow
             return;
         }
 
-        // ShowWindow reports the *previous* visibility, so only IsIconic decides.
+        // ShowWindow 报告的是*先前*的可见性，所以只有 IsIconic 能做判断。
         ShowWindow(window, SwMinimize);
 
         if (IsIconic(window))
@@ -341,16 +341,16 @@ internal static class HeadlessWindow
     }
 
     /// <summary>
-    /// The process's own top-level window. <see cref="Process.MainWindowHandle"/>
-    /// is tried first; the enumeration is the fallback for the first seconds of
-    /// startup, while that property can still report no window.
+    /// 本进程自己的顶层窗口。<see cref="Process.MainWindowHandle"/>
+    /// 会先被尝试；枚举是启动最初几秒的回退手段，
+    /// 那时该属性仍可能报告没有窗口。
     /// </summary>
     private static IntPtr FindGameWindow()
     {
         try
         {
-            // A fresh Process object is required: MainWindowHandle is cached
-            // after its first read.
+            // 必须使用新的 Process 对象：MainWindowHandle 在首次读取之后
+            // 会被缓存。
             using var process = Process.GetCurrentProcess();
             var handle = process.MainWindowHandle;
             if (handle != IntPtr.Zero)
@@ -360,7 +360,7 @@ internal static class HeadlessWindow
         }
         catch (Exception)
         {
-            // Fall through to the enumeration.
+            // 落到枚举路径。
         }
 
         _processId = (uint)Process.GetCurrentProcess().Id;

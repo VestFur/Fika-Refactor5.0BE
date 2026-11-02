@@ -5,7 +5,7 @@ using System.Reflection;
 namespace Fika.Headless.Patches;
 
 /// <summary>
-/// Attempts to fix a nullref due to renders being disabled
+/// 尝试修复因渲染被禁用而导致的空引用异常
 /// </summary>
 public class WindowBreaker_UpdateToFalling_Transpiler : ModulePatch
 {

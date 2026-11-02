@@ -1,9 +1,9 @@
-﻿using System;
+﻿﻿using System;
 
 namespace Fika.Headless.Classes;
 
 /// <summary>
-/// Used to sync transforms every frame, as otherwise triggers don't work for e.g. <see cref="EFT.Interactive.TransitPoint"/>s
+/// 用于每帧同步变换，否则例如 <see cref="EFT.Interactive.TransitPoint"/> 之类的触发器就无法工作
 /// </summary>
 public class HeadlessRaidController : MonoBehaviour
 {

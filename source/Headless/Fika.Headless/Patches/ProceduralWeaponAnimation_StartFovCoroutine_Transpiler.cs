@@ -1,4 +1,4 @@
-﻿using EFT;
+﻿﻿using EFT;
 using EFT.Animations;
 using SPTushonka.Reflection.Patching;
 using HarmonyLib;
@@ -9,7 +9,7 @@ using System.Reflection.Emit;
 namespace Fika.Headless.Patches;
 
 /// <summary>
-/// This patch aims to decrease the amount of CPU cycles spent updating data the headless does not see
+/// 本补丁旨在减少用于更新无头端看不到的数据所消耗的 CPU 周期
 /// </summary>
 public class ProceduralWeaponAnimation_StartFovCoroutine_Transpiler : ModulePatch
 {

@@ -1,4 +1,4 @@
-﻿using EFT;
+﻿﻿using EFT;
 using EFT.Hideout;
 using SPTushonka.Reflection.Patching;
 using System.Reflection;
@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 namespace Fika.Headless.Patches.TarkovAppPatches;
 
 /// <summary>
-/// Stops the headless from loading the hideout
+/// 阻止无头端加载藏身处
 /// </summary>
 public class HideoutRepresentation_Init_Patch : ModulePatch
 {

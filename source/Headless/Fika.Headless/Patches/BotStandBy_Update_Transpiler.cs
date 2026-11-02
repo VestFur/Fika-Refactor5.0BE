@@ -1,4 +1,4 @@
-﻿using HarmonyLib;
+﻿﻿using HarmonyLib;
 using SPTushonka.Reflection.Patching;
 using System.Collections.Generic;
 using System.Reflection;
@@ -7,7 +7,7 @@ using System.Reflection.Emit;
 namespace Fika.Headless.Patches;
 
 /// <summary>
-/// The purpose of this patch is to disable bot sleeping on the headless host
+/// 本补丁的目的是在无头主机上禁用机器人休眠
 /// </summary>
 [IgnoreAutoPatch]
 public class BotStandBy_Update_Transpiler : ModulePatch

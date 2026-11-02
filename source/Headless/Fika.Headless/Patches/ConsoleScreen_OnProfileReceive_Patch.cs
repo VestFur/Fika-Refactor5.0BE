@@ -17,9 +17,9 @@ public class ConsoleScreen_OnProfileReceive_Patch : ModulePatch
     }
 
     /// <summary>
-    /// Observer, not a gate: it only reports which profile the client logged in
-    /// with. A normal playing profile leaves the game running untouched - no
-    /// critical error screen, no <c>Application.Quit</c>, no graphics work.
+    /// 它是观察者，不是门禁：只报告客户端登录时用的是
+    /// 哪个 profile。正常游玩的 profile 会让游戏原样继续运行 —— 没有
+    /// 严重错误界面，没有 <c>Application.Quit</c>，也没有图形相关的工作。
     /// </summary>
     [PatchPostfix]
     public static void Prefix(Profile profile)

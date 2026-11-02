@@ -8,16 +8,16 @@ using System.Reflection;
 namespace Fika.Headless.Classes;
 
 /// <summary>
-/// The single place that knows which patches may be installed before the mode
-/// is known and which ones carry the dedicated-host payload.
+/// 唯一知道在模式确定之前可以安装哪些补丁、以及哪些补丁带有专用主机
+/// 载荷的地方。
 /// </summary>
 internal static class HeadlessPatchCatalog
 {
     /// <summary>
-    /// Installed at plugin load, in every mode except <c>Disabled</c>. They
-    /// only inspect the selected profile and log; they never touch a renderer,
-    /// a material, a camera or any other game object, and they return without
-    /// doing anything when the profile is not a headless one.
+    /// 在插件加载时安装，除 <c>Disabled</c> 之外的所有模式都会安装。它们
+    /// 只检查选中的档案并记录日志；从不接触渲染器、
+    /// 材质、摄像机或任何其他游戏对象，当档案不是 headless 档案时
+    /// 它们会直接返回、不做任何事。
     /// </summary>
     internal static readonly Type[] ObserverPatches =
     [
@@ -26,11 +26,11 @@ internal static class HeadlessPatchCatalog
     ];
 
     /// <summary>
-    /// Namespaces whose patches remove renderers, materials, textures, lights,
-    /// post effects or cameras, override graphics capabilities, or replace the
-    /// local raid factory. Loading any of them into a playing client is what
-    /// destroys its renderer, so they are only ever installed once the process
-    /// is a confirmed dedicated host.
+    /// 其补丁会移除渲染器、材质、纹理、灯光、后期效果或摄像机，
+    /// 覆盖图形能力，或替换本地战局工厂的命名空间。
+    /// 把它们中的任何一个加载进正在游玩的客户端，
+    /// 就会破坏其渲染器，因此只有在进程被确认为专用主机之后
+    /// 才会安装它们。
     /// </summary>
     internal static readonly string[] GraphicsNamespaces =
     [
@@ -57,10 +57,10 @@ internal static class HeadlessPatchCatalog
     }
 
     /// <summary>
-    /// Every patch that must not exist in a playing install. Mirrors the
-    /// client plugin's auto-patch discovery, minus the observers (already
-    /// installed) and minus the graphics namespaces when the user disabled
-    /// renderer destruction in the config.
+    /// 所有在游玩安装中不得存在的补丁。与客户端插件的
+    /// 自动补丁发现保持一致，但减去观察者（已安装），
+    /// 以及在用户于配置中禁用渲染器破坏时减去
+    /// 图形相关命名空间。
     /// </summary>
     internal static List<Type> GetDeferredPatches(Assembly assembly, bool includeGraphics) =>
         assembly.GetTypes()

@@ -58,11 +58,11 @@ namespace Fika.Headless.AssetNuker
         }
 
         /// <summary>
-        /// This tool permanently replaces the textures of whatever install it is
-        /// run in. Fika.Headless.dll may legitimately sit in a normal playing
-        /// install, so its presence is no longer proof of a dedicated host: the
-        /// run has to be confirmed explicitly, either with <c>--yes</c> (for a
-        /// scripted headless setup) or by typing the confirmation word.
+        /// 本工具会永久替换它所在安装目录的贴图。
+        /// Fika.Headless.dll 也可能合法地存在于普通游玩安装中，
+        /// 因此它的存在不再是专用主机的证明：这次运行
+        /// 必须被显式确认，可以通过 <c>--yes</c>（用于
+        /// 脚本化的 headless 环境）或输入确认词。
         /// </summary>
         private static Task<bool> ConfirmDestructiveRun(string[] args)
         {

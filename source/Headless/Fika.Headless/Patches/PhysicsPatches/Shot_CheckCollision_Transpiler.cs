@@ -1,4 +1,4 @@
-﻿using EFT;
+﻿﻿using EFT;
 using EFT.Ballistics;
 using EFT.Vehicle;
 using HarmonyLib;
@@ -10,7 +10,7 @@ using System.Reflection.Emit;
 namespace Fika.Headless.Patches.PhysicsPatches;
 
 /// <summary>
-/// This patch syncs all transforms before a bullet checks if it hits
+/// 本补丁在子弹检测是否命中之前同步所有变换
 /// </summary>
 internal class Shot_CheckCollision_Transpiler : ModulePatch
 {

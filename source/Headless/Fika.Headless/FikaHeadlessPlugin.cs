@@ -47,8 +47,8 @@ namespace Fika.Headless;
 [BepInDependency("com.sptushonka.custom", BepInDependency.DependencyFlags.HardDependency)]
 public class FikaHeadlessPlugin : BasePlugin
 {
-    // 1.5.3: the plugin is mode-gated. It only arms the dedicated-host payload
-    // for a confirmed host; in normal play it installs nothing at all.
+    // 1.5.3：插件受模式门控。它只为已确认的主机武装专用主机载荷；
+    // 在正常游玩时则完全不安装任何东西。
     public const string HeadlessVersion = "1.5.5";
 
     public static FikaHeadlessPlugin Instance { get; private set; }
@@ -56,13 +56,13 @@ public class FikaHeadlessPlugin : BasePlugin
     public static bool PlayerDisposeError;
 
     /// <summary>
-    /// 1 once the dedicated-host payload (injected native types, resident
-    /// ticker, ~100 patches, the headless raid factory) is installed.
-    /// Everything destructive checks this first: while it is 0 this process is
-    /// a normal playing install and must stay untouched.
+    /// 专用主机载荷（注入的原生类型、常驻
+    /// ticker、约 100 个补丁、无头战局工厂）安装完成后为 1。
+    /// 所有具有破坏性的操作都先检查它：当它为 0 时，本进程是一个
+    /// 正常游玩的安装，必须保持不被触碰。
     /// </summary>
     private static int _armed;
-    /// <summary>1 once the decision is "normal play": the payload can never be armed in this process.</summary>
+    /// <summary>一旦判定为"正常游玩"即为 1：此后本进程永远无法再武装该载荷。</summary>
     private static int _inert;
     private static string _armedReason;
 
@@ -89,7 +89,7 @@ public class FikaHeadlessPlugin : BasePlugin
     private int _raidGeneration;
     private string _raidReservationToken;
     private int _raidSocketGeneration;
-    /// <summary>Patches that were armed, so a forced mode can be undone again.</summary>
+    /// <summary>已武装的补丁，以便强制模式可以被回退。</summary>
     private readonly List<Type> _installedPatchTypes = [];
 
     public static ConfigEntry<string> RunMode { get; private set; }
@@ -118,15 +118,15 @@ public class FikaHeadlessPlugin : BasePlugin
 #endif
 
     /// <summary>
-    /// BepInEx loads plugins before the game knows which profile it will use,
-    /// so nothing that can damage a graphical install may happen here.
+    /// BepInEx 在游戏知道将使用哪个 profile 之前就加载插件，
+    /// 因此这里不能做任何可能损坏图形化安装的事情。
     /// <para>
-    /// Phase 1 (this method): bind the config, log, and install the two profile
-    /// observers. Phase 2 (<see cref="ArmHeadlessHost"/>) installs the payload
-    /// only for a confirmed dedicated host - either because the process itself
-    /// says so (config <c>Mode=Headless</c>, <c>-headless</c>, or the display
-    /// less <c>-batchmode -nographics</c> combination), or because the selected
-    /// profile is the server-generated <c>headless_</c> one.
+    /// 阶段 1（本方法）：绑定配置、日志，并安装两个 profile
+    /// 观察器。阶段 2（<see cref="ArmHeadlessHost"/>）只为已确认的专用主机
+    /// 安装载荷——要么因为进程自身就这样声明
+    /// （配置 <c>Mode=Headless</c>、<c>-headless</c>，或没有显示环境的
+    /// <c>-batchmode -nographics</c> 组合），要么因为所选的
+    /// profile 是服务器生成的 <c>headless_</c> 那个。
     /// </para>
     /// </summary>
     public override void Load()
@@ -150,9 +150,9 @@ public class FikaHeadlessPlugin : BasePlugin
             Log.LogWarning("You are not running an officially supported operating system by Fika. Minimal support will be given.");
         }
 
-        // Nothing may be installed before this point: no native type injection,
-        // no ticker, no unpatching of other plugins, no HTTP request, no log
-        // cleanup. All of that belongs to the dedicated-host payload.
+        // 在此处之前不得安装任何东西：不注入原生类型、
+        // 不启动 ticker、不复原其他插件的补丁、不发 HTTP 请求、不做日志
+        // 清理。这些全都属于专用主机载荷。
         var configuredMode = ParseRunMode();
 
         if (configuredMode == HeadlessRunMode.Disabled)
@@ -185,8 +185,8 @@ public class FikaHeadlessPlugin : BasePlugin
     }
 
     /// <summary>
-    /// Reads <c>Mode</c> from the config file. An unknown value falls back to
-    /// <see cref="HeadlessRunMode.Auto"/>, which is the only safe choice.
+    /// 从配置文件读取 <c>Mode</c>。未知值会回退到
+    /// <see cref="HeadlessRunMode.Auto"/>，那是唯一安全的选择。
     /// </summary>
     private static HeadlessRunMode ParseRunMode()
     {
@@ -201,8 +201,8 @@ public class FikaHeadlessPlugin : BasePlugin
     }
 
     /// <summary>
-    /// The only patches that exist before the mode is known. They observe the
-    /// selected profile and log; in normal play they return immediately.
+    /// 模式未知之前唯一存在的一批补丁。它们观察所选的
+    /// profile 并写日志；在正常游玩时它们会立即返回。
     /// </summary>
     private void InstallObserverPatches()
     {
@@ -225,16 +225,16 @@ public class FikaHeadlessPlugin : BasePlugin
     }
 
     /// <summary>
-    /// Installs the dedicated-host payload. Reached only when the process is a
-    /// confirmed host: at load from the config or the command line, otherwise
-    /// from the profile observer once the selected profile turned out to be
-    /// the server-generated <c>headless_</c> one.
+    /// 安装专用主机载荷。只有在进程是已确认的主机时才会走到：
+    /// 加载时依据配置或命令行，否则
+    /// 在所选 profile 被发现是服务器生成的
+    /// <c>headless_</c> 那个之后，由 profile 观察器调用。
     /// </summary>
-    /// <param name="reason">Decision text that is logged verbatim behind "[Headless] Mode: ".</param>
+    /// <param name="reason">判定文本，会逐字记录在 "[Headless] Mode: " 之后。</param>
     /// <param name="duringLoad">
-    /// True when the payload is armed while BepInEx is still loading plugins
-    /// (the settings seam has not run yet). False for the profile gate, which
-    /// is too late for <c>ClientApplicationInitOperation.LoadUserSettings</c>.
+    /// 当载荷在 BepInEx 仍在加载插件时就被武装则为 true
+    /// （此时设置接缝尚未运行）。对 profile 关卡则为 false，因为那时
+    /// 对 <c>ClientApplicationInitOperation.LoadUserSettings</c> 来说已经太晚。
     /// </param>
     private void ArmHeadlessHost(string reason, bool duringLoad)
     {
@@ -266,7 +266,7 @@ public class FikaHeadlessPlugin : BasePlugin
         Log.LogInfo($"[Headless] Mode: {reason}, arming {patches.Count} patches " +
             $"(destroyGraphics={ShouldDestroyGraphics.Value}, destroyRenderers={DestroyRenderersOnSceneLoad.Value})");
 
-        // Injected IL2CPP types first, exactly like the original load order.
+        // 先注入 IL2CPP 类型，与原始加载顺序完全一致。
         try
         {
             HeadlessNativeTypes.RegisterAll(assembly, Log);
@@ -276,7 +276,7 @@ public class FikaHeadlessPlugin : BasePlugin
             Log.LogError($"[Headless] Mode: registering the native types FAILED, this host cannot create raids: {exception}");
         }
 
-        // Resident ticker: RAM/GC maintenance, host only.
+        // 常驻 ticker：内存/GC 维护，仅主机。
         try
         {
             AddComponent<HeadlessTicker>();
@@ -286,8 +286,8 @@ public class FikaHeadlessPlugin : BasePlugin
             Log.LogError($"[Headless] Mode: adding the headless ticker FAILED: {exception}");
         }
 
-        // Client plugin patches the host does not need. Never done in normal
-        // play: Fika.Core needs them for cooperative play.
+        // 主机不需要的客户端插件补丁。在正常游玩中绝不执行：
+        // Fika.Core 需要它们来进行合作游玩。
         try
         {
             DisableFikaCorePatches();
@@ -306,12 +306,12 @@ public class FikaHeadlessPlugin : BasePlugin
             Log.LogError($"[Headless] Mode: disabling the SPT patch FAILED: {exception}");
         }
 
-        // From here on Fika.Core takes its headless code paths.
+        // 从这里开始 Fika.Core 会走它的无头代码路径。
         FikaBackendUtils.IsHeadless = true;
         Log.LogInfo("[Headless] Plugin start: marked this process as a dedicated host (FikaBackendUtils.IsHeadless=true)");
 
-        // The deferred patches: manual per-class installation, so an unarmed
-        // plugin has installed none of them.
+        // 延后安装的补丁：按类手动安装，这样一个未武装的
+        // 插件一个都不会装上。
         Fika.Core.PatchManager manager = new(this, true);
         var installed = 0;
         List<string> failed = [];
@@ -346,7 +346,7 @@ public class FikaHeadlessPlugin : BasePlugin
             }
         }
 
-        // Host-only maintenance. None of this may run in a playing install.
+        // 仅主机的维护。这些在游玩用的安装里都不得运行。
         try
         {
             GetHeadlessRestartAfterRaidAmount();
@@ -358,17 +358,17 @@ public class FikaHeadlessPlugin : BasePlugin
 
         CleanupLogFiles();
 
-        // A profile-armed host missed ClientApplicationInitOperation.LoadUserSettings,
-        // which is the seam the settings patch replaces. Apply the same headless
-        // settings now that the mode is known.
+        // 由 profile 武装的主机错过了 ClientApplicationInitOperation.LoadUserSettings，
+        // 而那是设置补丁所替换的接缝。既然模式已确定，
+        // 现在就套用同样的无头设置。
         if (!duringLoad)
         {
             FikaHeadlessSettingsManager.ApplyDeferred();
         }
 
-        // Startup diagnostics for the dedicated host. Both are guarded: a host
-        // that cannot describe its assemblies or its window must still be able
-        // to host, so neither may throw out of the arming path.
+        // 专用主机的启动诊断。两者都加了保护：一个无法描述自己的
+        // 程序集或窗口的主机，仍然必须能够
+        // 承担主机职责，因此两者都不得从武装路径中抛出异常。
         try
         {
             HeadlessAssemblies.Report(Log);
@@ -389,17 +389,17 @@ public class FikaHeadlessPlugin : BasePlugin
     }
 
     /// <summary>
-    /// Removes every headless patch and clears the armed flag. Only used when
-    /// the mode was forced by the user but the selected profile turned out to
-    /// be a normal playing profile.
+    /// 移除所有无头补丁并清除武装标志。仅在用户强制了模式、但所选
+    /// profile 结果是普通游玩 profile 时
+    /// 才使用。
     /// </summary>
     private void DisarmHeadlessPatches()
     {
         foreach (var type in _installedPatchTypes)
         {
-            // The SPT loader registers every ModulePatch under its type name,
-            // which is what the client plugin uses to unpatch its own patches.
-            // Try the full name as well in case that naming ever changes.
+            // SPT 加载器会以类型名注册每个 ModulePatch，
+            // 客户端插件正是靠它来取消自己补丁的。
+            // 也尝试完整名称，以防这种命名方式将来发生变化。
             foreach (var id in new[] { type.Name, type.FullName })
             {
                 try
@@ -426,8 +426,8 @@ public class FikaHeadlessPlugin : BasePlugin
     }
 
     /// <summary>
-    /// True when <paramref name="type"/> still owns a Harmony prefix or postfix
-    /// on its target, i.e. the forced mode could not be undone cleanly.
+    /// 当 <paramref name="type"/> 仍在其目标上持有 Harmony prefix 或 postfix
+    /// 时为 true，也就是强制模式未能干净地回退。
     /// </summary>
     private static bool IsStillPatched(Type type)
     {
@@ -451,16 +451,16 @@ public class FikaHeadlessPlugin : BasePlugin
         }
         catch
         {
-            // Reporting is best effort; never fail the running game for it.
+            // 上报尽力而为；绝不因此让正在运行的游戏失败。
             return false;
         }
     }
 
     /// <summary>
-    /// The selected profile is a normal playing profile, so this install is not
-    /// a dedicated host. Logged once; the plugin stays inert for the rest of
-    /// the process and the game is never quit or touched. Called from the
-    /// profile observers only.
+    /// 所选的 profile 是普通游玩 profile，因此本次安装不是
+    /// 专用主机。只记录一次；插件在此后整个进程期间保持惰性，
+    /// 游戏永远不会被退出或触碰。只由 profile
+    /// 观察器调用。
     /// </summary>
     internal void NoteNormalPlay(string source, string nickname)
     {
@@ -491,10 +491,10 @@ public class FikaHeadlessPlugin : BasePlugin
         if (!string.IsNullOrEmpty(title))
         {
             Log.LogInfo($"Using custom window title: {title}");
-            // Batchmode/-nographics processes may not have a console handle.
-            // Console.Title throws IOException in that environment; changing
-            // the optional title must never prevent the headless plugin from
-            // loading its patches and websocket.
+            // Batchmode/-nographics 进程可能没有控制台句柄。
+            // 那种环境下 Console.Title 会抛 IOException；修改可选标题
+            // 绝不能妨碍无头插件加载
+            // 它的补丁与 websocket。
             try
             {
                 Console.Title = $"Fika Headless {HeadlessVersion} - {title}";
@@ -508,9 +508,9 @@ public class FikaHeadlessPlugin : BasePlugin
 
     internal void Tick()
     {
-        // The ticker only exists on an armed host, but keep the guard: the
-        // memory management below unloads assets and must never run in a
-        // playing install.
+        // ticker 只存在于已武装的主机上，但保留这个保护：下面的
+        // 内存管理会卸载资源，绝不能在游玩用的
+        // 安装里运行。
         if (!IsArmed)
         {
             return;
@@ -540,7 +540,7 @@ public class FikaHeadlessPlugin : BasePlugin
     }
 
     /// <summary>
-    /// Disables patches from Fika.Core that the headless does not need
+    /// 禁用无头模式不需要的那些 Fika.Core 补丁
     /// </summary>
     private static void DisableFikaCorePatches()
     {
@@ -560,7 +560,7 @@ public class FikaHeadlessPlugin : BasePlugin
 #endif
 
     /// <summary>
-    /// Cleans up all old log files
+    /// 清理所有旧日志文件
     /// </summary>
     private void CleanupLogFiles()
     {
@@ -579,7 +579,7 @@ public class FikaHeadlessPlugin : BasePlugin
 
             var directoriesToDelete = logsDir.EnumerateDirectories()
                                          .OrderByDescending(d => d.LastWriteTime)
-                                         .Skip(2); // keep the latest 3 folders, 1 is added which leaves 3
+                                         .Skip(2); // 保留最新的 3 个文件夹，额外计入 1 个，因此剩下 3 个
 
             foreach (var dir in directoriesToDelete)
             {
@@ -609,7 +609,7 @@ public class FikaHeadlessPlugin : BasePlugin
     }
 
     /// <summary>
-    /// Initializes the <see cref="ConfigFile"/> settings
+    /// 初始化 <see cref="ConfigFile"/> 设置
     /// </summary>
     private void SetupConfig()
     {
@@ -642,7 +642,7 @@ public class FikaHeadlessPlugin : BasePlugin
     }
 
     /// <summary>
-    /// When a request to start a raid is received
+    /// 收到启动战局请求时
     /// </summary>
     /// <param name="request"></param>
     /// <exception cref="NullReferenceException"></exception>
@@ -651,7 +651,7 @@ public class FikaHeadlessPlugin : BasePlugin
     {
         try
         {
-            // StartHeadlessRequest is a value type: never use the null-conditional operator on it.
+            // StartHeadlessRequest 是值类型：绝不要对它使用 null 条件运算符。
             Log.LogInfo($"[Headless] Start request: location={request.LocationId}, side={request.Side}, " +
                 $"time={request.Time}, canHost={CanHost}, reservationTokenLength={request.ReservationToken?.Length ?? 0}");
 
@@ -674,9 +674,9 @@ public class FikaHeadlessPlugin : BasePlugin
                 return;
             }
 
-            // TarkovApplication.Session is an IEftSession IL2CPP proxy. The
-            // concrete ClientBackendSession owns the loaded location table;
-            // accessing it through the interface proxy can return null.
+            // TarkovApplication.Session 是一个 IEftSession IL2CPP 代理。
+            // 具体的 ClientBackendSession 才持有已加载的地点表；
+            // 通过接口代理访问它可能返回 null。
             var backendSession = session.TryCast<ClientBackendSession>();
             var locations = backendSession?.LocationSettings?.locations;
             Log.LogInfo($"Headless start state: location={request.LocationId}, backendSession={(backendSession == null ? "null" : "ready")}, locations={(locations == null ? "null" : "ready")}");
@@ -706,10 +706,10 @@ public class FikaHeadlessPlugin : BasePlugin
                     if (task.IsFaulted)
                     {
                         Log.LogError($"Headless start task failed: {task.Exception?.GetBaseException()}");
-                        // Preflight exceptions occur before BeginFikaStartRaid's
-                        // match-creation catch. Abandon that reservation by
-                        // replacing its socket; the server ends any partial
-                        // room before it offers this host again.
+                        // 预检异常发生在 BeginFikaStartRaid 的
+                        // 建房 catch 之前。通过替换它的 socket 来放弃
+                        // 那次预留；服务器会在再次向本主机发起邀约之前
+                        // 结束任何残缺的房间。
                         MainThreadDispatcher.Post(() =>
                         {
                             if (raidGeneration != Volatile.Read(ref _raidGeneration) || CanHost) return;
@@ -726,7 +726,7 @@ public class FikaHeadlessPlugin : BasePlugin
     }
 
     /// <summary>
-    /// Verifies that this headless client is valid for hosting
+    /// 校验该无头客户端是否有资格承担主机
     /// </summary>
     /// <returns></returns>
     public async Task RunPluginValidation()
@@ -743,8 +743,8 @@ public class FikaHeadlessPlugin : BasePlugin
         {
             await Task.Delay(100);
             waitedMilliseconds += 100;
-            // Never wait silently: a stalled locale/configuration load is the
-            // first thing to rule out when a headless never becomes offerable.
+            // 绝不静默等待：当无头实例迟迟无法被邀约时，卡住的
+            // 语言/配置加载是第一个要排除的原因。
             if (waitedMilliseconds % 10000 == 0)
             {
                 Log.LogError($"[Headless] Validation: Fika locales are still not loaded after {waitedMilliseconds / 1000}s " +
@@ -772,13 +772,13 @@ public class FikaHeadlessPlugin : BasePlugin
             return;
         }
 
-        // Temporarily disabled
+        // 暂时禁用
         //await GetQuestTemplates((Class303)tarkovApplication.Session);
 
-        // Character selection can submit in batchmode without advancing the
-        // main-menu data load. Fetch the native location table before making
-        // this host visible to requesters; otherwise their start notification
-        // arrives while ClientBackendSession.LocationSettings is still null.
+        // 角色选择在 batchmode 下可能已经提交，却没有推进
+        // 主菜单的数据加载。在让本主机对请求方可见之前，先取回原生地点表；
+        // 否则他们的启动通知会在
+        // ClientBackendSession.LocationSettings 仍为 null 时到达。
         Fika.Core.Main.Utils.MainThreadDispatcher.Post(() =>
             _ = CompleteHeadlessInitializationAsync(tarkovApplication));
         _hasVerified = true;
@@ -795,10 +795,10 @@ public class FikaHeadlessPlugin : BasePlugin
 
             if (session.Profile == null)
             {
-                // Profile construction initializes SkillManager from the data
-                // installed by GlobalsDataLoader.Apply. Loading only the
-                // GlobalConfiguration singleton leaves those dependencies
-                // absent in batchmode, where the normal menu load is skipped.
+                // profile 构建会用 GlobalsDataLoader.Apply 装进来的数据
+                // 初始化 SkillManager。只加载
+                // GlobalConfiguration 单例，会让这些依赖在 batchmode 下
+                // 缺失，因为那里会跳过正常的主菜单加载。
                 Log.LogInfo("[Headless] Session: loading global configuration data");
                 var globalsLoader = new TarkovApplication.GlobalsDataLoader();
                 await globalsLoader.Load(session).AsManaged();
@@ -809,38 +809,38 @@ public class FikaHeadlessPlugin : BasePlugin
                 Log.LogInfo($"[Headless] Session: profiles loaded (selected={(session.Profile == null ? "no" : "yes")}, count={backendSession.AllProfiles?.Length ?? 0})");
             }
 
-            // LocalGameMatching constructs an OfflineHealthController before
-            // the raid starts. Its regeneration path reads BonusController's
-            // singleton, normally installed during menu preparation.
+            // LocalGameMatching 会在战局开始前构造一个 OfflineHealthController。
+            // 它的再生路径会读 BonusController 的
+            // 单例，而那个单例通常在菜单准备阶段安装。
             if (!Singleton<BonusController>.Instantiated)
             {
                 Log.LogInfo("[Headless] Session: initializing the bonus controller");
                 tarkovApplication.InitBonusController();
             }
 
-            // Headless matching only needs the SocialNetwork instance. Its
-            // native Init currently throws inside SPT 5's batchmode social
-            // path, even with valid contacts and dialogs; the headless host
-            // never opens chat UI. Keep the native object for matchmaker.
+            // 无头匹配只需要 SocialNetwork 实例。它的
+            // 原生 Init 目前在 SPT 5 的 batchmode 社交路径里会抛异常，
+            // 即使联系人和对话框都有效；无头主机
+            // 从不打开聊天 UI。为匹配器保留这个原生对象。
             if (backendSession.SocialNetwork == null)
             {
                 backendSession._SocialNetwork_k__BackingField = new SocialNetwork();
                 Log.LogInfo("[Headless] Session: created a social network stub for matching");
             }
 
-            // MatchmakerOperation enables native notifications even in
-            // batchmode. Its controller constructor subscribes to this
-            // singleton before a raid can start; the skipped menu flow has
-            // not created it for a dedicated host.
+            // MatchmakerOperation 即使在 batchmode 下也会启用原生通知。
+            // 它的控制器构造函数会在战局开始前订阅这个
+            // 单例；而被跳过的主菜单流程并没有为专用主机
+            // 创建它。
             if (!Singleton<NotificationManager>.Instantiated)
             {
                 Singleton<NotificationManager>.Create(new NotificationManager());
                 Log.LogInfo("[Headless] Session: created the notification manager");
             }
 
-            // The batchmode profile path never creates the menu settings
-            // resolver, but LocalGameMatching sets its game state before
-            // showing the matching screen.
+            // batchmode 的 profile 路径从不创建菜单设置
+            // 解析器，但 LocalGameMatching 会在显示匹配界面之前
+            // 设置它的游戏状态。
             if (tarkovApplication._settingsScreenResolver == null)
             {
                 tarkovApplication._settingsScreenResolver = new SettingsScreenResolver(session);
@@ -869,9 +869,9 @@ public class FikaHeadlessPlugin : BasePlugin
 
     private void EnsureHeadlessMapLoadControllers(TarkovApplication tarkovApplication)
     {
-        // LoadMapAndData unloads both controllers before loading the scene.
-        // In batchmode, profile selection and menu setup can overlap the raid
-        // request, leaving either native controller absent at the call site.
+        // LoadMapAndData 会在加载场景前卸载这两个控制器。
+        // 在 batchmode 下，profile 选择与菜单设置可能与战局
+        // 请求重叠，导致调用处任一原生控制器缺失。
         if (tarkovApplication.NarrateControllerAccess == null)
         {
             tarkovApplication._NarrateControllerAccess_k__BackingField =
@@ -887,7 +887,7 @@ public class FikaHeadlessPlugin : BasePlugin
     }
 
     /// <summary>
-    /// Creates and connects the <see cref="HeadlessWebSocket"/>
+    /// 创建并连接 <see cref="HeadlessWebSocket"/>
     /// </summary>
     private void CreateHeadlessWebsocket()
     {
@@ -904,7 +904,7 @@ public class FikaHeadlessPlugin : BasePlugin
     }
 
     /// <summary>
-    /// Verifies that no invalid plugins are loaded
+    /// 校验没有加载无效插件
     /// </summary>
     private Task VerifyPlugins()
     {
@@ -963,16 +963,16 @@ public class FikaHeadlessPlugin : BasePlugin
         var selectedProfile = session.Profile;
         if (selectedProfile == null)
             throw new InvalidOperationException("Headless backend session has no selected profile");
-        // The 5.0 batchmode selection path skips TarkovApplication's normal
-        // profile-pref initialization. RaidSettings.OnlinePveRaid writes a
-        // per-profile preference during construction.
+        // 5.0 的 batchmode 选择路径会跳过 TarkovApplication 正常的
+        // profile-pref 初始化。RaidSettings.OnlinePveRaid 会在构造期间
+        // 写入一个按 profile 区分的偏好。
         if (string.IsNullOrEmpty(PrefsUtils._profileId))
             PrefsUtils.Init(selectedProfile.ProfileId);
         Log.LogInfo("Constructing Headless raid settings");
-        // The default constructor leaves the location table detached in the
-        // batchmode path. Matching reads RaidSettings._locationSettings when
-        // it calculates the selected location's group limits, so construct
-        // it with the loaded backend table as the game does for normal raids.
+        // 默认构造函数会让地点表在 batchmode 路径下处于未挂接状态。
+        // 匹配在计算所选地点的队伍上限时会读
+        // RaidSettings._locationSettings，因此要像游戏正常战局那样
+        // 用已加载的后端表来构造它。
         var locationSettings = session.TryCast<ClientBackendSession>()?.LocationSettings
             ?? throw new InvalidOperationException("Headless location settings are unavailable");
         RaidSettings raidSettings = new(request.Side, request.Time, ERaidMode.Local,
@@ -1001,7 +1001,7 @@ public class FikaHeadlessPlugin : BasePlugin
 
         if (FikaPlugin.Instance.Settings.ForceIP.Value != "")
         {
-            // We need to handle DNS entries as well
+            // 我们还需要一并处理 DNS 条目
             var ip = FikaPlugin.Instance.Settings.ForceIP.Value;
             try
             {
@@ -1037,18 +1037,18 @@ public class FikaHeadlessPlugin : BasePlugin
             }
         }
 
-        // Only the description of the settings is at risk here; the settings
-        // themselves reach the server through CreateMatch below. A log line must
-        // never decide whether this host can create the room.
+        // 这里只有设置的描述文字会受影响；设置本身会
+        // 通过下面的 CreateMatch 到达服务器。一行日志绝不能
+        // 决定这台主机能否创建房间。
         try
         {
             Log.LogInfo($"[Headless] Raid: starting with {DescribeRaidSettings(raidSettings)}");
         }
         catch (Exception exception)
         {
-            // A linkage failure against a shadowing assembly is raised in the
-            // *calling* frame, so DescribeRaidSettings cannot observe it itself.
-            // This frame can, and continues: the raid does not depend on it.
+            // 针对遮蔽程序集的链接失败会在*调用*帧中抛出，
+            // 因此 DescribeRaidSettings 自身观察不到它。
+            // 本帧可以捕获，并继续执行：战局并不依赖它。
             Log.LogError($"[Headless] Raid: the raid settings could not be described for the log line " +
                 $"({exception.GetType().Name}: {exception.Message}), continuing with the raid");
             HeadlessAssemblies.ReportIfShadowed(Log);
@@ -1127,18 +1127,18 @@ public class FikaHeadlessPlugin : BasePlugin
     }
 
     /// <summary>
-    /// Describes the raid settings for the "Raid: starting with" line through
-    /// the port's own JSON facility.
+    /// 通过本移植版自己的 JSON 设施，为 "Raid: starting with" 这一行
+    /// 描述战局设置。
     /// <para>
-    /// The previous <c>JsonConvert.SerializeObject(raidSettings)</c> bound to
-    /// <c>SerializeObject(Il2CppSystem.Object)</c> of the IL2CPP proxy. On an
-    /// install that also carries a managed Newtonsoft.Json.dll in
-    /// BepInEx/plugins that overload does not exist, and the resulting
-    /// MissingMethodException is raised while the calling method is compiled -
-    /// before its first statement runs. That is why the raid never started:
-    /// <see cref="BeginFikaStartRaid"/>'s own try/catch could never see it.
-    /// <see cref="FikaJson"/> routes native values through the game's own
-    /// JsonConvert via IL2CPP, which a managed assembly cannot shadow.
+    /// 之前的 <c>JsonConvert.SerializeObject(raidSettings)</c> 绑定到了
+    /// IL2CPP 代理的 <c>SerializeObject(Il2CppSystem.Object)</c>。在一个
+    /// BepInEx/plugins 里还带有托管 Newtonsoft.Json.dll 的
+    /// 安装上，那个重载并不存在，随之产生的
+    /// MissingMethodException 会在调用方法被编译时抛出——
+    /// 也就是在其第一条语句执行之前。这就是战局一直无法启动的原因：
+    /// <see cref="BeginFikaStartRaid"/> 自己的 try/catch 永远看不到它。
+    /// <see cref="FikaJson"/> 会通过游戏自己的
+    /// JsonConvert（经 IL2CPP）转发原生值，而托管程序集无法遮蔽它。
     /// </para>
     /// </summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
@@ -1150,7 +1150,7 @@ public class FikaHeadlessPlugin : BasePlugin
         }
         catch (Exception exception)
         {
-            // Not fatal: the settings still reach the server through CreateMatch.
+            // 不致命：设置仍会通过 CreateMatch 到达服务器。
             FikaHeadlessLogger.LogError($"[Headless] Raid: serializing the raid settings for the log line failed " +
                 $"({exception.GetType().Name}: {exception.Message}); the raid continues without the description");
             HeadlessAssemblies.ReportIfShadowed(FikaHeadlessLogger);
@@ -1195,17 +1195,17 @@ public class FikaHeadlessPlugin : BasePlugin
             {
                 await menuTask.AsManaged();
 
-                // Native menu return and Fika's game/network disposal must
-                // both finish before this process can accept another raid.
+                // 原生菜单返回与 Fika 的游戏/网络释放都必须
+                // 完成，本进程才能接受下一场战局。
                 for (var attempt = 0; attempt < 300; attempt++)
                 {
                     if (raidGeneration != Volatile.Read(ref _raidGeneration)) return;
                     var backendSession = tarkovApplication.Session?.TryCast<ClientBackendSession>();
                     var oldRaidReleased = !Singleton<AbstractGame>.Instantiated &&
                         !FikaSingleton<IFikaGame>.Instantiated;
-                    // A transit keeps the Fika server and its UDP session
-                    // alive for the next map. A normal raid must release it
-                    // before the headless can accept a fresh reservation.
+                    // 过境传送会让 Fika 服务器及其 UDP 会话
+                    // 存活到下一张地图。普通战局必须在无头实例能接受
+                    // 新的预留之前释放它。
                     var networkReady = isTransit
                         ? FikaSingleton<FikaServer>.Instantiated
                         : !FikaSingleton<FikaServer>.Instantiated;
@@ -1222,10 +1222,10 @@ public class FikaHeadlessPlugin : BasePlugin
                                 throw new InvalidOperationException("Transit returned without cached raid settings");
                             }
 
-                            // LocalGameMatching's transition overload reads
-                            // TarkovApplication.TransitionStatus and rebuilds
-                            // the destination raid settings. Keep the existing
-                            // Fika server and start the next map in-place.
+                            // LocalGameMatching 的 transition 重载会读
+                            // TarkovApplication.TransitionStatus，并重建
+                            // 目标战局设置。保留现有的
+                            // Fika 服务器，并就地启动下一张地图。
                             ToggleFramelimit(false);
                             Log.LogInfo("[Headless] Shutdown: transit cleanup complete, starting the next map");
                             await tarkovApplication.LocalGameMatching(
@@ -1285,22 +1285,22 @@ public class FikaHeadlessPlugin : BasePlugin
     }
 
     /// <summary>
-    /// Marks the headless backend profile as ready for hosting.  SPT 5 can
-    /// enter the character-selection flow without invoking
-    /// <see cref="ConsoleScreen.OnProfileReceive"/> on the generated IL2CPP
-    /// wrapper, so callers must be able to complete this handshake from the
-    /// selection data as well.  The interlocked guard keeps both entry points
-    /// from starting plugin validation twice when the callback is delivered
-    /// normally.
+    /// 把无头后端 profile 标记为可承担主机。SPT 5 可能
+    /// 进入角色选择流程却不调用
+    /// 生成 IL2CPP 包装器上的 <see cref="ConsoleScreen.OnProfileReceive"/>，
+    /// 因此调用方也必须能够仅凭
+    /// 选择数据完成这次握手。该互锁保护使两个入口
+    /// 在回调被正常送达（即通常情形）时都不会重复启动
+    /// 插件校验。
     /// </summary>
     internal void MarkProfileVerified(string source, string nickname = null)
     {
         if (Interlocked.Exchange(ref _profileVerificationStarted, 1) != 0)
             return;
 
-        // The automatic signal: only the server-generated headless_ profile
-        // may arm the payload. Both observers already check the nickname, so
-        // this is a defensive second check - never arm on a guess.
+        // 自动信号：只有服务器生成的 headless_ profile
+        // 才能武装该载荷。两个观察器已经检查过昵称，因此
+        // 这是一次防御性的二次检查——绝不凭猜测武装。
         if (string.IsNullOrEmpty(nickname) || !nickname.Contains("headless_", StringComparison.OrdinalIgnoreCase))
         {
             NoteNormalPlay(source, nickname);
