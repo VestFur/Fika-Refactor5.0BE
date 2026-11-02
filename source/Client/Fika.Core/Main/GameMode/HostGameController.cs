@@ -57,8 +57,8 @@ public class HostGameController : BaseGameController
         _botStateManager = BotStateManager.Create(_abstractGame, FikaSingleton<FikaServer>.Instance, this);
         _gameDateTime = gameDateTime;
 
-        // Native parity: the offline raid preparation EFT runs before the bot
-        // scenarios exist (see PrepareLocationForOfflineRaid).
+        // 与原版对齐：EFT 在 bot 场景存在之前执行的离线战局准备
+        // （见 PrepareLocationForOfflineRaid）。
         PrepareLocationForOfflineRaid(location, wavesSettings);
 
         if (game is not AbstractGame abstractGame)
@@ -66,21 +66,24 @@ public class HostGameController : BaseGameController
             throw new NullReferenceException("Missing AbstractGame");
         }
 
-        // Non Waves Scenario setup
+        // 非波次场景设置
         _nonWavesSpawnScenario = NonWavesSpawnScenario.Create(abstractGame, location, _botsController);
         _nonWavesSpawnScenario.ImplementWaveSettings(wavesSettings);
 
-        // Waves Scenario setup
+        // 波次场景设置
         var waves = LocalGame.ModifySettings(wavesSettings, location.waves);
-        _wavesSpawnScenario = WavesSpawnScenario.Create(abstractGame.gameObject, waves, (Il2CppSystem.Func<SpawnWave, Il2CppSystem.Threading.Tasks.Task>)_botsController.ActivateBotsByWave, location);
+        _wavesSpawnScenario = WavesSpawnScenario.Create(abstractGame.gameObject, waves,
+            (Il2CppSystem.Func<SpawnWave, Il2CppSystem.Threading.Tasks.Task>)
+            (Func<SpawnWave, Il2CppSystem.Threading.Tasks.Task>)
+            (wave => _botsController.ActivateBotsByWave(wave)), location);
 
-        // Boss Scenario setup
+        // Boss 场景设置
         var bossSpawns = LocalGame.ModifyBossWaveSettings(ELocalMode.PVE_OFFLINE, wavesSettings, location.BossLocationSpawn);
         bossSpawns = ApplyBossWaveCollapse(bossSpawns);
-        // Every activation is logged before it reaches the native spawner. The
-        // IL2CPP wrapper does not implicitly convert a managed method group to
-        // System.Action<T>, so bridge it explicitly and fall back to the
-        // native method binding if the trampoline cannot be created.
+        // 每次激活在到达原版生成器之前都会被记录。
+        // IL2CPP 包装器不会把托管方法组隐式转换为
+        // System.Action<T>，所以要显式桥接它，并在无法创建
+        // trampoline 时回退到原版方法绑定。
         System.Action<BossLocationSpawn> bossAction;
         try
         {
@@ -105,18 +108,18 @@ public class HostGameController : BaseGameController
     protected readonly BotsController _botsController;
     protected readonly WavesSpawnScenario _wavesSpawnScenario;
     protected readonly BossSpawnScenario _bossSpawnScenario;
-    // A peer can acknowledge each bot profile only once. The snapshot is
-    // captured before sending, so a later joiner cannot hold this spawn up.
+    // 每个对端对每个 bot 档案只能确认一次。快照在发送之前
+    // 捕获，因此后来的加入者无法拖住这次生成。
     protected readonly Dictionary<int, HashSet<NetPeer>> _botQueue = [];
     private readonly object _botQueueGate = new();
     /// <summary>
-    /// Telemetry for the [BossSpawn] lines: how many bots of every boss-wave
-    /// role (boss or escort) the host actually created during this raid.
+    /// [BossSpawn] 行的遥测：本场战局中主机实际创建了每个 boss 波次
+    /// 角色（boss 或 escort）的多少个 bot。
     /// </summary>
     private readonly Dictionary<WildSpawnType, int> _bossRolesCreated = [];
     /// <summary>
-    /// Role histogram of every bot created this raid plus the one-shot flag of the
-    /// [ZoneDiag] ambient line (see <see cref="LogAmbientBotCreation"/>).
+    /// 本场战局创建的每个 bot 的角色直方图，外加 [ZoneDiag] 环境行的
+    /// 一次性标志（见 <see cref="LogAmbientBotCreation"/>）。
     /// </summary>
     private readonly Dictionary<WildSpawnType, int> _botRolesCreated = [];
     private bool _ambientScavLogged;
@@ -124,20 +127,20 @@ public class HostGameController : BaseGameController
     protected GameDateTime _gameDateTime;
 
     /// <summary>
-    /// How long in seconds until a bot is force spawned if not every client could load it
+    /// 若并非每个客户端都能加载某个 bot，多少秒后强制生成它
     /// </summary>
     private readonly float _botTimeout = 120f;
     /// <summary>
-    /// The <see cref="Task.Delay(int)"/> in every loop during the <see cref="_botTimeout"/>
+    /// <see cref="_botTimeout"/> 期间每个循环中的 <see cref="Task.Delay(int)"/>
     /// </summary>
     private readonly float _botTimeoutDelay = 0.25f;
 
     private readonly NetDataWriter _writer = new();
 
     /// <summary>
-    /// Peer ids this host already released through the pre-raid barrier backstop. A peer is disconnected
-    /// at most once per raid (idempotent): the set is checked when the peers are collected, so a second
-    /// backstop run - or a peer id that reappears - cannot produce a second disconnect for the same peer.
+    /// 本主机已通过战前闸门后备逻辑释放过的对端 id。每场战局中一个对端最多
+    /// 被断开一次（幂等）：收集对端时会检查该集合，因此第二次后备运行 - 或
+    /// 重新出现的对端 id - 都无法对同一对端产生第二次断开。
     /// </summary>
     private readonly HashSet<int> _gateReleasedPeers = [];
 
@@ -186,12 +189,12 @@ public class HostGameController : BaseGameController
     }
 
     private readonly NativeActionEvent _nativeUpdateByUnity = new();
-    /// <summary>Fika's own subscribers (artillery fire control) use a managed delegate.</summary>
+    /// <summary>Fika 自己的订阅者（火炮火控）使用托管委托。</summary>
     public void add_UpdateByUnity(System.Action handler) => _nativeUpdateByUnity.Add(handler);
     public void remove_UpdateByUnity(System.Action handler) => _nativeUpdateByUnity.Remove(handler);
     /// <summary>
-    /// The game subscribes to <c>IBotGame.UpdateByUnity</c> with its own native
-    /// delegate, so the injected bridge forwards that ABI here.
+    /// 游戏用自己的原生委托订阅 <c>IBotGame.UpdateByUnity</c>，
+    /// 因此注入的桥接把该 ABI 转发到这里。
     /// </summary>
     public void add_UpdateByUnity(Il2CppSystem.Action handler) => _nativeUpdateByUnity.Add(handler);
     public void remove_UpdateByUnity(Il2CppSystem.Action handler) => _nativeUpdateByUnity.Remove(handler);
@@ -273,34 +276,34 @@ public class HostGameController : BaseGameController
 
         _server.SendData(ref packet, DeliveryMethod.ReliableOrdered);
 
-        // The loot descriptor used to be dropped right here, after the first
-        // information broadcast. That made the host answer "descriptor not ready"
-        // for every later request, so a client whose request lost the race - and
-        // any player scav joining a running raid - received no world loot at all.
-        // The descriptor is ~135 KB and Location.Loot stays alive anyway, so it
-        // is kept for the whole raid.
+        // 战利品描述符过去就在此处、第一次信息广播之后被丢弃。
+        // 这使主机对之后每次请求都答复 "descriptor not ready"，
+        // 于是输掉竞争的客户端 - 以及加入进行中战局的玩家 scav -
+        // 完全拿不到世界战利品。该描述符约 135 KB，而
+        // Location.Loot 本来也一直存活，所以它现在保留
+        // 整场战局。
 
         yield break;
     }
 
     #region Bots
     /// <summary>
-    /// Used to spawn a bot for the host
+    /// 用于为主机生成一个 bot
     /// </summary>
-    /// <param name="profile"><see cref="Profile"/> to spawn</param>
-    /// <param name="position">The <see cref="Vector3"/> position to spawn on</param>
+    /// <param name="profile">要生成的 <see cref="Profile"/></param>
+    /// <param name="position">生成所用的 <see cref="Vector3"/> 位置</param>
     /// <returns></returns>
-    /// <summary>Tail of the one-at-a-time bot creation chain (from upstream 3.0.4).</summary>
+    /// <summary>逐个 bot 创建链的尾部（来自上游 3.0.4）。</summary>
     private Task _botCreateTail = Task.CompletedTask;
 
     /// <summary>
-    /// Tail of the one-at-a-time bot creation chain (from upstream 3.0.4).
+    /// 逐个 bot 创建链的尾部（来自上游 3.0.4）。
     /// <para>
-    /// A boss wave burst hands several profiles to <see cref="CreateBot"/> inside one frame (Interchange
-    /// activates 10 of 12 waves with EBotsSpawnMode.Anyway). Running those concurrently races on Bots, the coop
-    /// handler, the net id counter and the per-bot ack queue, and an Interchange raid was observed to die inside
-    /// the native Player.Create around the tenth bot of such a burst. Every creation now waits for the previous
-    /// one to finish.
+    /// 一次 boss 波次突发会在一帧内把多个档案交给 <see cref="CreateBot"/>（Interchange
+    /// 用 EBotsSpawnMode.Anyway 激活 12 个波次中的 10 个）。并发运行这些创建会在 Bots、联机
+    /// 处理器、网络 id 计数器和逐 bot 确认队列上产生竞争，而且观察到一场 Interchange 战局
+    /// 在这种突发的第十个 bot 前后死在原版 Player.Create 里面。现在每次创建都会等待前一个
+    /// 完成。
     /// </para>
     /// </summary>
     private async Task<LocalPlayer> CreateBot(GameWorld gameWorld, Profile profile, Vector3 position)
@@ -309,8 +312,8 @@ public class HostGameController : BaseGameController
         var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _botCreateTail = gate.Task;
 
-        // Completed tasks resume synchronously, so the first bot pays nothing and every later one starts on the
-        // main thread right after the previous one.
+        // 已完成的任务会同步延续，所以第一个 bot 不付代价，之后每一个都在前一个
+        // 之后立即于主线程开始。
         await previous;
         try
         {
@@ -415,7 +418,7 @@ public class HostGameController : BaseGameController
             fikaBot.HealthController.DisableMetabolism();
         }
         _coopHandler.Players.Add(fikaBot.NetId, fikaBot);
-        // Counted only once the bot is fully registered on the host.
+        // 只有 bot 在主机上完全注册之后才计数。
         LogBossBotCreation(profile);
         LogAmbientBotCreation(profile);
 
@@ -433,10 +436,10 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// Acknowledges one peer loading a bot profile for <see cref="WaitForPlayersToLoadBotProfile(int)"/>
+    /// 确认一个对端为 <see cref="WaitForPlayersToLoadBotProfile(int)"/> 加载了某个 bot 档案
     /// </summary>
-    /// <param name="netId">The bot ID</param>
-    /// <param name="peer">The acknowledging peer</param>
+    /// <param name="netId">bot 的 ID</param>
+    /// <param name="peer">进行确认的对端</param>
     public void IncreaseLoadedPlayers(int netId, NetPeer peer)
     {
         lock (_botQueueGate)
@@ -452,7 +455,7 @@ public class HostGameController : BaseGameController
         if (CoopHandler?.Players.TryGetValue(netId, out var existing) == true &&
             existing?.AIData?.IsAI == true)
         {
-            // Reconnect replays acknowledgements for bots already on the host.
+            // 重连会重放主机上已有 bot 的确认。
             Logger.LogDebug($"IncreaseLoadedPlayers::Ignoring late acknowledgement for existing bot netId {netId}");
             return;
         }
@@ -461,9 +464,9 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// <see cref="Task"/> used to ensure that all players loads a bot before it spawns
+    /// 用于确保所有玩家都加载某个 bot 后它才生成的 <see cref="Task"/>
     /// </summary>
-    /// <param name="netId">The NetId to spawn</param>
+    /// <param name="netId">要生成的 NetId</param>
     /// <returns></returns>
     private async Task WaitForPlayersToLoadBotProfile(int netId)
     {
@@ -490,7 +493,7 @@ public class HostGameController : BaseGameController
                     return;
                 }
 
-                await Task.Delay((int)(_botTimeoutDelay * 1000)); // multiply 0.X * 1000 to get milliseconds
+                await Task.Delay((int)(_botTimeoutDelay * 1000)); // 乘 0.X * 1000 得到毫秒
                 elapsedSeconds += _botTimeoutDelay;
             }
 
@@ -505,10 +508,10 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// Despawns a bot
+    /// 反生成一个 bot
     /// </summary>
     /// <param name="coopHandler"></param>
-    /// <param name="bot">The bot to despawn</param>
+    /// <param name="bot">要反生成的 bot</param>
     internal void DespawnBot(CoopHandler coopHandler, Player bot)
     {
         var botOwner = bot.AIData.BotOwner;
@@ -529,9 +532,9 @@ public class HostGameController : BaseGameController
     #endregion
 
     /// <summary>
-    /// Sets up a custom weather curve
+    /// 设置自定义天气曲线
     /// </summary>
-    /// <param name="timeAndWeather">Struct with custom settings</param>
+    /// <param name="timeAndWeather">带自定义设置的结构体</param>
     public void SetupCustomWeather(TimeAndWeatherSettings timeAndWeather)
     {
         if (WeatherController.Instance == null)
@@ -588,7 +591,7 @@ public class HostGameController : BaseGameController
 
         await StartBotsSystem(Location);
 
-        // Add FreeCamController to GameWorld GameObject
+        // 把 FreeCamController 添加到 GameWorld 的 GameObject
         if (!FikaBackendUtils.IsHeadless)
         {
             var freeCamController = gameWorld.gameObject.AddComponent<FreeCameraController>();
@@ -658,9 +661,9 @@ public class HostGameController : BaseGameController
         }
 
 
-        // A peer can disconnect while the remaining players are loading. Keep
-        // the original upper bound so late joins do not extend this barrier,
-        // but stop waiting for peers that are no longer connected.
+        // 对端可能在其余玩家加载时断开。保留最初的上界，
+        // 这样迟到的加入不会延长这道屏障，
+        // 但不再等待已经断开连接的对端。
         int ExpectedPlayers() => Math.Max(1, Math.Min(initialPlayerCount, _server.PlayerAmount));
         int ExpectedHumans() => Math.Max(0, ExpectedPlayers() - (FikaBackendUtils.IsHeadless ? 1 : 0));
 #if DEBUG
@@ -668,11 +671,11 @@ public class HostGameController : BaseGameController
 #endif
         _server.ReadyClients++;
 
-        // Judgement line (analysis/loading-screen-sync): the host's pre-raid barrier waits for the
-        // *characters* of the peers, i.e. for each peer's SendCharacter announcement - not for its
-        // loading progress and not for a packet the peer may have failed to apply. A peer whose raid
-        // start failed and left the session never announces a character, which is why this wait is now
-        // bounded and names the missing peer count in every line.
+        // 判定行（analysis/loading-screen-sync）：主机的战前屏障等待对端的
+        // *角色*，即每个对端的 SendCharacter 通告 - 而不是它的
+        // 加载进度，也不是它可能未能应用的数据包。战局启动失败并离开
+        // 会话的对端永远不会通告角色，这就是该等待现在有界、并在每一行里
+        // 点名缺失对端数量的原因。
         var barrierStartedAt = UnityEngine.Time.realtimeSinceStartup;
         var nextBarrierReport = 0f;
         var timedOut = false;
@@ -701,8 +704,8 @@ public class HostGameController : BaseGameController
             var barrierState = DescribeBarrier(ExpectedHumans(), ExpectedPlayers(),
                 UnityEngine.Time.realtimeSinceStartup - barrierStartedAt);
 
-            // The backstop really fired: this is the one place where a peer is disconnected (see
-            // DisconnectPeersWithoutCharacter). The normal release above never disconnects anybody.
+            // 后备逻辑确实触发了：这是唯一会断开对端的地方（见
+            // DisconnectPeersWithoutCharacter）。上面正常的放行从不主动断开任何人。
             var released = DisconnectPeersWithoutCharacter(barrierState);
             LoadSync.Warn("HostGameController.WaitForOtherPlayersToLoad",
                 barrierState + " => gave up after " + LoadSync.PeerLoadTimeoutSeconds.ToString("0")
@@ -766,31 +769,31 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// Disconnects the peers that are still connected and have never announced a character, at the moment
-    /// the pre-raid barrier gives up. Returns how many peers were actually disconnected.
+    /// 在对端的战前屏障放弃的那一刻，断开仍连接且从未通告过角色的对端。
+    /// 返回实际断开的对端数量。
     ///
-    /// Why (analysis/loading-screen-sync): the barrier waits for every expected peer's *character*, and a
-    /// peer whose raid start failed stays connected while it will never announce one - in the 2026-10-11
-    /// 18:58 round that held the host on its loading screen from the client's failed start until that
-    /// client's process was closed. Releasing the gate while such a peer stays connected also keeps it in
-    /// the session: it receives raid traffic and its own session flags do not match the raid any more
-    /// (that is what produced "Received CharacterSyncPacket as server" on a client that was on the main
-    /// menu). Disconnecting it makes both sides consistent: the host stops expecting it (the standard
-    /// path decrements PlayerAmount, so ExpectedPlayers shrinks) and the peer sees a closed session.
+    /// 原因（analysis/loading-screen-sync）：屏障等待每个预期对端的*角色*，而一个
+    /// 战局启动失败的对端会保持连接，且永远不会通告角色 - 在 2026-10-11 18:58 那一轮，
+    /// 这使主机停留在加载界面上，从客户端启动失败一直等到该客户端
+    /// 进程被关闭。在此类对端仍保持连接时放行闸门，也会把它留在
+    /// 会话中：它收到战局流量，而它自己的会话标志已与战局不再匹配
+    /// （这正是那个处于主菜单的客户端收到 "Received CharacterSyncPacket as server" 的原因）。断开它
+    /// 使双方一致：主机不再预期它（标准路径会
+    /// 递减 PlayerAmount，因此 ExpectedPlayers 缩小），而对端则看到会话已关闭。
     ///
-    /// The rules this follows:
-    ///   * only at the moment the backstop fires - the normal release path never disconnects anybody;
-    ///   * only peers with no player (a peer that announced its character between the last poll and this
-    ///     call has Player != null and is left alone; a peer that already disconnected is not enumerated
-    ///     by NetServer at all, which is the "already gone" case);
-    ///   * idempotent: <see cref="_gateReleasedPeers"/> holds every peer id this backstop released, so a
-    ///     peer is disconnected at most once per raid;
-    ///   * through the standard entry only - NetPeer.Disconnect() -> NetManager.DisconnectPeer -> the
-    ///     disconnect packet plus the local disconnect event, i.e. the very same cleanup the host already
-    ///     runs for a peer that left on its own (FikaServer.OnPeerDisconnected: ready/assigned-net-id/
-    ///     profile/scav bookkeeping, RaidInteractionSync.OnDisconnected, the ClientDisconnected broadcast,
-    ///     PlayerAmount-- with the UpdateBackendData broadcast, the reconnect timer, the headless handling
-    ///     and the PeerDisconnectedEvent). Nothing in that path is changed by this method.
+    /// 本方法遵循的规则：
+    ///   * 只在后备逻辑触发的那一刻 - 正常的放行路径从不主动断开任何人；
+    ///   * 只断开没有玩家的对端（在上次轮询与本次调用之间通告了角色的
+    ///     对端 Player != null，不会被触碰；已经断开的对端根本不会被
+    ///     NetServer 枚举，这就是"已经走了"的情况）；
+    ///   * 幂等：<see cref="_gateReleasedPeers"/> 保存本后备逻辑释放过的每个对端 id，因此
+    ///     每场战局中一个对端最多被断开一次；
+    ///   * 只走标准入口 - NetPeer.Disconnect() -> NetManager.DisconnectPeer ->
+    ///     断开数据包加本地断开事件，即主机为自行离开的对端
+    ///     已经在跑的那套清理（FikaServer.OnPeerDisconnected：ready/assigned-net-id/
+    ///     profile/scav 记账、RaidInteractionSync.OnDisconnected、ClientDisconnected 广播、
+    ///     PlayerAmount-- 连同 UpdateBackendData 广播、重连计时器、无头处理
+    ///     以及 PeerDisconnectedEvent）。这条路径中没有任何东西被本方法改动。
     /// </summary>
     private int DisconnectPeersWithoutCharacter(string barrierState)
     {
@@ -843,7 +846,7 @@ public class HostGameController : BaseGameController
             }
             catch (Exception exception)
             {
-                // Give the id back: the peer was not released, so a later backstop (or a later raid) may try again.
+                // 把这个 id 还回去：该对端并未被释放，后来的后备（或后来的战局）可以再试。
                 _gateReleasedPeers.Remove(peer.Id);
                 LoadSync.Warn("HostGameController.WaitForOtherPlayersToLoad",
                     "-> peer=" + name + " (id=" + peer.Id + ") could not be disconnected: "
@@ -856,8 +859,8 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// The state of the pre-raid barrier as one line, for the [LoadSync] reports: what the host expects,
-    /// what it has, who is still missing and what would release the wait.
+    /// 战前屏障的状态，一行呈现，供 [LoadSync] 报告使用：主机预期多少、
+    /// 已有多少、还缺谁，以及什么会放行该等待。
     /// </summary>
     private string DescribeBarrier(int expectedHumans, int expectedPlayers, float elapsed)
     {
@@ -873,9 +876,9 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// The nicknames of the connected peers that have no player in this world yet - the "who am I waiting
-    /// for" half of a barrier line. A peer's nickname is the Tag the connection was accepted with
-    /// (FikaServer.OnPeerDisconnected reads it the same way).
+    /// 已连接但在此世界中尚无玩家的对端昵称 - 屏障行中"我在等谁"
+    /// 的那一半。对端的昵称是接受连接时使用的 Tag
+    /// （FikaServer.OnPeerDisconnected 也以同样方式读取它）。
     /// </summary>
     private string DescribePeersWithoutPlayer()
     {
@@ -905,7 +908,7 @@ public class HostGameController : BaseGameController
         return names.Length == 0 ? "none" : names.ToString();
     }
 
-    /// <summary>The nicknames of the human players this host has spawned in this raid.</summary>
+    /// <summary>本主机在本场战局中已生成的人类玩家昵称。</summary>
     private string DescribeSpawnedHumans()
     {
         var players = _coopHandler?.HumanPlayers;
@@ -947,8 +950,8 @@ public class HostGameController : BaseGameController
             if (!FikaBackendUtils.CustomRaidSettings.UseCustomWeather)
             {
                 WeatherClasses = weather.Weathers;
-                // SetWeatherNodes smooths fog in place. Preserve the original
-                // nodes for clients, which apply their own smoothing.
+                // SetWeatherNodes 会就地平滑雾效。为客户端保留原始
+                // 节点，它们会自己再做平滑。
                 WeatherController.Instance.SetWeatherNodes(Array.ConvertAll(WeatherClasses, CloneNode));
             }
         }
@@ -984,9 +987,9 @@ public class HostGameController : BaseGameController
         yield return base.CountdownScreen(profile, profileId);
         _localPlayer.PacketSender.Init();
 
-        // Both of these used to be engine coroutines started from inside the countdown routine (i.e. from
-        // inside another coroutine's MoveNext - the shape that faulted during the host raid start, see
-        // analysis/host-raid-coroutine). They run on the Update driven pump now.
+        // 这两者过去都是从倒计时例程内部启动的引擎协程（即在另一个协程的
+        // MoveNext 内部 - 正是主机战局启动时出错的那种形态，见
+        // analysis/host-raid-coroutine）。它们现在跑在 Update 驱动的泵上。
         FikaRoutinePump.Instance.Start(SyncTraps(), "SyncTraps");
         FikaRoutinePump.Instance.Start(CreateStashes(), "CreateStashes");
     }
@@ -1020,9 +1023,9 @@ public class HostGameController : BaseGameController
             ((world, profile, position) => NativeTask.FromManaged(MainThreadDispatcher.RunAsync(() => CreateBot(world, profile, position)))));
         BotZone[] botZones = [.. LocationScene.GetAllObjects<BotZone>(false)];
 
-        // The zones the raid data names versus the zones the scene provides - the only
-        // place that difference is visible (the native spawner skips such a wave
-        // silently).
+        // 战局数据点名的区域与场景实际提供的区域之差 - 这个差异
+        // 唯一可见的地方（原版生成器会静默跳过这样的
+        // 波次）。
         LogZoneDiagnostics(location, botZones);
 
         var useWaveControl = controllerSettings.BotAmount == EBotAmount.Horde;
@@ -1035,8 +1038,8 @@ public class HostGameController : BaseGameController
             limits = 0;
         }
 
-        // One mapping for both budgets: the spawner's MaxBots and the ambient cap
-        // PrepareLocationForOfflineRaid falls back to (see ResolveBotBudget).
+        // 两个预算共用一套映射：生成器的 MaxBots 和 PrepareLocationForOfflineRaid
+        // 回退到的环境上限（见 ResolveBotBudget）。
         var numberOfBots = ResolveBotBudget(controllerSettings.BotAmount);
 
         _botsController.SetSettings(limits > 0 ? limits : numberOfBots, _backendSession.BackEndConfig.BotPresets, _backendSession.BackEndConfig.BotWeaponScatterings);
@@ -1061,10 +1064,10 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// Made for modders to set custom limits in their mods
+    /// 供 mod 作者在各自 mod 中设置自定义上限
     /// </summary>
-    /// <param name="location">The map to get the max bots for</param>
-    /// <returns>Max bots if any</returns>
+    /// <param name="location">要获取最大 bot 数的地图</param>
+    /// <returns>最大 bot 数（若有）</returns>
     protected int SetMaxBotsLimit(LocationSettings.Location location)
     {
         return 0;
@@ -1094,31 +1097,31 @@ public class HostGameController : BaseGameController
             }
         }
 
-        // Native parity: EFT.LocalGame.LocalBotsControllerInitialization calls
-        // bossSpawnScenario.Run(BotSpawner.GetPmcZones()) - the 2-arg call, whose
-        // default mode is EBotsSpawnMode.Anyway (Fika 2.4.3 did the same).
-        // AfterGameStarted only arms a timer for waves whose Time > 0 and never
-        // activates a Time <= 0 wave; every boss wave SPT sends uses Time = -1
-        // (Lighthouse: Zryachiy/Knight/Partisan/Gluhar, and the Rogues whenever
-        // rogueLighthouseSpawnTimeSettings.enabled is false), so that mode
-        // silently dropped the complete boss list.
+        // 与原版对齐：EFT.LocalGame.LocalBotsControllerInitialization 调用
+        // bossSpawnScenario.Run(BotSpawner.GetPmcZones()) - 那个两参数调用，其
+        // 默认模式是 EBotsSpawnMode.Anyway（Fika 2.4.3 也是如此）。
+        // AfterGameStarted 只为 Time > 0 的波次武装计时器，从不
+        // 激活 Time <= 0 的波次；SPT 发送的每个 boss 波次都用 Time = -1
+        // （Lighthouse：Zryachiy/Knight/Partisan/Gluhar，以及
+        // rogueLighthouseSpawnTimeSettings.enabled 为 false 时的 Rogues），所以那种模式
+        // 静默丢掉了整份 boss 列表。
         _bossSpawnScenario.Run(_botsController.BotSpawner.GetPmcZones(), _botsController.BotSpawner.GetSeason01Zones(), EBotsSpawnMode.Anyway);
         LogBossScenarioState("after Run");
         _botsController.EventsController.SpawnAction();
     }
 
     /// <summary>
-    /// Logs every wave activation before it is handed to the native spawner.
+    /// 在每次波次激活被交给原版生成器之前记录它。
     /// </summary>
     private void OnBossWaveActivated(BossLocationSpawn wave)
     {
         Logger.LogInfo($"[BossSpawn] Activating wave: {DescribeBossWave(wave)}");
         LogBossWaveRequest(wave);
 
-        // (2026-10-26 W17, restored from upstream 3.0.4) One activation per 50 ms keeps a wave burst
-        // (Interchange activates 10 of 12 waves in one frame) from stacking that many bot creations in the
-        // same frame. CreateBot serialises them anyway; this keeps the frame itself from stalling, and the
-        // dispatcher keeps the continuation on Unity main thread, which the native activation requires.
+        // （2026-10-26 W17，从上游 3.0.4 恢复）每 50 毫秒一次激活，避免一次波次突发
+        // （Interchange 在一帧内激活 12 个波次中的 10 个）在同一帧里堆积同样多的 bot 创建。
+        // CreateBot 本来就会串行化它们；这能避免帧本身卡住，而
+        // 派发器把延续保持在 Unity 主线程上，这是原版激活所要求的。
         _ = MainThreadDispatcher.RunAsync(async () =>
         {
             try
@@ -1127,7 +1130,7 @@ public class HostGameController : BaseGameController
             }
             catch (Exception)
             {
-                // A cancelled wait must still activate the wave below.
+                // 被取消的等待仍然必须激活下面的波次。
             }
 
             try
@@ -1136,28 +1139,28 @@ public class HostGameController : BaseGameController
             }
             catch (Exception exception)
             {
-                // Never let a managed exception cross back into native timer or
-                // event code; report it instead so the wave can be investigated.
+                // 绝不让托管异常回到原生计时器或
+                // 事件代码；改为上报它，以便追查该波次。
                 Logger.LogError($"[BossSpawn] Wave activation failed for '{wave?.BossName}': {exception}");
             }
         });
     }
 
     /// <summary>
-    /// Spacing between two boss wave activations, see <see cref="OnBossWaveActivated"/>.
+    /// 两次 boss 波次激活之间的间隔，见 <see cref="OnBossWaveActivated"/>。
     /// </summary>
     private const int BossWaveActivationSpacingMilliseconds = 50;
 
     /// <summary>
-    /// Logs the boss wave list exactly as received from the server (after
-    /// <see cref="LocalGame.ModifyBossWaveSettings"/>).
+    /// 原样记录从服务器收到的 boss 波次列表（在
+    /// <see cref="LocalGame.ModifyBossWaveSettings"/> 之后）。
     /// </summary>
     private void LogBossWaves(string stage, Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<BossLocationSpawn> waves)
     {
-        // (analysis/perf-diagnostics-cleanup) Boss/zone telemetry of this controller: the master switch
-        // ('Coop / Diagnostics', default off) closes it. The 2026-10-13 00:40 raid wrote 102 [BossSpawn] lines
-        // (one per boss-wave bot created) and 4 [ZoneDiag] lines - the largest in-raid family of that log.
-        // Nothing in this method changes what the raid does; it only describes it.
+        // (analysis/perf-diagnostics-cleanup) 本控制器的 boss/区域遥测：总开关
+        // （'Coop / Diagnostics'，默认关闭）会关掉它。2026-10-13 00:40 的战局写了 102 行 [BossSpawn]
+        // （每创建一个 boss 波次 bot 一行）和 4 行 [ZoneDiag] - 是那份日志中最大的战局内日志族。
+        // 本方法中没有任何东西改变战局行为；它只是描述战局。
         
         var length = waves?.Length ?? 0;
         Logger.LogInfo($"[BossSpawn] Boss wave list {stage}: {length} wave(s)");
@@ -1168,8 +1171,8 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// Logs which waves the scenario armed or activated and how many timers it
-    /// holds for the timed (Time &gt; 0) waves.
+    /// 记录场景武装或激活了哪些波次，以及它为定时波次（Time &gt; 0）
+    /// 持有多少个计时器。
     /// </summary>
     private void LogBossScenarioState(string stage)
     {
@@ -1194,12 +1197,12 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// One line per boss wave activation stating what the wave asks the native
-    /// spawner for. Icebreaker's boss groups are gated behind triggered events
-    /// (wedges1-4), so "the boss never spawns" splits into two very different
-    /// cases that this line plus <see cref="LogIdleBossTriggers"/> tell apart:
-    /// the wave activated but the boss body is missing, or the wave was never
-    /// activated at all.
+    /// 每次 boss 波次激活一行，说明该波次向原版生成器要求什么。
+    /// Icebreaker 的 boss 组被触发事件（wedges1-4）门控，所以
+    /// "boss 永不生成"分成两种截然不同的情况，这一行加上
+    /// <see cref="LogIdleBossTriggers"/> 可以区分它们：
+    /// 波次已激活但 boss 实体缺失，或者波次根本从未
+    /// 激活过。
     /// </summary>
     private void LogBossWaveRequest(BossLocationSpawn wave)
     {
@@ -1213,11 +1216,11 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// Lists the botEvent triggers that still have waves waiting. A map whose boss
-    /// group only spawns on an event (Icebreaker: wedges1-4, Terminal: TB1-4) leaves
-    /// exactly one trace when the event never arrives - an armed wave and an
-    /// "idle" entry here. Without it, "no boss in the room" is indistinguishable
-    /// from "our port dropped the boss".
+    /// 列出仍有波次在等待的 botEvent 触发器。boss 组只在事件上生成的
+    /// 地图（Icebreaker：wedges1-4，Terminal：TB1-4），在事件始终不到达时会
+    /// 恰好留下一条痕迹 - 一个已武装的波次和这里的一条
+    /// "idle" 条目。没有它，"房间里没有 boss" 就无法与
+    /// "本移植丢了 boss" 区分开来。
     /// </summary>
     private void LogIdleBossTriggers()
     {
@@ -1262,8 +1265,8 @@ public class HostGameController : BaseGameController
             }
 
     /// <summary>
-    /// Counts the boss and escort bots the native spawner actually asked the
-    /// host to create, logging each one.
+    /// 统计原版生成器实际要求主机创建的 boss 与 escort bot，
+    /// 并逐个记录。
     /// </summary>
     private void LogBossBotCreation(Profile profile)
     {
@@ -1280,39 +1283,39 @@ public class HostGameController : BaseGameController
         _bossRolesCreated.TryGetValue(role, out var count);
         count++;
         _bossRolesCreated[role] = count;
-        // Deliberately role-agnostic: the previous predicate skipped every role that is
-        // neither in LocaleUtils' table nor named "follower*", so the bots of the
-        // post-0.14 map bosses (bossWedge, bossBullyBlackDiv, ...) were created in the
-        // raid but never appeared here - the log then reads exactly like "the bridge
-        // dropped the boss and kept the escorts".
+        // 刻意与角色无关：先前的判断条件会跳过既不在 LocaleUtils 表中、也不叫
+        // "follower*" 的每个角色，所以 0.14 之后的地图 boss（bossWedge、
+        // bossBullyBlackDiv，……）的 bot 在战局中被创建了，
+        // 却从未出现在这里 - 于是日志读起来完全是"桥接丢掉了 boss、
+        // 只留下了 escort"。
         Logger.LogInfo($"[BossSpawn] Created boss-wave bot: {role} " +
             $"({bossName ?? (isFollower ? "escort" : "unlisted role")}) difficulty={settings.BotDifficulty} " +
             $"profile={profile.Id}, {role} created so far={count}");
     }
 
     /// <summary>
-    /// Reports - and, with <see cref="CollapseBossWavesPerTrigger"/>, removes - the bossWedge
-    /// waves that share one trigger. Several entries under one trigger is how the map data
-    /// expresses "this event owns these positions", and the native scenario activates every
-    /// one of them (<c>BossSpawnScenario.Run</c> hands each activated wave to
-    /// <c>ActivateBotsByWave</c>; nothing de-duplicates them). Only <c>bossWedge</c> waves take
-    /// part in a group (<see cref="BossTriggerKey"/>); every other role is handed to the
-    /// scenario exactly as shipped.
+    /// 上报 - 并在 <see cref="CollapseBossWavesPerTrigger"/> 开启时移除 - 共用同一个触发器的
+    /// bossWedge 波次。一个触发器下挂多个条目，是地图数据表达"这个事件拥有这些位置"的方式，
+    /// 而原版场景会激活其中每一个（<c>BossSpawnScenario.Run</c> 把每个已激活的波次交给
+    /// <c>ActivateBotsByWave</c>；没有任何东西去重）。只有 <c>bossWedge</c> 波次参与
+    /// 分组（<see cref="BossTriggerKey"/>）；其他所有角色都按发布原样交给
+    /// 场景，内容完全
+    /// 按发布原样。
     ///
-    /// The user's expectation is one boss in the room, so the collapse runs by default and
-    /// keeps the group member with the largest escort count (the squad leader; ties go to
-    /// the first entry of the data). With <see cref="CollapseBossWavesPerTrigger"/> off the
-    /// shipped list stays byte-for-byte effective, which is how the native behaviour (three
-    /// Wedge bodies per event on Icebreaker) can be restored without a database change.
+    /// 用户的期望是房间里只有一个 boss，所以折叠默认执行，并
+    /// 保留 escort 数量最大的那个组成员（即小队长；数量相同时取
+    /// 数据中的第一个条目）。<see cref="CollapseBossWavesPerTrigger"/> 关闭时
+    /// 发布列表逐字节保持不变，这就是在不改数据库的情况下恢复原版行为
+    /// （Icebreaker 上每个事件三个 Wedge 实体）的办法。
     /// </summary>
     private Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<BossLocationSpawn> ApplyBossWaveCollapse(
         Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<BossLocationSpawn> waves)
     {
         var length = waves?.Length ?? 0;
 
-        // Only the bossWedge family forms groups (see BossTriggerKey): every other wave -
-        // another role, or a trigger-less/timer boss - is its own group, so the collapse
-        // cannot silence it.
+        // 只有 bossWedge 家族会形成分组（见 BossTriggerKey）：其他任何波次 -
+        // 另一个角色，或无触发器/计时的 boss - 都自成一个分组，所以折叠
+        // 无法让它静默。
         Dictionary<string, int> groups = new(StringComparer.Ordinal);
         Dictionary<string, int> keepers = new(StringComparer.Ordinal);
         for (var index = 0; index < length; index++)
@@ -1326,9 +1329,9 @@ public class HostGameController : BaseGameController
             var key = BossTriggerKey(wave);
             groups.TryGetValue(key, out var count);
             groups[key] = count + 1;
-            // The user wants "a boss with its escorts", so the wave that asks the native
-            // spawner for the most followers is the one that survives; an equal escort
-            // count keeps the earlier entry of the data.
+            // 用户要的是"一个 boss 带着它的 escort"，所以向原版生成器要求
+            // 最多随从的那个波次得以存活；escort 数量相同时保留
+            // 数据中靠前的条目。
             if (!keepers.TryGetValue(key, out var keeper) || wave.EscortCount > waves[keeper].EscortCount)
             {
                 keepers[key] = index;
@@ -1375,18 +1378,18 @@ public class HostGameController : BaseGameController
             }
 
             var key = BossTriggerKey(wave);
-            // keepers only exist for duplicated groups, so a trigger-less wave (own key,
-            // never in keepers) is always kept.
+            // keepers 只为重复的分组存在，因此无触发器的波次（自己的键，
+            // 从不在 keepers 中）总是被保留。
             if (!losers.Contains(key) || keepers[key] == index)
             {
                 kept.Add(wave);
                 continue;
             }
 
-            // The waves that lose stay in the list (the scenario still subscribes them)
-            // but are marked as already activated, and both the event callback and the
-            // timer callback skip a wave in that state, so they can never reach the
-            // native spawner.
+            // 落败的波次留在列表中（场景仍会订阅它们），
+            // 但被标记为已激活，而事件回调与
+            // 计时器回调都会跳过处于该状态的波次，所以它们永远无法到达
+            // 原版生成器。
             wave.Activated = true;
             disabled++;
         }
@@ -1403,15 +1406,15 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// Groups the waves the way the map gates them: the trigger kind plus its id. A wave
-    /// without an id is its own group (an index-suffixed key), so two timed bosses of the
-    /// same role never collapse into one another.
+    /// 按地图门控波次的方式对它们分组：触发器种类加上它的 id。没有 id 的波次
+    /// 自成一个分组（带索引后缀的键），所以同一角色的两个定时 boss
+    /// 永远不会互相折叠。
     ///
-    /// Only <see cref="WildSpawnType.bossWedge"/> participates: the user's rule is "do not
-    /// touch the shipped spawning except the boss", and the Icebreaker data also lists
-    /// duplicated triggers for pmcBotBlackDiv/bossBullyBlackDiv (hides1-3, stern0-3) whose
-    /// stacking is the data's business. Those waves get a key of their own - one group each -
-    /// so the collapse can never silence them.
+    /// 只有 <see cref="WildSpawnType.bossWedge"/> 参与：用户的规则是"除 boss 之外
+    /// 不要碰发布的生成配置"，而 Icebreaker 数据还为
+    /// pmcBotBlackDiv/bossBullyBlackDiv 列出了重复的触发器（hides1-3、stern0-3），它们的
+    /// 叠加是数据自己的事。那些波次各自获得自己的键 - 各成一个分组 -
+    /// 所以折叠永远无法让它们静默。
     /// </summary>
     private static string BossTriggerKey(BossLocationSpawn wave)
     {
@@ -1424,16 +1427,16 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// Native parity for the offline raid preparation EFT performs before any bot
-    /// scenario exists - <c>EFT.BaseLocalGame.smethod_1</c> (BaseLocalGame.cs:508-530):
-    /// it copies the Offline* spawn switches onto the live ones and scales the map's
-    /// ambient bot cap with the raid's bot amount. The headless host already ports it
-    /// (Fika.Headless/Classes/GameMode/HeadlessGame.cs:330-353), the coop host never
-    /// did, so a location that ships <c>NewSpawn=false</c> with
-    /// <c>OfflineNewSpawn=true</c> never started its non-wave spawn scenario. On
-    /// Icebreaker the non-wave scenario is the only zone-valid spawn system (its
-    /// <c>waves</c> still name zones of the Interchange), so that map stayed empty
-    /// apart from the boss waves.
+    /// 与 EFT 在任何 bot 场景存在之前执行的离线战局准备对齐 -
+    /// <c>EFT.BaseLocalGame.smethod_1</c>（BaseLocalGame.cs:508-530）：
+    /// 它把 Offline* 生成开关复制到实时开关上，并按战局的 bot 数量
+    /// 缩放地图的环境 bot 上限。无头主机早已移植了它
+    /// （Fika.Headless/Classes/GameMode/HeadlessGame.cs:330-353），联机主机从未
+    /// 做过，所以发布 <c>NewSpawn=false</c> 而
+    /// <c>OfflineNewSpawn=true</c> 的地点从未启动它的非波次
+    /// 生成场景。在 Icebreaker 上，非波次场景是唯一区域有效的
+    /// 生成系统（它的 <c>waves</c> 仍然点名 Interchange 的区域），所以那张地图除了
+    /// boss 波次之外一直是空的。
     /// </summary>
     private void PrepareLocationForOfflineRaid(LocationSettings.Location location, WavesSettings wavesSettings)
     {
@@ -1450,12 +1453,12 @@ public class HostGameController : BaseGameController
             location.NewSpawn = location.OfflineNewSpawn;
         }
 
-        // A map that configures an ambient window (BotStop/BotSpawnTimeOn*) yet ships
-        // cap 0 expects the server to send the cap: SPT does that from
-        // bot.json/maxBotCap (PostDbLoadService.AdjustLocationBotValues). The fallback
-        // below stands in for a missing server cap, but the user's rule for Icebreaker
-        // is "no ambient scavengers" (2026-10-13), so it stays off and the map's own
-        // BotMax = 0 decides - the non-wave scenario runs with a budget of zero.
+        // 配置了环境窗口（BotStop/BotSpawnTimeOn*）却发布上限
+        // 0 的地图，期望服务器下发上限：SPT 从
+        // bot.json/maxBotCap 那样做（PostDbLoadService.AdjustLocationBotValues）。下面的
+        // 兜底代替缺失的服务器上限，但用户对 Icebreaker 的规则
+        // 是"不要环境 scavenger"（2026-10-13），所以它保持关闭，由地图自己的
+        // BotMax = 0 决定 - 非波次场景以零预算运行。
         if (EnableAmbientBotCapFallback && ambientCap <= 0 && location.BotStop > 0)
         {
             ambientCap = Math.Min(ResolveBotBudget(wavesSettings.BotAmount), FallbackAmbientBotCap);
@@ -1464,57 +1467,57 @@ public class HostGameController : BaseGameController
 
         location.BotMax = ambientCap;
 
-        // (analysis/perf-diagnostics-cleanup) A [ZoneDiag] probe line inside a functional method: with the
-        // master switch off the interpolation is not built; the assignments above are untouched.
+        // (analysis/perf-diagnostics-cleanup) 功能方法里的一条 [ZoneDiag] 探针行：总开关
+        // 关闭时不会构建插值；上面的赋值不受影响。
         
     }
 
     /// <summary>
-    /// Ambient cap used when a location ships cap 0 although it configures an ambient
-    /// spawn window. 18 is SPT's own <c>bot.json -> maxBotCap.default</c> (the value
-    /// the installs that still ship that table use for every map without a specific
-    /// entry), and it is still bounded by the raid's own bot budget.
+    /// 当地点配置了环境生成窗口却发布上限 0 时使用的
+    /// 环境上限。18 是 SPT 自己的 <c>bot.json -> maxBotCap.default</c>（仍然
+    /// 发布该表的安装对它没有专门条目的每张地图都使用这个值），且它
+    /// 仍受战局自己的 bot 预算约束。
     /// </summary>
     private const int FallbackAmbientBotCap = 18;
 
     /// <summary>
-    /// Off by default since 2026-10-13: the user does not want ambient scavengers on
-    /// Icebreaker, so the map's data decides again (<c>BotMax = 0</c> -&gt; the non-wave
-    /// scenario computes a budget of zero and spawns nobody). Turn it on to give a map
-    /// that configures an ambient window yet ships cap 0 a fallback cap instead.
+    /// 自 2026-10-13 起默认关闭：用户不希望 Icebreaker 上有
+    /// 环境 scavenger，所以又由地图数据决定（<c>BotMax = 0</c> -&gt; 非波次
+    /// 场景算出零预算，不生成任何人）。把它打开，则改为给配置了环境窗口
+    /// 却发布上限 0 的地图一个兜底上限。
     /// </summary>
     internal static bool EnableAmbientBotCapFallback = false;
 
     /// <summary>
-    /// Mirrors <c>OfflineOldSpawn/OfflineNewSpawn</c> onto the live spawn switches and
-    /// scales the ambient cap with the raid's bot amount, exactly like
-    /// <c>EFT.BaseLocalGame.smethod_1</c> and the headless host do. On its own it does
-    /// not spawn a single bot: the non-wave scenario additionally needs
-    /// <c>BotMax &gt; 0</c> (see <see cref="EnableAmbientBotCapFallback"/>). Turn it off
-    /// to keep the shipped flags untouched.
+    /// 把 <c>OfflineOldSpawn/OfflineNewSpawn</c> 镜像到实时生成开关上，并按战局的
+    /// bot 数量缩放环境上限，与 <c>EFT.BaseLocalGame.smethod_1</c> 和无头主机
+    /// 的做法完全一致。它自己不会生成哪怕一个 bot：非波次场景
+    /// 另外还需要 <c>BotMax &gt; 0</c>（见
+    /// <see cref="EnableAmbientBotCapFallback"/>）。把它关掉可让发布标志
+    /// 保持不动。
     /// </summary>
     internal static bool MirrorOfflineSpawnFlags = true;
 
     /// <summary>
-    /// The user request of 2026-10-13: one map data set may list several boss waves for the
-    /// same trigger (Icebreaker's <c>wedges1-4</c> ship three each, in three different
-    /// rooms), and the native scenario activates every one of them, so a single event puts
-    /// three Wedge bodies on the ship. On (default) exactly one wave per trigger spawns -
-    /// the one with the most escorts, ties going to the first entry of the data - and the
-    /// others are marked <c>Activated</c> so they can never fire. Off restores the native
-    /// behaviour (every entry of the shipped list) without touching the database.
+    /// 2026-10-13 的用户要求：一份地图数据可能为同一个触发器列出多个
+    /// boss 波次（Icebreaker 的 <c>wedges1-4</c> 每个发布三个，分布在三个不同的
+    /// 房间），而原版场景会激活其中每一个，于是一个事件就在船上放下
+    /// 三个 Wedge 实体。开启（默认）时每个触发器只生成一个波次 -
+    /// escort 最多的那个，数量相同时取数据中的第一个条目 - 其余的
+    /// 被标记为 <c>Activated</c>，从而永不触发。关闭则在不改数据库的情况下
+    /// 恢复原版行为（发布列表的每个条目）。
     /// </summary>
     /// <summary>
-    /// (analysis/boss-wedge-vanilla) Retired as a user setting: the collapse kept one boss wave per trigger
-    /// point, but in live co-op raids the boss then failed to spawn at all, so the vanilla mechanic is used
-    /// again. The field is kept (false) so <see cref="ApplyBossWaveCollapse"/> still reports the shipped wave
-    /// list, and the old configuration key is dropped from the file by FikaConfig.RetireRemovedEntries.
+    /// (analysis/boss-wedge-vanilla) 作为用户设置已退役：折叠让每个触发点只保留一个
+    /// boss 波次，但在实际联机战局中 boss 因此完全不再生成，所以重新使用原版
+    /// 机制。字段保留（false），使 <see cref="ApplyBossWaveCollapse"/> 仍然上报发布的
+    /// 波次列表，而旧配置键由 FikaConfig.RetireRemovedEntries 从文件中删除。
     /// </summary>
     internal static bool CollapseBossWavesPerTrigger = false;
 
     /// <summary>
-    /// EFT's WAVE_COEF_* switch of <c>BaseLocalGame.smethod_1</c>, read exactly the way
-    /// the headless port reads it.
+    /// EFT 的 <c>BaseLocalGame.smethod_1</c> 中的 WAVE_COEF_* 开关，完全按
+    /// 无头移植的读取方式读取。
     /// </summary>
     private static float ResolveWaveCoefficient(EBotAmount botAmount)
     {
@@ -1534,9 +1537,9 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// The raid's bot budget: the spawner's MaxBots and the ambient cap fallback of
-    /// <see cref="PrepareLocationForOfflineRaid"/> share this mapping, so the ambient
-    /// spawner can never aim above the raid's own limit.
+    /// 战局的 bot 预算：生成器的 MaxBots 与
+    /// <see cref="PrepareLocationForOfflineRaid"/> 的环境上限兜底共用这套映射，因此
+    /// 环境生成器永远不会瞄准超过战局自身上限的数量。
     /// </summary>
     private int ResolveBotBudget(EBotAmount botAmount)
     {
@@ -1553,12 +1556,12 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// One line about the zone names the raid data references versus the zones the
-    /// scene really provides. A location can ship wave entries that name another map's
-    /// zones (Icebreaker's <c>waves</c> and <c>OpenZones</c> still carry the Interchange
-    /// set) and the native spawner returns silently for such a wave
-    /// (EFT.BotSpawner.ActivateBotsByWave: <c>botZone == null</c> -&gt; no spawn), which
-    /// no log could show before.
+    /// 一行说明战局数据引用的区域名
+    /// 与场景实际提供的区域之间的对照。一个地点可能发布点名另一张地图
+    /// 区域的波次条目（Icebreaker 的 <c>waves</c> 和 <c>OpenZones</c> 仍带着 Interchange
+    /// 的那一套），而原版生成器对这样的波次会静默返回
+    /// （EFT.BotSpawner.ActivateBotsByWave：<c>botZone == null</c> -&gt; 不生成），
+    /// 这一点此前没有任何日志能显示。
     /// </summary>
     private void LogZoneDiagnostics(LocationSettings.Location location, BotZone[] botZones)
     {
@@ -1606,10 +1609,10 @@ public class HostGameController : BaseGameController
             }
 
     /// <summary>
-    /// One-shot proof that the map's non-wave (ambient) spawn scenario is alive: the
-    /// first scavenger-role bot the host creates is logged once per raid. On a map
-    /// whose only zone-valid spawn system is the non-wave one (Icebreaker) this line
-    /// appears shortly after the raid start - or the ambient scenario never ran.
+    /// 一次性证明地图的非波次（环境）生成场景是活的：主机创建的第一个
+    /// scavenger 角色 bot 每场战局记录一次。在唯一区域有效的生成
+    /// 系统就是非波次系统的地图（Icebreaker）上，这一行会在战局开始后不久
+    /// 出现 - 否则就是环境场景从未运行。
     /// </summary>
     private void LogAmbientBotCreation(Profile profile)
     {
@@ -1633,8 +1636,8 @@ public class HostGameController : BaseGameController
             }
 
     /// <summary>
-    /// The roles the ambient spawner picks from (<c>NonWavesSpawnScenario</c> weights
-    /// <c>assault</c> and <c>marksman</c>; their event variants share the bucket).
+    /// 环境生成器挑选的角色（<c>NonWavesSpawnScenario</c> 对 <c>assault</c> 和
+    /// <c>marksman</c> 加权；它们的事件变体共用同一个桶）。
     /// </summary>
     private static bool IsAmbientScavRole(WildSpawnType role)
     {
@@ -1677,10 +1680,10 @@ public class HostGameController : BaseGameController
     {
         if (_fikaGame is not CoopGame coopGame)
         {
-            // HeadlessGame does not have a local profile, GameUI or player
-            // owner. Its HeadlessGameController calls this hook after the
-            // world and bots are ready, so only perform the game-wide part of
-            // the native startup here.
+            // HeadlessGame 没有本地档案、GameUI 或玩家
+            // 所有者。它的 HeadlessGameController 在世界和 bot 就绪后
+            // 调用这个钩子，所以这里只执行原版启动中
+            // 与整局相关的那部分。
             _abstractGame.GameTimer.Start(GameTime.ToNative(), SessionTime.ToNative());
             Logger.LogInfo("[SERVER] Headless raid started at spawn point: " + (_spawnPoint?.Id ?? "unknown"));
             if (Location.EventTrapsData != null)
@@ -1727,8 +1730,8 @@ public class HostGameController : BaseGameController
             secretExfilPoints = exfilController.SecretEligiblePoints();
         }
 
-        // The game's ExtractionTimersPanel starts its slide/colour coroutines from inside SetTime,
-        // and Unity refuses that on the closed (inactive) panel. Drive it only while it is live.
+        // 游戏的 ExtractionTimersPanel 在 SetTime 内部启动它的滑动/颜色协程，
+        // 而 Unity 在关闭（不活动）的面板上拒绝这样做。只在它活着时驱动它。
         if (FikaUiPanels.CanDrive(coopGame.GameUi.TimerPanel, "HostGameController.Spawn.TimerPanel.SetTime"))
         {
             coopGame.GameUi.TimerPanel.SetTime(DateTimeExtensions.UtcNow,
@@ -1761,20 +1764,20 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// When the local player successfully extracts, enable freecam, notify other players about the extract
+    /// 当本地玩家成功撤离时，启用自由视角，并把撤离告知其他玩家
     /// </summary>
-    /// <param name="player">The local player to start the Coroutine on</param>
-    /// <param name="exfiltrationPoint">The exfiltration point that was used to extract</param>
-    /// <param name="transitPoint">The transit point that was used to transit</param>
+    /// <param name="player">要在其上启动协程的本地玩家</param>
+    /// <param name="exfiltrationPoint">用于撤离的撤离点</param>
+    /// <param name="transitPoint">用于转移的转移点</param>
     /// <returns></returns>
     public override void Extract(FikaPlayer player, ExfiltrationPoint exfiltrationPoint, TransitPoint transitPoint = null)
     {
         if (_fikaGame is not CoopGame coopGame)
         {
-            // Headless hosts have no local UI/player owner. Transit extracts
-            // are finalized by the headless game itself; keep the shared
-            // player bookkeeping and notify peers without touching CoopGame
-            // UI or camera state.
+            // 无头主机没有本地 UI/玩家所有者。转移撤离
+            // 由无头游戏自己完成；保留共享的玩家记账
+            // 并通知对端，而不触碰 CoopGame 的 UI
+            // 或摄像机状态。
             if (_coopHandler == null) throw new NullReferenceException("Extract: CoopHandler was null!");
             if (_fikaGame.ExtractedPlayers.Contains(player.NetId)) return;
             _fikaGame.ExtractedPlayers.Add(player.NetId);
@@ -1815,8 +1818,8 @@ public class HostGameController : BaseGameController
             sharedQuestController.ToggleQuestSharing(false);
         }
 
-        // SPT folds queued healing, energy and hydration experience into the
-        // profile before evaluating the raid result.
+        // SPT 在评估战局结果之前，把排队的治疗、能量和水分经验
+        // 折算进档案。
         player.StatisticsManager?.TryCast<HealthStatisticsManager>()?.ConsumeExperience();
 
 #if !DEBUG
@@ -1833,14 +1836,14 @@ public class HostGameController : BaseGameController
 
             if (exfiltrationPoint.HasRequirements && exfiltrationPoint.TransferItemRequirement?.Met(player, exfiltrationPoint) == true && player.IsYourPlayer)
             {
-                // Seems to already be handled by SPT so we only add it visibly
+                // 看起来已由 SPT 处理，所以这里只做可见的添加
                 player.Profile.EftStats.SessionCounters.AddDouble(0.2, NativeCounters.ExitStanding());
             }
         }
 
         if (player.Side == EPlayerSide.Savage)
         {
-            // Seems to already be handled by SPT so we only add it visibly
+            // 看起来已由 SPT 处理，所以这里只做可见的添加
             player.Profile.EftStats.SessionCounters.AddDouble(0.01d, NativeCounters.ExitStanding());
         }
 
@@ -1862,7 +1865,7 @@ public class HostGameController : BaseGameController
 
         if (_coopHandler != null)
         {
-            try // This is to allow clients to extract if they lose connection
+            try // 这样客户端在断线时也能撤离
             {
                 _server.SendGenericPacket(EGenericSubPacketType.ClientExtract,
                     ClientExtract.FromValue(player.NetId), true);
@@ -1887,10 +1890,10 @@ public class HostGameController : BaseGameController
 
             _extractRoutine = coopGame.StartCoroutine(ExtractRoutine(player, coopGame));
 
-            // Prevents players from looting after extracting
+            // 防止玩家在撤离后继续搜刮
             EftScreenManager.Instance.CloseAllScreensForced();
 
-            // Detroys session timer
+            // 销毁会话计时器
             if (TimeManager != null)
             {
                 UnityEngine.Object.Destroy(TimeManager);
@@ -1951,13 +1954,13 @@ public class HostGameController : BaseGameController
             location.Loot = new JsonType.LootData();
         }
 
-        // (2026-10-19, plan A) Terminal: put every player's equipment into the armory containers before the
-        // descriptor is built, so the containers arrive on every machine already holding the gear.
+        // （2026-10-19，方案 A）Terminal：在构建描述符之前把每位玩家的装备放进
+        // 军械库容器，这样容器到达每台机器时就已装好装备。
         try
         {
-            // (2026-10-19) Gate on the raid's own location id, not on the menu selection: the menu still holds the
-            // previous map during a transit, and an armory injection into a raid that is not the Terminal would
-            // touch a loot table it does not belong to.
+            // （2026-10-19）以战局自身的位置 id 为门槛，而不是菜单选择：转移期间菜单
+            // 仍持有上一张地图，而向非 Terminal 的战局注入军械库会
+            // 触碰不属于它的战利品表。
             if (TerminalArmory.Applies(location?.Id))
             {
                 TerminalArmory.Inject(location, FikaSingleton<IFikaNetworkManager>.Instance?.CoopHandler);
@@ -1965,8 +1968,8 @@ public class HostGameController : BaseGameController
         }
         catch (Exception exception)
         {
-            // (2026-10-19) Loot initialisation must never fail because of the terminal armory: an exception here
-            // leaves the raid stuck on "loading loot pool" for every machine.
+            // （2026-10-19）战利品初始化绝不能因为 terminal 军械库而失败：这里抛异常
+            // 会让每台机器都卡在 "loading loot pool"。
             FikaGlobals.LogError($"[TerminalArmory] skipped, the raid keeps its normal loot: {exception}");
         }
 
@@ -1979,12 +1982,12 @@ public class HostGameController : BaseGameController
     }
 
     /// <summary>
-    /// Drops loot entries the host itself cannot spawn because they are bound to
-    /// other profiles (battle pass documents, profile specific quest loot).
-    /// Clients apply their own profile filter on top of this descriptor, so the
-    /// result can never contain an item the host does not have - otherwise the
-    /// host rejects the client's pickup descriptor and the client is forced
-    /// through a full inventory resync while it is still interacting.
+    /// 丢弃主机自己无法生成的战利品条目，因为它们绑定在其他档案上
+    /// （战斗通行证文件、档案专属任务战利品）。
+    /// 客户端会在这个描述符之上再套用自己的档案过滤，所以结果
+    /// 永远不会包含主机没有的物品 - 否则主机
+    /// 会拒绝客户端的拾取描述符，而客户端在仍在交互时
+    /// 被迫经历一次完整的背包重同步。
     /// </summary>
     private JsonType.LootData FilterLootForHostProfile(JsonType.LootData loot)
     {
@@ -2016,7 +2019,7 @@ public class HostGameController : BaseGameController
         }
         catch (Exception exception)
         {
-            // Never let this optimisation cost the raid its loot.
+            // 绝不让这个优化让战局失去战利品。
             FikaGlobals.LogError($"Failed to filter the loot descriptor for the host profile: {exception}");
             return loot;
         }
@@ -2035,13 +2038,13 @@ public class HostGameController : BaseGameController
 
     public byte[] GetHostLootItems()
     {
-        // Only the descriptor built from the raid's own loot data is
-        // authoritative. Serializing the live world LootList while the host is
-        // still spawning (or before InitializeLoot ran) produced a truncated
-        // world for early clients, so an unready host now answers with an empty
-        // payload and the client polls again. The loot itself is spawned from
-        // Location.Loot by SpawnLoot, so InitializeLoot always describes the
-        // complete world.
+        // 只有根据战局自身战利品数据构建的描述符才是
+        // 权威的。在主机仍在生成时（或 InitializeLoot 运行之前）序列化
+        // 实时的世界 LootList，会为早到的客户端产出残缺的
+        // 世界，所以现在未就绪的主机用空负载
+        // 答复，客户端再轮询一次。战利品本身由 SpawnLoot 从
+        // Location.Loot 生成，所以 InitializeLoot 描述的总是
+        // 完整的世界。
         if (LootData != null && LootData.Length > 0)
         {
             return LootData;
@@ -2059,11 +2062,11 @@ public class HostGameController : BaseGameController
             num = (short)Array.IndexOf(gameWorld.Platforms, lootItem.Platform);
         }
 
-        // SPT 5's binary loot format has a dedicated JsonCorpse descriptor.
-        // Returning a plain JsonLootItem here loses the corpse's body
-        // customization and ragdoll pose, which makes a late-joining client
-        // see only an empty loot item (and prevents dogtag/corpse inventory
-        // from being restored by the native loot spawner).
+        // SPT 5 的二进制战利品格式有专门的 JsonCorpse 描述符。
+        // 这里返回普通的 JsonLootItem 会丢掉尸体的外观
+        // 定制和布娃娃姿态，使迟到的客户端
+        // 只看到一个空战利品条目（并且阻止 dogtag/尸体背包
+        // 被原版战利品生成器恢复）。
         if (lootItem.TryCast<Corpse>() is { } corpse)
         {
             var bones = num > -1 ? corpse.TransformSyncsRelativeToPlatform : corpse.TransformSyncs;
@@ -2086,9 +2089,9 @@ public class HostGameController : BaseGameController
                 Side = corpse.Side,
                 Bones = bones,
                 ProfileID = corpse.PlayerProfileID,
-                // SPT 5 removed IsZombieCorpse from the native Corpse API.
-                // The regular player corpse path is the only one Fika can
-                // author here; native zombie corpses keep the safe default.
+                // SPT 5 从原版 Corpse API 中移除了 IsZombieCorpse。
+                // 常规玩家尸体路径是 Fika 在这里唯一能
+                // 编写的路径；原版僵尸尸体保留安全的默认值。
                 IsZombieCorpse = false
             };
         }
@@ -2152,9 +2155,9 @@ public class HostGameController : BaseGameController
     {
         if (scenario == null) return;
 
-        // SPT 5 retains elapsed timers in the scenario, while TimerManager has
-        // already stopped and detached them. Native Stop assumes every entry
-        // is active; prune completed entries before its normal cancellation.
+        // SPT 5 在场景中保留已耗尽的计时器，而 TimerManager 早已
+        // 停止并分离了它们。原版 Stop 假定每个条目都是活动的；
+        // 在它正常取消之前先剪除已完成的条目。
         var timers = scenario.Timers;
         for (var index = timers.Count - 1; index >= 0; index--)
         {

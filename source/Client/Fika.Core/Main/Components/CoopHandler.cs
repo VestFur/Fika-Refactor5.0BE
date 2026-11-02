@@ -21,7 +21,7 @@ using Fika.Core.Networking.Packets.Player.Common.SubPackets;
 namespace Fika.Core.Main.Components;
 
 /// <summary>
-/// CoopHandler handles most of the spawning logic in the raid, e.g. other players or AI. It also handles the extraction of the local player.
+/// CoopHandler 负责 raid 中的大部分生成逻辑，例如其他玩家或 AI。它还负责本地玩家的撤离。
 /// </summary>
 public class CoopHandler : MonoBehaviour
 {
@@ -35,31 +35,31 @@ public class CoopHandler : MonoBehaviour
 
     #region Fields/Properties
     /// <summary>
-    /// Reference to the local <see cref="CoopGame"/> instance
+    /// 本地 <see cref="CoopGame"/> 实例的引用
     /// </summary>
     public IFikaGame LocalGameInstance { get; internal set; }
     /// <summary>
-    /// The ID of the raid session
+    /// raid 会话的 ID
     /// </summary>
     public string ServerId { get; internal set; }
     /// <summary>
-    /// Reference to the local <see cref="FikaPlayer"/> player
+    /// 本地 <see cref="FikaPlayer"/> 玩家的引用
     /// </summary>
     public FikaPlayer MyPlayer { get; internal set; }
     /// <summary>
-    /// If the <see cref="CoopHandler"/> should sync and spawn profiles during <see cref="Update"/>
+    /// <see cref="CoopHandler"/> 是否应在 <see cref="Update"/> 期间同步并生成 profile
     /// </summary>
     public bool ShouldSync { get; set; }
     /// <summary>
-    /// Dictionary of key = <see cref="FikaPlayer.NetId"/>, value = <see cref="FikaPlayer"/>
+    /// 键 = <see cref="FikaPlayer.NetId"/>、值 = <see cref="FikaPlayer"/> 的字典
     /// </summary>
     public Dictionary<int, FikaPlayer> Players { get; internal set; }
     /// <summary>
-    /// All human players in the form of <see cref="FikaPlayer"/>
+    /// 以 <see cref="FikaPlayer"/> 形式表示的所有人类玩家
     /// </summary>
     public List<FikaPlayer> HumanPlayers { get; internal set; }
     /// <summary>
-    /// The amount of human players
+    /// 人类玩家的数量
     /// </summary>
     public int AmountOfHumans
     {
@@ -69,29 +69,29 @@ public class CoopHandler : MonoBehaviour
         }
     }
     /// <summary>
-    /// List of <see cref="FikaPlayer.NetId"/>s that have extracted
+    /// 已撤离的 <see cref="FikaPlayer.NetId"/> 列表
     /// </summary>
     public List<int> ExtractedPlayers { get; internal set; }
     /// <summary>
-    /// Returns the current <see cref="EQuitState"/>
+    /// 返回当前的 <see cref="EQuitState"/>
     /// </summary>
     public EQuitState QuitState
     {
         get
         {
-            // error?
+            // 出错？
             if (LocalGameInstance == null || MyPlayer == null)
             {
                 return EQuitState.None;
             }
 
-            // are we alive
+            // 我们还活着吗
             if (!MyPlayer.HealthController.IsAlive)
             {
                 return EQuitState.Dead;
             }
 
-            // have we extracted
+            // 我们已经撤离了吗
             if (LocalGameInstance.ExtractedPlayers.Contains(MyPlayer.NetId))
             {
                 return EQuitState.Extracted;
@@ -103,18 +103,18 @@ public class CoopHandler : MonoBehaviour
 
     private ManualLogSource _logger;
     /// <summary>
-    /// List of all queued players by <see cref="FikaPlayer.NetId"/>
+    /// 按 <see cref="FikaPlayer.NetId"/> 索引的所有已排队玩家的列表
     /// </summary>
     private List<int> _queuedPlayers;
     private readonly Dictionary<int, SpawnObject> _pendingPlayerStates = [];
     /// <summary>
-    /// Queue of <see cref="SpawnObject"/> containing all players to spawn
+    /// 包含所有待生成玩家的 <see cref="SpawnObject"/> 队列
     /// </summary>
     private Queue<SpawnObject> _spawnQueue;
     private bool _isClient;
     private float _charSyncCounter;
     private bool _requestQuitGame;
-    /// <summary>Profiles that arrived before the world existed and were kept in the spawn queue (see QueueProfile).</summary>
+    /// <summary>在世界存在之前到达、并被保留在生成队列中的 profile（见 QueueProfile）。</summary>
     private int _profilesQueuedBeforeWorld;
     #endregion
 
@@ -144,18 +144,18 @@ public class CoopHandler : MonoBehaviour
 
     public void CleanUpForTransit()
     {
-        // (analysis/transit-reload-oom) This component - and the network manager that owns it - survives a
-        // transit on purpose, so every reference held here survives with it. Two of them point straight at
-        // the raid that is being replaced and are dropped below instead of being carried into the next one:
-        // the observed players of the old world, and the local player of the old world.
+        // (analysis/transit-reload-oom) 本组件 —— 以及拥有它的网络管理器 —— 会有意
+        // 在 transit 中存活下来，因此这里持有的每个引用都会随之存活。其中有两个直接指向
+        // 正在被替换的那场 raid，它们会在下面被丢弃，而不是被带进下一场：
+        // 旧 world 的 observed 玩家，以及旧 world 的本地玩家。
         var network = FikaSingleton<IFikaNetworkManager>.Instance;
         var observed = network?.ObservedPlayers;
         var droppedPlayers = observed?.Count ?? 0;
         if (droppedPlayers > 0)
         {
-            // The list is ticked every frame by the surviving network manager (FikaClient.Update), so a
-            // stale entry is not only a pinned Player object - it is a destroyed player being driven.
-            // The new world re-adds every player it spawns (CoopHandler.SpawnObservedPlayer).
+            // 该列表每帧由存活的网络管理器（FikaClient.Update）驱动，因此一个
+            // 陈旧条目不只是被钉住的 Player 对象 —— 它是一个正在被驱动的、已销毁的玩家。
+            // 新的 world 会重新加入它生成的每一个玩家（CoopHandler.SpawnObservedPlayer）。
             observed.Clear();
         }
 
@@ -178,8 +178,8 @@ public class CoopHandler : MonoBehaviour
             if (client != null)
             {
                 client.FikaClientWorld = null;
-                // NetManagerUtils.SetupGameVariables sets both again when the new raid creates its player;
-                // every reader of theirs during the swap window is gated by LocalGameInstance/the world.
+                // 新 raid 创建它的玩家时，NetManagerUtils.SetupGameVariables 会重新设置这两者；
+                // 换挡窗口内所有读取它们的代码都受 LocalGameInstance/world 门控。
                 client.MyPlayer = null;
             }
         }
@@ -187,9 +187,9 @@ public class CoopHandler : MonoBehaviour
     }
 
     /// <summary>
-    /// Checks if all human players are alive/downed
+    /// 检查所有人类玩家是否都已死亡/倒地
     /// </summary>
-    /// <returns><see langword="true"/> if everyone is dead; otherwise <see langword="false"/></returns>
+    /// <returns>若所有人都已死亡则为 <see langword="true"/>；否则为 <see langword="false"/></returns>
     public bool AreAllHumanPlayersDead()
     {
         var deadPlayers = 0;
@@ -224,7 +224,7 @@ public class CoopHandler : MonoBehaviour
     }
 
     /// <summary>
-    /// (analysis/perf-round2) The co-op handler's per-frame work is one slot of the frame-cost probe.
+    /// (analysis/perf-round2) co-op handler 的逐帧工作是帧开销探针的一个槽位。
     /// </summary>
     protected void Update()
     {
@@ -254,8 +254,8 @@ public class CoopHandler : MonoBehaviour
                 _logger.LogInfo($"Spawning queued player: netId={spawn.NetId}, profile={spawn.Profile?.ProfileId}, isAI={spawn.IsAI}");
                 if (spawn.QueuedBeforeWorld)
                 {
-                    // The profile waited for the world: name how long, so a future run shows whether the
-                    // world-not-ready window is still long enough to matter.
+                    // 该 profile 等待了 world：记录等了多久，这样将来某次运行可以显示
+                    // world 未就绪的窗口是否仍然长到值得关注。
                     spawn.QueuedBeforeWorld = false;
                 }
                 MainThreadDispatcher.RunAsync(() => SpawnPlayer(spawn).AsTask()).Forget();
@@ -319,7 +319,7 @@ public class CoopHandler : MonoBehaviour
     }
 
     /// <summary>
-    /// This handles the ways of exiting the active game session
+    /// 负责处理退出当前活动游戏会话的各种方式
     /// </summary>
     private void ProcessQuitting()
     {
@@ -329,7 +329,7 @@ public class CoopHandler : MonoBehaviour
         }
     }
 
-    /// <summary>Requests extraction using the same state and peer checks as the configured hotkey.</summary>
+    /// <summary>使用与已配置热键相同的状态检查与 peer 检查来请求撤离。</summary>
     public void RequestQuit()
     {
         if (FikaFinalMissionDirector.DeferStop) return;
@@ -348,14 +348,14 @@ public class CoopHandler : MonoBehaviour
         var isPlayerAlive = MyPlayer.ActiveHealthController.IsAlive;
         var exitLocation = isPlayerAlive ? fikaGame.ExitLocation : null;
 
-        // client logic
+        // 客户端逻辑
         if (_isClient)
         {
             fikaGame.Stop(MyPlayer.ProfileId, fikaGame.ExitStatus, exitLocation, 0);
             return;
         }
 
-        // host logic
+        // 主机逻辑
         var server = FikaSingleton<FikaServer>.Instance;
         var peers = server.NetServer.ConnectedPeersCount;
 
@@ -406,15 +406,15 @@ public class CoopHandler : MonoBehaviour
     }
 
     /// <summary>
-    /// How long a player spawn waits for its prefab pools once the raid is live.
+    /// raid 进入运行状态后，一次玩家生成会为其 prefab 池等待多久。
     /// </summary>
     private const int PrefabLoadTimeoutMs = 120000;
 
     internal bool QueueSpawningPlayerState(Fika.Core.Networking.Packets.Player.Common.CommonPlayerPacket packet)
     {
         if (!_pendingPlayerStates.TryGetValue(packet.NetId, out var spawn)) return false;
-        // Update timers at receive time so bundle loading cannot extend bleedout
-        // or rescue pauses. Their visual state is applied after player creation.
+        // 在接收时更新计时器，这样 bundle 加载无法延长流血倒计时
+        // 或救援暂停。它们的视觉状态在玩家创建之后再应用。
         if (packet.SubPacket is DownedSyncPacket downed)
         {
             if (!spawn.DeathPending) spawn.RevivalClock.Restore(downed.State);
@@ -434,8 +434,8 @@ public class CoopHandler : MonoBehaviour
         if (packet.SubPacket is HealthSyncPacket health &&
             health.Packet.SyncType == EFT.HealthSystem.SyncHealthPacket.ESyncType.IsAlive && !health.Packet.Data.IsAlive.IsAlive)
             spawn.DeathPending = true;
-        // Packet instances are pooled. Retain serialized bytes while native
-        // prefab/hands creation yields, never references to recycled subpackets.
+        // 报文实例是池化的。在本机 prefab/双手创建让出期间，请保留序列化后的字节，
+        // 绝不要保留对被回收子报文的引用。
         var writer = new NetDataWriter();
         packet.Serialize(writer);
         spawn.PendingPackets.Add(writer.CopyData());
@@ -471,15 +471,15 @@ public class CoopHandler : MonoBehaviour
         }
 
         await JobScheduler.Yield().AsManaged();
-        // A player that walks into a raid which already runs cannot wait for the
-        // configured (low) load priority: the raid never goes idle again, so the
-        // bundle job would never be picked up and the spawn would hang forever.
+        // 中途走进一场已经在运行的 raid 的玩家，不能去等已配置的（低）加载优先级：
+        // raid 再也不会进入空闲状态，因此那个 bundle 任务
+        // 永远不会被拾起，生成会永远挂住。
         var raidAlreadyRunning = FikaSingleton<IFikaGame>.Instance?.GameController?.RaidStarted == true;
-        // Inside a live raid the "Local" assembly type never finishes its pool job,
-        // which is why a late joiner's prefabs (for example the player scav body,
-        // wild_body.bundle) stayed unloaded and the spawn failed with
-        // "wild_body.bundle is not loaded". Mid-raid loads use the online assembly
-        // type and the general priority, exactly like the world object spawner.
+        // 在一场运行中的 raid 里，"Local" 程序集类型永远不会完成它的池任务，
+        // 这就是为什么后加入者的 prefab（例如玩家 scav 的躯体，
+        // wild_body.bundle）一直未被加载，生成会以
+        // "wild_body.bundle is not loaded" 失败。raid 中期的加载使用 online 程序集
+        // 类型和一般优先级，与世界对象生成器完全一致。
         var assemblyType = raidAlreadyRunning
             ? ObjectsFactory.AssemblyType.Online
             : ObjectsFactory.AssemblyType.Local;
@@ -494,14 +494,14 @@ public class CoopHandler : MonoBehaviour
             var loadTask = Singleton<ObjectsFactory>.Instance.LoadBundlesAndCreatePools(ObjectsFactory.PoolsCategory.Raid,
                 assemblyType, allPrefabPaths, priority,
                 null, new Il2CppSystem.Threading.CancellationToken()).AsManaged();
-            // Never wait for the pool job without a bound. A pending job would keep
-            // the whole spawn - and with it peer.Player binding - from completing,
-            // and every gameplay packet of that client (inventory operations,
-            // pickups, proceeds) would then be rejected by the host, which the
-            // player experiences as the client freezing the moment it picks
-            // something up. If the load does not finish in time the spawn continues
-            // with whatever is already resident; a failure is logged and retried
-            // when the client announces its character again.
+            // 绝不要在无上限的情况下等待池任务。一个挂起的任务会让整个生成 —— 以及随之而来的
+            // peer.Player 绑定 —— 无法完成，
+            // 而那个客户端的每个玩法报文（库存操作、
+            // 拾取、收益）随后都会被主机拒绝，而玩家
+            // 体验到的就是客户端在拾起东西的那一刻卡死。
+            // 如果加载没有及时完成，生成会带着已经驻留的内容
+            // 继续下去；失败会被记录，并在客户端再次宣告其角色时
+            // 重试。
             var finished = await Task.WhenAny(loadTask, Task.Delay(PrefabLoadTimeoutMs));
             if (finished != loadTask)
             {
@@ -567,7 +567,7 @@ public class CoopHandler : MonoBehaviour
                 var botController = (FikaSingleton<IFikaGame>.Instance.GameController as HostGameController)?.BotsController;
                 if (botController != null)
                 {
-                    // Start Coroutine as botController might need a while to start sometimes...
+                    // 启动协程，因为 botController 有时可能需要一段时间才能启动……
 #if DEBUG
                     _logger.LogInfo("Starting AddClientToBotEnemies routine.");
 #endif
@@ -588,27 +588,27 @@ public class CoopHandler : MonoBehaviour
     }
 
     /// <summary>
-    /// How many profiles may wait in the spawn queue at once. The queue is drained one profile per frame
-    /// once ShouldSync is set, so this only matters for a burst - and a burst that exceeds it is reported
-    /// instead of growing without bound.
+    /// 一次最多允许多少个 profile 在生成队列中等待。一旦 ShouldSync 被设置，队列每帧消费一个 profile，
+    /// 因此这只对突发情况有意义 —— 而超出该上限的突发会被上报，
+    /// 而不是无上限地增长。
     /// </summary>
     private const int MaxQueuedProfiles = 256;
 
     /// <summary>
-    /// Queues one profile (player or AI) for spawning.
+    /// 把一个 profile（玩家或 AI）排入生成队列。
     ///
-    /// The world may legitimately not exist yet: a transit replaces the world object, and a peer that
-    /// finished its own load can announce its character while this machine's world is still being
-    /// created - and the client's world is created *later* than the host's raid start. This method used
-    /// to drop such a profile with "QueueProfile::GameWorld was null, not queuing" (10 of them in the
-    /// 2026-10-11 18:58 client run): the peer's character was never spawned, and every later command
-    /// that addresses it failed, e.g. the host's AI teleport command
-    /// ("Could not find 20..29 to teleport", LogOutput.log:2727-2736, 10 lines).
+    /// world 可能确实还不存在：transit 会替换 world 对象，而一个已经
+    /// 完成自身加载的 peer，可能会在本机的 world 仍在创建时宣告它的角色 ——
+    /// 而客户端的 world 比主机的 raid 启动要*更晚*创建。这个方法以前
+    /// 会用 "QueueProfile::GameWorld was null, not queuing" 丢掉这样的 profile（在
+    /// 2026-10-11 18:58 那次客户端运行中有 10 次）：该 peer 的角色从未被生成，之后每条
+    /// 针对它的命令都失败了，例如主机的 AI 传送命令
+    /// （"Could not find 20..29 to teleport"，LogOutput.log:2727-2736，共 10 行）。
     ///
-    /// The profile is now kept instead. The spawn pump only runs while ShouldSync is set, which
-    /// CoopGame.InitPlayer sets after the world exists, so a queued profile is spawned exactly when it
-    /// can be spawned and never earlier. Only the world-dependent duplicate check is skipped while the
-    /// world is missing; SpawnPlayerCore repeats it against AllPlayersEverExisted at spawn time.
+    /// 现在改为保留该 profile。生成泵只在 ShouldSync 被设置时运行，而
+    /// CoopGame.InitPlayer 是在 world 存在之后才设置它，因此排队的 profile 恰好在
+    /// 能够生成时才被生成，绝不会更早。只有在 world 缺失期间才会跳过依赖 world 的重复检查；
+    /// SpawnPlayerCore 会在生成时针对 AllPlayersEverExisted 再检查一次。
     /// </summary>
     public void QueueProfile(Profile profile, byte[] healthByteArray, Vector3 position, int netId, bool isAlive, bool isAI, MongoID firstId, ushort firstOperationId, bool isZombie, MongoID? itemId,
         EHandsControllerType controllerType = EHandsControllerType.None, RevivalState? revivalState = null, bool isStationary = false)
@@ -638,11 +638,11 @@ public class CoopHandler : MonoBehaviour
                 return;
             }
 
-            // (2026-10-17) The net id is marked as queued but no spawn object is pending for it: that is
-            // what a world swap leaves behind when the queue was cleared while an announcement was being
-            // applied. Treating the stale mark as "already queued" kept the peer without a player for the
-            // rest of the raid (every proceed request answered with "unbound player"), so the mark is
-            // dropped and the profile is queued again.
+            // (2026-10-17) 该 net id 被标记为已排队，但并没有挂起的生成对象对应它：这正是
+            // 在应用某个宣告的过程中队列被清空时，一次 world 换挡留下的痕迹。把陈旧
+            // 标记当作"已排队"会让该 peer 在 raid 余下的时间里一直没有玩家（每个
+            // proceed 请求都被回答 "unbound player"），因此这个标记被
+            // 丢弃，profile 会被重新排队。
             _queuedPlayers.Remove(netId);
             LoadSync.Warn("CoopHandler.QueueProfile",
                 "netId " + netId + " was marked as queued without a pending spawn (" + profile.ProfileId
@@ -651,8 +651,8 @@ public class CoopHandler : MonoBehaviour
 
         if (_spawnQueue.Count >= MaxQueuedProfiles)
         {
-            // Give the net id back, otherwise CheckIds (the CharacterSync answer) would believe this
-            // player is on its way and never ask the host for the character again.
+            // 把 net id 还回去，否则 CheckIds（CharacterSync 的应答）会认为这个
+            // 玩家正在路上，从而再也不向主机索要该角色。
             _queuedPlayers.Remove(netId);
             LoadSync.Warn("CoopHandler.QueueProfile",
                 "the spawn queue is full (" + MaxQueuedProfiles + "): netId=" + netId + ", profile=" + profile.ProfileId
@@ -699,7 +699,7 @@ public class CoopHandler : MonoBehaviour
         var healthBytes = spawnObject.HealthBytes;
         var isZombie = spawnObject.IsZombie;
 
-        // Handle null bytes on players
+        // 处理玩家上的空字节
         if (!isAi && (spawnObject.HealthBytes == null || spawnObject.HealthBytes.Length == 0))
         {
             healthBytes = profile.Health.SerializeHealthInfo();
@@ -754,7 +754,7 @@ public class CoopHandler : MonoBehaviour
 
         FikaSingleton<IFikaNetworkManager>.Instance.ObservedPlayers.Add(otherPlayer);
 #if DEBUG
-        _logger.LogInfo($"SpawnObservedPlayer: {profile.GetCorrectedNickname()} spawning with NetId {netId} at [{position:F1}]");
+        _logger.LogInfo($"SpawnObservedPlayer: {profile.GetCorrectedNickname()} spawning with NetId {netId} at [{position.x:F1}, {position.y:F1}, {position.z:F1}]");
 #endif
 
         if (!Players.ContainsKey(netId))
@@ -859,7 +859,7 @@ public class CoopHandler : MonoBehaviour
     }
 
     /// <summary>
-    /// The state your character or game is in to Quit.
+    /// 你的角色或游戏为退出（Quit）所处的状态。
     /// </summary>
     public enum EQuitState
     {
@@ -885,9 +885,9 @@ public class CoopHandler : MonoBehaviour
         internal readonly RevivalStateClock RevivalClock = new();
         internal readonly List<byte[]> PendingPackets = [];
         internal bool DeathPending;
-        /// <summary>True when this profile was queued before a game world existed (see QueueProfile).</summary>
+        /// <summary>当该 profile 在游戏世界存在之前就被排队时为 true（见 QueueProfile）。</summary>
         internal bool QueuedBeforeWorld;
-        /// <summary>When it was queued, for the [LoadSync] line the spawn pump writes.</summary>
+        /// <summary>它被排队的时刻，供生成泵写出的 [LoadSync] 行使用。</summary>
         internal float QueuedAt;
     }
 }
