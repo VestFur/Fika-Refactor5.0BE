@@ -3,6 +3,7 @@ using Comfort.Common;
 using Fika.Core.Main.Utils;
 using Fika.Core.Main.Components;
 using Fika.Core.Main.GameMode;
+using Fika.Core.Main.HostClasses;
 
 namespace Fika.Core;
 
@@ -26,6 +27,10 @@ public sealed class FikaPluginBehaviour : MonoBehaviour
         FikaPlugin.Instance.UpdateInitialization();
 
         RepairLocalStateInUpdate();
+
+        // 主机端库存操作的 native 完成若始终不到达，会让 EFT.PickUpState 一直保持在进入状态；
+        // 这里在其超时后让它失败，从而完成拾取回调。
+        FikaBoundaries.Run(BoundaryUpdate + "/HostOperationWatchdog.Tick", static () => HostOperationWatchdog.Tick());
 
         // AP (analysis/nonfika-raid-inertness)：raid 类型在此被重新核实 —— 最多每 500 ms 一次
         // 单例读取 —— 这样一个为我们自己的 raid 布置的门就不可能存活进一场原生 raid，

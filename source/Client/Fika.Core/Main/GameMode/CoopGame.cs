@@ -879,6 +879,9 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         // GroundLootPickup.NoteStuckPickup）。释放逻辑完全保持原样。
         GroundLootPickup.DiagnoseStuckState(movementContext, stuckState, heldFor);
         GroundLootPickup.NoteStuckPickup(_localPlayer, stuckState, heldFor);
+        // The native pickup continuation (MovementContext.PickupAction) is lost when the take-item
+        // animation event never fires. Run it once before releasing the state.
+        global::Fika.Core.Main.Utils.PickupContinuationRepair.TryRepair(_localPlayer, movementContext, stuckState, heldFor);
         _logger.LogWarning($"Local player stayed in {stuckState} for more than {timeout} seconds; releasing the native interaction state");
         NativeInteractionRelease.Release(_localPlayer, "stuck-pickup-state");
     }
@@ -2196,6 +2199,8 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         Fika.Core.Main.Utils.FikaRaidGate.Disarm("CoopGame.CleanUp");
         FikaBackendUtils.CleanUpVariables();
         BTRSide_Patches.Passengers.Clear();
+        // 池化的主机端操作不得存活到下一场 raid 里在那里超时。
+        global::Fika.Core.Main.HostClasses.HostOperationWatchdog.Reset();
         // （analysis/transit-crash-unload）raid 的最后一站：这个世界的任何东西都不许再可达。
         Fika.Core.Main.Utils.WorldLifecycle.MarkWorldTornDown("CoopGame.CleanUp");
     }
