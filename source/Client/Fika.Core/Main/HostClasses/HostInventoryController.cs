@@ -96,13 +96,13 @@ public sealed class HostInventoryController : BaseInventoryController
         }
         catch (Exception exception)
         {
-            // Execute is dispatched fire-and-forget; an exception that reaches this method used to be
-            // swallowed by Forget(). The native EFT.PickUpState only leaves when this callback is
-            // completed, so every failure path has to fail it and release the interaction state.
+            // Execute 是以 fire-and-forget 方式派发的；到达本方法的异常过去会被 Forget() 吞掉。
+            // 只有当这个回调被完成时，原生 EFT.PickUpState 才会退出，因此每条失败路径
+            // 都必须让它失败并释放交互状态。
             FikaGlobals.LogError($"[LootFix] host-operation threw class={operation?.GetIl2CppType().Name} " +
                 $"id={operation?.Id}: {exception}", "HandleOperation");
-            // Use the callback captured by this method, not handler.Callback: RunHostOperation may
-            // already have returned the pooled handler, and CancelDispatch/Dispose can clear its field.
+            // 使用本方法捕获到的 callback，而不是 handler.Callback：RunHostOperation 可能
+            // 已经把池化的处理器归还了，而 CancelDispatch/Dispose 会清空它的字段。
             try { callback?.Fail($"host operation failed: {exception.Message}", 1); } catch { }
             try { NativeInteractionRelease.Release(_player, "host-operation-exception"); } catch { }
         }
@@ -221,8 +221,8 @@ public sealed class HostInventoryController : BaseInventoryController
         }
         catch (Exception exception)
         {
-            // Relaying the operation to peers is optional; executing it (and completing the native
-            // pickup callback) is mandatory. A descriptor failure must not cancel the operation.
+            // 把操作转发给其他玩家是可选的；执行它（并完成原生拾取回调）则是必须的。
+            // 描述符构建失败绝不能取消该操作。
             FikaGlobals.LogWarning($"[LootFix] relay-descriptor-failed class={operation.GetIl2CppType().Name} " +
                 $"id={operation.Id}: {exception.GetType().Name}: {exception.Message}", "RunHostOperation");
         }

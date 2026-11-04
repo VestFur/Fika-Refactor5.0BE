@@ -7,14 +7,14 @@ using UnityEngine;
 namespace Fika.Core.Main.HostClasses;
 
 /// <summary>
-/// Host inventory operations are dispatched fire-and-forget. When an operation never reaches a
-/// terminal result, the native EFT.PickUpState callback is never completed and the player stays in
-/// the pickup state until CoopGame's 5 s interaction watchdog releases it. This watchdog fails and
-/// releases the operation after 10 s, so a lost callback cannot lock pickup for the rest of the raid.
+/// 主机端库存操作以 fire-and-forget 方式派发。当某个操作始终不进入终态结果时，
+/// 原生的 EFT.PickUpState 回调便永远不会被完成，玩家会一直停留在拾取状态，
+/// 直到 CoopGame 的 5 秒交互看门狗将其释放。本看门狗在 10 秒后令该操作失败并
+/// 释放它，因此丢失的回调不会把拾取锁死整场 raid。
 ///
-/// The handler is pooled and reused. The entry therefore stores the operation it was created for:
-/// an old entry whose handler already runs another operation is stale and must be dropped, never
-/// timed out against the new operation.
+/// 处理器是池化复用的。因此条目会记录它被创建时对应的那个操作：
+/// 某个旧条目的处理器若已在运行另一个操作，该条目即为过期，必须直接丢弃，
+/// 绝不能拿它去对新操作做超时判定。
 /// </summary>
 internal static class HostOperationWatchdog
 {
@@ -68,8 +68,8 @@ internal static class HostOperationWatchdog
                     return;
                 }
 
-                // Walk backwards and remove in place: this runs during ordinary host inventory traffic,
-                // so no per-frame snapshot copy. Only a real timeout allocates the expired list.
+                // 反向遍历并原地移除：这段逻辑跑在常规的主机端库存流量里，
+                // 因此不做逐帧的快照拷贝。只有真正超时时才会分配 expired 列表。
                 for (var i = Pending.Count - 1; i >= 0; i--)
                 {
                     var entry = Pending[i];
@@ -106,7 +106,7 @@ internal static class HostOperationWatchdog
         }
     }
 
-    /// <summary>Clears per-raid state so a pooled operation from a previous raid can never time out here.</summary>
+    /// <summary>清除每场 raid 的状态，使上一场 raid 池化下来的操作永远无法在这里超时。</summary>
     internal static void Reset()
     {
         try
