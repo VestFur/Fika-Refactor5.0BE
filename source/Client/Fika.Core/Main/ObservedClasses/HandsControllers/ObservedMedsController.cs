@@ -34,9 +34,9 @@ internal sealed class ObservedMedsController : Player.MedsController
     public static ObservedMedsController Create(FikaPlayer player, Item item, OneAndList<EBodyPart> bodyParts, float amount, int animationVariant)
     {
         var controller = CreateController<ObservedMedsController>(player, item, bodyParts, amount, animationVariant);
-            // OnOutUseEvent is an event in 47888 and cannot be cleared by assignment
-        // controller._fikaPlayer no longer exists in 47888
-// controller._animation no longer exists in 47888: controller._animation = animationVariant;
+        controller.OnOutUseEvent = null;
+        controller._fikaPlayer = player;
+        controller._animation = animationVariant;
         return controller;
     }
 
@@ -46,7 +46,7 @@ internal sealed class ObservedMedsController : Player.MedsController
         FirearmsAnimator.SetAnimationSpeed(animationSpeed);
         FirearmsAnimator.SetPointOfViewOnSpawn(EPointOfView.ThirdPerson);
         ObservedOperation = new ObservedMedsOperation(this, InitiateOperation<MedsInHandsOperation>());
-        ObservedOperation.ObservedStart((System.Action)(() => callback?.Invoke()));
+        ObservedOperation.ObservedStart(callback);
     }
 
     public override void Destroy()
@@ -105,8 +105,8 @@ internal sealed class ObservedMedsController : Player.MedsController
     {
         private readonly ObservedMedsController _observedMedsController;
         private readonly MedsInHandsOperation _operation;
-        private readonly System.Action<IHealthEffect> _effectRemovedHandler;
-        private readonly System.Action _outUseHandler;
+        private readonly Il2CppSystem.Action<IHealthEffect> _effectRemovedHandler;
+        private readonly Il2CppSystem.Action _outUseHandler;
         private IHealthController _healthController;
         private int _animation;
         private bool _destroyRequested;
@@ -115,11 +115,11 @@ internal sealed class ObservedMedsController : Player.MedsController
         {
             _observedMedsController = controller;
             _operation = operation;
-            _effectRemovedHandler = (System.Action<IHealthEffect>)HealthController_EffectRemovedEvent;
-            _outUseHandler = (System.Action)ObservedMedsController_OnOutUseEvent;
+            _effectRemovedHandler = (Il2CppSystem.Action<IHealthEffect>)HealthController_EffectRemovedEvent;
+            _outUseHandler = (Il2CppSystem.Action)ObservedMedsController_OnOutUseEvent;
         }
 
-        public void ObservedStart(System.Action callback)
+        public void ObservedStart(Il2CppSystem.Action callback)
         {
             _operation.State = Player.EOperationState.Executing;
             _operation.SetLeftStanceAnimOnStartOperation();

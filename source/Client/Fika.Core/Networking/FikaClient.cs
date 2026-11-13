@@ -61,6 +61,8 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
     public bool HostReady;
     public bool HostLoaded;
     public bool HostReceivedLocation;
+    public bool ReconnectDone;
+    internal string ReconnectError;
     public NetPeer ServerConnection { get; private set; }
     public NetManager NetClient
     {
@@ -137,225 +139,7 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
     private const int MaxEmptyLootDescriptors = 30;
     private int _emptyLootDescriptors;
     private Queue<EFT.InventoryLogic.Operations.AbstractOperation> _inventoryOperations;
-    /// <summary>
-    /// Transit events that arrived while this machine had no world to apply them to.
-    /// <para>
-    /// Each entry carries the map-state generation it was queued in (FikaClient.MapState), because the
-    /// queue now survives a world swap instead of being wiped by <c>ClearMapState</c>: a transit reload
-    /// tears the world down long before the next one exists, and an event that arrives in that window
-    /// belongs to the raid that is being created. Entries of an older generation are dropped at the swap
-    /// and at every flush (analysis/transit-reload-sync), so nothing from a previous raid is replayed.
-    /// </para>
-    /// </summary>
-    private readonly Queue<(TransitEventPacket Packet, int Generation)> _pendingTransitEvents = new();
-
-    // ------------------------------------------------------------------ world packet queue
-    // (analysis/loading-screen-sync)
-    //
-    // The world state packets (WorldPacket: ragdolls, grenades, artillery, sync objects, loot sync)
-    // are applied to Singleton<GameWorld>.Instance. A transit replaces that world: between the swap
-    // and the new world's creation the instance is null, and every such packet was dropped with one
-    // error line per packet (36 of them in the 2026-10-11 18:58 client run, right after the transit).
-    // The queue below holds the packets of that window as *bytes* - the receive path hands the same
-    // WorldPacket instance to every receive (NetPacketProcessor.SubscribeReusable keeps one reference),
-    // so the packet object itself can never be retained - and replays them through the same packet
-    // processor once the world exists.
-    //
-    // Bounded on purpose, in three ways:
-    //   * armed only for the world swap after a transit (ArmWorldPacketQueue); outside that window the
-    //     old behaviour (drop + aggregated error) stays, because a world packet that arrives while no
-    //     raid is being loaded belongs to the previous raid and must never be applied to the next one;
-    //   * at most MaxPendingWorldPackets entries - a longer burst is truncated, oldest first;
-    //   * every entry expires after WorldPacketQueueMaxAgeSeconds; an expired entry is dropped, not
-    //     replayed, so stale world objects cannot be resurrected into a fresh world.
-    internal const int MaxPendingWorldPackets = 256;
-    private const float WorldPacketQueueMaxAgeSeconds = 15f;
-
-    /// <summary>Cap of the transit startup event queue below (same bound as the world packet queue).</summary>
-    internal const int MaxPendingTransitEvents = 256;
-
-    private sealed class PendingWorldPacket
-    {
-        internal byte[] Payload;
-        internal float QueuedAt;
-        internal string Origin;
-    }
-
-    private readonly Queue<PendingWorldPacket> _pendingWorldPackets = new();
-    private bool _worldPacketQueueArmed;
-    private int _worldPacketsDropped;
-    private float _worldPacketDropReportedAt;
-
-    /// <summary>How many InformationPacket responses the host has sent for this session (see OnInformationPacketReceived).</summary>
-    public int HostResponseCount { get; private set; }
-
-    // ------------------------------------------------------------------ transit retention counters
-    // (analysis/transit-reload-oom)
-    //
-    // This object survives a transit on purpose (see NetManagerUtils.DestroyNetManager), so every list,
-    // queue and cache it owns survives with it. These four counters are what the [MemDiag] line prints,
-    // so the next run shows whether a swap left old-raid state behind:
-    //   * observedPlayers must be 0 right after the swap (the players of the replaced world are gone and
-    //     the list is cleared in CoopHandler.CleanUpForTransit);
-    //   * worldQueue is capped at MaxPendingWorldPackets entries of raw bytes, each 15 s old at most;
-    //   * transitQueue is capped at MaxPendingTransitEvents entries;
-    //   * inventoryOps must drain within a frame - a non-zero value across the swap would mean an
-    //     operation of the old raid is about to be executed against the new one.
-
-    /// <summary>Number of players the spawning code currently keeps for network state updates.</summary>
-    internal int ObservedPlayerCount => ObservedPlayers?.Count ?? 0;
-
-    /// <summary>Entries the world packet queue of a transit swap holds right now.</summary>
-    internal int PendingWorldPacketCount => _pendingWorldPackets.Count;
-
-    /// <summary>Transit startup events waiting for a native transit controller.</summary>
-    internal int PendingTransitEventCount => _pendingTransitEvents.Count;
-
-    /// <summary>Queued inventory operations of the raid that is still running.</summary>
-    internal int PendingInventoryOperationCount => _inventoryOperations?.Count ?? 0;
-
-    /// <summary>Counts one host response; the loading wait uses the delta to tell a slow host from a dead one.</summary>
-    internal void NoteHostResponse()
-    {
-        HostResponseCount++;
-    }
-
-    /// <summary>
-    /// Opens the world packet queue for the world swap that follows a transit. Called from
-    /// NetManagerUtils.DestroyNetManager on the transit path, i.e. at the moment this client's world
-    /// is torn down and the next one is about to be created.
-    /// </summary>
-    internal void ArmWorldPacketQueue(string reason)
-    {
-        _pendingWorldPackets.Clear();
-        _worldPacketQueueArmed = true;
-    }
-
-    /// <summary>
-    /// Keeps one world packet for the next world. Returns false when the queue is not armed (or the
-    /// packet does not fit), in which case the caller keeps its current behaviour.
-    /// </summary>
-    internal bool TryQueueWorldPacket(ref WorldPacket packet, string origin)
-    {
-        if (!_worldPacketQueueArmed)
-        {
-            return false;
-        }
-
-        try
-        {
-            if (packet is null)
-            {
-                return true;
-            }
-
-            var writer = new NetDataWriter();
-            _packetProcessor.Write(writer, packet);
-            var payload = writer.CopyData();
-            if (payload == null || payload.Length == 0)
-            {
-                return false;
-            }
-
-            while (_pendingWorldPackets.Count >= MaxPendingWorldPackets)
-            {
-                var evicted = _pendingWorldPackets.Dequeue();
-                _worldPacketsDropped++;
-                LoadSync.Warn("FikaClient.TryQueueWorldPacket",
-                    "the world packet queue is full (" + MaxPendingWorldPackets + "): dropped the oldest entry of "
-                    + evicted.Origin + " => the world it carried is lost, raise the cap only with a reason");
-            }
-
-            _pendingWorldPackets.Enqueue(new PendingWorldPacket
-            {
-                Payload = payload,
-                QueuedAt = UnityEngine.Time.realtimeSinceStartup,
-                Origin = origin
-            });
-            return true;
-        }
-        catch (Exception exception)
-        {
-            _logger.LogError($"Could not queue a world packet ({origin}): {exception.Message}");
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Replays the queued world packets once a world exists, drops the expired ones, and says so in one
-    /// line. Driven from Update, i.e. once per frame on the main thread.
-    /// </summary>
-    private void FlushPendingWorldPackets()
-    {
-        if (_pendingWorldPackets.Count == 0)
-        {
-            if (!LoadSync.WorldReady)
-            {
-                return;
-            }
-
-            if (_worldPacketQueueArmed)
-            {
-                _worldPacketQueueArmed = false;
-            }
-
-            return;
-        }
-
-        var now = UnityEngine.Time.realtimeSinceStartup;
-        var worldReady = LoadSync.WorldReady;
-        if (!worldReady && now - _pendingWorldPackets.Peek().QueuedAt < WorldPacketQueueMaxAgeSeconds)
-        {
-            // Still inside the swap window: keep the entries until the world exists or they expire.
-            return;
-        }
-
-        var replayed = 0;
-        var expired = 0;
-        while (_pendingWorldPackets.Count > 0)
-        {
-            var entry = _pendingWorldPackets.Dequeue();
-            if (!worldReady || now - entry.QueuedAt > WorldPacketQueueMaxAgeSeconds)
-            {
-                expired++;
-                continue;
-            }
-
-            try
-            {
-                _packetProcessor.ReadPacket(new NetDataReader(entry.Payload), null);
-                replayed++;
-            }
-            catch (Exception exception)
-            {
-                _logger.LogError($"Could not replay a queued world packet ({entry.Origin}): {exception.Message}");
-            }
-        }
-
-        _worldPacketQueueArmed = false;
-    }
-
-    /// <summary>
-    /// The aggregated replacement for the per-packet "GameWorld was null!" error: one line per second
-    /// with the count, so a burst stays visible without flooding the game log.
-    /// </summary>
-    internal void ReportDroppedWorldPacket(string origin)
-    {
-        _worldPacketsDropped++;
-        var now = UnityEngine.Time.realtimeSinceStartup;
-        if (now - _worldPacketDropReportedAt < 1f)
-        {
-            return;
-        }
-
-        _worldPacketDropReportedAt = now;
-        LoadSync.Warn("FikaClient.ReportDroppedWorldPacket",
-            "world packet dropped without a world: " + _worldPacketsDropped + " packet(s) so far, last origin="
-            + origin + ", queueArmed=" + _worldPacketQueueArmed + " => "
-            + (FikaBackendUtils.IsTransit
-                ? "this is a transit swap: the packets belong to the raid that is being replaced"
-                : "no raid is being loaded, the packets belong to a previous raid and must not be applied"));
-    }
+    private readonly Queue<TransitEventPacket> _pendingTransitEvents = new();
     private List<int> _missingIds;
     private GenericPacket _genericPacket;
     private DateTime _startTime;
@@ -363,7 +147,6 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
 
     public async Task Init()
     {
-        
         _netClient = new(this)
         {
             UnconnectedMessagesEnabled = true,
@@ -379,9 +162,6 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
             UseNativeSockets = NativeSocket.IsSupported
         };
 
-        // (analysis/stutter-frame-skip) The budget is read when a client starts: 0 keeps the unbounded drain
-        // of every arrived event, a positive value bounds how many of them this frame delivers.
-        _netClient.MaxEventsPerPoll = FikaPlugin.Instance.Settings.NetPollBudget.Value;
         _packetProcessor = new();
         _dataWriter = new();
         _logger = Logger.CreateLogSource("Fika.Client");
@@ -424,29 +204,17 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
         }
 
         var endPoint = FikaBackendUtils.RemoteEndPoint;
-        var connectString = FikaProtocol.ConnectionKey(FikaBackendUtils.IsScavLateJoin);
-
-        // The host endpoint is committed by the ping handshake (FikaPingingClient.CommitEndpoint).
-        // It is the only thing that sets it, so a null here means the handshake never finished.
-        // Reading endPoint.Address on that null used to surface as the generic
-        // "Object reference not set to an instance of an object." error box, and letting the
-        // method continue left the raid starting with a client that was never connected (which
-        // is what leaves the Fika loading screen at 0 %). Fail with a reason instead.
-        if (endPoint == null)
-        {
-            
-            throw new InvalidOperationException(
-                "The host address was never resolved (the ping handshake did not complete), so the raid cannot be joined.");
-        }
+        var connectString = FikaProtocol.ConnectionKey(FikaBackendUtils.IsReconnect, FikaBackendUtils.IsScavLateJoin);
 
         if (endPoint.Address == null)
         {
-            
-            throw new InvalidOperationException("The host address was empty when the raid was joined.");
+            Singleton<PreloaderUI>.Instance.ShowErrorScreen("Network Error",
+                "Unable to connect to the raid server. IP and/or Port was empty when requesting data!");
         }
-
-        
-        ServerConnection = _netClient.Connect(endPoint, connectString);
+        else
+        {
+            ServerConnection = _netClient.Connect(FikaBackendUtils.RemoteEndPoint, connectString);
+        }
     }
 
     private FikaVoiceSession _voiceSession;
@@ -485,17 +253,15 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
         RegisterPacket<InteractableInitPacket>(OnInteractableInitPacketReceived);
         RegisterPacket<StatisticsPacket>(OnStatisticsPacketReceived);
         RegisterPacket<WorldLootPacket>(OnWorldLootPacketReceived);
+        RegisterPacket<ReconnectPacket>(OnReconnectPacketReceived);
         RegisterPacket<SpawnSyncObjectPacket>(OnSpawnSyncObjectPacketReceived);
         RegisterPacket<BTRInteractionPacket>(OnBTRInteractionPacketReceived);
         RegisterPacket<FlareSuccessPacket>(OnFlareSuccessPacketReceived);
         RegisterPacket<BufferZonePacket>(OnBufferZonePacketReceived);
-        RegisterPacket<SentryAccessPacket>(OnSentryAccessPacketReceived);
         RegisterPacket<ResyncInventoryIdPacket>(OnResyncInventoryIdPacketReceived);
         RegisterPacket<InventoryResyncPacket>(OnInventoryResyncPacketReceived);
         RegisterPacket<NetworkSettingsPacket>(OnNetworkSettingsPacketReceived);
         RegisterPacket<SyncTransitControllersPacket>(OnSyncTransitControllersPacketReceived);
-        TransitZonePresence.RegisterOnClient(this);
-        FlareExfilActivationPacket.RegisterOnClient(this);
         RegisterPacket<TransitEventPacket>(OnTransitEventPacketReceived);
         RegisterPacket<BotStatePacket>(OnBotStatePacketReceived);
         RegisterPacket<LoadingProfilePacket>(OnLoadingProfilePacketReceived);
@@ -552,58 +318,19 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
 
     private void Update()
     {
-        
-
-        
         RaidInteractionSync.Tick();
-        
-
-        
         _netClient?.PollEvents();
-        
-        ReportPollBurst();
-
-        
         ApplyPendingRaidInteractions();
-        
-
-        
         ApplyPendingMapState();
-        
-
-        
         FlushPendingTransitEvents();
-        
-
-        
-        FlushPendingWorldPackets();
-        
-
-        // (analysis/loading-screen-peer-state) The bounded re-announcement of this machine's loading row and
-        // progress (see LoadingScreenUI.ArmPeerStateHeartbeat); 
-        LoadingScreenUI.TickPeerStateHeartbeat();
-        
 
         var networkTime = NetworkTimeSync.NetworkTime;
-        // (analysis/perf-multiplayer) The co-op-only half of this frame gets its own slot plus the player
-        // count that paid for it. This walk exists only on a client: a host iterates its own ObservedPlayers
-        // (other clients, one or two) and a solo raid has none at all, so the slot reads 0 there - which is
-        // exactly the "what does multiplayer add per frame" number this probe is asked for. The list is
-        // taken once into a local: nothing in the walk replaces it, and the loop body is unchanged.
-        var observed = ObservedPlayers;
-        var observedCount = observed.Count;
-        
-        
-        for (var i = 0; i < observedCount; i++)
+        for (var i = 0; i < ObservedPlayers.Count; i++)
         {
-            observed[i].ManualStateUpdate(networkTime);
+            ObservedPlayers[i].ManualStateUpdate(networkTime);
         }
 
-        
-
-        
         HandleInventoryOperations();
-        
 
         if (Input.GetKeyDown(FikaPlugin.Instance.Settings.ChatKey.Value.MainKey))
         {
@@ -612,63 +339,12 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
                 _fikaChat.ToggleChat();
             }
         }
-
-        
     }
-
-    /// <summary>
-    /// (analysis/stutter-frame-skip) A frame that delivered a burst of network events is named once per two
-    /// seconds. The delivery of every arrived event of every peer happens inside this frame's
-    /// <c>PollEvents</c> call - packet parse and callback included, because this manager has no logic thread
-    /// (see <c>LiteNetManager.PollEvents</c>) - and the 2026-10-13 20:01 raid measured the step that contains
-    /// it at 76-306 ms in 101 of its 103 in-raid windows. The line turns "a big frame" into "this frame
-    /// delivered N events, the worst so far is M". Never throws.
-    /// </summary>
-    private void ReportPollBurst()
-    {
-        try
-        {
-            var client = _netClient;
-            if (client == null)
-            {
-                return;
-            }
-
-            var delivered = client.LastPollEventCount;
-            if (delivered < PollBurstReportThreshold)
-            {
-                return;
-            }
-
-            _pollBursts++;
-            var now = UnityEngine.Time.realtimeSinceStartup;
-            if (now < _nextPollBurstReport)
-            {
-                return;
-            }
-
-            _nextPollBurstReport = now + 2f;
-            FikaGlobals.LogWarning("[NetPoll] one frame delivered " + delivered + " network event(s) in a row"
-                + " (bursts=" + _pollBursts + ", max=" + client.MaxPollEventCount
-                + ", deferredTotal=" + client.DeferredEventCount + ", budget=" + client.MaxEventsPerPoll
-                + ") => every arrived event of every peer is parsed and applied inside that frame;"
-                + " a budget above 0 spreads the next burst over the following frames");
-        }
-        catch (Exception)
-        {
-        }
-    }
-
-    /// <summary>Events one frame may deliver before the burst is worth a line (see <see cref="ReportPollBurst"/>).</summary>
-    private const int PollBurstReportThreshold = 48;
-
-    private float _nextPollBurstReport;
-    private int _pollBursts;
 
     private void QueueTransitEvent(TransitEventPacket packet)
     {
         if (packet == null) return;
-        if (_pendingTransitEvents.Count >= MaxPendingTransitEvents)
+        if (_pendingTransitEvents.Count >= 256)
         {
             _logger.LogError("Transit startup event queue exceeded its limit");
             return;
@@ -677,8 +353,7 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
         // Keep an independent packet shell while the native controller is
         // being created. The event payload itself is a freshly deserialized
         // IL2CPP object and is consumed exactly once by the controller.
-        NoteTransitEventQueued(packet.EventType);
-        _pendingTransitEvents.Enqueue((new TransitEventPacket
+        _pendingTransitEvents.Enqueue(new TransitEventPacket
         {
             EventType = packet.EventType,
             TransitEvent = packet.TransitEvent,
@@ -689,22 +364,15 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
             RegisteredPointId = packet.RegisteredPointId,
             KeyId = packet.KeyId,
             SelectedTime = packet.SelectedTime
-        }, _mapStateGeneration));
+        });
     }
 
     private void FlushPendingTransitEvents()
     {
         var world = Singleton<GameWorld>.Instance;
         if (FikaWorldControllers.Find<Fika.Core.Main.ClientClasses.ClientTransitController>(world?.TransitController) is not { } transit) return;
-        while (_pendingTransitEvents.TryDequeue(out var entry))
+        while (_pendingTransitEvents.TryDequeue(out var packet))
         {
-            if (!IsTransitEventGenerationCurrent(entry.Generation))
-            {
-                DropStaleTransitEvent(entry.Packet, entry.Generation, "the flush of the new raid");
-                continue;
-            }
-
-            var packet = entry.Packet;
             if (packet.EventType == TransitEventPacket.ETransitEventType.Init) transit.ReceiveSnapshot(packet);
             else transit.ReceiveEvent(packet);
         }
@@ -734,8 +402,6 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
         ClearRaidInteractions();
         ClearMapState();
         _pendingTransitEvents.Clear();
-        _pendingWorldPackets.Clear();
-        _worldPacketQueueArmed = false;
         _netClient?.Stop();
         _genericPacket.Clear();
 
@@ -890,10 +556,6 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
 
     public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
     {
-        // One stamp per inbound packet, for the [LoadSync] lines ("sinceLastInbound"): on the client this
-        // separates "the host's main thread is busy" (transport alive, no packets) from "the host answers".
-        LoadSync.NotePeerPacket("client receive");
-
         switch (reader.GetEnum<EPacketType>())
         {
             case EPacketType.Serializable:
@@ -904,7 +566,6 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
                 var localTime = NetworkTimeSync.NetworkTime;
                 var remaining = reader.GetRemainingBytesSpan();
                 var snapshots = MemoryMarshal.Cast<byte, PlayerStateData>(remaining);
-                
                 for (var i = 0; i < snapshots.Length; i++)
                 {
                     ref readonly var snapshot = ref snapshots[i];
@@ -939,7 +600,7 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
             // while it is null, which strands the client on the loading screen and
             // freezes it as soon as it interacts with loot.
             ServerConnection = _netClient.Connect(remoteEndPoint, NetDataWriter.FromString(
-                FikaProtocol.ConnectionKey(FikaBackendUtils.IsScavLateJoin)).AsReadOnlySpan());
+                FikaProtocol.ConnectionKey(FikaBackendUtils.IsReconnect, FikaBackendUtils.IsScavLateJoin)).AsReadOnlySpan());
         }
     }
 
@@ -961,9 +622,9 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
         if (disconnectInfo.Reason is DisconnectReason.Timeout)
         {
             NotificationManager.DisplayWarningNotification(LocaleUtils.LOST_CONNECTION.Localized());
-            
-            // The host can time out while the local player is still loading. Release the transport even
-            // when no player/packet sender has been created yet.
+            // The host can time out while the reconnect profile or local
+            // player is still loading. Release the transport even when no
+            // player/packet sender has been created yet.
             try
             {
                 MyPlayer?.PacketSender?.DestroyThis();

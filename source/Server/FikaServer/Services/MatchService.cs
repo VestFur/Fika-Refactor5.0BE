@@ -1,6 +1,5 @@
-using FikaServer.Helpers;
+﻿using FikaServer.Helpers;
 using FikaServer.Models.Enums;
-using FikaServer.Models.Fika.API;
 using FikaServer.Models.Fika;
 using FikaServer.Models.Fika.Config;
 using FikaServer.Models.Fika.Presence;
@@ -565,27 +564,7 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
                 match.UseFikaNatPunchServer = useFikaNatPunchServer;
                 match.IsHeadless = isHeadless;
             }
-
-            return;
         }
-
-        // The room does not exist (yet): /fika/raid/create either has not run or has already replaced
-        // it. Dropping the address silently is what made the joiners report "IPs: , Port: 0" with no
-        // way to tell whether the host never published or the record was discarded here.
-        var published = 0;
-        if (ips != null)
-        {
-            for (var i = 0; i < ips.Length; i++)
-            {
-                if (!string.IsNullOrWhiteSpace(ips[i]))
-                {
-                    published++;
-                }
-            }
-        }
-
-        logger.Warning($"sethost for unknown match {matchId}: the host address was dropped "
-            + $"({published} usable address(es), port {port}, natPunch={natPunch}, isHeadless={isHeadless})");
     }
 
     /// <summary>
@@ -601,7 +580,6 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
                 if (!ReferenceEquals(GetMatch(matchId), match)) return;
 
                 match.Timeout = 0;
-
                 if (_timeoutIntervals.TryGetValue(matchId, out var timer))
                 {
                     // Restart the 1-minute countdown. A disposed timer can
@@ -632,19 +610,8 @@ public class MatchService(ISptLogger<MatchService> logger, LocationLifecycleServ
             if (!ReferenceEquals(GetMatch(matchId), match) || match.IsEnding) return false;
             if (!match.Players.TryAdd(playerId, data))
             {
-                // Already a participant: a duplicate announcement, not an error. Refresh the flags the
-                // new request carries and keep the rest of the record, which is what the raid host's
-                // own character state hangs off.
-                var existing = match.Players[playerId];
-                existing.IsSpectator = data.IsSpectator;
-                if (!string.IsNullOrEmpty(data.GroupId))
-                {
-                    existing.GroupId = data.GroupId;
-                }
-
-                logger.Info($"{playerId} is already a participant of match {matchId} "
-                    + "(spectator=" + existing.IsSpectator + ")");
-                return true;
+                logger.Error($"Could not add player ({playerId}) to match {matchId}, they were most likely already in it");
+                return false;
             }
 
             try

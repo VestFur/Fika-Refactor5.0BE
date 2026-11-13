@@ -42,9 +42,9 @@ internal class FikaHalloweenEventManager : MonoBehaviour
         Il2CppSystem.Action<HalloweenSummonStartedEvent> summonStarted = summonStartedManaged;
         Il2CppSystem.Action<HalloweenSyncStateEvent> syncState = syncStateManaged;
         Il2CppSystem.Action<HalloweenSyncExitsEvent> syncExits = syncExitsManaged;
-        _summonStartedAction = GlobalEventsController.Instance.SubscribeOnEvent<HalloweenSummonStartedEvent>(summonStarted);
-        _syncStateEvent = GlobalEventsController.Instance.SubscribeOnEvent<HalloweenSyncStateEvent>(syncState);
-        _syncExitsEvent = GlobalEventsController.Instance.SubscribeOnEvent<HalloweenSyncExitsEvent>(syncExits);
+        _summonStartedAction = GlobalEventsController.Instance.SubscribeOnEvent(summonStarted);
+        _syncStateEvent = GlobalEventsController.Instance.SubscribeOnEvent(syncState);
+        _syncExitsEvent = GlobalEventsController.Instance.SubscribeOnEvent(syncExits);
     }
 
     protected void OnDestroy()

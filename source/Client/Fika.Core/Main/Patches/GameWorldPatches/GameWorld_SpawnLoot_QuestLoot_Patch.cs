@@ -34,16 +34,6 @@ internal sealed class GameWorld_SpawnLoot_QuestLoot_Patch : ModulePatch
     {
         try
         {
-            // AP (analysis/nonfika-raid-inertness): this patch exists because *Fika's* game mode never
-            // called GetQuestLootReady, so the deferred quest loot stayed queued. A native single-player
-            // raid is driven by the native local game, which materialises its own share at the right time -
-            // our early call would be at best redundant and at worst a second materialisation. Outside a
-            // Fika raid the native flow is left alone; [Inert] skip=GameWorld.SpawnLoot postfix names it.
-            if (FikaRaidGate.Skip("GameWorld.SpawnLoot postfix"))
-            {
-                return;
-            }
-
             if (__instance == null)
             {
                 return;

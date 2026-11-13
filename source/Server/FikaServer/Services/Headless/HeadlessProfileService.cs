@@ -135,15 +135,13 @@ public class HeadlessProfileService(ISptLogger<HeadlessProfileService> logger, S
         }
 
         var startMinimized = ResolveStartMinimized(newFolderPath);
-        var display = ResolveDisplay(newFolderPath);
 
         var launchSettings = new HeadlessLaunchSettings()
         {
             SettingsVersion = HeadlessLaunchSettings.CurrentSettingsVersion,
             ProfileId = profileId,
             BackendUrl = uri,
-            StartMinimized = startMinimized.Value,
-            Display = display.Value
+            StartMinimized = startMinimized.Value
         };
 
         var serialized = jsonUtil.Serialize(launchSettings, true);
@@ -152,9 +150,8 @@ public class HeadlessProfileService(ISptLogger<HeadlessProfileService> logger, S
         logger.Info($"Created new launch settings in {newFile} for headless profile {profileId}");
         logger.Info($"[Headless] profile {profileId}: StartMinimized={startMinimized.Value.ToString().ToLowerInvariant()} " +
             $"({startMinimized.Source})");
-        logger.Info($"[Headless] profile {profileId}: Display={display.Value} ({display.Source})");
 
-        WriteLaunchHelper(newFolderPath, profileId, uri, startMinimized.Value, display.Value);
+        WriteLaunchHelper(newFolderPath, profileId, uri, startMinimized.Value);
     }
 
     /// <summary>
@@ -198,58 +195,11 @@ public class HeadlessProfileService(ISptLogger<HeadlessProfileService> logger, S
     }
 
     /// <summary>
-    /// Resolves how this profile's host presents itself. <c>headless.display.mode</c> wins when it
-    /// is present, so editing <c>fika.jsonc</c> and restarting the server rewrites every profile's
-    /// <c>StartHeadless.cmd</c> (this method runs from the same place the profile and its helper
-    /// are created). A file that already names a mode is only honoured while the key is absent, so
-    /// an operator can also pin one profile by deleting the server wide value.
-    /// </summary>
-    private (string Value, string Source) ResolveDisplay(string folderPath)
-    {
-        var raw = fikaServerConfig.Headless.Display?.Mode;
-        if (!string.IsNullOrWhiteSpace(raw))
-        {
-            var configured = HeadlessDisplayModes.Normalize(raw);
-            if (configured == null)
-            {
-                logger.Warning($"[Headless] headless.display.mode '{raw}' is not Console/Hidden, using {HeadlessDisplayModes.Console}");
-                configured = HeadlessDisplayModes.Console;
-            }
-
-            return (configured, $"headless.display.mode ('{raw}')");
-        }
-
-        var configFile = Path.Combine(folderPath, "HeadlessConfig.json");
-        if (!File.Exists(configFile))
-        {
-            return (HeadlessDisplayModes.Console, "default for a new profile (headless.display.mode is not set)");
-        }
-
-        var relative = ToModRelativePath(configFile);
-        try
-        {
-            var existing = jsonUtil.Deserialize<HeadlessLaunchSettings>(File.ReadAllText(configFile));
-            var kept = HeadlessDisplayModes.Normalize(existing?.Display);
-            if (kept != null)
-            {
-                return (kept, $"kept from {relative} (headless.display.mode is not set)");
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.Warning($"[Headless] {relative} could not be read ({ex.Message}), regenerating it with the default display mode");
-        }
-
-        return (HeadlessDisplayModes.Console, $"default ({relative} carried no usable value)");
-    }
-
-    /// <summary>
     /// Writes the double-clickable <c>StartHeadless.cmd</c> next to HeadlessConfig.json. The SPT
     /// launcher never lists headless profiles, so this helper is the supported way to start a
-    /// dedicated host: it runs the exact command line the launcher uses for a normal profile, plus
-    /// <c>-batchmode -nographics</c> in Console display mode.
+    /// dedicated host: it runs the exact command line the launcher uses for a normal profile.
     /// </summary>
-    private void WriteLaunchHelper(string folderPath, MongoId profileId, Uri backendUrl, bool startMinimized, string displayMode)
+    private void WriteLaunchHelper(string folderPath, MongoId profileId, Uri backendUrl, bool startMinimized)
     {
         var newFile = Path.Combine(folderPath, HeadlessLaunchHelper.FileName);
 
@@ -262,7 +212,7 @@ public class HeadlessProfileService(ISptLogger<HeadlessProfileService> logger, S
             // error storm a fresh headless host used to produce. HeadlessConfig.json never had
             // this problem because the json serializer writes the Uri without the slash, so trim
             // it here as well to keep both files identical.
-            File.WriteAllText(newFile, HeadlessLaunchHelper.Build(profileId, backendUrl.ToString().TrimEnd('/'), startMinimized, displayMode));
+            File.WriteAllText(newFile, HeadlessLaunchHelper.Build(profileId, backendUrl.ToString().TrimEnd('/'), startMinimized));
         }
         catch (Exception ex)
         {
@@ -271,7 +221,7 @@ public class HeadlessProfileService(ISptLogger<HeadlessProfileService> logger, S
         }
 
         logger.Info($"[Headless] wrote launch helper {ToModRelativePath(newFile)} " +
-            $"(Display={displayMode}, StartMinimized={(startMinimized ? "true" : "false")})");
+            $"(StartMinimized={(startMinimized ? "true" : "false")})");
     }
 
     /// <summary>

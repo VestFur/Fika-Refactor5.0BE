@@ -7,46 +7,22 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.UI.Patches;
 
 /// <summary>
-/// Creates <see cref="FikaNotificationManager"/> once the application is up.
-///
-/// This is the only place that opens SPT's <c>/fika/notification/</c> websocket, and that
-/// socket is what registers a player's presence on the server
-/// (<c>FikaServer.WebSockets.NotificationWebSocket.OnConnectionAsync</c> is the only caller of
-/// <c>PresenceService.AddPlayerPresence</c>). While this patch was unapplied nobody announced
-/// itself, <c>/fika/presence/get</c> answered an empty array and the main menu panel could not
-/// show a single row - the missing self entry lived here, not in the panel and not in the
-/// presence providers.
-///
-/// 47888 renamed the hooked method: <c>TarkovApplication.InitNotificationManager</c> (the name
-/// this patch used up to 47242) became <c>TarkovApplication.EnsureNotificationManagerAsync</c>,
-/// private and returning <c>Task</c>. The rename is confirmed on 1.2.0.47965: the interop exposes
-/// <c>EnsureNotificationManagerAsync()</c> and no member of either build is called
-/// <c>InitNotificationManager</c>, so the old name is not kept as a lookup - a branch that can
-/// never match would only hide a future rename behind a second silent null.
+/// The intention of this patch is to enable FikaNotificationManager after NotificationManager and the NotifierView are initialized.
 /// </summary>
 public class TarkovApplication_InitNotificationManager_Patch : ModulePatch
 {
     protected override MethodBase GetTargetMethod()
     {
-        // The member is private in the game build, so the lookup has to include non-public
-        // instance methods; without that the 47888 rename makes the patch silently dead (the
-        // loader then reports "target method does not exist in this game build").
         return typeof(TarkovApplication)
-            .GetMethod("EnsureNotificationManagerAsync",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            .GetMethod(nameof(TarkovApplication.InitNotificationManager));
     }
 
-    /// <summary>
-    /// Runs when the native initializer returns its task. The manager itself does not depend on
-    /// the notification UI: <see cref="FikaNotificationManager"/> only opens the socket in its
-    /// constructor and every notification it renders goes through
-    /// <c>Singleton&lt;PreloaderUI&gt;.Instance?.NotifierView</c> on the main thread, so being
-    /// created a few awaits early cannot fault - and connecting earlier is what makes the server
-    /// know this player before the main menu asks for the presence list.
-    /// </summary>
     [PatchPostfix]
     internal static void Postfix()
     {
-        FikaNotificationManager.EnsureCreated("TarkovApplication notification manager");
+        if (!FikaNotificationManager.Exists)
+        {
+            FikaPlugin.Instance.NotificationManager = new();
+        }
     }
 }

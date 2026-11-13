@@ -35,17 +35,11 @@ public static class FikaNativeTypes
         ArgumentNullException.ThrowIfNull(logger);
         using var signatures = new NativeInjectionScope(assembly);
         var types = RegistrationOrder(assembly);
-        var defaultImplemented = new List<string>();
-        var inheritedDescriptors = new List<string>();
         foreach (var type in types)
         {
-            ValidateInterfaces(type, defaultImplemented);
+            ValidateInterfaces(type);
             NativeInjectionScope.ValidateDeclaredMethods(type);
         }
-        if (defaultImplemented.Count > 0)
-            logger.LogWarning($"Interface validation skipped {defaultImplemented.Count} default-implemented member(s) with no native vtable slot: "
-                + $"{string.Join(", ", defaultImplemented.Distinct())}. The interop contract supplies their body (the *_Managed helpers and the "
-                + "bridges to BCL interface members), so the injector never binds them; every real native slot is still enforced.");
         foreach (var type in types)
         {
             if (type.GetConstructor(new[] { typeof(IntPtr) }) == null)
@@ -63,8 +57,7 @@ public static class FikaNativeTypes
                 ClassInjector.RegisterTypeInIl2Cpp(type);
                 if (Il2CppClassPointerStore.GetNativeClassPointer(type) == IntPtr.Zero)
                     throw new InvalidOperationException("Registration returned a null native class");
-                if (NativeInjectedGc.PreserveReferences(type))
-                    inheritedDescriptors.Add(type.FullName);
+                NativeInjectedGc.PreserveReferences(type);
                 NativeInjectedFinalizer.Register(type);
             }
             catch (Exception exception)
@@ -72,20 +65,7 @@ public static class FikaNativeTypes
                 throw new InvalidOperationException($"Fika cannot register {type.FullName} (base {type.BaseType}).", exception);
             }
         }
-        if (inheritedDescriptors.Count > 0)
-            logger.LogWarning($"Il2CppInterop copied a base class GC descriptor into {inheritedDescriptors.Count} Fika native type(s). "
-                + "That descriptor only describes the base class layout, while the injector appends this class's own fields after it, "
-                + "so the descriptor was dropped and conservative reference tracing was enabled instead: "
-                + string.Join(", ", inheritedDescriptors));
         logger.LogInfo($"Registered {types.Length} Fika native types from {assembly.GetName().Name}.");
-        // The invoker of every injected method has to be the managed shim, not only the methods the
-        // registration time postfix happened to see: sweep the types once the registration is complete
-        // (analysis/managed-invoker/REPORT-sweep.md). Runs before the entry points are validated, so a
-        // method the sweep rewrote is validated in its final shape.
-        NativeManagedInvoker.Sweep(types, "Fika registration complete");
-        // JIT validate the generated native entry points while a rejection is still catchable
-        // (analysis/adjust-shot-vectors/REPORT.md).
-        NativeEntryWarmup.WarmAll(types, logger);
     }
 
     private static void InitializeNativeHierarchy(Type type, Assembly assembly)
@@ -121,7 +101,7 @@ public static class FikaNativeTypes
         }
     }
 
-    private static void ValidateInterfaces(Type type, List<string> defaultImplemented)
+    private static void ValidateInterfaces(Type type)
     {
         if (type.IsAbstract) return;
         foreach (var contract in type.GetInterfaces().Where(i => i.Assembly != type.Assembly &&
@@ -129,33 +109,8 @@ public static class FikaNativeTypes
         {
             var map = type.GetInterfaceMap(contract);
             for (var index = 0; index < map.TargetMethods.Length; index++)
-            {
-                if (map.TargetMethods[index].DeclaringType?.IsInterface != true) continue;
-                var member = map.InterfaceMethods[index];
-                // Only the interop's native slots exist in the game metadata and
-                // need a managed implementation for the injector to bind. The
-                // *_Managed conveniences and the private, final bridges to BCL
-                // interface members are default-implemented by the contract
-                // itself, so they are recorded, not fatal.
-                if (IsNativeSlot(contract, member))
-                    throw new MissingMethodException($"{type.FullName} does not implement {contract.FullName}.{member}");
-                defaultImplemented.Add($"{contract.Name}.{member.Name}");
-            }
+                if (map.TargetMethods[index].DeclaringType?.IsInterface == true)
+                    throw new MissingMethodException($"{type.FullName} does not implement {contract.FullName}.{map.InterfaceMethods[index]}");
         }
-    }
-
-    /// <summary>
-    /// A native slot is a public virtual newslot the generator backed with a
-    /// NativeMethodInfoPtr field. Managed convenience accessors and the
-    /// explicit bridges to the BCL interfaces have no such pointer and no
-    /// native counterpart in the game.
-    /// </summary>
-    private static bool IsNativeSlot(Type contract, MethodInfo member)
-    {
-        if (member.IsStatic || !member.IsPublic || !member.IsVirtual || member.IsFinal ||
-            (member.Attributes & MethodAttributes.NewSlot) == 0) return false;
-        var prefix = "NativeMethodInfoPtr_" + member.Name + "_";
-        return contract.GetFields(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
-            .Any(field => field.Name.StartsWith(prefix, StringComparison.Ordinal));
     }
 }

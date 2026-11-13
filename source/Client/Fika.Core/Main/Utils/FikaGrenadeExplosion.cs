@@ -19,22 +19,6 @@ internal static class FikaGrenadeExplosion
 {
     private static readonly HashSet<IntPtr> Exploded = new();
 
-    /// <summary>
-    /// Drops the exploded-grenade set at a world teardown (analysis/transit-crash-unload). The set holds raw
-    /// native addresses, so a new world that happens to reuse an address would otherwise be reported as
-    /// already exploded. Returns the number of entries dropped.
-    /// </summary>
-    internal static int ClearForWorldTeardown()
-    {
-        var count = Exploded.Count;
-        if (count > 0)
-        {
-            Exploded.Clear();
-        }
-
-        return count;
-    }
-
     internal static bool TryExplode(Grenade grenade, string reason)
     {
         try

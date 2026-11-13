@@ -153,30 +153,10 @@ public class ObservedMovementContext : MovementContext
         return true;
     }
 
-    /// <summary>
-    /// (analysis/stutter-pose-reset) 值未变就不写. The native setter this overrides is unconditional:
-    /// <c>MovementContext.SmoothedCharacterMovementSpeed</c> (decompiled MovementContext.cs:794-809) always calls
-    /// <c>PlayerAnimatorSetCharacterMovementSpeed</c> and then <c>ProceduralWeaponAnimation.Walk.Speed</c>, and
-    /// that second one is not a plain field either - <c>WalkEffector.Speed</c> (WalkEffector.cs:110-122)
-    /// recomputes the walk-bob intensity of the weapon sway. ManualStateUpdate passes the snapshot speed with
-    /// force on every frame and every observed player (61 on the measured client raids), i.e. it re-pushed a
-    /// value the native object already held, which is exactly the 「每帧把姿态/移动写回去」 shape this round is
-    /// about. The value state after the guard is identical - the field keeps the value it already had - while the
-    /// animator call, the walk-intensity recompute and one interop setter per player per frame disappear.
-    /// <para>
-    /// The other two statements stay unconditional on purpose: <c>CharacterMovementSpeed</c> is the plain native
-    /// field and <c>UpdateCovertEfficiency</c> also depends on the player's weight and skills, not only on the
-    /// pushed speed, so it must keep being refreshed.
-    /// </para>
-    /// </summary>
     public override void SetCharacterMovementSpeed(float characterMovementSpeed, bool force = false)
     {
         CharacterMovementSpeed = characterMovementSpeed;
-        if (!global::Fika.Core.Main.Utils.PoseWriteGuards.Enabled || SmoothedCharacterMovementSpeed != characterMovementSpeed)
-        {
-            SmoothedCharacterMovementSpeed = characterMovementSpeed;
-        }
-
+        SmoothedCharacterMovementSpeed = characterMovementSpeed;
         UpdateCovertEfficiency(characterMovementSpeed, false);
     }
 
@@ -197,7 +177,6 @@ public class ObservedMovementContext : MovementContext
             return;
         }
         LastDeltaTime = deltaTime;
-
 
         CheckFlying(deltaTime);
         SmoothPoseLevel(deltaTime);
@@ -328,7 +307,7 @@ public class ObservedMovementContext : MovementContext
     public override void Init()
     {
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call4(this);
-        RotationAction = _player.UsedSimplifiedSkeleton ? (System.Action<Player>)SimpleRotate : (System.Action<Player>)Rotate;
+        RotationAction = _player.UsedSimplifiedSkeleton ? (Il2CppSystem.Action<Player>)SimpleRotate : (Il2CppSystem.Action<Player>)Rotate;
 
         // Fix base game bug where idle animations are not playing
         PlayerAnimator.SetIsThirdPerson(true);
@@ -358,7 +337,7 @@ public class ObservedMovementContext : MovementContext
         }
         _player.ProceduralWeaponAnimation.SetMountingData(false, false);
         observedMountedState.StartExiting();
-        PlayerMountingPointData.OnStartExitMountedState -= NativeDelegates.BindManaged<System.Action>(this, nameof(StartExitingMountedState));
+        PlayerMountingPointData.OnStartExitMountedState -= NativeDelegates.Bind<Il2CppSystem.Action>(this, nameof(StartExitingMountedState));
         var handsController = _player.HandsController;
         if (handsController == null)
         {
@@ -372,14 +351,14 @@ public class ObservedMovementContext : MovementContext
         private readonly MovementContext _context;
         private readonly Player _player;
         public readonly Il2CppSystem.Action<Player.AbstractHandsController, Player.AbstractHandsController> callback;
-        public readonly System.Action<Player.AbstractHandsController, Player.AbstractHandsController> HandleSwapDelegate;
+        public readonly Il2CppSystem.Action<Player.AbstractHandsController, Player.AbstractHandsController> HandleSwapDelegate;
 
         public StationaryHandler(MovementContext context, Player player, Il2CppSystem.Action<Player.AbstractHandsController, Player.AbstractHandsController> callback)
         {
             _context = context;
             _player = player;
             this.callback = callback;
-            HandleSwapDelegate = (System.Action<Player.AbstractHandsController, Player.AbstractHandsController>)HandleSwap;
+            HandleSwapDelegate = (Il2CppSystem.Action<Player.AbstractHandsController, Player.AbstractHandsController>)HandleSwap;
         }
 
         public void HandleSwap(Player.AbstractHandsController oldController, Player.AbstractHandsController newController)

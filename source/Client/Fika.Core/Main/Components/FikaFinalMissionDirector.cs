@@ -25,63 +25,6 @@ namespace Fika.Core.Main.Components;
 /// </summary>
 internal static class FikaFinalMissionDirector
 {
-    /// <summary>Frames between the raid start and the map's raid-start story scene.</summary>
-    private const int IntroDelayFrames = 120;
-
-    // (analysis/terminal-ending-settlement) The clock of the personal ending and its judgement. The ending is a
-    // client-only cutscene of this machine (no CutsceneProcess), so the two native signals that report it -
-    // the timeline's exit action and the viewer completion - are the only way it can say that it is over, and
-    // DeferStop holds every other stop of this game back while it is open. The constants below bound that wait
-    // instead of letting one lost signal freeze the raid on its ending picture.
-    /// <summary>How long the ending scene may take to appear before the director enters its playback itself.</summary>
-    private const float EndingPlayGraceSeconds = 2f;
-
-    /// <summary>Seconds between two rescue attempts of the ending scene.</summary>
-    private const float EndingRescueRetrySeconds = 2f;
-
-    /// <summary>How many times the director enters the ending playback before it stops trying.</summary>
-    private const int EndingRescueMaxAttempts = 3;
-
-    /// <summary>Seconds between two samples of the ending scene.</summary>
-    private const float EndingSampleSeconds = 0.25f;
-
-    /// <summary>How long a scene that stopped advancing may stay before the ending is treated as over.</summary>
-    private const float EndingStoppedGraceSeconds = 3f;
-
-    /// <summary>How long the native completion is awaited after the scene is over before the director settles.</summary>
-    private const float EndingSettleGraceSeconds = 3f;
-
-    /// <summary>No frame of the ending played within this many seconds: the scene is taken down anyway.</summary>
-    private const float EndingWithoutSceneSeconds = 30f;
-
-    /// <summary>Hard deadline of the whole ending: after it the raid is settled with the outcome the host sent.</summary>
-    private const float EndingHardDeadlineSeconds = 45f;
-
-    /// <summary>How long the raid stop may be deferred for an ending that does not finish.</summary>
-    private const float EndingDeferCapSeconds = 90f;
-
-    /// <summary>Seconds between two acknowledgements of a completion the host has not answered yet.</summary>
-    private const float EndingCompleteRetrySeconds = 5f;
-
-    /// <summary>Seconds between two progress lines of a playing ending scene.</summary>
-    private const float EndingProgressSeconds = 5f;
-
-    /// <summary>How many progress lines one ending writes at most.</summary>
-    private const int EndingProgressLines = 12;
-
-    /// <summary>
-    /// (analysis/terminal-ending-settlement) One switch for the whole ending repair: the watchdog that follows
-    /// the personal ending of this machine, accepts its completion under either of its two native ids, ends a
-    /// scene that is over (or never played) through the native stop, repeats an unacknowledged completion, and
-    /// bounds the hold <see cref="DeferStop"/> puts on every other stop of this game. With <c>false</c> exactly
-    /// the previous behaviour is left: the ending is started as before and only the two native signals can finish
-    /// it. It is a <c>static bool</c> and not a <c>const</c> on purpose - the same deal as the switches of the
-    /// cutscene bridge - so the rollback is one assignment (or one config key the main agent wires).
-    /// </summary>
-    // (2026-10-18 refactor W3-finalmission) Ending repair layer OFF: periodic watchdog, completion retry and
-    // scene rescue all keyed on this switch; the final mission now runs on the native signals only.
-    internal static bool EndingRepair = false;
-
     private sealed class Ending
     {
         internal FinalMissionPacket Packet;
@@ -97,71 +40,21 @@ internal static class FikaFinalMissionDirector
     private static CoopHandler _handler;
     private static FinallExitZone _zone;
     private static MapTimelinesBank _bank;
-    private static bool _timerBankMissingReported;
     private static Collider[] _colliders;
     private static WorldInteractiveObject[] _gates;
     private static bool _discovered, _introStarted, _armed, _departed, _localStarted, _localComplete;
-    private static bool _exitAuthorized, _stopping, _localPrepared, _zoneRequested;
+    private static bool _exitAuthorized, _stopping, _localPrepared;
     private static int _frames, _nextOutcome;
     private static float _nextState, _nextError, _nextQuestState, _nextQuestRefresh;
-
-    /// <summary>
-    /// (perf 2026-10-14) CutsceneBoundary.Tick drives five pumps (adopt link / takeover / local playback /
-    /// skip overlay / host playback repair) and used to be called once per frame from TickMission. The method
-    /// watch measured it at 6.2 ms average per call, ~20 calls/s, 25.5 s of a 194 s raid (13% of wall time) -
-    /// and it is the same chain that made story cutscenes hitch. Each pump already polls on its own internal
-    /// timer (playback 0.25 s, adopt link RetrySeconds), so a 10 Hz cap is invisible to the logic.
-    /// </summary>
-    private const float CutsceneTickIntervalSeconds = 0.1f;
-
-    private static float _nextCutsceneTick;
-
-    /// <summary>
-    /// (perf 2026-10-14, measured) Throttling only CutsceneBoundary.Tick left the method at 22,529 ms over
-    /// 5,151 calls in a 184 s raid (worst single call 571.6 ms) - i.e. 4.4 ms per call, 12% of wall clock.
-    /// The rest of the body is retry/watchdog work: the story-intro driver, the final-mission queue drain and
-    /// the host-side arming retries. All of it is explicitly "retried until it works" by design, and the
-    /// fastest inner cadence anywhere below is the 0.25 s playback pump, so 10 Hz loses nothing and removes
-    /// most of that tax.
-    /// </summary>
-    private const float MissionTickIntervalSeconds = 0.1f;
-
-    private static float _nextMissionTick;
     private static float _evacuationDuration, _evacuationElapsed;
     private static FinalMissionPacket? _localEnding;
     private static EFinalExitStatus? _localEligibility;
     private static bool _localZoneUi;
-    // (analysis/terminal-ending-settlement) The ending chain's own state: when the ending was handed to this
-    // machine's viewer, whether its scene ever advanced a frame, when it stopped, and which of the fallbacks
-    // already ran. Every one of them answers one question of the report - the screen stays on the ending picture
-    // and nothing settles - without needing a second raid to reproduce it.
-    private static float _localEndingAt, _endingStoppedAt, _nextEndingSample, _nextEndingRescue, _nextEndingProgress, _localCompleteAt, _nextCompleteRetry;
-    private static double _localEndingSceneTime = -1d;
-    private static bool _endingPlayed, _endingVisible, _endingRescued, _endingNoScene, _endingSceneOver, _endingSettledByWatchdog;
-    private static int _endingRescueAttempts, _endingProgressWritten;
-    private static string _endingScene;
     private static GameWorld World => RaidInteractionSync.World;
     private static IFikaNetworkManager Network => FikaSingleton<IFikaNetworkManager>.Instance;
     private static CoopHandler Handler => _handler ??= Network?.CoopHandler;
     internal static bool Bound => World != null;
-
-    /// <summary>True while this machine plays its own ending (its outcome arrived and was started here).</summary>
-    internal static bool HasLocalEnding => _localEnding.HasValue && _localStarted;
     internal static bool Owns(FinallExitZone zone) => Bound && (_zone == null || _zone.Pointer == zone.Pointer);
-
-    /// <summary>
-    /// True when the director runs this zone's clock itself: after arming on the host, or after the
-    /// host's state packet on a peer. While it is false the native zone update is left alone, so a
-    /// zone the director could not take over is still driven by the game instead of by nobody.
-    /// </summary>
-    internal static bool DrivesZone(FinallExitZone zone)
-    {
-        if (!Bound || zone == null) return false;
-        if (_zone != null && _zone.Pointer != zone.Pointer) return false;
-        // A peer never drives the mission itself: seats, clock and outcome arrive in the host's
-        // FinalMissionPacket(State) stream, so its native update stays suppressed.
-        return !FikaBackendUtils.IsServer || _armed || _departed;
-    }
 
     internal static void Reset()
     {
@@ -180,21 +73,10 @@ internal static class FikaFinalMissionDirector
         _localEligibility = null;
         _localZoneUi = false;
         _discovered = _introStarted = _armed = _departed = _localStarted = _localComplete = false;
-        _exitAuthorized = _stopping = _localPrepared = _zoneRequested = false;
-        
+        _exitAuthorized = _stopping = _localPrepared = false;
         _frames = _nextOutcome = 0;
         _nextState = _nextError = _nextQuestState = _nextQuestRefresh = 0;
-        _nextCutsceneTick = 0f;
         _evacuationDuration = _evacuationElapsed = 0;
-        _localEndingAt = _endingStoppedAt = 0;
-        _nextEndingSample = _nextEndingRescue = _nextEndingProgress = _localCompleteAt = _nextCompleteRetry = 0;
-        _localEndingSceneTime = 0d;
-        _endingPlayed = _endingVisible = _endingRescued = _endingNoScene = _endingSceneOver = false;
-        _endingSettledByWatchdog = false;
-        _endingRescueAttempts = _endingProgressWritten = 0;
-        _endingScene = null;
-        
-        CutsceneBoundary.Reset();
     }
 
     internal static void Receive(FinalMissionPacket packet)
@@ -233,28 +115,7 @@ internal static class FikaFinalMissionDirector
                     .Where(door => door.KeyId == "6866adbe09b973bf45094339").ToArray();
             }
         }
-        // (analysis/icebreaker-cutscene) The native cutscene controllers are created without their timeline
-        // bank on a Fika raid; repair that link before anything reads it, so the story marker has a controller
-        // that can actually resolve its cutscene - and so the client controller can decode a timeline at all.
-        // (perf 2026-10-14) reverted to the original per-frame call: the 10 Hz throttle did not help the
-        // stutter and it displaced the cutscene skip overlay (one of the pumps below), so vanilla cadence wins.
-        CutsceneBoundary.Tick(World);
-        AdoptTimelinesBank();
-        _frames++;
-        // The raid-start story scene belongs to the map marker, not to the final exit: drive it
-        // before the final-mission gates, so a story map without a FinallExitZone still plays it.
-        // (perf 2026-10-14) reverted to the original per-frame body: throttling the whole tick to 10 Hz did
-        // not reduce the per-second stutter, and it delayed the on-screen mission UI the same way.
-        DriveStoryIntro();
-        if (World.CutscenesClientController?._timelinesMapBank == null)
-        {
-            return;
-        }
-        if (_zone == null || _bank == null)
-        {
-            return;
-        }
-        
+        if (_zone == null || _bank == null || World.CutscenesClientController?._timelinesMapBank == null) return;
         SyncQuestStates();
         while (Incoming.TryPeek(out var message))
         {
@@ -268,12 +129,20 @@ internal static class FikaFinalMissionDirector
         {
             if (World.CutscenesServerController?._timelinesMapBank == null) return;
             var players = Participants();
-            // The native zone initialisation asks to arm the zone, but it can run before the raid
-            // is started or before a single player is registered; that request is retried here so
-            // a mission is never left unarmed by a hook that fired too early.
-            if (!_armed && _zoneRequested) TryArm("native-zone-init retry");
+            if (!_introStarted && ++_frames >= 120 && players.Length > 0)
+            {
+                var marker = UnityEngine.Object.FindObjectOfType<StartCutsceneByStartRaid>();
+                if (marker == null) _introStarted = true;
+                else if (_bank.timelines.Count > 0)
+                {
+                    World.CutscenesServerController._lagTimeCompensation = Math.Max(2,
+                        Singleton<GlobalConfiguration>.Instance.FinalMissionSettings.LagTimeCompensation);
+                    _introStarted = World.CutscenesServerController.StartCutscene(_bank.timelines[0].cutsceneId,
+                        PlayerIds(players), false, false, 0) != null;
+                }
+            }
             if (!_armed && _introStarted && (_gates.Any(gate => gate != null && gate.DoorState == EDoorState.Open) ||
-                (_gates.Length == 0 && players.Any(InZone)))) TryArm("gate-open");
+                (_gates.Length == 0 && players.Any(InZone)))) Arm(_zone);
             if (_armed && !_departed)
             {
                 // Native UI initialization also writes these zone fields. Keep
@@ -296,28 +165,7 @@ internal static class FikaFinalMissionDirector
             _zone._evacuateTimerElapsed = Math.Min(_zone.evacuateTimer, _zone._evacuateTimerElapsed + Time.deltaTime);
 
         if (_localEnding.HasValue && !_localStarted) StartLocalEnding();
-        // (2026-10-26 W18, restored from upstream 3.0.4) The ending repair layer was wired out by
-        // W3-finalmission: the switch stayed, the behaviour it guards did not. Restored verbatim, still
-        // guarded by EndingRepair (config 'Final Mission: Ending Repair', default true):
-        //   * WatchLocalEnding - this machine's own ending is followed until it really completes, so one lost
-        //     native signal cannot leave the raid on the ending picture;
-        //   * PrepareLocal on completion - the local exit path is prepared as soon as the ending completed;
-        //   * RetryCompletion - a lost ExitAuthorized acknowledgement is repeated (the host handler is
-        //     idempotent for the same outcome id), instead of waiting forever for an answer.
-        if (EndingRepair && _localStarted && !_localComplete) WatchLocalEnding();
         if (_localComplete) PrepareLocal(game);
-        if (EndingRepair && _localComplete && !_exitAuthorized)
-        {
-            var retryNow = Time.unscaledTime;
-            if (retryNow >= _nextCompleteRetry)
-            {
-                _nextCompleteRetry = retryNow + EndingCompleteRetrySeconds;
-                RetryCompletion();
-            }
-        }
-        // (analysis/terminal-ending-settlement) The ending of this machine is followed from here: the native
-        // signals that report its end are the only other way it can finish, and one lost signal must not leave
-        // the raid on its ending picture (see WatchLocalEnding).
         if (FikaBackendUtils.IsClient && _localComplete &&
             FikaSingleton<FikaClient>.Instance?.ServerConnection?.ConnectionState != ConnectionState.Connected)
             _exitAuthorized = true; // Save the already-issued host outcome after connection loss.
@@ -342,7 +190,6 @@ internal static class FikaFinalMissionDirector
             _stopping = true;
             if (FikaBackendUtils.IsClient && FikaSingleton<FikaClient>.Instance?.ServerConnection?.ConnectionState == ConnectionState.Connected)
                 Network.SendGenericPacket(EGenericSubPacketType.ClientExtract, ClientExtract.FromValue(Handler.MyPlayer.NetId), true);
-            
             game.Stop(Handler.MyPlayer.ProfileId, ending.ExitStatus, FinallExitZone.FINAL_EXIT_NAME, 0);
         }
     }
@@ -371,40 +218,6 @@ internal static class FikaFinalMissionDirector
         return ids;
     }
 
-    /// <summary>
-    /// (2026-10-17) The native cutscene controllers are created without their timeline bank (CutsceneBoundary
-    /// creates them and deliberately does not run the private native Init), and the bridge's own adoption
-    /// stops after three attempts inside the load. A map whose <see cref="MapTimelinesBank"/> streams in
-    /// later therefore never got the link, and the native <c>StartCutscene</c> of that map - the Terminal
-    /// arrival scene - threw a NullReferenceException on every attempt (309 times in the 2026-10-17 host
-    /// log) while the screen it had already switched to stayed black. The bank this director resolves is
-    /// handed to both controllers here, idempotent and only when the controller has none.
-    /// </summary>
-    private static void AdoptTimelinesBank()
-    {
-        if (_bank == null) return;
-        try
-        {
-            var server = World.CutscenesServerController;
-            if (server != null && server._timelinesMapBank == null)
-            {
-                server._timelinesMapBank = _bank;
-                FikaGlobals.LogWarning("[CutsceneBank] the server cutscene controller had no timeline bank; linked the map's bank");
-            }
-
-            var clientController = World.CutscenesClientController;
-            if (clientController != null && clientController._timelinesMapBank == null)
-            {
-                clientController._timelinesMapBank = _bank;
-                FikaGlobals.LogWarning("[CutsceneBank] the client cutscene controller had no timeline bank; linked the map's bank");
-            }
-        }
-        catch (Exception error)
-        {
-            FikaGlobals.LogWarning("[CutsceneBank] linking the map's timeline bank failed: " + error.Message);
-        }
-    }
-
     internal static void TickTimer(StartCutsceneByTimer timer)
     {
         if (!FikaBackendUtils.IsServer || !timer.timerOn || Handler?.ShouldSync != true ||
@@ -413,119 +226,19 @@ internal static class FikaFinalMissionDirector
         if (timer._timeElapsed < timer.time) return;
         var ids = PlayerIds(Participants());
         if (ids.Count == 0 || World.CutscenesServerController == null) return;
-        // (2026-10-17) Without the timeline bank the native StartCutscene throws a NullReferenceException
-        // inside the IL2CPP runtime (309 of them in the 2026-10-17 host log) and the cutscene screen it was
-        // called for stays black. The bank is linked by AdoptTimelinesBank once the map carries it; until
-        // then the timer is simply not fired.
-        if (World.CutscenesServerController._timelinesMapBank == null)
-        {
-            if (!_timerBankMissingReported)
-            {
-                _timerBankMissingReported = true;
-                FikaGlobals.LogWarning("[CutsceneBank] the timer-driven cutscene was not started: the server controller has no timeline bank yet");
-            }
-
-            return;
-        }
         if (World.CutscenesServerController.StartCutscene(timer.cutsceneId, ids, true, true, 0) == null) return;
         timer.timerOn = false;
         timer._timeElapsed = 0;
         timer.gameObject.SetActive(false);
     }
 
-    /// <summary>
-    /// The raid-start story scene. The map marks it with <see cref="StartCutsceneByStartRaid"/>,
-    /// and the single-player driver honours that marker on Terminal only; a Fika raid replaces
-    /// that driver, so the marker is honoured on every map that carries it. Host only: the
-    /// timeline bank and the server controller own the process, and every peer receives a
-    /// CutsceneStartPacket from it.
-    /// </summary>
-    private static void DriveStoryIntro()
+    internal static void Arm(FinallExitZone zone)
     {
-        if (_introStarted || !FikaBackendUtils.IsServer) return;
-        if (World.CutscenesServerController?._timelinesMapBank == null)
-        {
-            
-            return;
-        }
-        if (_frames < IntroDelayFrames) return;
-        var marker = UnityEngine.Object.FindObjectOfType<StartCutsceneByStartRaid>();
-        if (marker == null)
-        {
-            _introStarted = true;
-            
-            return;
-        }
-        if (_bank == null)
-        {
-            
-            return;
-        }
-        if (_bank.timelines.Count == 0)
-        {
-            
-            return;
-        }
-        var players = Participants();
-        if (players.Length == 0)
-        {
-            
-            return;
-        }
-        var cutscene = _bank.timelines[0].cutsceneId;
-        World.CutscenesServerController._lagTimeCompensation = Math.Max(2,
-            Singleton<GlobalConfiguration>.Instance.FinalMissionSettings.LagTimeCompensation);
-        var process = World.CutscenesServerController.StartCutscene(cutscene, PlayerIds(players), false, false, 0);
-        if (process == null)
-        {
-            
-            return;
-        }
-        _introStarted = true;
-        
-    }
-
-    /// <summary>
-    /// Called by the replaced native <see cref="FinallExitZone.InitZoneServer"/> hook. The request
-    /// is recorded even when the zone cannot be armed yet - the map asks for its zone long before
-    /// the first player is registered - and <see cref="TickMission"/> retries it. Returns true
-    /// only when the director owns the zone, so the caller knows whether to suppress the native body.
-    /// </summary>
-    internal static bool Arm(FinallExitZone zone)
-    {
-        if (zone != null)
-        {
-            _zone = zone;
-            _zoneRequested = true;
-        }
-        return TryArm("native-zone-init");
-    }
-
-    private static bool TryArm(string source)
-    {
-        if (_armed) return true;
-        if (!FikaBackendUtils.IsServer)
-        {
-            
-            return false;
-        }
-        if (Handler?.ShouldSync != true)
-        {
-            
-            return false;
-        }
-        if (_zone is not { } zone)
-        {
-            
-            return false;
-        }
+        if (!FikaBackendUtils.IsServer || _armed || Handler?.ShouldSync != true) return;
+        _zone = zone;
         var settings = Singleton<GlobalConfiguration>.Instance.FinalMissionSettings;
         var count = Participants().Length;
-        if (count == 0)
-        {
-            
-            return false;
-        }
+        if (count == 0) return;
         zone._playersToEvacuateRandom = settings.SeatsRandom;
         zone._minPLayersToEvacuate = settings.MinPlayersToEvac;
         zone._playersToEvacuate = Math.Min(count, Math.Max(settings.MinPlayersToEvac,
@@ -552,8 +265,6 @@ internal static class FikaFinalMissionDirector
         zone._zoneActive = true;
         _armed = true;
         FikaGlobals.LogInfo($"Final mission armed: {count} players, {zone._playersToEvacuate} seats, {zone.evacuateTimer}s");
-        
-        return true;
     }
 
     private static bool InZone(FikaPlayer player)
@@ -759,10 +470,7 @@ internal static class FikaFinalMissionDirector
                     _localEligibility = packet.Eligibility;
                 }
                 var panel = GameUI.Instance?.TimerPanel;
-                // The locked/condition setters animate the panel's colours through its own
-                // coroutines, so a closed (inactive) panel must not be driven at all.
-                if (panel?.FinalExitTimerIsExist() == true &&
-                    FikaUiPanels.CanDrive(panel, "FikaFinalMissionDirector.FinalExitZoneText"))
+                if (panel?.FinalExitTimerIsExist() == true)
                 {
                     panel.SetFinalExitZoneConditionText($"{FinallExitZone.FINAL_EXIT_CONDITION_SEATS_COUNT.Localized()} {packet.Seats} " +
                         $"{FinallExitZone.FINAL_EXIT_CONDITION_SEATS_PLAYERS.Localized()} {packet.EligiblePlayers}");
@@ -774,7 +482,6 @@ internal static class FikaFinalMissionDirector
                 if (_localEnding.HasValue) throw new InvalidOperationException("Host changed a final mission outcome");
                 _departed = true;
                 _localEnding = packet;
-                
                 break;
             case FinalMissionMessage.ExitAuthorized:
                 if (_localComplete && _localEnding?.OutcomeId == packet.OutcomeId) _exitAuthorized = true;
@@ -785,12 +492,10 @@ internal static class FikaFinalMissionDirector
     private static void StartLocalEnding()
     {
         var ending = _localEnding.Value;
-        _localEndingAt = Time.unscaledTime;
-        _localEndingSceneTime = 0d;
         if (string.IsNullOrEmpty(ending.CutsceneId))
         {
             _localStarted = true;
-            CompleteLocal("the outcome carries no ending scene, so there is nothing to play here");
+            CompleteLocal();
             return;
         }
         // The native final ending is a client-only view (no server CutsceneProcess).
@@ -802,177 +507,22 @@ internal static class FikaFinalMissionDirector
                 new[] { Handler.MyPlayer.PlayerId }, 0, false, true);
         }
         catch { _localStarted = false; throw; }
-        // The native counterpart of this call is FinallExitZone.ActivateCutsceneForPlayer, which plays the very
-        // same client-only event; 
     }
 
-    /// <summary>
-    /// This machine's own viewer finished the timeline it was shown (the native
-    /// <c>CutscenesClientController.TimelineShowed</c> is what reports it). Two ids can arrive for the ending:
-    /// the cutscene id of the outcome packet, and the <b>scene</b> name of that cutscene's timeline entry -
-    /// the native event this signal travels in carries exactly that pair (<c>SceneName</c> plus the process id,
-    /// and the ending owns no process), so both answers are accepted instead of dropping the completion of a
-    /// scene that really did finish.
-    /// </summary>
     internal static void LocalTimelineComplete(string cutscene)
     {
-        if (!_localStarted || _localEnding is not { } ending) return;
-        if (string.Equals(ending.CutsceneId, cutscene, StringComparison.Ordinal))
-        {
-            CompleteLocal("the timeline of the ending was shown on this machine");
-            return;
-        }
-        var scene = EndingRepair ? SceneOfEnding(ending.CutsceneId) : null;
-        if (!string.IsNullOrEmpty(scene) && string.Equals(scene, cutscene, StringComparison.Ordinal))
-            CompleteLocal("the timeline of the ending was shown on this machine (reported by the scene name '" + cutscene + "')");
-    }
-
-    /// <summary>The scene name of the ending's timeline entry in the map's timeline bank, or null.</summary>
-    private static string SceneOfEnding(string cutscene)
-    {
-        if (string.IsNullOrEmpty(cutscene)) return null;
-        var controller = World?.CutscenesClientController;
-        try
-        {
-            if (string.Equals(controller?._currentTimelineData?.cutsceneId, cutscene, StringComparison.Ordinal))
-                return controller._currentTimelineData.sceneName;
-        }
-        catch (Exception) { }
-        try
-        {
-            var timelines = _bank?.timelines ?? controller?._timelinesMapBank?.timelines;
-            for (var i = 0; i < (timelines?.Count ?? 0); i++)
-                if (string.Equals(timelines[i].cutsceneId, cutscene, StringComparison.Ordinal)) return timelines[i].sceneName;
-        }
-        catch (Exception) { }
-        return null;
-    }
-
-    /// <summary>
-    /// (analysis/terminal-ending-settlement) The watchdog of the ending chain.
-    ///
-    /// The ending is a client-only cutscene of this machine (<see cref="StartLocalEnding"/>): no
-    /// CutsceneProcess drives it, so every process-based repair of the cutscene bridge stands aside, and the two
-    /// native signals that can report it as over are the timeline's exit action (SPT's ClientInitActionPatch ->
-    /// <see cref="LocalExitAction"/>) and the viewer completion (TimelineShowed ->
-    /// <see cref="LocalTimelineComplete"/>). The raid of 2026-10-13 is the shape of what happens when neither of
-    /// them lands: the outcome was announced, the ending picture was on screen and nothing settled - because
-    /// <see cref="DeferStop"/> keeps every other stop of this game out of the way while the ending is open.
-    ///
-    /// The watchdog closes that hole without replacing either signal: it samples the scene of the ending, enters
-    /// the native playback when the scene never started, ends the scene through the native stop once it is over
-    /// (the call that runs the timeline's own cleanup), and only after both were given their chance and the hard
-    /// deadline passed, completes the ending itself - so the raid stops with the exit status the host already
-    /// sent. Every step writes one [FinalDiag] line, which is what the next raid is read from.
-    /// </summary>
-    private static void WatchLocalEnding()
-    {
-        if (_localEnding is not { } ending) return;
-        var now = Time.unscaledTime;
-        var elapsed = now - _localEndingAt;
-        var cutscene = ending.CutsceneId;
-
-        if (now >= _nextEndingSample)
-        {
-            _nextEndingSample = now + EndingSampleSeconds;
-            var sample = CutsceneBoundary.SampleSceneOf(cutscene);
-            if (!string.IsNullOrEmpty(sample.Scene)) _endingScene = sample.Scene;
-            if (sample.Director)
-            {
-                // A director that merely exists is not a scene that played: the first frame of a scene that was
-                // never started sits at time 0, so only a playing director - or a clock that moved past its last
-                // sample - counts as progress.
-                if (sample.Playing || sample.Time > _localEndingSceneTime + 0.05d)
-                {
-                    if (!_endingPlayed)
-                    {
-                        _endingPlayed = true;
-                        
-                    }
-                    _endingVisible = sample.Visible;
-                    _localEndingSceneTime = sample.Time;
-                    _endingStoppedAt = 0f;
-                }
-                else if (_endingPlayed && _endingStoppedAt <= 0f)
-                {
-                    _endingStoppedAt = now;
-                    
-                }
-            }
-            else if (!_endingNoScene && elapsed >= EndingPlayGraceSeconds)
-            {
-                _endingNoScene = true;
-                
-            }
-        }
-
-        if (_endingPlayed && now >= _nextEndingProgress && _endingProgressWritten < EndingProgressLines)
-        {
-            _nextEndingProgress = now + EndingProgressSeconds;
-            _endingProgressWritten++;
-            
-        }
-
-        // 1) The scene never started: enter its playback through the same native calls the story rescue uses.
-        if (!_endingPlayed && !_endingRescued && elapsed >= EndingPlayGraceSeconds && now >= _nextEndingRescue &&
-            _endingRescueAttempts < EndingRescueMaxAttempts)
-        {
-            _endingRescueAttempts++;
-            _nextEndingRescue = now + EndingRescueRetrySeconds;
-            if (_endingRescueAttempts >= EndingRescueMaxAttempts) _endingRescued = true;
-            var verdict = CutsceneBoundary.RescueSceneOf(cutscene);
-            // Same rule as the story side uses for its take-over (analysis/cutscene-slowmo): the controller's own
-            // per-frame step is driven from here only while the director of the scene is stopped. A playing
-            // director is being advanced by the engine, and a second caller would run the timeline on two clocks.
-            var ticked = 0f;
-            var after = CutsceneBoundary.SampleSceneOf(cutscene);
-            if (after.Director && !after.Playing) ticked = CutsceneBoundary.TickSceneOf();
-            
-        }
-
-        // 2) The scene is over: end it through the native stop, which is the call that runs its own cleanup.
-        if (_endingPlayed && _endingStoppedAt > 0f && !_endingSceneOver &&
-            now - _endingStoppedAt >= EndingStoppedGraceSeconds)
-        {
-            _endingSceneOver = true;
-            var verdict = CutsceneBoundary.StopSceneOf(cutscene);
-            
-        }
-
-        // 3) Nothing of the ending ever played: after the native viewer wait is over, take the scene down anyway,
-        //    so a cutscene camera of this machine cannot keep the local player locked either way.
-        if (!_endingPlayed && !_endingSceneOver && elapsed >= EndingWithoutSceneSeconds)
-        {
-            _endingSceneOver = true;
-            var verdict = CutsceneBoundary.StopSceneOf(cutscene);
-            
-        }
-
-        // 4) The completion itself. Both native signals had their full chance by now, and the raid has to settle
-        //    regardless: while the ending is open, DeferStop holds every other stop of this game back.
-        var settledByScene = _endingSceneOver && _endingStoppedAt > 0f &&
-            now - _endingStoppedAt >= EndingStoppedGraceSeconds + EndingSettleGraceSeconds;
-        if (settledByScene || elapsed >= EndingHardDeadlineSeconds)
-        {
-            _endingSettledByWatchdog = true;
-            CompleteLocal(settledByScene
-                ? "the ending scene was over " + (now - _endingStoppedAt).ToString("0.0")
-                    + "s ago and neither native completion of it landed"
-                : "the ending did not finish within " + EndingHardDeadlineSeconds.ToString("0.0")
-                    + "s; the outcome of the host is settled anyway");
-        }
+        if (_localStarted && _localEnding?.CutsceneId == cutscene) CompleteLocal();
     }
 
     internal static bool EndLocalOnTimeout()
     {
         if (_localEnding is not { } ending || !_localStarted) return false;
         if (_localComplete) return true;
-        // The native FinalCutsceneTimer is the map's own safety net for an ending that does not finish: it calls
-        // this through the patched ImmediateExitFromRaid. Its body is the same native stop the bridge uses, and
-        // when the director of the ending is not resolvable the raid must still settle instead of being kept open
-        // by the suppressed native exit (analysis/terminal-ending-settlement).
-        var verdict = CutsceneBoundary.StopSceneOf(ending.CutsceneId);
-        
+        var controller = World?.CutscenesClientController;
+        if (controller?._currentTimelineData is { } timeline && timeline.cutsceneId == ending.CutsceneId &&
+            controller._directorsByScene.TryGetValue(timeline.sceneName, out var director))
+            controller.StopCutscene(director, false);
+        else FikaGlobals.LogError($"Cannot finish timed-out final cutscene '{ending.CutsceneId}': its director is unavailable");
         // Never signal success without running the native end-actions/cleanup.
         return true;
     }
@@ -981,7 +531,7 @@ internal static class FikaFinalMissionDirector
     {
         if (_localStarted && _localEnding is { } ending && controller._cutsceneId == ending.CutsceneId &&
             controller._actions.TryGetValue(actionId, out var action) && action.TryCast<CutsceneActionExitAfterCutscene>() != null)
-            CompleteLocal("the exit action '" + actionId + "' of the ending ran on this machine");
+            CompleteLocal();
     }
 
     internal static bool SuppressExitAction(string cutsceneId) =>
@@ -996,24 +546,10 @@ internal static class FikaFinalMissionDirector
         return string.Equals(controller._cutsceneId, _localEnding.Value.CutsceneId, StringComparison.Ordinal);
     }
 
-    private static void CompleteLocal(string reason)
+    private static void CompleteLocal()
     {
         if (_localComplete) return;
         _localComplete = true;
-        _localCompleteAt = Time.unscaledTime;
-        
-        RequestCompletion();
-    }
-
-    /// <summary>
-    /// Repeats the acknowledgement of a completion the host has not answered yet. The response travels in a
-    /// reliable packet, and the host's handler is idempotent for the same outcome id - so a lost response costs
-    /// a repeated packet instead of a raid that never ends.
-    /// </summary>
-    private static void RetryCompletion()
-    {
-        if (!_localComplete) return;
-        
         RequestCompletion();
     }
 
@@ -1074,20 +610,5 @@ internal static class FikaFinalMissionDirector
 
     // Keep native raid-time expiry from tearing down a host while peers are still
     // playing/saving. The explicit authorized stop above bypasses this guard.
-    //
-    // (analysis/terminal-ending-settlement) The hold is bounded: an ending whose completion signal never arrives
-    // used to hold the whole game back for the rest of the session - every other stop path of this port asks this
-    // property first - which is exactly the state the report describes (a screen on the ending picture, nothing
-    // else happening, no way to settle). After EndingDeferCapSeconds the guard releases, so the game can end the
-    // raid through its own paths even in the worst case.
-    internal static bool DeferStop
-    {
-        get
-        {
-            if (_stopping) return false;
-            if (EndingRepair && _localEnding.HasValue && _localStarted && !_localComplete &&
-                Time.unscaledTime - _localEndingAt >= EndingDeferCapSeconds) return false;
-            return _localEnding.HasValue || (FikaBackendUtils.IsServer && _departed);
-        }
-    }
+    internal static bool DeferStop => !_stopping && (_localEnding.HasValue || (FikaBackendUtils.IsServer && _departed));
 }

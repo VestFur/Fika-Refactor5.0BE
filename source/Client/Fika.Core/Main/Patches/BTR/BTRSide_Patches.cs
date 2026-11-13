@@ -13,21 +13,6 @@ public class BTRSide_Patches
 {
     public static List<ValueTuple<BTRSide, Player, int>> Passengers = [];
 
-    /// <summary>
-    /// Drops the passenger list at a world teardown (analysis/transit-crash-unload): every entry is a native
-    /// BTRSide and a native Player, i.e. an object of the world that just ended. Returns the count.
-    /// </summary>
-    internal static int ClearForWorldTeardown()
-    {
-        var count = Passengers.Count;
-        if (count > 0)
-        {
-            Passengers.Clear();
-        }
-
-        return count;
-    }
-
     public class BTRSide_AddPassenger_Patch : ModulePatch
     {
         protected override MethodBase GetTargetMethod()

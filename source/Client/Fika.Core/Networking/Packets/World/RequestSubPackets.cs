@@ -6,6 +6,7 @@ using System.Linq;
 using Comfort.Common;
 using EFT.Interactive;
 using EFT.Interactive.SecretExfiltrations;
+using Fika.Core.Main.Components;
 using Fika.Core.Main.GameMode;
 using Fika.Core.Main.Players;
 using Fika.Core.Main.Utils;
@@ -273,6 +274,10 @@ public static class RequestSubPackets
                     // that has not been discovered yet. Preserve that bit so a
                     // reconnect can restore discovery without a live event.
                     writer.Put(point.Status != EExfiltrationStatus.Hidden);
+
+                    FikaFlareExfilManager.TryGetSnapshotScope(point, out var secretScopeOwner, out var secretScopeSquadWide);
+                    writer.Put(secretScopeOwner ?? string.Empty);
+                    writer.Put(secretScopeSquadWide);
                 }
             }
             return writer.CopyData();
@@ -290,6 +295,13 @@ public static class RequestSubPackets
                 writer.Put(point.Settings.StartTime);
                 if (point.Status == EExfiltrationStatus.Countdown)
                     writer.Put(point.ExfiltrationStartTime);
+
+                // A flare gated countdown belongs to the player that unlocked the
+                // exit, so the snapshot carries the owner. An empty owner keeps
+                // the historical point wide behaviour.
+                FikaFlareExfilManager.TryGetSnapshotScope(point, out var scopeOwner, out var scopeSquadWide);
+                writer.Put(scopeOwner ?? string.Empty);
+                writer.Put(scopeSquadWide);
             }
         }
 
@@ -319,15 +331,17 @@ public static class RequestSubPackets
                     var eligibleForScav = reader.GetBool();
                     var itemTransferred = reader.GetBool();
                     var discovered = reader.GetBool();
+                    var scopeOwner = reader.GetString();
+                    var scopeSquadWide = reader.GetBool();
 
                     var exfilPoint = secretPoints?.FirstOrDefault(x => x.Settings.Name == name);
+                    if (exfilPoint != null && !FikaFlareExfilManager.ShouldApplyScope(scopeOwner, scopeSquadWide))
+                    {
+                        FikaGlobals.LogInfo($"[FlareExfil] ignored (report profile=<{scopeOwner}> != me)");
+                        continue;
+                    }
                     if (exfilPoint != null)
                     {
-                        if (Fika.Core.Main.Components.FikaFlareExfil.ShouldSkipPointStatus(name))
-                        {
-                            continue;
-                        }
-
                         exfilPoint.Settings.StartTime = startTime;
                         if (status == EExfiltrationStatus.Countdown)
                             exfilPoint.ExfiltrationStartTime = exfilStartTime;
@@ -357,17 +371,18 @@ public static class RequestSubPackets
                 var status = reader.GetEnum<EExfiltrationStatus>();
                 var startTime = reader.GetInt();
                 var exfilStartTime = status == EExfiltrationStatus.Countdown ? reader.GetFloat() : -1f;
+                var scopeOwner = reader.GetString();
+                var scopeSquadWide = reader.GetBool();
+
+                if (!FikaFlareExfilManager.ShouldApplyScope(scopeOwner, scopeSquadWide))
+                {
+                    FikaGlobals.LogInfo($"[FlareExfil] ignored (report profile=<{scopeOwner}> != me)");
+                    continue;
+                }
 
                 var exfilPoint = points?.FirstOrDefault(x => x.Settings.Name == name);
                 if (exfilPoint != null)
                 {
-                    // A flare gated exit is only open for the players the flare activation covers;
-                    // the point level status of the sender says nothing about this player.
-                    if (Fika.Core.Main.Components.FikaFlareExfil.ShouldSkipPointStatus(name))
-                    {
-                        continue;
-                    }
-
                     exfilPoint.Settings.StartTime = startTime;
                     if (status == EExfiltrationStatus.Countdown)
                         exfilPoint.ExfiltrationStartTime = exfilStartTime;

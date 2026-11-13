@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\Build.props" />
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Nullable>disable</Nullable>
     <Configurations>Debug;Release;GoldMaster</Configurations>
@@ -17,11 +17,6 @@
     <Optimize>true</Optimize>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Parallel builds use per-agent tags (obj-<tag>/bin-<tag>). The SDK only excludes the
-         paths of the current build, so every other agent's generated AssemblyAttributes.cs
-         would be compiled into this one and fail with CS0579 "TargetFrameworkAttribute
-         duplicated". Keep all tagged intermediate and output trees out of the compile set. -->
-    <Compile Remove="obj*/**;bin*/**" />
     <EmbeddedResource Include="Bundles\Files\masterbundle.il2cpp.bundle" LogicalName="Fika.Core.Bundles.Files.masterbundle.bundle" />
     <None Remove="Bundles\Files\masterbundle.bundle" />
   </ItemGroup>

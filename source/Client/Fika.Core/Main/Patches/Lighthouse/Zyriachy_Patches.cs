@@ -37,18 +37,12 @@ internal sealed class ZryachiyDeathListener : UnityEngine.MonoBehaviour
     public ZryachiyDeathListener(System.IntPtr pointer) : base(pointer) { }
 
     private Player _player;
-    private System.Action<EFT.Player, EFT.IPlayer, EFT.Ballistics.DamageInfo, EBodyPart> _handler;
+    private OnPlayerDead _handler;
 
     internal void Bind(Player player)
     {
         Unbind();
-        if (_handler == null && !NativeDelegates.TryBindManaged<System.Action<EFT.Player, EFT.IPlayer, EFT.Ballistics.DamageInfo, EBodyPart>>(
-                this, nameof(OnPlayerDead), "ZryachiyDeathListener.OnPlayerDead", out _handler))
-        {
-            // DamageInfo travels by value: when the interop refuses that delegate, the native zone
-            // logic keeps running and only this Fika-side notification is lost.
-            return;
-        }
+        _handler ??= NativeDelegates.Bind<OnPlayerDead>(this, nameof(OnPlayerDead));
         _player = player;
         _player.OnPlayerDead += _handler;
     }

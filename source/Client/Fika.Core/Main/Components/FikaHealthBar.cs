@@ -60,16 +60,12 @@ public sealed class FikaHealthBar : MonoBehaviour
     private IHealthController _boundHealthController;
     private bool _healthEventsBound;
     private bool _effectEventsBound;
-    // Set when the native health notifications could not be bound (their signature carries a
-    // by-value struct). The plate then refreshes itself from Update instead of from the events.
-    private bool _pollHealth;
-    private float _pollTimer;
-    private System.Action<EBodyPart, float, DamageInfo> _healthChanged;
-    private System.Action<EBodyPart, EDamageType> _bodyPartDestroyed;
-    private System.Action<EBodyPart, ValueStruct> _bodyPartRestored;
-    private System.Action<EDamageType> _died;
-    private System.Action<IHealthEffect> _effectAdded;
-    private System.Action<IHealthEffect> _effectRemoved;
+    private Il2CppSystem.Action<EBodyPart, float, DamageInfo> _healthChanged;
+    private Il2CppSystem.Action<EBodyPart, EDamageType> _bodyPartDestroyed;
+    private Il2CppSystem.Action<EBodyPart, ValueStruct> _bodyPartRestored;
+    private Il2CppSystem.Action<EDamageType> _died;
+    private Il2CppSystem.Action<IHealthEffect> _effectAdded;
+    private Il2CppSystem.Action<IHealthEffect> _effectRemoved;
 
     private bool _downed;
     private bool _updateDowned;
@@ -101,15 +97,6 @@ public sealed class FikaHealthBar : MonoBehaviour
     {
         var deltaTime = Time.deltaTime;
         UpdateScreenSpacePosition();
-        if (_pollHealth && _currentPlayer != null)
-        {
-            _pollTimer += deltaTime;
-            if (_pollTimer >= 0.5f)
-            {
-                _pollTimer = 0f;
-                UpdateHealth();
-            }
-        }
         if (_updateDowned && _downed)
         {
             UpdateDowned(deltaTime);
@@ -277,14 +264,18 @@ public sealed class FikaHealthBar : MonoBehaviour
         _playerPlate = uiGameObj.GetComponent<PlayerPlateUI>();
         _alphaGroup = _playerPlate.AlphaGroup.Value;
         _plateRectTransform = _playerPlate.ScalarObjectScreen.Value.GetComponent<RectTransform>();
-        // The plate is the teammate's identity on screen. FikaGlobals.GetDisplayName is the one
-        // place that resolves it: a human's main profile name when the game/announcement carried
-        // one, otherwise the nickname - which is the only name an AI profile has, because the
-        // game leaves MainProfileNickname empty for bots.
-        var shownName = _currentPlayer.Profile.GetDisplayName();
+        // The plate is the teammate's identity on screen; MainProfileNickname is what Fika
+        // stores for the real (non streamer-mode) name, but a profile that was announced
+        // without it must still show the player's actual nickname instead of nothing.
+        var info = _currentPlayer.Profile?.Info;
+        var shownName = info == null ? string.Empty : info.MainProfileNickname;
+        if (string.IsNullOrEmpty(shownName))
+        {
+            shownName = info?.Nickname ?? string.Empty;
+        }
 
         _playerPlate.SetNameText(shownName);
-        
+        MapMarkerDiagnostics.LogNameplate(_currentPlayer, "plate", true, shownName);
         _camera = CameraManager.Instance.Camera;
         if (FikaPlugin.DevelopersList.ContainsKey(_currentPlayer.Profile.Nickname.ToLower()))
         {
@@ -349,50 +340,36 @@ public sealed class FikaHealthBar : MonoBehaviour
         ToggleNamePlate();
     }
 
-    /// <summary>
-    /// Binds one native health notification. A refused conversion (DamageInfo and ValueStruct are
-    /// passed by value) disables that single notification instead of throwing while the name plate
-    /// is being created, which happens during the raid start.
-    /// </summary>
-    private T BindHealthEvent<T>(string method) where T : System.Delegate
-    {
-        NativeDelegates.TryBindManaged<T>(this, method, "FikaHealthBar." + method, out var handler);
-        return handler;
-    }
-
     private void ToggleHealthControllerEvents(bool enabled)
     {
         _boundHealthController ??= _currentPlayer?.HealthController;
         if (_boundHealthController == null) return;
         if (_healthChanged == null)
         {
-            _healthChanged = BindHealthEvent<System.Action<EBodyPart, float, DamageInfo>>(nameof(HealthController_HealthChangedEvent));
-            _bodyPartDestroyed = BindHealthEvent<System.Action<EBodyPart, EDamageType>>(nameof(HealthController_BodyPartDestroyedEvent));
-            _bodyPartRestored = BindHealthEvent<System.Action<EBodyPart, ValueStruct>>(nameof(HealthController_BodyPartRestoredEvent));
-            _died = BindHealthEvent<System.Action<EDamageType>>(nameof(HealthController_DiedEvent));
-            _effectAdded = BindHealthEvent<System.Action<IHealthEffect>>(nameof(HealthController_EffectAddedEvent));
-            _effectRemoved = BindHealthEvent<System.Action<IHealthEffect>>(nameof(HealthController_EffectRemovedEvent));
+            _healthChanged = NativeDelegates.Bind<Il2CppSystem.Action<EBodyPart, float, DamageInfo>>(this, nameof(HealthController_HealthChangedEvent));
+            _bodyPartDestroyed = NativeDelegates.Bind<Il2CppSystem.Action<EBodyPart, EDamageType>>(this, nameof(HealthController_BodyPartDestroyedEvent));
+            _bodyPartRestored = NativeDelegates.Bind<Il2CppSystem.Action<EBodyPart, ValueStruct>>(this, nameof(HealthController_BodyPartRestoredEvent));
+            _died = NativeDelegates.Bind<Il2CppSystem.Action<EDamageType>>(this, nameof(HealthController_DiedEvent));
+            _effectAdded = NativeDelegates.Bind<Il2CppSystem.Action<IHealthEffect>>(this, nameof(HealthController_EffectAddedEvent));
+            _effectRemoved = NativeDelegates.Bind<Il2CppSystem.Action<IHealthEffect>>(this, nameof(HealthController_EffectRemovedEvent));
         }
 
         if (enabled != _healthEventsBound)
         {
             if (enabled)
             {
-                if (_healthChanged != null) _boundHealthController.add_HealthChangedEvent(_healthChanged);
-                if (_bodyPartDestroyed != null) _boundHealthController.add_BodyPartDestroyedEvent(_bodyPartDestroyed);
-                if (_bodyPartRestored != null) _boundHealthController.add_BodyPartRestoredEvent(_bodyPartRestored);
-                if (_died != null) _boundHealthController.add_DiedEvent(_died);
+                _boundHealthController.add_HealthChangedEvent(_healthChanged);
+                _boundHealthController.add_BodyPartDestroyedEvent(_bodyPartDestroyed);
+                _boundHealthController.add_BodyPartRestoredEvent(_bodyPartRestored);
+                _boundHealthController.add_DiedEvent(_died);
             }
             else
             {
-                if (_healthChanged != null) _boundHealthController.remove_HealthChangedEvent(_healthChanged);
-                if (_bodyPartDestroyed != null) _boundHealthController.remove_BodyPartDestroyedEvent(_bodyPartDestroyed);
-                if (_bodyPartRestored != null) _boundHealthController.remove_BodyPartRestoredEvent(_bodyPartRestored);
-                if (_died != null) _boundHealthController.remove_DiedEvent(_died);
+                _boundHealthController.remove_HealthChangedEvent(_healthChanged);
+                _boundHealthController.remove_BodyPartDestroyedEvent(_bodyPartDestroyed);
+                _boundHealthController.remove_BodyPartRestoredEvent(_bodyPartRestored);
+                _boundHealthController.remove_DiedEvent(_died);
             }
-
-            // Nothing essential is bound: keep the plate current through the pull-based path.
-            _pollHealth = _healthChanged == null || _died == null;
             _healthEventsBound = enabled;
         }
         ToggleEffectEvents(enabled && FikaPlugin.Instance.Settings.ShowEffects.Value);
@@ -403,8 +380,8 @@ public sealed class FikaHealthBar : MonoBehaviour
         if (enabled == _effectEventsBound || _boundHealthController == null) return;
         if (enabled)
         {
-            if (_effectAdded != null) _boundHealthController.add_EffectAddedEvent(_effectAdded);
-            if (_effectRemoved != null) _boundHealthController.add_EffectRemovedEvent(_effectRemoved);
+            _boundHealthController.add_EffectAddedEvent(_effectAdded);
+            _boundHealthController.add_EffectRemovedEvent(_effectRemoved);
             RemoveAllActiveEffects();
             AddAllActiveEffects();
         }

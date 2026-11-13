@@ -32,7 +32,6 @@ using Fika.Core.Main.Components;
 using Fika.Core.Main.GameMode;
 using Fika.Core.Main.HostClasses;
 using Fika.Core.Main.PacketHandlers;
-using Fika.Core.Main.Patches.World;
 using Fika.Core.Main.Utils;
 using Fika.Core.Networking;
 using Fika.Core.Networking.Http;
@@ -148,14 +147,51 @@ public class FikaPlayer : LocalPlayer
     internal bool IsVoipTalking => _voipController?.IsTalking == true;
     private Bleedout _bleedout;
     internal RevivalStateClock RevivalClock { get; } = new();
+    internal bool AwaitingReconnectRevival { get; private set; }
     internal bool HasDied { get; private set; }
 
     internal RevivalState CaptureRevivalState()
     {
         var state = RevivalClock.Capture();
-        state.Downed = Downed;
-        state.IsAlive = !HasDied && (Downed || HealthController.IsAlive);
+        if (!AwaitingReconnectRevival)
+        {
+            state.Downed = Downed;
+            state.IsAlive = !HasDied && (Downed || HealthController.IsAlive);
+        }
         return state;
+    }
+
+    internal void StageReconnectRevival(RevivalState state)
+    {
+        AwaitingReconnectRevival = true;
+        RevivalClock.Restore(state);
+        ActiveHealthController?.TryCast<ClientHealthController>()?.RestoreRevivalHistory(state);
+    }
+
+    internal void ApplyReconnectRevival()
+    {
+        if (!AwaitingReconnectRevival) return;
+        var state = RevivalClock.Capture();
+        var health = ActiveHealthController.Cast<ClientHealthController>();
+        health.RestoreRevivalHistory(state);
+        if (!state.IsAlive)
+        {
+            AwaitingReconnectRevival = false;
+            health.KillAfterReconnect();
+            return;
+        }
+        if (state.Downed)
+        {
+            // Run the regular visual/input transition only after PlayerOwner and
+            // BattleUI start, then restore the elapsed timer instead of resetting it.
+            ToggleDowned(true);
+            RevivalClock.Restore(state);
+            health.IsAlive = false;
+            if (state.RevivePauseRemaining > 0) _bleedout.ShowRevive(state.ReviverNickname);
+            else _bleedout.ShowUI();
+        }
+        AwaitingReconnectRevival = false;
+        SendRevivalState();
     }
 
     internal void AcceptRevival()
@@ -167,7 +203,13 @@ public class FikaPlayer : LocalPlayer
             if (this is ObservedPlayer) ToggleDowned(false);
             return;
         }
-        if (Downed) ToggleDowned(false);
+        if (AwaitingReconnectRevival)
+        {
+            RevivalClock.SetDowned(false, 0);
+            ActiveHealthController.Cast<ClientHealthController>().RestoreRevivalHistory(RevivalClock.Capture());
+            SendRevivalState();
+        }
+        else if (Downed) ToggleDowned(false);
     }
 
     private void SendRevivalState()
@@ -227,7 +269,7 @@ public class FikaPlayer : LocalPlayer
         bool aiControl, EUpdateQueue updateQueue, EUpdateMode armsUpdateMode, EUpdateMode bodyUpdateMode,
         CharacterControllerSpawner.Mode characterControllerMode, Func<float> getSensitivity,
         Func<float> getAimingSensitivity, IStatisticsManager statisticsManager, ICustomizationFilter filter, IEftSession session,
-        int netId, bool strictSync)
+        int netId, bool strictSync, ReconnectInventoryState reconnectInventory = null)
     {
         var useSimpleAnimator = profile.Info.Settings.UseSimpleAnimator;
         var resourceKey = useSimpleAnimator ? InGameBundles.ZOMBIE_BUNDLE_NAME : InGameBundles.PLAYER_BUNDLE_NAME;
@@ -245,7 +287,7 @@ public class FikaPlayer : LocalPlayer
 
         PlayerOwnerInventoryController inventoryController = FikaBackendUtils.IsServer
             ? new HostInventoryController(player, profile, false, strictSync)
-            : new ClientInventoryController(player, profile, false, strictSync);
+            : new ClientInventoryController(player, profile, false, strictSync, reconnectInventory);
 
         player._baseInventoryController = inventoryController.TryCast<BaseInventoryController>()
             ?? throw new InvalidOperationException("Fika inventory controller was not a BaseInventoryController");
@@ -272,7 +314,7 @@ public class FikaPlayer : LocalPlayer
         questController.Init();
         AchievementsControllerClientBackend achievementsController = new(profile, inventoryController, questController.Native, session, true);
         achievementsController.Init();
-        achievementsController.AchievementUnlocked += (System.Action<string>)player.UnlockAchievement;
+        achievementsController.AchievementUnlocked += (Il2CppSystem.Action<string>)player.UnlockAchievement;
         achievementsController.Run();
         questController.Run();
         PrestigeControllerClientGame prestigeController = new(profile, inventoryController, questController.Quests, session);
@@ -318,7 +360,7 @@ public class FikaPlayer : LocalPlayer
         }
 
         player._handsController = EmptyHandsController.CreateController<EmptyHandsController>(player);
-        player._handsController.Spawn(1f, (System.Action)FikaGlobals.EmptyAction);
+        player._handsController.Spawn(1f, (Il2CppSystem.Action)FikaGlobals.EmptyAction);
         player.AIData = new AIData(null, player);
         player.AggressorFound = false;
         player._animators[0].enabled = true;
@@ -479,8 +521,8 @@ public class FikaPlayer : LocalPlayer
             AssignGetCurrentSet();
         }
 
-        MovementContext.OnStateChanged -= StateChangedHandler;
-        MovementContext.OnStateChanged += MovementContext_OnStateChanged;
+        MovementContext.OnStateChanged -= (MovementContext.OnStateChangeDelegate)StateChangedHandler;
+        MovementContext.OnStateChanged += (MovementContext.OnStateChangeDelegate)MovementContext_OnStateChanged;
 
         if (_idleCoroutine != null)
         {
@@ -690,7 +732,7 @@ public class FikaPlayer : LocalPlayer
             var slot = Inventory.Equipment.GetSlot(slotType);
 
             _armorUnsubcribes[i] = slot.ReactiveContainedItem
-                .Subscribe((System.Action<Item>)RecalculateEquippedArmorComponents); // Subscribe does not invoke on registration.
+                .Subscribe((Il2CppSystem.Action<Item>)RecalculateEquippedArmorComponents); // Subscribe does not invoke on registration.
         }
     }
 
@@ -782,13 +824,6 @@ public class FikaPlayer : LocalPlayer
             MovementContext.IsAxesIgnored = false;
             clientHealthController.EnableMetabolism();
             clientHealthController.Revive();
-            // (2026-10-17) A death switched quest sharing off (CoopGame.HandleLocalPlayerDeath) and nothing
-            // ever switched it back on, so a revived player neither sent nor received shared quest progress
-            // for the rest of the raid. The machine is alive again here, so the same channel is re-armed.
-            if (FikaQuests is ClientSharedQuestController revivedQuests)
-            {
-                revivedQuests.ToggleQuestSharing(true);
-            }
             UpdateSpeedLimitByHealth();
             if (_bleedout != null)
             {
@@ -811,12 +846,13 @@ public class FikaPlayer : LocalPlayer
             }
         }
 
-        SendRevivalState();
+        if (!AwaitingReconnectRevival) SendRevivalState();
     }
 
     public virtual void ToggleRevive(bool reviving, string nickname)
     {
         RevivalClock.SetReviving(reviving, nickname, FikaPlugin.Instance.Settings.ReviveConfig.ReviveTime);
+        if (AwaitingReconnectRevival) return;
 #if DEBUG
         FikaGlobals.LogInfo($"Being revived by {nickname}");
 #endif
@@ -1187,10 +1223,7 @@ public class FikaPlayer : LocalPlayer
         CommonPacket.Type = ECommonSubPacketType.Drop;
         CommonPacket.SubPacket = DropPacket.FromValue(fastDrop);
         PacketSender.NetworkManager.SendNetReusable(ref CommonPacket, DeliveryMethod.ReliableOrdered, true);
-        // The interop parameter is Il2CppSystem.Action: the native base implementation expects the
-        // native delegate object, so the native callback is forwarded unchanged (a managed closure
-        // could not be marshalled into it).
-        global::Fika.Core.Main.Utils.NativeBaseCalls.Call96(this, callback ?? FikaGlobals.EmptyNativeAction, fastDrop, nextControllerItem);
+        global::Fika.Core.Main.Utils.NativeBaseCalls.Call96(this, callback, fastDrop, nextControllerItem);
     }
 
     public override void OnBeenKilledByAggressor(IPlayer aggressor, DamageInfo damageInfo, EBodyPart bodyPart, EDamageType lethalDamageType)
@@ -1446,7 +1479,8 @@ public class FikaPlayer : LocalPlayer
         // [CorpseSync] The native Player.OnDead reaches this method exactly once, after the
         // hands are frozen and before the corpse is put in charge of the body. The line proves
         // whether the authoritative machine produced a corpse and its loot container for this
-        // victim; 
+        // victim; a client's own line is logged from ObservedPlayer.OnDead.
+        CorpseSyncLog.LogDeath(this, FikaBackendUtils.IsServer ? "host" : "client", "native", LastDamageType);
         return corpse;
     }
 
@@ -1510,7 +1544,7 @@ public class FikaPlayer : LocalPlayer
         CommonPacket.SubPacket = WorldInteractionPacket.FromValue(interactiveObject.Id, interactionResult.InteractionType,
             EInteractionStage.Start, interactionResult.TryCast<UnlockResult>()?.Key?.Item?.Id);
         PacketSender.NetworkManager.SendNetReusable(ref CommonPacket, DeliveryMethod.ReliableOrdered, true);
-        global::Fika.Core.Main.Utils.NativeBaseCalls.Call102(this, interactiveObject, interactionResult, callback ?? FikaGlobals.EmptyNativeAction, enterDoorState);
+        global::Fika.Core.Main.Utils.NativeBaseCalls.Call102(this, interactiveObject, interactionResult, callback, enterDoorState);
     }
 
     // Execute
@@ -1529,7 +1563,6 @@ public class FikaPlayer : LocalPlayer
 
     public override void PlantItemNetwork(string itemId, string zoneId, bool successful)
     {
-        
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call104(this, itemId, zoneId, successful);
         UpdateInteractionCast();
     }
@@ -1589,17 +1622,6 @@ public class FikaPlayer : LocalPlayer
         }
         else
         {
-            // The interaction itself proves that this player is standing at the point, but the
-            // host's "is everyone in the zone" gate can already run for another player before
-            // it sees this request. Announce the zone first (same reliable-ordered stream, so
-            // it arrives before the interact packet) and let FikaHostTransitController
-            // register the player even if the native zone trigger never did.
-            if (FikaWorldControllers.Find<ClientClasses.ClientTransitController>(
-                    Singleton<GameWorld>.Instance?.TransitController) is { } localTransit)
-            {
-                localTransit.SendZonePresence(transitPointId, true, "interact request");
-            }
-
             TransitInteractPacket interactPacket = new()
             {
                 NetId = NetId,
@@ -1757,7 +1779,7 @@ public class FikaPlayer : LocalPlayer
         PacketSender.SendState = false;
         if (IsYourPlayer)
         {
-            StartCoroutine(EngineCoroutines.Wrap(LocalPlayerDied(), "FikaPlayer.LocalPlayerDied"));
+            StartCoroutine(LocalPlayerDied().WrapToIl2Cpp());
         }
     }
 
@@ -1796,12 +1818,13 @@ public class FikaPlayer : LocalPlayer
             if (faction == EPlayerSide.Savage)
             {
                 // Scavs (and any bot the server did not give a dog tag to) are supposed to have
-                // no tag data; 
+                // no tag data; native SetDogtagInfo returns for a Savage victim as well.
+                MapMarkerDiagnostics.LogDogtag(this, "skipped", faction, null);
                 return;
             }
 
             FikaGlobals.LogError($"GenerateAndSendDogTagPacket: Item or Dogtagcomponent was null on player {Profile.Nickname}, id {NetId}");
-            
+            MapMarkerDiagnostics.LogDogtag(this, "missing-item", faction, null);
             return;
         }
 
@@ -1831,7 +1854,7 @@ public class FikaPlayer : LocalPlayer
         dogtagComponent.Status = hasAggressor ? "Killed by" : "Died";
         dogtagComponent.WeaponName = weaponName;
         dogtagComponent.GroupId = groupId;
-        
+        MapMarkerDiagnostics.LogDogtag(this, "generated", side, dogtagComponent, LastAggressor);
     }
 
     private IEnumerator LocalPlayerDied()
@@ -1850,7 +1873,7 @@ public class FikaPlayer : LocalPlayer
         LootableContainerInteractionHandler handler = new(this, container);
         if (handler.Container != null && _openAction != null)
         {
-            _openAction.Invoke((System.Action)handler.Handle);
+            _openAction.Invoke((Il2CppSystem.Action)handler.Handle);
         }
         _openAction = null;
     }
@@ -1874,11 +1897,28 @@ public class FikaPlayer : LocalPlayer
 
     public void SetupMainPlayer()
     {
-        
+        // Fika's "this lobby is one team" group marker. The local player and every session
+        // human share it (ObservedPlayer.InitObservedPlayer stamps the replicated ones, and the
+        // announced profile carries it, see FikaSerializationExtensions.PutProfile).
+        //
+        // It has to be non-empty here: the native SecretExfiltrationPointFoundShareEvent is
+        // matched against the *receiving* player's own Profile.Info.GroupId/TeamId
+        // (FikaExfilManager sends this player's values), and the game's native group logic only
+        // fires for a non-empty group id.
+        //
+        // It must stay shared: Player.GroupId is the only "same team" signal third-party
+        // consumers have - "SPT Dynamic Maps" reports a player as "Friendly Player" when
+        // Player.GroupId equals the main player's - and the game's own group logic (voice
+        // groups, teammate nameplates) keys off it too. The marker categories are decided by
+        // role/side (FikaGlobals.GetFactionSide), so sharing the group no longer collapses
+        // PMC/Scav/Boss. Fika's own "is this one of ours" gameplay tests use
+        // FikaGlobals.IsCoopPlayer, not the group id. The group only leaves the machine through
+        // the raid-end scav save, which strips it again (RaidEndProfile.Capture).
+        MapMarkerDiagnostics.ResetForRaid();
         FikaGlobals.CaptureLocalGroup(Profile);
         Profile.Info.GroupId = FikaGlobals.FikaGroupId;
         Profile.Info.TeamId = FikaGlobals.FikaGroupId;
-        
+        MapMarkerDiagnostics.Log(this, "local");
     }
 
     public void HandleHeadLightsPacket(HeadLightsPacket packet)
@@ -1919,7 +1959,7 @@ public class FikaPlayer : LocalPlayer
     public void HandleDropPacket(bool fastDrop)
     {
         /*DropHandler handler = new(this);*/
-        global::Fika.Core.Main.Utils.NativeBaseCalls.Call96(this, FikaGlobals.EmptyNativeAction, fastDrop, null);
+        global::Fika.Core.Main.Utils.NativeBaseCalls.Call96(this, (Il2CppSystem.Action)FikaGlobals.EmptyAction, fastDrop, null);
     }
 
     public void HandleUsableItemPacket(UsableItemPacket packet)
@@ -2267,7 +2307,7 @@ public class FikaPlayer : LocalPlayer
     {
         if (_achievementsController != null)
         {
-            _achievementsController.AchievementUnlocked -= (System.Action<string>)UnlockAchievement;
+            _achievementsController.AchievementUnlocked -= (Il2CppSystem.Action<string>)UnlockAchievement;
         }
         return global::Fika.Core.Main.Utils.NativeBaseCalls.Call111(this, exitStatus, pastTime, locationId, exitName);
     }
@@ -2324,7 +2364,7 @@ public class FikaPlayer : LocalPlayer
             }
         }
 #if DEBUG
-        FikaGlobals.LogInfo($"Could not find questItem with id '{LogSafe.Ref(templateId)}' in the current session, either the quest is not active or something else occured.");
+        FikaGlobals.LogInfo($"Could not find questItem with id '{templateId}' in the current session, either the quest is not active or something else occured.");
 #endif
         return null;
     }
@@ -2357,7 +2397,6 @@ public class FikaPlayer : LocalPlayer
             {
                 _player.MovementContext.SetPoseLevel(_player.MovementContext.LevelOnApproachStart, false);
                 _player.MovementContext.LevelOnApproachStart = -1f;
-                
             }
         }
     }

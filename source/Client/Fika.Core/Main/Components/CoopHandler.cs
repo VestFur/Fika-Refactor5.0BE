@@ -114,8 +114,6 @@ public class CoopHandler : MonoBehaviour
     private bool _isClient;
     private float _charSyncCounter;
     private bool _requestQuitGame;
-    /// <summary>Profiles that arrived before the world existed and were kept in the spawn queue (see QueueProfile).</summary>
-    private int _profilesQueuedBeforeWorld;
     #endregion
 
     public static bool TryGetCoopHandler(out CoopHandler coopHandler)
@@ -144,21 +142,6 @@ public class CoopHandler : MonoBehaviour
 
     public void CleanUpForTransit()
     {
-        // (analysis/transit-reload-oom) This component - and the network manager that owns it - survives a
-        // transit on purpose, so every reference held here survives with it. Two of them point straight at
-        // the raid that is being replaced and are dropped below instead of being carried into the next one:
-        // the observed players of the old world, and the local player of the old world.
-        var network = FikaSingleton<IFikaNetworkManager>.Instance;
-        var observed = network?.ObservedPlayers;
-        var droppedPlayers = observed?.Count ?? 0;
-        if (droppedPlayers > 0)
-        {
-            // The list is ticked every frame by the surviving network manager (FikaClient.Update), so a
-            // stale entry is not only a pinned Player object - it is a destroyed player being driven.
-            // The new world re-adds every player it spawns (CoopHandler.SpawnObservedPlayer).
-            observed.Clear();
-        }
-
         ShouldSync = false;
         Players.Clear();
         HumanPlayers.Clear();
@@ -168,22 +151,10 @@ public class CoopHandler : MonoBehaviour
         _spawnQueue.Clear();
         LocalGameInstance = null;
         _requestQuitGame = false;
-        MyPlayer = null;
-        _charSyncCounter = 0f;
-        var queuedBeforeWorld = _profilesQueuedBeforeWorld;
-        _profilesQueuedBeforeWorld = 0;
         if (_isClient)
         {
-            var client = FikaSingleton<FikaClient>.Instance;
-            if (client != null)
-            {
-                client.FikaClientWorld = null;
-                // NetManagerUtils.SetupGameVariables sets both again when the new raid creates its player;
-                // every reader of theirs during the swap window is gated by LocalGameInstance/the world.
-                client.MyPlayer = null;
-            }
+            FikaSingleton<FikaClient>.Instance.FikaClientWorld = null;
         }
-
     }
 
     /// <summary>
@@ -223,23 +194,7 @@ public class CoopHandler : MonoBehaviour
         _isClient = FikaBackendUtils.IsClient;
     }
 
-    /// <summary>
-    /// (analysis/perf-round2) The co-op handler's per-frame work is one slot of the frame-cost probe.
-    /// </summary>
     protected void Update()
-    {
-        
-        try
-        {
-            UpdateMeasured();
-        }
-        finally
-        {
-            
-        }
-    }
-
-    private void UpdateMeasured()
     {
         if (LocalGameInstance == null)
         {
@@ -252,12 +207,6 @@ public class CoopHandler : MonoBehaviour
             {
                 var spawn = _spawnQueue.Dequeue();
                 _logger.LogInfo($"Spawning queued player: netId={spawn.NetId}, profile={spawn.Profile?.ProfileId}, isAI={spawn.IsAI}");
-                if (spawn.QueuedBeforeWorld)
-                {
-                    // The profile waited for the world: name how long, so a future run shows whether the
-                    // world-not-ready window is still long enough to matter.
-                    spawn.QueuedBeforeWorld = false;
-                }
                 MainThreadDispatcher.RunAsync(() => SpawnPlayer(spawn).AsTask()).Forget();
             }
 
@@ -488,7 +437,6 @@ public class CoopHandler : MonoBehaviour
             : FikaPlugin.Instance.Settings.LoadPriority.Value.ToLoadPriorty();
         _logger.LogInfo($"SpawnPlayerCore:: loading {allPrefabPaths.Count} prefabs for netId={spawnObject.NetId} " +
             $"(raidStarted={raidAlreadyRunning})");
-        
         try
         {
             var loadTask = Singleton<ObjectsFactory>.Instance.LoadBundlesAndCreatePools(ObjectsFactory.PoolsCategory.Raid,
@@ -532,7 +480,6 @@ public class CoopHandler : MonoBehaviour
         _logger.LogInfo($"SpawnPlayerCore:: creating the observed player for netId={spawnObject.NetId}");
         var otherPlayer = await SpawnObservedPlayer(spawnObject);
         _logger.LogInfo($"SpawnPlayerCore:: observed player for netId={spawnObject.NetId} is {(otherPlayer == null ? "null" : "ready")}");
-        
         if (otherPlayer == null) return;
 
         var revival = spawnObject.RevivalClock.Capture();
@@ -587,76 +534,28 @@ public class CoopHandler : MonoBehaviour
         _queuedPlayers.Remove(spawnObject.NetId);
     }
 
-    /// <summary>
-    /// How many profiles may wait in the spawn queue at once. The queue is drained one profile per frame
-    /// once ShouldSync is set, so this only matters for a burst - and a burst that exceeds it is reported
-    /// instead of growing without bound.
-    /// </summary>
-    private const int MaxQueuedProfiles = 256;
-
-    /// <summary>
-    /// Queues one profile (player or AI) for spawning.
-    ///
-    /// The world may legitimately not exist yet: a transit replaces the world object, and a peer that
-    /// finished its own load can announce its character while this machine's world is still being
-    /// created - and the client's world is created *later* than the host's raid start. This method used
-    /// to drop such a profile with "QueueProfile::GameWorld was null, not queuing" (10 of them in the
-    /// 2026-10-11 18:58 client run): the peer's character was never spawned, and every later command
-    /// that addresses it failed, e.g. the host's AI teleport command
-    /// ("Could not find 20..29 to teleport", LogOutput.log:2727-2736, 10 lines).
-    ///
-    /// The profile is now kept instead. The spawn pump only runs while ShouldSync is set, which
-    /// CoopGame.InitPlayer sets after the world exists, so a queued profile is spawned exactly when it
-    /// can be spawned and never earlier. Only the world-dependent duplicate check is skipped while the
-    /// world is missing; SpawnPlayerCore repeats it against AllPlayersEverExisted at spawn time.
-    /// </summary>
     public void QueueProfile(Profile profile, byte[] healthByteArray, Vector3 position, int netId, bool isAlive, bool isAI, MongoID firstId, ushort firstOperationId, bool isZombie, MongoID? itemId,
         EHandsControllerType controllerType = EHandsControllerType.None, RevivalState? revivalState = null, bool isStationary = false)
     {
         var gameWorld = Singleton<GameWorld>.Instance;
-        if (gameWorld != null)
+        if (gameWorld == null)
         {
-            foreach (IPlayer player in gameWorld.AllPlayersEverExisted)
-            {
-                if (player.ProfileId == profile.ProfileId)
-                {
-                    _logger.LogInfo($"QueueProfile::Skipped {profile.ProfileId} (netId {netId}), the profile already exists in the world");
-                    return;
-                }
-            }
+            _logger.LogInfo("QueueProfile::GameWorld was null, not queuing");
+            return;
         }
-        else
+
+        foreach (IPlayer player in gameWorld.AllPlayersEverExisted)
         {
-            _profilesQueuedBeforeWorld++;
+            if (player.ProfileId == profile.ProfileId)
+            {
+                _logger.LogInfo($"QueueProfile::Skipped {profile.ProfileId} (netId {netId}), the profile already exists in the world");
+                return;
+            }
         }
 
         if (_queuedPlayers.Contains(netId) && !Players.ContainsKey(netId))
         {
-            if (_pendingPlayerStates.ContainsKey(netId))
-            {
-                _logger.LogInfo($"QueueProfile::Skipped netId {netId} for {profile.ProfileId}, it is already queued");
-                return;
-            }
-
-            // (2026-10-17) The net id is marked as queued but no spawn object is pending for it: that is
-            // what a world swap leaves behind when the queue was cleared while an announcement was being
-            // applied. Treating the stale mark as "already queued" kept the peer without a player for the
-            // rest of the raid (every proceed request answered with "unbound player"), so the mark is
-            // dropped and the profile is queued again.
-            _queuedPlayers.Remove(netId);
-            LoadSync.Warn("CoopHandler.QueueProfile",
-                "netId " + netId + " was marked as queued without a pending spawn (" + profile.ProfileId
-                + "): the stale mark is cleared and the profile is queued again");
-        }
-
-        if (_spawnQueue.Count >= MaxQueuedProfiles)
-        {
-            // Give the net id back, otherwise CheckIds (the CharacterSync answer) would believe this
-            // player is on its way and never ask the host for the character again.
-            _queuedPlayers.Remove(netId);
-            LoadSync.Warn("CoopHandler.QueueProfile",
-                "the spawn queue is full (" + MaxQueuedProfiles + "): netId=" + netId + ", profile=" + profile.ProfileId
-                + " is dropped and un-queued so the host's character list can re-request it");
+            _logger.LogInfo($"QueueProfile::Skipped netId {netId} for {profile.ProfileId}, it is already queued");
             return;
         }
 
@@ -668,8 +567,6 @@ public class CoopHandler : MonoBehaviour
         _logger.LogInfo($"Queueing profile: {profile.Nickname}, {profile.ProfileId}");
 #endif
         SpawnObject spawnObject = new(profile, position, isAlive, isAI, netId, firstId, firstOperationId, isZombie);
-        spawnObject.QueuedBeforeWorld = gameWorld == null;
-        spawnObject.QueuedAt = UnityEngine.Time.realtimeSinceStartup;
         spawnObject.RevivalClock.Restore(revivalState ?? new RevivalState { IsAlive = isAlive, BleedoutRemaining = -1f });
         spawnObject.IsStationary = isStationary;
         _pendingPlayerStates[netId] = spawnObject;
@@ -885,10 +782,6 @@ public class CoopHandler : MonoBehaviour
         internal readonly RevivalStateClock RevivalClock = new();
         internal readonly List<byte[]> PendingPackets = [];
         internal bool DeathPending;
-        /// <summary>True when this profile was queued before a game world existed (see QueueProfile).</summary>
-        internal bool QueuedBeforeWorld;
-        /// <summary>When it was queued, for the [LoadSync] line the spawn pump writes.</summary>
-        internal float QueuedAt;
     }
 }
 

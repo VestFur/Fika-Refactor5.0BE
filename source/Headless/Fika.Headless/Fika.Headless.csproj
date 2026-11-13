@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<Import Project="..\Build.props" />
 
@@ -22,11 +22,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<!-- Parallel builds use per-agent tags (obj-<tag>/bin-<tag>). The SDK only excludes the
-		     paths of the current build, so another agent's generated AssemblyAttributes.cs would
-		     be compiled into this one and fail with CS0579 "TargetFrameworkAttribute duplicated".
-		     Keep every tagged intermediate and output tree out of the compile set. -->
-		<Compile Remove="obj*/**;bin*/**" />
 		<Reference Include="$(BepInExCore)/BepInEx.Core.dll" Private="false" />
 		<Reference Include="$(BepInExCore)/BepInEx.Unity.IL2CPP.dll" Private="false" />
 		<Reference Include="$(BepInExCore)/BepInEx.Unity.Common.dll" Private="false" />

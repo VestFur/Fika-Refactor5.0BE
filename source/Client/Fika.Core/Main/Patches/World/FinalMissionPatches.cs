@@ -1,7 +1,6 @@
 using System.Reflection;
 using CommonAssets.Scripts.Cutscenes;
 using Fika.Core.Main.Components;
-using Fika.Core.Main.Utils;
 using HarmonyLib;
 using SPTushonka.Reflection.Patching;
 
@@ -14,9 +13,8 @@ internal sealed class FinalMissionZoneInitPatch : ModulePatch
     public static bool Prefix(FinallExitZone __instance)
     {
         if (!FikaFinalMissionDirector.Owns(__instance)) return true;
-        if (FikaFinalMissionDirector.Arm(__instance)) return false;
-        
-        return FikaBackendUtils.IsServer;
+        FikaFinalMissionDirector.Arm(__instance);
+        return false;
     }
 }
 
@@ -24,7 +22,7 @@ internal sealed class FinalMissionZoneUpdatePatch : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(FinallExitZone), nameof(FinallExitZone.Update));
     [PatchPrefix]
-    public static bool Prefix(FinallExitZone __instance) => !FikaFinalMissionDirector.DrivesZone(__instance);
+    public static bool Prefix(FinallExitZone __instance) => !FikaFinalMissionDirector.Owns(__instance);
 }
 
 internal sealed class FinalMissionTimerPatch : ModulePatch
@@ -49,22 +47,9 @@ internal sealed class FinalMissionClientExitPatch : ModulePatch
     {
         // The target is SPT's static Postfix; its parameter named __instance is
         // argument zero, not an instance of the target method.
-        if (!FikaFinalMissionDirector.Bound) return true;
-        if (FikaFinalMissionDirector.IsLocalFinalExitAction(__0, __1))
-        {
-            FikaFinalMissionDirector.LocalExitAction(__0, __1);
-            return false;
-        }
-        // (analysis/terminal-ending-settlement) The one line a raid that reached the ending picture needs: was
-        // the exit action of this machine's ending refused by the guard above? If it was, SPT's own shim runs
-        // instead - and its StopRaid ends a LocalGame, while a Fika raid is no LocalGame, so that path is a
-        // silent dead end (which is why this port owns the ending and its acknowledgement).
-        if (FikaFinalMissionDirector.HasLocalEnding)
-        {
-            
-        }
-
-        return true;
+        if (!FikaFinalMissionDirector.Bound || !FikaFinalMissionDirector.IsLocalFinalExitAction(__0, __1)) return true;
+        FikaFinalMissionDirector.LocalExitAction(__0, __1);
+        return false;
     }
 }
 

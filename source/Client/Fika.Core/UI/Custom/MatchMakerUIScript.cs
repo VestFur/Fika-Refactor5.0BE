@@ -460,20 +460,20 @@ public class MatchMakerUIScript : MonoBehaviour
         RefreshUI();
     }
 
-    public static Task<bool> JoinMatch(string profileId, string serverId, Button button) =>
-        JoinMatchCore(profileId, serverId, button, false, CancellationToken.None);
+    public static Task<bool> JoinMatch(string profileId, string serverId, Button button, bool reconnect) =>
+        JoinMatchCore(profileId, serverId, button, reconnect, false, CancellationToken.None);
 
-    public static Task<bool> JoinMatch(string profileId, string serverId, Button button,
+    public static Task<bool> JoinMatch(string profileId, string serverId, Button button, bool reconnect,
         CancellationToken cancellationToken) =>
-        JoinMatchCore(profileId, serverId, button, false, cancellationToken);
+        JoinMatchCore(profileId, serverId, button, reconnect, false, cancellationToken);
 
     /// <summary>
     /// Join implementation. <paramref name="scavLateJoin"/> marks a player scav
     /// entering a raid that already started: it uses its own connection key, is
     /// spawned as a scav and stays outside the host's group.
     /// </summary>
-    public static async Task<bool> JoinMatchCore(string profileId, string serverId, Button button, bool scavLateJoin,
-        CancellationToken cancellationToken)
+    public static async Task<bool> JoinMatchCore(string profileId, string serverId, Button button, bool reconnect,
+        bool scavLateJoin, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (button != null)
@@ -481,10 +481,7 @@ public class MatchMakerUIScript : MonoBehaviour
             button.enabled = false;
         }
 
-        // A new attempt starts clean; the previous attempt's failure is reported (and logged) here
-        // instead of aborting this one at the raid start with a stale reason.
-        FikaBackendUtils.ClearLeftoverJoinFailure();
-
+        FikaBackendUtils.IsReconnect = reconnect;
         FikaBackendUtils.IsScavLateJoin = scavLateJoin;
         FikaNotifications.DisplayMessageNotification(LocaleUtils.CONNECTING_TO_SESSION.Localized(),
             iconType: EFT.Communications.ENotificationIconType.EntryPoint);
@@ -498,14 +495,14 @@ public class MatchMakerUIScript : MonoBehaviour
             // A player scav entering a running raid is allowed through, so the
             // host must answer the "you may connect" reply instead of the
             // "raid already started" one.
-            var success = await pingingClient.AttemptToPingHost(knockMessage, cancellationToken);
+            var success = await pingingClient.AttemptToPingHost(knockMessage, reconnect || scavLateJoin, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!success)
             {
                 Singleton<PreloaderUI>.Instance.ShowCriticalErrorScreen(
                 LocaleUtils.UI_ERROR_CONNECTING.Localized(),
-                LocaleUtils.UI_UNABLE_TO_CONNECT.Localized() + PingingFailureDetail(pingingClient),
+                LocaleUtils.UI_UNABLE_TO_CONNECT.Localized(),
                 ErrorScreen.EButtonType.OkButton, 10f);
 
                 if (button != null)
@@ -517,14 +514,9 @@ public class MatchMakerUIScript : MonoBehaviour
         }
         else
         {
-            // Two different failures used to share the "could not start the FikaPinger" text. A server
-            // that answered without a host record is the host's side (their raid was never published),
-            // a transport failure is ours; the trailing detail line says which one it was.
             Singleton<PreloaderUI>.Instance.ShowCriticalErrorScreen(
                 LocaleUtils.UI_ERROR_CONNECTING.Localized(),
-                (pingingClient.HostAddressMissing
-                    ? LocaleUtils.UI_ERROR_CONNECTING_TO_RAID.Localized()
-                    : LocaleUtils.UI_UNABLE_TO_CONNECT.Localized()) + PingingFailureDetail(pingingClient),
+                LocaleUtils.UI_PINGER_START_FAIL.Localized(),
                 ErrorScreen.EButtonType.OkButton, 10f);
             return false;
         }
@@ -546,14 +538,6 @@ public class MatchMakerUIScript : MonoBehaviour
             return false;
         }
     }
-
-    /// <summary>
-    /// Appends the concrete reason a ping could not be started to the dialog body, so the player does
-    /// not have to open the log to tell "the host never published an address" from "we cannot reach
-    /// the server". Empty when there is no extra detail.
-    /// </summary>
-    private static string PingingFailureDetail(FikaPingingClient pingingClient) =>
-        string.IsNullOrEmpty(pingingClient?.FailureReason) ? string.Empty : "\n\n" + pingingClient.FailureReason;
 
     private void RefreshUI()
     {
@@ -589,6 +573,17 @@ public class MatchMakerUIScript : MonoBehaviour
 
             server.name = entry.ServerId;
 
+            var localPlayerInRaid = false;
+            var localPlayerDead = false;
+            foreach ((MongoID profileId, var player) in entry.Players)
+            {
+                if (profileId == _profileId)
+                {
+                    localPlayerInRaid = true;
+                    localPlayerDead = player;
+                }
+            }
+
             // A player scav may walk into a PMC raid that is already running.
             // Such a join adopts the host's location and world clock on the fly
             // and is spawned as a scav, so it is never part of the host's group.
@@ -620,7 +615,7 @@ public class MatchMakerUIScript : MonoBehaviour
                 Singleton<GUISounds>.Instance.PlayUISound(EUISoundType.ButtonClick);
                 FikaBackendUtils.HostLocationId = entry.Location;
                 ToggleLoading(true);
-                var success = await JoinMatchCore(_profileId, server.name, button, scavLateJoin,
+                var success = await JoinMatchCore(_profileId, server.name, button, localPlayerInRaid, scavLateJoin,
                     CancellationToken.None);
                 if (success)
                 {
@@ -706,27 +701,48 @@ public class MatchMakerUIScript : MonoBehaviour
                     }
                     break;
                 case LobbyEntry.ELobbyStatus.IN_GAME:
-                    if (scavLateJoin)
+                    if (!localPlayerInRaid)
                     {
-                        // Player scavs join a running raid by design.
+                        if (scavLateJoin)
+                        {
+                            // Player scavs join a running raid by design.
+                            tooltipArea = joinButton.GetOrAddComponent<HoverTooltipArea>();
+                            tooltipArea.enabled = true;
+                            tooltipArea.SetMessageText(LocaleUtils.UI_JOIN_RAID.Localized());
+                            break;
+                        }
+
+                        button.enabled = false;
+                        if (image != null)
+                        {
+                            image.color = new(0.5f, image.color.g / 2, image.color.b / 2, 0.75f);
+                        }
+
                         tooltipArea = joinButton.GetOrAddComponent<HoverTooltipArea>();
                         tooltipArea.enabled = true;
-                        tooltipArea.SetMessageText(LocaleUtils.UI_JOIN_RAID.Localized());
-                        break;
+                        tooltipArea.SetMessageText(LocaleUtils.UI_RAID_IN_PROGRESS.Localized());
                     }
-
-                    // A raid that already runs cannot be entered again: the character this client
-                    // left behind stays with the host, exactly as the vanilla disconnect handling
-                    // leaves it. Rejoining it was the removed disconnect-reconnect feature.
-                    button.enabled = false;
-                    if (image != null)
+                    else
                     {
-                        image.color = new(0.5f, image.color.g / 2, image.color.b / 2, 0.75f);
-                    }
+                        if (!localPlayerDead)
+                        {
+                            tooltipArea = joinButton.GetOrAddComponent<HoverTooltipArea>();
+                            tooltipArea.enabled = true;
+                            tooltipArea.SetMessageText(LocaleUtils.UI_REJOIN_RAID.Localized());
+                        }
+                        else
+                        {
+                            button.enabled = false;
+                            if (image != null)
+                            {
+                                image.color = new(0.5f, image.color.g / 2, image.color.b / 2, 0.75f);
+                            }
 
-                    tooltipArea = joinButton.GetOrAddComponent<HoverTooltipArea>();
-                    tooltipArea.enabled = true;
-                    tooltipArea.SetMessageText(LocaleUtils.UI_RAID_IN_PROGRESS.Localized());
+                            tooltipArea = joinButton.GetOrAddComponent<HoverTooltipArea>();
+                            tooltipArea.enabled = true;
+                            tooltipArea.SetMessageText(LocaleUtils.UI_CANNOT_REJOIN_RAID_DIED.Localized());
+                        }
+                    }
                     break;
                 case LobbyEntry.ELobbyStatus.COMPLETE:
                     tooltipArea = joinButton.GetOrAddComponent<HoverTooltipArea>();

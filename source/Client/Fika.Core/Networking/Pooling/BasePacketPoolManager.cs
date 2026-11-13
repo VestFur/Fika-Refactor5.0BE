@@ -1,4 +1,4 @@
-#if DEBUG
+﻿#if DEBUG
 using Fika.Core.Main.Utils;
 #endif
 using System;
@@ -78,14 +78,7 @@ public abstract class BasePacketPoolManager<TEnum, TType>
             CreatePool();
         }
 
-        var pool = WithdrawPacket(type);
-        if (pool == null)
-        {
-            // Unknown type for this build (see WithdrawPacket): the caller skips the packet.
-            return default;
-        }
-
-        return (T)pool.Get();
+        return (T)WithdrawPacket(type).Get();
     }
 
     /// <summary>
@@ -105,17 +98,7 @@ public abstract class BasePacketPoolManager<TEnum, TType>
         }
 
         packet.Dispose();
-
-        // (2026-10-26 W23) WithdrawPacket now returns default for a type this build does not know (W22); the old
-        // one-liner would then have dereferenced null here. The packet is already disposed, so dropping it is the
-        // whole work of "returning" an unknown one.
-        var pool = WithdrawPacket(type);
-        if (pool == null)
-        {
-            return;
-        }
-
-        pool.Return(packet);
+        WithdrawPacket(type).Return(packet);
     }
 
     /// <summary>
@@ -126,16 +109,6 @@ public abstract class BasePacketPoolManager<TEnum, TType>
     /// <exception cref="ArgumentException">Thrown if the specified type does not exist in the pool.</exception>
     private PacketPool<TType> WithdrawPacket(TEnum type)
     {
-        // (2026-10-26 W22) A peer built from a different package can send a sub-packet type this build does not
-        // know; the array index then threw IndexOutOfRange inside the network poll loop. Report it instead and
-        // let the caller skip the packet - one unknown type must not take the whole net loop down.
-        var index = ToInt(type);
-        if ((System.UInt32)index >= (System.UInt32)_pool.Length)
-        {
-            global::Fika.Core.Main.Utils.FikaGlobals.LogError($"packet pool has no entry for {typeof(TEnum).Name}={index} " +
-                $"(this build has {_pool.Length}); the peer runs a different build");
-            return null;
-        }
 #if DEBUG
         return _pool[ToInt(type)]
             ?? throw new ArgumentException("Could not find given type in the packet pool manager!", nameof(type));

@@ -174,61 +174,23 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
     {
         FikaSingleton<IFikaNetworkManager>.Instance.RaidSide = localRaidSettings.playerSide;
 
-        TraceStep("create: native headless factory");
         var game = NativeHeadlessGameFactory.Create(updateQueue,
             new Il2CppSystem.Nullable<Il2CppSystem.TimeSpan>(sessionTime.ToNative()));
         game._logger = Logger.CreateLogSource(nameof(HeadlessGame));
         game.GameWorld = gameWorld;
-        TraceStep("create: native game ready");
 
         var gameTime = backendDateTime;
-
-        // (analysis/map-fixed-time) The same block CoopGame.Create runs, on the dedicated host's own raid
-        // path: a map can pin its own clock in the native matchmaker panel
-        // (EFT.UI.Matchmaker.LocationConditionsPanel, one static "<map>FixedTime" value per such map), and a
-        // Fika raid never runs that panel. 'Coop / Honor Map Fixed Time' (default on) is the one switch, and
-        // a rejoin or a transit keeps the running clock either way because pinning it again would rewind it.
-        //
-        // Note for whoever reads a headless log: DoWeatherThings (called further down in this method) derives
-        // the clock a second time - with IsRandomTime set it draws a random hour and discards the fixed time
-        // again. The judging line prints isRandomTime so that case is visible instead of silent, and switching
-        // 'Honor Map Fixed Time' off remains the one-flip rollback for this path as well.
-        var fixedHour = 0;
-        var fixedMinute = 0;
-        var fixedSource = "none";
-        var honorFixedTime = FikaPlugin.Instance.Settings.HonorMapFixedTime.Value
-            && !FikaBackendUtils.IsScavLateJoin && !FikaBackendUtils.IsTransit
-            && MapFixedTime.TryGet(location.Id, out fixedHour, out fixedMinute, out fixedSource);
-        var effectiveHourOfDay = honorFixedTime ? fixedHour : timeAndWeather.HourOfDay;
-        var fixedField = honorFixedTime
-            ? fixedHour.ToString("D2") + ":" + fixedMinute.ToString("D2") + " (" + fixedSource + ")"
-            : "none";
-        // A random time would redraw the hour inside DoWeatherThings and silently discard the fixed time, so it is
-        // skipped for exactly the raid that took the fixed time (see the call below and analysis/map-fixed-time §6.4).
-        var skippedRandom = honorFixedTime && timeAndWeather.IsRandomTime;
-        game._logger.LogInfo($"Raid time: hourOfDay={effectiveHourOfDay} " +
-            $"({(honorFixedTime ? "map fixed time" : effectiveHourOfDay == -1 ? "current world time" : "custom")}), " +
-            $"server={FikaBackendUtils.IsServer}, scav={FikaBackendUtils.IsScav}, " +
-            $"worldHour={backendDateTime.StatedGameDateTime.Hour}, " +
-            $"fixed={fixedField}, playerHourOfDay={timeAndWeather.HourOfDay}, " +
-            $"isRandomTime={timeAndWeather.IsRandomTime}, skippedRandom={skippedRandom}, headless=True");
-        if (honorFixedTime)
+        if (timeAndWeather.HourOfDay != -1)
         {
-            game._logger.LogInfo($"[MapFixedTime] {location.Id} carries a fixed clock time: using {fixedField} and ignoring " +
-                $"the player's hourOfDay={timeAndWeather.HourOfDay} (headless host)");
-        }
-        if (effectiveHourOfDay != -1)
-        {
-            game._logger.LogInfo($"Using custom time, hour of day: {effectiveHourOfDay}");
+            game._logger.LogInfo($"Using custom time, hour of day: {timeAndWeather.HourOfDay}");
             var currentTime = backendDateTime.StatedGameDateTime;
-            Il2CppSystem.DateTime newTime = new(currentTime.Year, currentTime.Month, currentTime.Day, effectiveHourOfDay,
+            Il2CppSystem.DateTime newTime = new(currentTime.Year, currentTime.Month, currentTime.Day, timeAndWeather.HourOfDay,
                 currentTime.Minute, currentTime.Second, currentTime.Millisecond);
             gameTime = new(backendDateTime.StatedRealDateTime, newTime, backendDateTime.TimeFactor);
             gameTime.Reset(newTime);
             dateTime = EDateTime.CURR;
         }
 
-        TraceStep("create: wave scaling");
         const float num = 1.5f;
         foreach (var wildSpawnWave in location.waves)
         {
@@ -236,60 +198,35 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
             wildSpawnWave.slots_max = (int)(wildSpawnWave.slots_max * num);
         }
 
-        TraceStep("create: wave scaling ok");
         game.BackendSession = backEndSession;
         game._exitCallback = callback;
         game._location = location;
         game._tarkovDateTime = dateTime;
         game.FixedDeltaTime = fixedDeltaTime;
-        TraceStep("create: handle location data");
         game.HandleLocationData(location, wavesSettings.BotAmount);
-        TraceStep("create: handle location data ok");
         if (!Singleton<GlobalEventDispatcher>.Instantiated)
         {
             Singleton<GlobalEventDispatcher>.Create(new GlobalEventDispatcher());
         }
 
-        TraceStep("create: game controller ctor");
         game.GameController = new HeadlessGameController(game, updateQueue, gameWorld, backEndSession, location, wavesSettings, gameTime)
         {
             Location = location
         };
-        TraceStep("create: game controller ok");
         game.GameDateTime = gameTime;
         game._localRaidSettings = localRaidSettings;
-        TraceStep("create: weather");
-        // (analysis/map-fixed-time §6.4) Priority: the map's fixed time wins over a random time, and only then.
-        // When this raid did not take a fixed time (honorFixedTime == false, i.e. the map has none, the switch is
-        // off, or this is a rejoin/transit) the argument is exactly timeAndWeather.IsRandomTime - the original
-        // semantics, untouched.
-        game.DoWeatherThings(timeAndWeather.IsRandomTime && !honorFixedTime, timeAndWeather.IsRandomWeather);
-        TraceStep("create: weather ok");
+        game.DoWeatherThings(timeAndWeather.IsRandomTime, timeAndWeather.IsRandomWeather);
         WorldInteractiveObject.InteractionShouldBeConfirmed = false;
 
-        TraceStep("create: voip distance");
-        // A dedicated host has no VOIP instance of its own; the value only feeds
-        // game._voipDistance, so a missing handler must not abort the raid start.
-        float hearingDistance = 0f;
-        if (FikaGlobals.VOIPHandler is { } voipHandler)
-        {
-            hearingDistance = voipHandler.PushToTalkSettings.HearingDistance;
-        }
-        else
-        {
-            game._logger.LogWarning("[Headless] No VOIP handler is instantiated; using a hearing distance of 0");
-        }
+        float hearingDistance = FikaGlobals.VOIPHandler.PushToTalkSettings.HearingDistance;
         game._voipDistance = (hearingDistance * hearingDistance) + 9;
 
-        TraceStep("create: hearing table");
         ClientHearingTable.Instance = game;
 
         if (game.GameController.IsServer)
         {
             gameWorld.World.RegisterNetworkInteractionObjects();
         }
-
-        TraceStep("create: network interaction objects ok");
 
         if (timeAndWeather.TimeFlowType != ETimeFlowType.x1)
         {
@@ -304,27 +241,15 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
             (game.GameController as HostGameController).SetupCustomWeather(timeAndWeather);
         }
 
-        TraceStep("create: game singleton");
         FikaSingleton<IFikaGame>.Create(game);
         FikaEventDispatcher.DispatchEvent(new FikaGameCreatedEvent(game));
 
-        TraceStep("create: raid controller component");
         game.GameController.RaidSettings = raidSettings;
         game.GameController.ThrownGrenades = [];
         game.gameObject.AddComponent<HeadlessRaidController>();
-        game._logger.LogInfo($"[Headless] Raid host game created (locationPtr={(location is null ? "null" : "0x" + location.Pointer.ToInt64().ToString("X"))}, side={localRaidSettings.playerSide}, bots={wavesSettings.BotAmount})");
+        game._logger.LogInfo($"[Headless] Raid host game created for {location.Id} (side={localRaidSettings.playerSide}, bots={wavesSettings.BotAmount})");
 
         return game;
-    }
-
-    /// <summary>
-    /// Raid-start trace. A failure inside native or async frames reports only the
-    /// entry method, so every risky statement of <see cref="Create"/> logs its name:
-    /// the last line before a failure names the statement that threw.
-    /// </summary>
-    private static void TraceStep(string step)
-    {
-        FikaHeadlessPlugin.FikaHeadlessLogger.LogInfo($"[Headless] Stage(trace): {step}");
     }
 
     private void HandleLocationData(LocationSettings.Location location, EBotAmount botAmount)
@@ -394,7 +319,7 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
 
         Status = GameStatus.Running;
         UnityEngine.Random.InitState((int)DateTimeExtensions.Now.Ticks);
-        _logger.LogInfo($"[Headless] Stage: raid init started (locationPtr={(_location is null ? "null" : "0x" + _location.Pointer.ToInt64().ToString("X"))}, status=Running)");
+        _logger.LogInfo($"[Headless] Stage: raid init started for {_location?.Id} (status=Running)");
 
         await GameController.SetupCoopHandler(this);
         var gameWorld = Singleton<GameWorld>.Instance;
@@ -490,9 +415,7 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
         _logger.LogInfo("[Headless] Stage: host ready, deploying players");
 
         TaskCompletionSource taskCompletionSource = new();
-        // Routed through the managed/engine value boundary: a routine that yields the port's managed
-        // WaitSeconds must never hand it to the engine's enumerator wrapper (analysis/red-errors-coroutines, E1).
-        StartCoroutine(Fika.Core.EngineCoroutines.Wrap(FinishRaidSetup(() => taskCompletionSource.SetResult(true)), "Fika.Headless.FinishRaidSetup"));
+        StartCoroutine(FinishRaidSetup(() => taskCompletionSource.SetResult(true)).WrapToIl2Cpp());
         await taskCompletionSource.Task;
 
         FikaBackendUtils.GroupPlayers.Clear();
@@ -505,7 +428,7 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
 
         NetManagerUtils.DisableLoadingScreenUI();
 
-        StartCoroutine(Fika.Core.EngineCoroutines.Wrap(GameController.CreateStashes(), "Fika.Headless.CreateStashes"));
+        StartCoroutine(GameController.CreateStashes().WrapToIl2Cpp());
 
         if (GameController.CoopHandler.HumanPlayers.Count > 0)
         {
@@ -527,7 +450,7 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
             }
         }
 
-        StartCoroutine(Fika.Core.EngineCoroutines.Wrap((GameController as HeadlessGameController).SyncTraps(), "Fika.Headless.SyncTraps"));
+        StartCoroutine((GameController as HeadlessGameController).SyncTraps().WrapToIl2Cpp());
     }
 
     private Task RunMemoryCleanup()
@@ -689,16 +612,6 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
             }
 
             LoadingScreenUI.Instance?.UpdateAndBroadcast(50f);
-            // (analysis/transit-reload-sync) The headless twin of FikaHostGameWorld's alignment anchor: a client
-            // that already ended its own raid waits for this signal before it creates its level, so it has to go
-            // out at the moment this host really starts loading the new map. Only a continuing transit announces
-            // (the clients' own bounded fallbacks cover a host that never does), and the call never throws.
-            if (FikaBackendUtils.IsTransit)
-            {
-                TransitReloadGate.AnnounceHostReloadStart(FikaSingleton<FikaServer>.Instance,
-                    _location != null ? _location.Id : "unknown");
-            }
-
             try
             {
                 await Singleton<ObjectsFactory>.Instance.LoadBundlesAndCreatePools(ObjectsFactory.PoolsCategory.Raid,

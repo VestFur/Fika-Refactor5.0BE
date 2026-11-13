@@ -28,12 +28,11 @@ using Fika.Core.Networking.Packets.Player;
 using Fika.Core.Networking.Packets.Player.Common;
 using Fika.Core.Networking.Packets.World;
 using HarmonyLib;
-
-// BJ (analysis/terminal-rauf-card): the sentry access line of the terminal, host side - see
-// FikaSentryAccess and the patches of SentryTerminalAccessPatches.cs.
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
+using static Fika.Core.Networking.Packets.World.ReconnectPacket;
 using EFT.NetworkPackets;
 using Diz.Jobs;
 using static Fika.Core.Networking.NetworkUtils;
@@ -54,7 +53,7 @@ public sealed partial class FikaServer
         var item = Singleton<ItemFactory>.Instance.CreateItem(packet.ItemId, packet.TemplateId, null);
         if (item == null)
         {
-            _logger.LogError($"Failed to create item [{packet.ItemId}] with templateId [{LogSafe.Ref(packet.TemplateId)}]");
+            _logger.LogError($"Failed to create item [{packet.ItemId}] with templateId [{packet.TemplateId}]");
             return;
         }
 
@@ -268,30 +267,9 @@ public sealed partial class FikaServer
     private void OnLoadingScreenPlayersPacketReceived(LoadingScreenPlayersPacket packet, NetPeer peer)
     {
         if (!_assignedPeerNetIds.TryGetValue(peer, out var assignedNetId) || packet.NetIds?.Length != 1 ||
-            packet.NetIds[0] != assignedNetId || packet.Nicknames?.Length != 1 || LoadingScreenUI.Instance == null)
-        {
-            // (analysis/loading-screen-peer-state) A dropped row announcement is the fingerprints of a peer
-            // whose loading state can never appear: name it instead of returning silently.
-            LoadingScreenUI.DiagThrottled("players-rejected-" + peer.Id, 5f,
-                "row announcement from peer " + peer.Id + " did not pass the check and was dropped: netIds="
-                + (packet.NetIds?.Length.ToString() ?? "null") + ", first="
-                + (packet.NetIds is { Length: > 0 } ? packet.NetIds[0].ToString() : "n/a")
-                + ", assigned=" + (_assignedPeerNetIds.TryGetValue(peer, out var known) ? known.ToString() : "none")
-                + ", nicknames=" + (packet.Nicknames?.Length.ToString() ?? "null")
-                + ", screen=" + (LoadingScreenUI.Instance == null ? "absent" : "present")
-                + " => this peer's row stays unknown on this machine");
-            return;
-        }
+            packet.NetIds[0] != assignedNetId || packet.Nicknames?.Length != 1 || LoadingScreenUI.Instance == null) return;
 
-        var hadRow = LoadingScreenUI.Instance.EnsureRow(assignedNetId, packet.Nicknames[0]);
-        if (hadRow)
-        {
-            // The row was re-created by this announcement: the peer announced itself again after this
-            // machine's own re-arm had dropped its row (the round10 gap) - or it is a normal late join.
-            LoadingScreenUI.Diag("row for peer " + peer.Id + " (netId=" + assignedNetId + ", '"
-                + packet.Nicknames[0] + "') did not exist on this screen and was created from the peer's "
-                + "announcement (" + LoadingScreenUI.Instance.DescribeRows() + ")");
-        }
+        LoadingScreenUI.Instance.AddPlayer(assignedNetId, packet.Nicknames[0]);
 
         var newPacket = LoadingScreenUI.Instance.GetPlayersPacket();
         SendData(ref newPacket, DeliveryMethod.ReliableUnordered);
@@ -299,22 +277,10 @@ public sealed partial class FikaServer
 
     private void OnLoadingScreenPacketReceived(LoadingScreenPacket packet, NetPeer peer)
     {
-        if (!_assignedPeerNetIds.TryGetValue(peer, out var assignedNetId) || packet.NetId != assignedNetId)
-        {
-            // (analysis/loading-screen-peer-state) Progress of a peer that this machine cannot match to an
-            // assigned net id would otherwise vanish without a line.
-            LoadingScreenUI.DiagThrottled("progress-rejected-" + peer.Id, 5f,
-                "progress from peer " + peer.Id + " was dropped: packetNetId=" + packet.NetId + ", assigned="
-                + (_assignedPeerNetIds.TryGetValue(peer, out var known) ? known.ToString() : "none")
-                + " => the peer's loading state cannot be shown on this machine");
-            return;
-        }
-
+        if (!_assignedPeerNetIds.TryGetValue(peer, out var assignedNetId) || packet.NetId != assignedNetId) return;
         if (LoadingScreenUI.Instance != null)
         {
-            // (analysis/loading-screen-peer-state) ApplyPeerProgress creates the row when this machine's
-            // re-arm dropped it; the row is what makes the peer's loading state visible here at all.
-            LoadingScreenUI.Instance.ApplyPeerProgress(packet.NetId, packet.Progress, "peer#" + peer.Id);
+            LoadingScreenUI.Instance.SetProgress(packet.NetId, packet.Progress);
         }
 
         SendData(ref packet, DeliveryMethod.Unreliable, peer);
@@ -565,14 +531,7 @@ public sealed partial class FikaServer
 
     private void OnTransitInteractPacketReceived(TransitInteractPacket packet, NetPeer peer)
     {
-        // (analysis/client-transit-terminal) This drop used to be silent. When a client's press produced no request
-        // on its own machine, the fix re-sends that request, and a mismatch here is the one place it can still
-        // vanish - the line below is the pair of the client's 'press fallback' line, so "the gate refused" and
-        // "the request never arrived" can be told apart in one grep.
-        if (peer.Player == null || packet.NetId != peer.Player.NetId)
-        {
-            return;
-        }
+        if (peer.Player == null || packet.NetId != peer.Player.NetId) return;
         if (_coopHandler.Players.TryGetValue(packet.NetId, out var playerToApply))
         {
             var transitController = Singleton<GameWorld>.Instance?.TransitController;
@@ -594,7 +553,7 @@ public sealed partial class FikaServer
             if (FikaSingleton<IFikaGame>.Instance?.GameController?.GameInstance?.Status == GameStatus.Started)
             {
                 var player = _coopHandler.HumanPlayers.FirstOrDefault(x => x.ProfileId == packet.ProfileId);
-                if (player != null) SendMapStateSnapshot(player, peer);
+                if (player != null) SendMapStateForReconnect(player, peer);
             }
             return;
         }
@@ -642,6 +601,366 @@ public sealed partial class FikaServer
         }
     }
 
+    private void OnReconnectPacketReceived(ReconnectPacket packet, NetPeer peer)
+    {
+        if (!packet.IsRequest) return;
+        if (!_assignedPeerProfiles.TryGetValue(peer, out var assignedProfile) || packet.ProfileId != assignedProfile)
+        {
+            // A reconnect request that carries an identity this connection never announced can
+            // never be answered, and dropping it silently leaves the waiting client stuck on a
+            // 120 s timeout. Answer it with the reason instead: the client needs the error to
+            // stop waiting, and the host log needs it to explain the refusal.
+            if (peer?.ConnectionState == ConnectionState.Connected)
+            {
+                var announced = assignedProfile ?? "none";
+                var reason = $"Reconnect request rejected: this connection announced profile {announced}, " +
+                    $"request carried {packet.ProfileId}";
+                FikaGlobals.LogWarning(reason);
+                var rejected = new ReconnectPacket { Type = EReconnectDataType.Failed, ProfileId = packet.ProfileId, Error = reason };
+                SendDataToPeer(ref rejected, DeliveryMethod.ReliableOrdered, peer);
+            }
+            return;
+        }
+        // SubscribeNetSerializable reuses its instance. The async world snapshot
+        // must not observe the next peer's request after awaiting container setup.
+        packet = new ReconnectPacket { IsRequest = true, InitialRequest = packet.InitialRequest, ProfileId = packet.ProfileId };
+        var world = Singleton<GameWorld>.Instance;
+        MainThreadDispatcher.RunAsync(async () =>
+        {
+            try { await HandleReconnectPacket(packet, peer, world); }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Reconnect failed for {packet.ProfileId}: {ex}");
+                // An older raid's asynchronous snapshot must not send a failure
+                // into a newer raid, or back to a peer that has disconnected.
+                if (!IsCurrentReconnectWorld(world, peer)) return;
+                var failed = new ReconnectPacket { Type = EReconnectDataType.Failed, ProfileId = packet.ProfileId, Error = ex.Message };
+                SendDataToPeer(ref failed, DeliveryMethod.ReliableOrdered, peer);
+            }
+        }).Forget();
+    }
+
+    private static bool IsCurrentReconnectWorld(GameWorld world, NetPeer peer) =>
+        world != null && peer?.ConnectionState == ConnectionState.Connected &&
+        Singleton<GameWorld>.Instance?.Pointer == world.Pointer;
+
+    private async System.Threading.Tasks.Task HandleReconnectPacket(ReconnectPacket packet, NetPeer peer, GameWorld world)
+    {
+        if (packet.IsRequest)
+        {
+            if (!IsCurrentReconnectWorld(world, peer))
+            {
+                FikaGlobals.LogWarning($"Reconnect {packet.ProfileId}: ignored, the world this request belongs to is no longer current (the client waits for its own timeout)");
+                return;
+            }
+            // The client asks for its profile as the very first step of InitPlayer, so a request
+            // can arrive while this host is still registering the raid (new raid, transit, host
+            // restart). Retry the lookup for a bounded time instead of failing on the first miss.
+            var reconnectDeadline = Time.unscaledTimeAsDouble + 20.0;
+            FikaPlayer reconnectingPlayer = null;
+            while (true)
+            {
+                reconnectingPlayer = _coopHandler.HumanPlayers.FirstOrDefault(x => x.ProfileId == packet.ProfileId);
+                if (reconnectingPlayer != null)
+                {
+                    break;
+                }
+                if (Time.unscaledTimeAsDouble >= reconnectDeadline)
+                {
+                    break;
+                }
+                await Task.Delay(250);
+                if (!IsCurrentReconnectWorld(world, peer))
+                {
+                    FikaGlobals.LogWarning($"Reconnect {packet.ProfileId}: aborted, the world changed while waiting for the player to register");
+                    return;
+                }
+            }
+            if (reconnectingPlayer == null)
+            {
+                // A player scav announces the profile SPT regenerated for this
+                // raid, so its body can be registered under a different profile id
+                // than the one the reconnecting client sends (the scav character
+                // id differs from the account/PMC id by design). The netId is
+                // cached per announced profile, so the body this peer owned before
+                // the disconnect is still addressable through it.
+                FikaPlayer matchedBody = null;
+                if (!_assignedPeerNetIds.TryGetValue(peer, out var reconnectNetId))
+                {
+                    var announcedNetId = _assignedPeerProfiles.FirstOrDefault(entry => entry.Value == packet.ProfileId);
+                    if (announcedNetId.Key != null)
+                    {
+                        reconnectNetId = _assignedPeerNetIds.FirstOrDefault(entry => entry.Key == announcedNetId.Key).Value;
+                    }
+                }
+                if (reconnectNetId != 0 && _coopHandler.Players.TryGetValue(reconnectNetId, out var bodyByNetId))
+                {
+                    matchedBody = bodyByNetId.TryCast<FikaPlayer>();
+                }
+                if (matchedBody == null)
+                {
+                    foreach (var candidate in _coopHandler.Players)
+                    {
+                        var typed = candidate.Value.TryCast<FikaPlayer>();
+                        if (typed?.Profile != null && typed.Profile.Id == packet.ProfileId)
+                        {
+                            matchedBody = typed;
+                            break;
+                        }
+                    }
+                }
+                if (matchedBody != null)
+                {
+                    _logger.LogInfo($"Reconnect {packet.ProfileId}: matched netId {reconnectNetId} " +
+                        $"carrying profile {matchedBody.ProfileId} instead");
+                    reconnectingPlayer = matchedBody;
+                }
+            }
+            if (reconnectingPlayer == null)
+            {
+                throw new InvalidOperationException($"Reconnect player {packet.ProfileId} was not found");
+            }
+            if (packet.InitialRequest)
+            {
+                FikaNotifications.DisplayMessageNotification(LocaleUtils.RECONNECT_REQUESTED.Localized(),
+                    iconType: EFT.Communications.ENotificationIconType.Alert);
+                if (reconnectingPlayer.TryCast<ObservedPlayer>() is not { } observedPlayer)
+                    throw new InvalidOperationException($"Reconnect profile {packet.ProfileId} is not an observed player");
+#if DEBUG
+                _logger.LogInfo($"Found player to send back: {observedPlayer.Profile.GetCorrectedNickname()}");
+#endif
+                ReconnectPacket ownCharacterPacket = new()
+                {
+                    Type = EReconnectDataType.OwnCharacter,
+                    ProfileId = packet.ProfileId,
+                    Profile = observedPlayer.Profile,
+                    ProfileHealthClass = observedPlayer.NetworkHealthController.Store(),
+                    PlayerPosition = observedPlayer.Position,
+                    PlayerRotation = observedPlayer.Rotation,
+                    ControllerId = observedPlayer.InventoryController.CurrentId,
+                    FirstOperationId = observedPlayer.InventoryController.NextOperationId,
+                    ControllerType = observedPlayer.HandsController != null
+                        ? HandsControllerTypeConvert.FromController(observedPlayer.HandsController)
+                        : EHandsControllerType.Empty,
+                    ItemId = observedPlayer.HandsController?.Item?.Id ?? new MongoID(),
+                    IsStationary = observedPlayer.MovementContext.IsStationaryWeaponInHands,
+                    LastEquippedItemId = observedPlayer.LastEquippedWeaponOrKnifeItem?.Id ?? new MongoID(),
+                    PlayerBodyRotation = observedPlayer.Transform.rotation,
+                    RevivalState = observedPlayer.CaptureRevivalState()
+                };
+                if (!IsCurrentReconnectWorld(world, peer)) return;
+                SendDataToPeer(ref ownCharacterPacket, DeliveryMethod.ReliableOrdered, peer);
+                return;
+            }
+
+            var gameWorld = world;
+
+            var grenades = gameWorld.Grenades.GetValuesEnumerator();
+            List<SmokeGrenadeNetworkData> smokeData = [];
+            foreach (var item in grenades)
+            {
+                // Values returned by the IL2CPP native collection are often
+                // materialized through the CLR Grenade wrapper. A CLR
+                // `is` check can therefore miss the native SmokeGrenade
+                // identity during reconnect snapshots. TryCast preserves the
+                // native type test while keeping the same payload semantics.
+                if (item.TryCast<SmokeGrenade>() is { } smokeGrenade)
+                {
+                    smokeData.Add(smokeGrenade.NetworkData);
+                }
+            }
+
+            if (smokeData.Count > 0)
+            {
+                ReconnectPacket throwablePacket = new()
+                {
+                    Type = EReconnectDataType.Throwable,
+                    ProfileId = packet.ProfileId,
+                    ThrowableData = smokeData
+                };
+
+                SendDataToPeer(ref throwablePacket, DeliveryMethod.ReliableOrdered, peer);
+            }
+
+            List<WorldInteractiveObject.InteractiveObjectStatusInfo> interactivesData = [];
+            foreach (var interactiveObject in gameWorld.World._interactableObjectsForNetSync)
+            {
+                if ((interactiveObject.DoorState != interactiveObject.InitialDoorState
+                    && interactiveObject.DoorState != EDoorState.Interacting)
+                    || (interactiveObject.TryCast<Door>() is { IsBroken: true }))
+                {
+                    interactivesData.Add(interactiveObject.GetStatusInfo(true));
+                }
+            }
+
+            if (interactivesData.Count > 0)
+            {
+                ReconnectPacket interactivePacket = new()
+                {
+                    Type = EReconnectDataType.Interactives,
+                    ProfileId = packet.ProfileId,
+                    InteractivesData = interactivesData
+                };
+
+                SendDataToPeer(ref interactivePacket, DeliveryMethod.ReliableOrdered, peer);
+            }
+
+            var lampControllers = LocationScene.GetAllObjects<LampController>(false);
+            Dictionary<int, byte> lampStates = [];
+            foreach (var controller in lampControllers)
+            {
+                lampStates.Add(controller.NetId, (byte)controller.LampState);
+            }
+
+            if (lampStates.Count > 0)
+            {
+                ReconnectPacket lampPacket = new()
+                {
+                    Type = EReconnectDataType.LampControllers,
+                    ProfileId = packet.ProfileId,
+                    LampStates = lampStates
+                };
+
+                SendDataToPeer(ref lampPacket, DeliveryMethod.ReliableOrdered, peer);
+            }
+
+            var windows = gameWorld.Windows.GetValuesEnumerator();
+            Dictionary<int, Vector3> windowData = [];
+            foreach (var window in windows)
+            {
+                if (window == null)
+                {
+                    continue;
+                }
+                if (window.AvailableToSync && window.IsDamaged)
+                {
+                    // FirstHitPosition is an inline IL2CPP Nullable<Vector3>.
+                    // The generated getter boxes an absent value as null and
+                    // reading .Value can therefore throw during reconnect.
+                    var firstHitPosition = NativeNullable<Vector3>.Read(
+                        window, "<FirstHitPosition>k__BackingField");
+                    if (!firstHitPosition.HasValue)
+                    {
+                        _logger.LogWarning($"Skipping damaged window {window.NetId} without a first-hit position");
+                        continue;
+                    }
+
+                    windowData.Add(window.NetId, firstHitPosition.Value);
+                }
+            }
+
+            if (windowData.Count > 0)
+            {
+                ReconnectPacket windowPacket = new()
+                {
+                    Type = EReconnectDataType.Windows,
+                    ProfileId = packet.ProfileId,
+                    WindowBreakerStates = windowData
+                };
+
+                SendDataToPeer(ref windowPacket, DeliveryMethod.ReliableOrdered, peer);
+            }
+
+            foreach (var player in _coopHandler.Players.Values)
+            {
+                if (player.ProfileId == packet.ProfileId)
+                {
+                    continue;
+                }
+
+                var characterPacket = SendCharacterPacket.FromValue(new()
+                {
+                    Profile = player.Profile,
+                    ControllerId = player.InventoryController.CurrentId,
+                    FirstOperationId = player.InventoryController.NextOperationId
+                },
+                player.HealthController.IsAlive, player.IsAI, player.Position, player.NetId, player.CaptureRevivalState());
+
+                if (player.ActiveHealthController != null)
+                {
+                    characterPacket.PlayerInfoPacket.HealthByteArray = player.ActiveHealthController.SerializeState();
+                }
+                else if (player.TryCast<ObservedPlayer>() is { } observedPlayer)
+                {
+                    characterPacket.PlayerInfoPacket.HealthByteArray = observedPlayer.NetworkHealthController.Store().SerializeHealthInfo();
+                }
+
+                if (player.HandsController != null)
+                {
+                    characterPacket.PlayerInfoPacket.ControllerType = HandsControllerTypeConvert.FromController(player.HandsController);
+                    characterPacket.PlayerInfoPacket.ItemId = player.HandsController.Item?.Id;
+                    characterPacket.PlayerInfoPacket.IsStationary = player.MovementContext.IsStationaryWeaponInHands;
+                }
+
+                SendGenericPacketToPeer(EGenericSubPacketType.SendCharacter, characterPacket, peer);
+            }
+
+            StashesPacket stashesPacket = new();
+            if (gameWorld.BtrController?.TransferItemsController != null)
+            {
+                stashesPacket.HasBTR = true;
+                var length = gameWorld.BtrController.TransferItemsController._transferContainers.Count;
+                stashesPacket.BTRStashes = new Stash[length];
+                for (var i = 0; i < length; i++)
+                {
+                    stashesPacket.BTRStashes[i] = gameWorld.BtrController.TransferItemsController._transferContainers[i];
+                }
+            }
+
+            if (gameWorld.TransitController?.TransferItemsController != null)
+            {
+                stashesPacket.HasTransit = true;
+                var length = gameWorld.TransitController.TransferItemsController._transferContainers.Count;
+                stashesPacket.TransitStashes = new Stash[length];
+                for (var i = 0; i < length; i++)
+                {
+                    stashesPacket.TransitStashes[i] = gameWorld.TransitController.TransferItemsController._transferContainers[i];
+                }
+            }
+
+            SendDataToPeer(ref stashesPacket, DeliveryMethod.ReliableOrdered, peer);
+
+            foreach (var player in _coopHandler.HumanPlayers)
+            {
+                if (player.ProfileId == packet.ProfileId && player.TryCast<ObservedPlayer>() is { } observedPlayer && observedPlayer.FikaQuests is ObservedQuestController questController)
+                {
+                    if (questController.TryGetReconnectQuestSyncPackets(out var packets))
+                    {
+                        ReconnectPacket questSyncPacket = new()
+                        {
+                            Type = EReconnectDataType.Quests,
+                            ProfileId = packet.ProfileId,
+                            QuestSyncPackets = packets
+                        };
+
+#if DEBUG
+                        _logger.LogInfo($"Sending {packets.Count} quest sync packets back to reconnecting client {observedPlayer.Profile.GetCorrectedNickname()}");
+#endif
+
+                        SendDataToPeer(ref questSyncPacket, DeliveryMethod.ReliableOrdered, peer);
+                    }
+
+                    break;
+                }
+            }
+
+            await SendWorldObjectsForReconnect(peer, packet.ProfileId);
+            if (!IsCurrentReconnectWorld(world, peer)) return;
+            SendMapStateForReconnect(reconnectingPlayer, peer);
+
+            if (!IsCurrentReconnectWorld(world, peer)) return;
+            ReconnectPacket finishPacket = new()
+            {
+                Type = EReconnectDataType.Finished,
+                ProfileId = packet.ProfileId,
+                RevivalState = reconnectingPlayer.CaptureRevivalState(),
+                BtrPassengers = CaptureBtrPassengers(),
+                BtrServices = CaptureBtrServices(reconnectingPlayer)
+            };
+
+            SendDataToPeer(ref finishPacket, DeliveryMethod.ReliableOrdered, peer);
+        }
+    }
 
     private void OnWorldLootPacketReceived(WorldLootPacket packet, NetPeer peer)
     {
@@ -740,29 +1059,7 @@ public sealed partial class FikaServer
 
     private void OnGenericPacketReceived(GenericPacket packet, NetPeer peer)
     {
-        if (!_assignedPeerNetIds.TryGetValue(peer, out var assignedNetId) && packet.Type is EGenericSubPacketType.SendCharacter)
-        {
-            // (2026-10-17) A transit keeps the UDP connection, but the host can be left without the
-            // per-peer assignment (the assignment table is rebuilt whenever the server object is
-            // re-created, and a surviving connection never re-sends NetworkSettings on its own). The peer
-            // then announces its character into a missing assignment, no player is ever created for it and
-            // every later request is answered with "unbound player" - the reported state after a transit:
-            // no weapon switching, no item moves, and the client standing still on the host.
-            // The assignment is restored only from the net id this host itself handed out for exactly that
-            // profile, never from a value the peer chooses.
-            if (packet.SubPacket is SendCharacterPacket restoring
-                && restoring.PlayerInfoPacket.Profile != null
-                && _cachedConnections.TryGetValue(restoring.PlayerInfoPacket.Profile.ProfileId, out var cachedNetId)
-                && cachedNetId == packet.NetId)
-            {
-                _assignedPeerNetIds[peer] = cachedNetId;
-                _assignedPeerProfiles[peer] = restoring.PlayerInfoPacket.Profile.ProfileId;
-                assignedNetId = cachedNetId;
-                _logger.LogWarning($"Restored the net id {cachedNetId} of peer {peer.Id} from its character " +
-                    $"announcement (profile {restoring.PlayerInfoPacket.Profile.ProfileId})");
-            }
-        }
-        if (!_assignedPeerNetIds.TryGetValue(peer, out assignedNetId) || packet.NetId != assignedNetId ||
+        if (!_assignedPeerNetIds.TryGetValue(peer, out var assignedNetId) || packet.NetId != assignedNetId ||
             IsHostOnlyGenericPacket(packet.Type))
         {
             if (packet.Type is EGenericSubPacketType.SendCharacter)
@@ -822,6 +1119,11 @@ public sealed partial class FikaServer
             (peer.Player == null || ((MuffledState)packet.SubPacket).NetId != peer.Player.NetId)) return;
         if (packet.Type is EGenericSubPacketType.ClientExtract &&
             (peer.Player == null || ((ClientExtract)packet.SubPacket).NetId != peer.Player.NetId)) return;
+        if (packet.Type is EGenericSubPacketType.FlareShootReport)
+        {
+            OnFlareShootReportReceived(packet.SubPacket as FlareShootReport, peer);
+            return;
+        }
         if (packet.Type is EGenericSubPacketType.DialogEntry)
         {
             OnDialogEntryPacketReceived((DialogEntryPacket)packet.SubPacket, peer);
@@ -843,6 +1145,38 @@ public sealed partial class FikaServer
             _packetProcessor.WriteNetReusable(writer, ref packet);
             _netServer.SendToAll(writer.AsReadOnlySpan(), DeliveryMethod.ReliableOrdered, peer);
         }
+    }
+
+    /// <summary>
+    /// A client fired a signal flare inside a flare detector zone. The native
+    /// activation only happened on that client's machine, so the host validates
+    /// the report against the sender, decides the activation scope (squad wide by
+    /// default) and broadcasts the canonical set, which every peer applies.
+    /// </summary>
+    private void OnFlareShootReportReceived(FlareShootReport report, NetPeer peer)
+    {
+        var sender = peer.Player;
+        if (!FikaFlareExfilManager.ValidateReport(report, sender, out var reason))
+        {
+            _logger.LogWarning($"[FlareExfil] rejected report from peer {peer.Id}: reason={reason}");
+            return;
+        }
+
+        var manager = FikaFlareExfilManager.Instance;
+        if (manager == null)
+        {
+            _logger.LogWarning("[FlareExfil] rejected report from peer " + peer.Id +
+                ": reason=flare manager is not active on the host");
+            return;
+        }
+
+        // The host recomputes the squad from its own player table: a report may
+        // not widen an activation to profiles the shooter is not grouped with.
+        var squad = FikaFlareExfilManager.CollectSquadProfiles(sender);
+        var canonical = manager.BuildCanonical(report.ZoneId, report.FlareType, report.ShooterProfileId,
+            report.ShooterRaidId, squad);
+        manager.ApplyCanonical(canonical, onHost: true);
+        SendGenericPacket(EGenericSubPacketType.FlareShootReport, canonical, true);
     }
 
     private void OnInformationPacketReceived(InformationPacket packet, NetPeer peer)
@@ -970,26 +1304,6 @@ public sealed partial class FikaServer
                         SendDataToPeer(ref rejectedResyncPacket, DeliveryMethod.ReliableOrdered, peer);
                         return;
                     }
-                }
-
-                // [PlantGuard] (analysis/plant-client-host-crash): the host rebuilds a client's
-                // operation from its descriptor and executes it natively afterwards. For the
-                // destroy-shaped descriptors that rebuild walks the sender's item graph and builds an
-                // ItemManipulator.Discard result before the operation object even exists; a removal
-                // this host can already tell it cannot complete must be stopped in managed code,
-                // here, instead of being handed to that native chain. Every refusal answers exactly
-                // like the conversion failure below (Failed + authoritative resync + id resync), so
-                // the client is never left waiting for a callback.
-                if (PlantRelayGuard.TryRefuse(playerToApply, packet.Descriptor, out var guardRefusal))
-                {
-                    PlantRelayGuard.ReportRefusal(packet.NetId, packet.CallbackId, packet.Descriptor, guardRefusal);
-                    SendGenericPacketToPeer(EGenericSubPacketType.OperationCallback,
-                        OperationCallbackPacket.FromValue(packet.NetId, packet.CallbackId, EOperationStatus.Failed,
-                        "The host does not support this operation: " + guardRefusal), peer);
-                    SendInventoryResyncToPeer(packet.NetId, packet.CallbackId, peer);
-                    ResyncInventoryIdPacket guardResyncPacket = new(playerToApply.NetId);
-                    SendDataToPeer(ref guardResyncPacket, DeliveryMethod.ReliableOrdered, peer);
-                    return;
                 }
 
                 if (playerToApply.InventoryController is IOperationHandler inventoryController)

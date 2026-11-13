@@ -28,21 +28,10 @@ namespace Fika.Core.Main.Utils;
 
 public static class FikaGlobals
 {
-    /// <summary>
-    /// Builds an IL2CPP delegate for a native instance method.
-    /// <para>
-    /// WARNING (round 8, analysis/delegate-targets/REPORT.md): <c>Il2CppSystem.Delegate.CreateDelegate</c>
-    /// accepts a method of an <em>injected</em> class too, and the delegate then carries that method's
-    /// registered MethodInfo - the engine reaches it through the interop invoker, whose closing
-    /// <c>calli</c> targets the method's trampoline thunk, which is the coreclr fail-fast of the
-    /// 2026-10-10 host raids. Pass a native object here, or hand the engine a managed lambda instead
-    /// (as <c>TarkovApplication_LocalGameCreator_Patch.AddRaidDisposable</c> now does). No call site uses
-    /// this helper today; it is kept for native targets only.
-    /// </para>
-    /// </summary>
-    public static System.Action Il2CppActionFor(Il2CppSystem.Object target, string methodName) =>
-        Il2CppSystem.Delegate.CreateDelegate(Il2CppInterop.Runtime.Il2CppType.Of<System.Action>(), target, methodName)
-            .Cast<System.Action>();
+    /// <summary>Builds an IL2CPP delegate for a native instance method.</summary>
+    public static Il2CppSystem.Action Il2CppActionFor(Il2CppSystem.Object target, string methodName) =>
+        Il2CppSystem.Delegate.CreateDelegate(Il2CppInterop.Runtime.Il2CppType.Of<Il2CppSystem.Action>(), target, methodName)
+            .Cast<Il2CppSystem.Action>();
     public const string TransitTraderId = "656f0f98d80a697f855d34b1";
     public const string TransitTraderName = "BTR";
     public const string DefaultTransitId = "66f5750951530ca5ae09876d";
@@ -58,17 +47,6 @@ public static class FikaGlobals
     /// Use when no callback is needed to reduce allocations
     /// </summary>
     public static Action EmptyActionDelegate => EmptyAction;
-
-    private static Il2CppSystem.Action _emptyNativeAction;
-
-    /// <summary>
-    /// Native no-op for base calls that must not hand a null callback to an IL2CPP method: the native
-    /// side takes a native delegate object, never a managed closure. The generated
-    /// Il2CppSystem.Action.op_Implicit(System.Action) builds that bridge; the result is cached because
-    /// every conversion allocates a native delegate.
-    /// </summary>
-    public static Il2CppSystem.Action EmptyNativeAction =>
-        _emptyNativeAction ??= (Il2CppSystem.Action)EmptyActionDelegate;
 
     public const int PingRange = 1000;
 
@@ -201,7 +179,7 @@ public static class FikaGlobals
 
     internal static void SpawnItemInWorld(Item item, FikaPlayer player)
     {
-        StaticManager.BeginCoroutine(EngineCoroutines.Wrap(SpawnItemRoutine(item, player), "FikaGlobals.SpawnItemInWorld"));
+        StaticManager.BeginCoroutine(SpawnItemRoutine(item, player).WrapToIl2Cpp());
     }
 
     private static IEnumerator SpawnItemRoutine(Item item, FikaPlayer player)
@@ -240,32 +218,6 @@ public static class FikaGlobals
     public static void SetProfileNickname(this ProfileInfo infoClass, string nickname)
     {
         infoClass.MainProfileNickname = nickname;
-    }
-
-    /// <summary>
-    /// The name to render for a player.
-    /// <para>
-    /// Fika stores a human's *main profile* name (the PMC name, which also stays the shown name
-    /// while that player plays as a scav) in <c>Info.MainProfileNickname</c>
-    /// (<see cref="FikaPlayer.Init"/> and <c>FikaClient.OnPeerConnected</c> fill it before the
-    /// profile is announced). The game leaves that field empty for AI, whose only name is
-    /// <c>Info.Nickname</c>, so every read that can address a bot has to go through here instead
-    /// of reading the field on its own: the nameplate, the kill and spawn notifications and the
-    /// ping label are all shown for bots in a normal raid.
-    /// </para>
-    /// </summary>
-    /// <param name="profile">The profile to name (may be null).</param>
-    /// <returns>The main profile name, or the nickname when there is no main name.</returns>
-    public static string GetDisplayName(this Profile profile)
-    {
-        var info = profile?.Info;
-        if (info == null)
-        {
-            return string.Empty;
-        }
-
-        var mainNickname = info.MainProfileNickname;
-        return !string.IsNullOrEmpty(mainNickname) ? mainNickname : info.Nickname;
     }
 
     /// <summary>
@@ -442,28 +394,11 @@ public static class FikaGlobals
     }
 
     /// <summary>
-    /// Last-resort guard for an announced profile descriptor: a profile that has *no* name at
-    /// all is unusable on the observing side, so a Nickname is recovered from the main profile
-    /// name when only the main name survived.
-    /// <para>
-    /// <c>Info.MainProfileNickname</c> is deliberately NOT written back any more. It is the
-    /// "main profile" name (the PMC name of a human, also while playing as a scav) and the game
-    /// leaves it empty for AI: SPT's <c>database/bots/base.json</c> has no such field at all,
-    /// and only a player scav (<c>BotGenerator.GeneratePlayerScav</c>) or an "<c>assault</c>" bot
-    /// that wins <c>ChanceAssaultScavHasPlayerScavName</c>
-    /// (<c>BotGenerator.GenerateBot</c> -> <c>BotNameService.AddRandomPmcNameToBotMainProfileNicknameProperty</c>)
-    /// ever gets one. Announcing a bot's nickname as its main profile name claimed the bot was a
-    /// human: <see cref="IsPlayerProfile"/> reads a non-empty MainProfileNickname as that marker
-    /// (bots have RegistrationDate 0 and no PetId) and <c>ObservedPlayer.Init</c> disables the
-    /// culling handler for such a profile.
-    /// </para>
-    /// <para>
-    /// The reader does not need the field for AI: the Fika nameplate falls back to
-    /// <c>Info.Nickname</c> (FikaHealthBar.CreateHealthBar) and every map mod already reads
-    /// <c>Info.Nickname</c>. Human profiles are filled at the source, where the name is known -
-    /// <c>FikaPlayer.Init</c> and <c>FikaClient.OnPeerConnected</c> call
-    /// <see cref="SetProfileNickname(ProfileInfo, string)"/> before the profile is announced.
-    /// </para>
+    /// Makes sure an announced profile descriptor carries a usable player name. The Fika
+    /// nameplate reads <c>Info.MainProfileNickname</c> (FikaHealthBar.cs:267) while the map mods
+    /// read <c>Info.Nickname</c>, so an empty field on either side leaves a teammate without a
+    /// label. Both fields are filled from each other and the fix is logged, so one raid shows
+    /// whether the profile that was announced was already missing one of them.
     /// </summary>
     /// <param name="descriptor">The descriptor about to be serialized.</param>
     public static void EnsureProfileNames(ProfileDescriptor descriptor)
@@ -475,44 +410,26 @@ public static class FikaGlobals
         }
 
         var nickname = info.Nickname;
-        if (!string.IsNullOrEmpty(nickname))
+        var mainNickname = info.MainProfileNickname;
+        var nicknameMissing = string.IsNullOrEmpty(nickname);
+        var mainNicknameMissing = string.IsNullOrEmpty(mainNickname);
+        if (!nicknameMissing && !mainNicknameMissing)
         {
-            // Nothing to repair: an empty MainProfileNickname is the normal state of an AI
-            // profile and the observing side renders the nickname for it.
             return;
         }
 
-        var mainNickname = info.MainProfileNickname;
-        if (!string.IsNullOrEmpty(mainNickname))
+        if (nicknameMissing && !mainNicknameMissing)
         {
             info.Nickname = mainNickname;
-            ReportNameDefect($"[Nameplate] announced profile {descriptor.Id} carried no Nickname; " +
-                $"it was filled from MainProfileNickname='{mainNickname}'");
-            return;
         }
-
-        ReportNameDefect($"[Nameplate] announced profile {descriptor.Id} carries neither Nickname " +
-            "nor MainProfileNickname; it will render without a label");
-    }
-
-    /// <summary>
-    /// The guard above only speaks when a profile really has no name - that is the case that
-    /// changes what a teammate sees. Bounded to the first few distinct profiles so a profile
-    /// that is announced in a loop cannot fill the log.
-    /// </summary>
-    private static readonly HashSet<string> _reportedNameDefects = new(StringComparer.Ordinal);
-
-    private static void ReportNameDefect(string message)
-    {
-        if (_reportedNameDefects.Count >= 20)
+        else if (mainNicknameMissing && !nicknameMissing)
         {
-            return;
+            info.MainProfileNickname = nickname;
         }
 
-        if (_reportedNameDefects.Add(message))
-        {
-            LogWarning(message);
-        }
+        LogWarning($"[Nameplate] announced profile {descriptor.Id} had Nickname='{nickname}' " +
+            $"MainProfileNickname='{mainNickname}', sent Nickname='{info.Nickname}' " +
+            $"MainProfileNickname='{info.MainProfileNickname}'");
     }
 
     /// <summary>

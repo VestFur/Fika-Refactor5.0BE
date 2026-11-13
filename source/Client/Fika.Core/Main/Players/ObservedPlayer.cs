@@ -213,21 +213,6 @@ public sealed class ObservedPlayer : FikaPlayer
     private bool _isZombie;
     private Corpse _fikaFinalisedCorpse;
 
-    // (analysis/stutter-pose-reset) The animator flags this player was last given. The three Enable* calls in
-    // ManualStateUpdate used to run on every grounded frame and every player, while the native jump state only
-    // ever calls them on the frame the value changes (JumpStateClass.cs:108/148/200). They are booleans in the
-    // animator, so pushing the same value again is a no-op for the animation - it is pure native call cost
-    // (61 players x 3 calls x every frame). These caches turn the calls into edges; they are invalidated
-    // whenever the player changes state, because another writer (ObservedMountedState) moves the same flags.
-    private bool _pushedJumpFlag;
-    private bool _pushedJumpFlagValid;
-    private bool _pushedLandingFlag;
-    private bool _pushedLandingFlagValid;
-    private bool _pushedInertFlag;
-    private bool _pushedInertFlagValid;
-    private EPlayerState _pushedFlagState;
-    private bool _pushedFlagStateValid;
-
     private const float _movementDeadZoneSqr = 0.05f * 0.05f;
     private const float _velocityDeadZoneSqr = 0.20f * 0.20f;
     #endregion
@@ -283,7 +268,7 @@ public sealed class ObservedPlayer : FikaPlayer
 
         player.Pedometer.Stop();
         player._handsController = EmptyHandsController.CreateController<EmptyHandsController>(player);
-        player._handsController.Spawn(1f, (System.Action)FikaGlobals.EmptyAction);
+        player._handsController.Spawn(1f, (Il2CppSystem.Action)FikaGlobals.EmptyAction);
 
         player.AIData = new AIData(null, player);
         player.botPlayerCulling = new();
@@ -330,7 +315,7 @@ public sealed class ObservedPlayer : FikaPlayer
             player._frameSkip = 0;
         }
 
-        CameraManager.Instance.FoVUpdateAction -= (System.Action<int>)player.OnFovUpdatedEvent;
+        CameraManager.Instance.FoVUpdateAction -= (Il2CppSystem.Action<int>)player.OnFovUpdatedEvent;
 
         if (!FikaBackendUtils.IsHeadless)
         {
@@ -377,7 +362,7 @@ public sealed class ObservedPlayer : FikaPlayer
             if (DissonanceComms != null)
             {
                 DissonanceComms.TrackPlayerPosition(this);
-                StartCoroutine(EngineCoroutines.Wrap(SourceBindingCreated(), "ObservedPlayer.SourceBindingCreated"));
+                StartCoroutine(SourceBindingCreated().WrapToIl2Cpp());
                 if (VoipAudioSource != null)
                 {
 
@@ -404,7 +389,7 @@ public sealed class ObservedPlayer : FikaPlayer
         if (VoipAudioSource == null)
         {
             var attempts = 0;
-            var waitForSeconds = new WaitSeconds(1f);
+            var waitForSeconds = new WaitForSeconds(1);
 
             while (VoipAudioSource == null)
             {
@@ -439,7 +424,7 @@ public sealed class ObservedPlayer : FikaPlayer
         _voiceBroadcastTrigger = gameObject.AddComponent<VoiceBroadcastTrigger>();
         _voiceBroadcastTrigger.ChannelType = CommTriggerTarget.Self;
         _soundSettings = Singleton<SettingsManager>.Instance.Sound.Settings;
-        CompositeDisposable.BindState(_soundSettings.VoiceChatVolume, (System.Action<int>)ChangeVoipDeviceSensitivity);
+        CompositeDisposable.BindState(_soundSettings.VoiceChatVolume, (Il2CppSystem.Action<int>)ChangeVoipDeviceSensitivity);
     }
 
     private void ChangeVoipDeviceSensitivity(int value)
@@ -928,19 +913,6 @@ public sealed class ObservedPlayer : FikaPlayer
     {
         var bufferState = Snapshotter.GetInterpolationIndices(localTime, out var from, out var to, out var t);
 
-        
-
-        // The Enable* caches below describe one player state only: after a state change another writer may have
-        // moved the flags (ObservedMountedState does), so the next push is forced.
-        if (!_pushedFlagStateValid || CurrentPlayerState.State != _pushedFlagState)
-        {
-            _pushedFlagState = CurrentPlayerState.State;
-            _pushedFlagStateValid = true;
-            _pushedJumpFlagValid = false;
-            _pushedLandingFlagValid = false;
-            _pushedInertFlagValid = false;
-        }
-
         if (bufferState == EBufferState.Stale)
         {
             if (!CurrentPlayerState.IsMoving)
@@ -952,10 +924,9 @@ public sealed class ObservedPlayer : FikaPlayer
             CurrentPlayerState.MovementDirection = Vector2.zero;
             CurrentPlayerState.IsMoving = false;
             ObservedCharacterController._velocity = CurrentPlayerState.Velocity;
-            
 
-            PushInertFlag(CurrentPlayerState.IsMoving);
-            PushMovementDirection(CurrentPlayerState.MovementDirection);
+            MovementContext.PlayerAnimatorEnableInert(CurrentPlayerState.IsMoving);
+            MovementContext.MovementDirection = CurrentPlayerState.MovementDirection;
             return;
         }
 
@@ -1059,18 +1030,15 @@ public sealed class ObservedPlayer : FikaPlayer
         }
 
         Rotation = CurrentPlayerState.Rotation;
-        
 
         HeadRotation = CurrentPlayerState.HeadRotation;
-        
         ProceduralWeaponAnimation.SetHeadRotation(CurrentPlayerState.HeadRotation);
-        
 
         var newState = CurrentPlayerState.State;
 
         if (newState == EPlayerState.Jump)
         {
-            PushJumpFlag(true);
+            MovementContext.PlayerAnimatorEnableJump(true);
             if (_isServer)
             {
                 MovementContext.EmitJumpNoise(1f);
@@ -1079,200 +1047,66 @@ public sealed class ObservedPlayer : FikaPlayer
 
         var isGrounded = CurrentPlayerState.IsGrounded;
         MovementContext.IsGrounded = isGrounded;
-        
 
         if (isGrounded)
         {
-            PushJumpFlag(false);
-            PushLandingFlag(true);
+            MovementContext.PlayerAnimatorEnableJump(false);
+            MovementContext.PlayerAnimatorEnableLanding(true);
         }
 
-        PushInertFlag(CurrentPlayerState.IsMoving);
-        PushMovementDirection(CurrentPlayerState.MovementDirection);
+        MovementContext.PlayerAnimatorEnableInert(CurrentPlayerState.IsMoving);
+        MovementContext.MovementDirection = CurrentPlayerState.MovementDirection;
         if (_isServer && CurrentPlayerState.IsMoving)
         {
             MovementContext.EmitStepNoise(CurrentPlayerState.MovementDirection);
         }
 
         Physical.SerializationStruct = CurrentPlayerState.Stamina;
-        
 
         if (MovementContext.Step != CurrentPlayerState.Step)
         {
             CurrentManagedState.SetStep(CurrentPlayerState.Step);
-            
-        }
-        else
-        {
-            
         }
 
         if (Physical.Sprinting != CurrentPlayerState.IsSprinting)
         {
             CurrentManagedState.EnableSprint(CurrentPlayerState.IsSprinting);
-            
-        }
-        else
-        {
-            
         }
 
         if (MovementContext.IsInPronePose != CurrentPlayerState.IsProne)
         {
             MovementContext.IsInPronePose = CurrentPlayerState.IsProne;
-            
-        }
-        else
-        {
-            
         }
 
         if (!Mathf.Approximately(PoseLevel, CurrentPlayerState.PoseLevel))
         {
             MovementContext.SetPoseLevel(CurrentPlayerState.PoseLevel);
-            
-        }
-        else
-        {
-            
         }
 
-        // The speed call stays where it was and keeps running every frame: its body also refreshes the covert
-        // efficiency, which depends on the player's weight and skills and not only on the pushed speed. The
-        // redundant half - the native smoothed-value write with its animator and weapon-sway side effects - is
-        // skipped inside ObservedMovementContext.SetCharacterMovementSpeed.
         MovementContext.SetCharacterMovementSpeed(CurrentPlayerState.MovementSpeed, true);
-        
-
-        // (analysis/stutter-pose-reset) 值未变就不写: the native SprintSpeed setter pushes the value into the
-        // animator unconditionally (MovementContext.cs:781-792), and this line used to run for every observed
-        // player on every frame while a sprint speed never changes during a walk or a stand.
-        if (!PoseWriteGuards.Enabled || MovementContext.SprintSpeed != CurrentPlayerState.SprintSpeed)
-        {
-            MovementContext.SprintSpeed = CurrentPlayerState.SprintSpeed;
-            
-        }
-        else
-        {
-            
-        }
+        MovementContext.SprintSpeed = CurrentPlayerState.SprintSpeed;
 
         if (MovementContext.BlindFire != CurrentPlayerState.Blindfire)
         {
             MovementContext.SetBlindFire(CurrentPlayerState.Blindfire);
-            
-        }
-        else
-        {
-            
         }
 
         Transform.position = CurrentPlayerState.Position;
-        
 
         if (!Mathf.Approximately(MovementContext.Tilt, CurrentPlayerState.Tilt))
         {
             MovementContext.SetTilt(CurrentPlayerState.Tilt, true);
-            
-        }
-        else
-        {
-            
         }
 
         if (!Mathf.Approximately(ObservedOverlap, CurrentPlayerState.WeaponOverlap))
         {
             ObservedOverlap = CurrentPlayerState.WeaponOverlap;
             ShouldOverlap = true;
-            
-        }
-        else
-        {
-            
         }
 
         LeftStanceDisabled = CurrentPlayerState.LeftStanceDisabled;
-        
 
         ObservedCharacterController._velocity = CurrentPlayerState.Velocity;
-        
-    }
-
-    /// <summary>
-    /// (analysis/stutter-pose-reset) 值未变就不写 for the jump flag. The native side is one unconditional call
-    /// into the animator (MovementContext.cs:3852-3855 -> PlayerAnimator.EnableJump) and the native jump state
-    /// only calls it on the frames the value changes (JumpStateClass.cs:108/148/200), so repeating it on every
-    /// grounded frame only buys native calls. The pushed value sequence is unchanged: the first frame of a state
-    /// always pushes (the cache is invalidated on every state change), and after that only real changes do.
-    /// </summary>
-    private void PushJumpFlag(bool enabled)
-    {
-        if (PoseWriteGuards.Enabled && _pushedJumpFlagValid && _pushedJumpFlag == enabled)
-        {
-            
-            return;
-        }
-
-        MovementContext.PlayerAnimatorEnableJump(enabled);
-        
-        _pushedJumpFlag = enabled;
-        _pushedJumpFlagValid = true;
-    }
-
-    /// <summary>
-    /// (analysis/stutter-pose-reset) 值未变就不写 for the landing flag; same reasoning as
-    /// <see cref="PushJumpFlag"/>. The flag is a boolean animation gate: keeping it at the value it already has
-    /// changes nothing for the animation, while re-sending it costs a native call per player per frame.
-    /// </summary>
-    private void PushLandingFlag(bool enabled)
-    {
-        if (PoseWriteGuards.Enabled && _pushedLandingFlagValid && _pushedLandingFlag == enabled)
-        {
-            
-            return;
-        }
-
-        MovementContext.PlayerAnimatorEnableLanding(enabled);
-        
-        _pushedLandingFlag = enabled;
-        _pushedLandingFlagValid = true;
-    }
-
-    /// <summary>
-    /// (analysis/stutter-pose-reset) 值未变就不写 for the inertia flag. The native movement code does call
-    /// <c>PlayerAnimatorEnableInert</c> every frame in some states, which is the proof that repeating the same
-    /// boolean is harmless - and also the proof that it is not needed: the animator only sees the value.
-    /// </summary>
-    private void PushInertFlag(bool enabled)
-    {
-        if (PoseWriteGuards.Enabled && _pushedInertFlagValid && _pushedInertFlag == enabled)
-        {
-            
-            return;
-        }
-
-        MovementContext.PlayerAnimatorEnableInert(enabled);
-        
-        _pushedInertFlag = enabled;
-        _pushedInertFlagValid = true;
-    }
-
-    /// <summary>
-    /// (analysis/stutter-pose-reset) 值未变就不写 for the movement direction. The native setter is
-    /// unconditional (MovementContext.cs:942-953 -> PlayerAnimator.SetMovementDirection), and a standing or
-    /// idle player keeps the same direction for frame after frame. Reading the value back costs one native
-    /// getter and saves the setter and its animator call whenever the value already matches.
-    /// </summary>
-    private void PushMovementDirection(Vector2 direction)
-    {
-        if (!PoseWriteGuards.Enabled || MovementContext.MovementDirection != direction)
-        {
-            MovementContext.MovementDirection = direction;
-            
-            return;
-        }
-
-        
     }
 
     public override void InteractionRaycast()
@@ -1359,7 +1193,7 @@ public sealed class ObservedPlayer : FikaPlayer
         {
             if (!IsObservedAI)
             {
-                var nickname = Profile.GetDisplayName();
+                var nickname = !string.IsNullOrEmpty(Profile.Info.MainProfileNickname) ? Profile.Info.MainProfileNickname : Profile.Nickname;
                 if (damageType != EDamageType.Undefined)
                 {
                     NotificationManager.DisplayWarningNotification(string.Format(LocaleUtils.GROUP_MEMBER_DIED_FROM.Localized(),
@@ -1373,16 +1207,16 @@ public sealed class ObservedPlayer : FikaPlayer
             }
             if (LocaleUtils.IsBoss(Profile.Info.Settings.Role, out var name) && IsObservedAI && LastAggressor?.TryCast<FikaPlayer>() is { } aggressor)
             {
-                var aggressorNickname = LastAggressor.Profile.GetDisplayName();
+                var aggressorNickname = !string.IsNullOrEmpty(LastAggressor.Profile.Info.MainProfileNickname) ? LastAggressor.Profile.Info.MainProfileNickname : LastAggressor.Profile.Nickname;
                 if (aggressor.gameObject.name.StartsWith("Player_") || aggressor.IsYourPlayer)
                 {
                     FikaNotifications.DisplayMessageNotification(string.Format(LocaleUtils.KILLED_BOSS.Localized(),
-                    [ColorizeText(EColor.GREEN, aggressorNickname), ColorizeText(EColor.BROWN, name)]),
+                    [ColorizeText(EColor.GREEN, LastAggressor.Profile.Info.MainProfileNickname), ColorizeText(EColor.BROWN, name)]),
                     iconType: EFT.Communications.ENotificationIconType.Friend);
                 }
             }
         }
-        Singleton<BetterAudio>.Instance.ProtagonistHearingChanged -= (System.Action)UpdateSoundRolloff;
+        Singleton<BetterAudio>.Instance.ProtagonistHearingChanged -= (Il2CppSystem.Action)UpdateSoundRolloff;
         base.OnDead(damageType);
 
         // [CorpseSync] The death of a client's observed AI must not depend on the native
@@ -1400,7 +1234,8 @@ public sealed class ObservedPlayer : FikaPlayer
             FinaliseObservedAiDeath();
         }
 
-        
+        CorpseSyncLog.LogDeath(this, FikaBackendUtils.IsServer ? "host" : "client",
+            _fikaFinalisedCorpse != null ? "client-fika-recovery" : "native", damageType);
 
         if (_cullingHandler != null)
         {
@@ -1414,7 +1249,7 @@ public sealed class ObservedPlayer : FikaPlayer
         {
             Corpse.SetItemInHandsLootedCallback(null);
             Corpse.ItemInHands.Value = CorpseSyncPacket.ItemInHands;
-            Corpse.SetItemInHandsLootedCallback((System.Action)ReleaseHand);
+            Corpse.SetItemInHandsLootedCallback((Il2CppSystem.Action)ReleaseHand);
         }
         CorpseSyncPacket = default;
         FikaSingleton<IFikaNetworkManager>.Instance.ObservedPlayers.Remove(this);
@@ -1441,7 +1276,9 @@ public sealed class ObservedPlayer : FikaPlayer
         }
         catch (Exception exception)
         {
-                        return;
+            FikaGlobals.LogError($"[CorpseSync] Fika could not create the corpse of observed AI " +
+                $"{ProfileId} ({(Profile?.Info?.Settings != null ? Profile.Info.Settings.Role.ToString() : "none")}): {exception}");
+            return;
         }
 
         try
@@ -1450,7 +1287,8 @@ public sealed class ObservedPlayer : FikaPlayer
         }
         catch (Exception exception)
         {
-                    }
+            FikaGlobals.LogWarning($"[CorpseSync] applying the corpse impulse to {ProfileId} failed: {exception}");
+        }
 
         // Stop the puppet the same way the native OnDead does, otherwise the body keeps being
         // animated (crawling in a prone pose) next to the corpse that was just created.
@@ -1477,7 +1315,8 @@ public sealed class ObservedPlayer : FikaPlayer
         }
         catch (Exception exception)
         {
-                    }
+            FikaGlobals.LogWarning($"[CorpseSync] stopping the puppet {ProfileId} failed: {exception}");
+        }
 
         try
         {
@@ -1489,7 +1328,8 @@ public sealed class ObservedPlayer : FikaPlayer
         }
         catch (Exception exception)
         {
-                    }
+            FikaGlobals.LogWarning($"[CorpseSync] freezing the hands of {ProfileId} failed: {exception}");
+        }
 
         try
         {
@@ -1501,7 +1341,8 @@ public sealed class ObservedPlayer : FikaPlayer
         }
         catch (Exception exception)
         {
-                    }
+            FikaGlobals.LogWarning($"[CorpseSync] unregistering {ProfileId} failed: {exception}");
+        }
     }
 
     public override void TransitInteraction(TransitController controller, int transitPointId, string keyId, EDateTime time)
@@ -1567,7 +1408,10 @@ public sealed class ObservedPlayer : FikaPlayer
             var mainPlayer = Singleton<GameWorld>.Instance?.MainPlayer?.TryCast<FikaPlayer>();
             if (mainPlayer == null)
             {
-                                return;
+                // Same as FikaBot: a dedicated host has no local player to share experience with.
+                FikaGlobals.LogInfo($"[CorpseSync] killcredit=skipped-no-local-player victim={ProfileId}, " +
+                    $"role={Profile.Info.Settings.Role}, killer={aggressor.ProfileId}");
+                return;
             }
 
             if (!mainPlayer.HealthController.IsAlive)
@@ -1847,7 +1691,7 @@ public sealed class ObservedPlayer : FikaPlayer
             var vaultingComponent = this._vaultingComponent;
             if (vaultingComponent != null)
             {
-                UpdateEvent -= (System.Action)vaultingComponent.DoVaultingTick;
+                UpdateEvent -= (Il2CppSystem.Action)vaultingComponent.DoVaultingTick;
             }
 
             this._vaultingComponent = null;
@@ -1882,19 +1726,19 @@ public sealed class ObservedPlayer : FikaPlayer
             FikaGlobals.ApplyFactionSide(this, "observedBot");
         }
 
-        
+        MapMarkerDiagnostics.Log(this, IsObservedAI ? "observedBot" : "observedPlayer");
 
         if (!IsObservedAI)
         {
             if (!FikaBackendUtils.IsHeadless)
             {
-                _waitForStartRoutine = StartCoroutine(EngineCoroutines.Wrap(CreateHealthBar(), "ObservedPlayer.CreateHealthBar"));
+                _waitForStartRoutine = StartCoroutine(CreateHealthBar().WrapToIl2Cpp());
             }
 
             var vaultingComponent = this._vaultingComponent;
             if (vaultingComponent != null)
             {
-                UpdateEvent -= (System.Action)vaultingComponent.DoVaultingTick;
+                UpdateEvent -= (Il2CppSystem.Action)vaultingComponent.DoVaultingTick;
             }
             this._vaultingComponent = null;
             this._vaultingComponentDebug = null;
@@ -1906,7 +1750,7 @@ public sealed class ObservedPlayer : FikaPlayer
             if (FikaPlugin.Instance.Settings.ShowNotifications.Value)
             {
                 FikaNotifications.DisplayMessageNotification(string.Format(LocaleUtils.GROUP_MEMBER_SPAWNED.Localized(),
-                    ColorizeText(EColor.GREEN, Profile.GetDisplayName())),
+                    ColorizeText(EColor.GREEN, Profile.Info.MainProfileNickname)),
                 ENotificationDurationType.Default, ENotificationIconType.Friend);
             }
 
@@ -1934,7 +1778,7 @@ public sealed class ObservedPlayer : FikaPlayer
         }
         else
         {
-            
+            MapMarkerDiagnostics.LogNameplate(this, "plate-not-allowed", false, null);
         }
 
         while (Singleton<GameWorld>.Instance.MainPlayer == null)
@@ -1946,49 +1790,18 @@ public sealed class ObservedPlayer : FikaPlayer
 
     public override void LateUpdate()
     {
-        // (analysis/perf-multiplayer) The engine calls this once per observed player per frame (61 on the
-        // measured client raids, none at all in a solo raid) and the body crosses into native code several
-        // times before it can cull itself, so it is one of the two per-entity frame costs a client owns.
-        // It gets its own slot; 
-        try
+        DistanceDirty = true;
+        OcclusionDirty = true;
+        _observedCorpseCulling?.ManualUpdate();
+        if (HealthController?.IsAlive != true)
         {
-            DistanceDirty = true;
-            OcclusionDirty = true;
-            _observedCorpseCulling?.ManualUpdate();
-            if (HealthController?.IsAlive != true)
-            {
-                return;
-            }
-            Physical.LateUpdate();
-            // (2026-10-29 IK) EFT 1.2 把手部 LimbIK 改成了每帧批处理，原生 Player.LateUpdate 串的是三步：
-            //   Player.BeginLocalSceneIkLateUpdate(this)            —— 开本帧批次、参与人数 +1
-            //   Player.VisualPass → IkProcess → EnqueueLocalSceneIkPlayer(this, distance) —— 只是入队
-            //   Player.EndLocalSceneIkLateUpdate(this)              —— 完成人数 +1，追上参与人数后整批执行
-            // 原生 IkApply 里已经没有 LimbIK.solver.Update()，所以"入队"本身不产生任何效果。这里的重写
-            // 没调父类 LateUpdate，只走了中间的入队：远端玩家从未登记进本帧批次，而本地玩家 End 时整批
-            // 已经执行完，远端晚入队的请求在下一帧 Begin 时被清掉 —— 远端手的 IK 目标永远没被设，
-            // 表现为检视/查弹匣/医疗包/喝饮料时手保持端枪姿势、物品自己在半空动（扔手雷走另一条路径所以正常）。
-            // 实测：LimbIK.solver.IKPosition 与 weapon_L/R_IK_marker 相距 18~19 m，权重却是 1。
-            // Begin/End 必须成对：只 Begin 不 End，这一帧整批都不执行，本地玩家的手也会坏。
-            BeginLocalSceneIkLateUpdate(this);
-            try
-            {
-                ObservedVisualPass(Time.deltaTime, 3);
-            }
-            finally
-            {
-                // 原版 Player.LateUpdate 的 End 不在 finally 里；这里用 finally 是因为 ObservedVisualPass
-                // 内部会多次跨进原生代码，一旦抛出就会把整帧批次留在"已开始未结束"的状态，连带拖坏本地玩家的手。
-                EndLocalSceneIkLateUpdate(this);
-            }
-            PropUpdate();
-            _armsupdated = false;
-            _bodyupdated = false;
+            return;
         }
-        finally
-        {
-            
-        }
+        Physical.LateUpdate();
+        ObservedVisualPass(Time.deltaTime, 3);
+        PropUpdate();
+        _armsupdated = false;
+        _bodyupdated = false;
     }
 
     public override void UpdateMuffledState()
@@ -2109,7 +1922,7 @@ public sealed class ObservedPlayer : FikaPlayer
         if (!FikaBackendUtils.IsHeadless)
         {
             base.InitAudioController();
-            Singleton<BetterAudio>.Instance.ProtagonistHearingChanged += (System.Action)UpdateSoundRolloff;
+            Singleton<BetterAudio>.Instance.ProtagonistHearingChanged += (Il2CppSystem.Action)UpdateSoundRolloff;
         }
     }
 
@@ -2177,7 +1990,7 @@ public sealed class ObservedPlayer : FikaPlayer
         }
         if (Singleton<BetterAudio>.Instantiated)
         {
-            Singleton<BetterAudio>.Instance.ProtagonistHearingChanged -= (System.Action)UpdateSoundRolloff;
+            Singleton<BetterAudio>.Instance.ProtagonistHearingChanged -= (Il2CppSystem.Action)UpdateSoundRolloff;
         }
         foreach (var slotViewHandler in _observedSlotViewHandlers)
         {
@@ -2267,12 +2080,12 @@ public sealed class ObservedPlayer : FikaPlayer
             _observedPlayer = player;
             _slotType = equipmentType;
 
-            itemSlot.OnAddOrRemoveItem += (System.Action<Item>)HandleItemMove;
+            itemSlot.OnAddOrRemoveItem += (Il2CppSystem.Action<Item>)HandleItemMove;
         }
 
         public void Dispose()
         {
-            _slot.OnAddOrRemoveItem -= (System.Action<Item>)HandleItemMove;
+            _slot.OnAddOrRemoveItem -= (Il2CppSystem.Action<Item>)HandleItemMove;
         }
 
         private void HandleItemMove(Item item)
@@ -2428,7 +2241,7 @@ public sealed class ObservedPlayer : FikaPlayer
             HandsController = null;
         }
 
-        SpawnController(controllerFactory(), (System.Action)handler.DisposeHandler);
+        SpawnController(controllerFactory(), (Il2CppSystem.Action)handler.DisposeHandler);
         ((ISetInHandsHandler)this).OnSetInHands(new(item, CommandStatus.Succeed, InventoryController));
         _shouldCullController = _handsController?.TryCast<EmptyHandsController>() != null
             || _handsController?.TryCast<KnifeController>() != null
@@ -2647,7 +2460,8 @@ public sealed class ObservedPlayer : FikaPlayer
         }
 
         // The corpse of an observed player is rebuilt from the host's inventory descriptor, so
-        // its dog tag is written by the host; 
+        // its dog tag is written by the host; this line proves which aggressor arrived here.
+        MapMarkerDiagnostics.LogDogtag(this, "aggressor-data", FikaGlobals.GetFactionSide(this), null, LastAggressor);
     }
 
     private void ObservedFBBIKUpdate(float distance, int ikUpdateInterval)

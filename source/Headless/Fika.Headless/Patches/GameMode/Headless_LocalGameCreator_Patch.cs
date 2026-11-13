@@ -42,16 +42,6 @@ internal class Headless_LocalGameCreator_Patch : ModulePatch
         return false;
     }
 
-    /// <summary>
-    /// Raid-start trace: a failure inside the native or async frames reports only this
-    /// method, so each risky statement logs its name. The last trace line before a
-    /// failure names the statement that threw.
-    /// </summary>
-    private static void TraceStep(string step)
-    {
-        FikaHeadlessPlugin.FikaHeadlessLogger.LogInfo($"[Headless] Stage(trace): {step}");
-    }
-
     public static async Task CreateFikaGame(TarkovApplication instance, TimeAndWeatherSettings timeAndWeather,
         RaidSettings raidSettings, GameDateTime localGameDateTime, float fixedDeltaTime, ClientMetricsEvents metricsEvents,
         GameWorld gameWorld, MainMenuShowOperation menuOperation, CompositeDisposable unsubscriber, BundleLock bundleLock)
@@ -138,110 +128,43 @@ internal class Headless_LocalGameCreator_Patch : ModulePatch
             throw new InvalidOperationException("Headless local raid did not return location loot");
         FikaHeadlessPlugin.FikaHeadlessLogger.LogInfo($"[Headless] Stage: server returned the local raid (serverId={localSettings.serverId}, " +
             $"location={localSettings.locationLoot.Id}, escapeTimeLimit={localSettings.locationLoot.EscapeTimeLimit})");
-        TraceStep("start: merging the bot settings");
-        // RaidSettings.BotSettings is a native field and the headless raid builds its
-        // RaidSettings itself, so it is the one prerequisite the UI path is given for
-        // free. Never let a missing one abort the raid start: the excluded boss list
-        // only narrows bot spawning, and the statement is traced so a regression here
-        // names itself instead of only reporting the enclosing method.
-        try
-        {
-            var botControllerSettings = raidSettings.BotSettings;
-            TraceStep($"start: bot settings read (botSettingsNull={botControllerSettings is null})");
-            if (botControllerSettings == null)
-            {
-                FikaHeadlessPlugin.FikaHeadlessLogger.LogWarning("[Headless] RaidSettings.BotSettings was null; the excluded boss list is not merged");
-            }
-            else
-            {
-                var excludedBosses = localSettings.excludedBosses;
-                TraceStep($"start: excluded bosses read (null={excludedBosses is null})");
-                botControllerSettings.ExcludedBosses = excludedBosses;
-                TraceStep("start: excluded bosses assigned");
-                raidSettings.BotSettings = botControllerSettings;
-                TraceStep("start: bot settings stored");
-            }
-        }
-        catch (Exception exception)
-        {
-            FikaHeadlessPlugin.FikaHeadlessLogger.LogError($"[Headless] Stage: merging the bot settings FAILED (non fatal, the raid continues): {exception}");
-        }
+        var botControllerSettings = raidSettings.BotSettings;
+        botControllerSettings.ExcludedBosses = localSettings.excludedBosses;
+        raidSettings.BotSettings = botControllerSettings;
         var raidSettingsToUpdate = instance._localRaidSettings;
-        try
-        {
-            TraceStep($"start: raid state (locationId={raidSettings.LocationId ?? "<null>"}, side={raidSettings.Side})");
-            bool isScav = raidSettings.IsScav;
-            TraceStep($"start: isScav={isScav}");
-            var selectedLocation = raidSettings.SelectedLocation;
-            TraceStep($"start: selectedLocation null={selectedLocation is null}");
-            // RaidSettings.SelectedLocation is a property whose backing field the native
-            // raid-start path may not have populated in a headless process (there is no
-            // matchmaker screen to do it). The server's location loot is the authoritative
-            // fallback - the very next statement installs it as the raid location anyway.
-            int escapeTimeLimit = (isScav || selectedLocation is null)
-                ? localSettings.locationLoot.EscapeTimeLimit
-                : selectedLocation.EscapeTimeLimit;
-            TraceStep($"start: escape time limit ok ({escapeTimeLimit})");
-            TraceStep("start: assigning the selected location");
-            raidSettings.SelectedLocation = localSettings.locationLoot;
-            TraceStep("start: selected location assigned");
-            raidSettings.SelectedLocation.EscapeTimeLimit = escapeTimeLimit;
-            TraceStep("start: escape time limit applied");
-            raidSettingsToUpdate.serverId = localSettings.serverId;
-            raidSettingsToUpdate.selectedLocation = localSettings.locationLoot;
-            raidSettingsToUpdate.selectedLocation.EscapeTimeLimit = escapeTimeLimit;
-            TraceStep("start: local raid settings updated");
-        }
-        catch (Exception exception)
-        {
-            // The copied managed stack names the interop member that threw; the IL2CPP
-            // marshalled exception only keeps the async entry method.
-            FikaHeadlessPlugin.FikaHeadlessLogger.LogError($"[Headless] Stage: updating the raid settings FAILED: {exception}");
-            throw;
-        }
+        var escapeTimeLimit = raidSettings.IsScav
+            ? localSettings.locationLoot.EscapeTimeLimit
+            : raidSettings.SelectedLocation.EscapeTimeLimit;
+        raidSettings.SelectedLocation = localSettings.locationLoot;
+        raidSettings.SelectedLocation.EscapeTimeLimit = escapeTimeLimit;
+        raidSettingsToUpdate.serverId = localSettings.serverId;
+        raidSettingsToUpdate.selectedLocation = localSettings.locationLoot;
+        raidSettingsToUpdate.selectedLocation.EscapeTimeLimit = escapeTimeLimit;
 
-        TraceStep("start: raid settings updated");
         var transitData = FikaBackendUtils.TransitData;
         transitData.transitionType = raidSettings.transitionType;
         FikaBackendUtils.TransitData = transitData;
         raidSettingsToUpdate.transition = transitData;
 
-        TraceStep("start: insurance");
         if (localSettings.profileInsurance?.insuredItems != null)
             profile.InsuredItems = localSettings.profileInsurance.insuredItems;
 
-        TraceStep("start: matchmaker status");
         instance.Matchmaker.UpdateMatchingStatus(EFT.UI.Matchmaker.EMatchingStage.LocalGameStarting,
             new Il2CppSystem.Nullable<float>());
-        TraceStep($"start: FikaServer singleton (instantiated={FikaSingleton<FikaServer>.Instantiated})");
         FikaSingleton<FikaServer>.Instance.LocationReceived = true;
 
-        TraceStep("start: creating the start handler");
         StartHandler startHandler = new(instance, session.Profile, session.ProfileOfPet, raidSettings.SelectedLocation);
 
-        TraceStep("start: raid limits");
         var raidLimits = GetRaidMinutes(raidSettings.SelectedLocation.EscapeTimeLimit);
 
-        TraceStep("start: creating the headless game");
-        HeadlessGame headlessGame;
-        try
-        {
-            headlessGame = HeadlessGame.Create(gameWorld, localGameDateTime, raidSettings.SelectedLocation, timeAndWeather,
-                raidSettings.WavesSettings, raidSettings.SelectedDateTime,
-                Bind<Callback<ExitStatus, Il2CppSystem.TimeSpan, ClientMetrics>>(startHandler, nameof(StartHandler.HandleStop)),
-                fixedDeltaTime, instance.PlayerUpdateQueue, instance.Session, raidLimits, localRaidSettings, raidSettings);
-        }
-        catch (Exception exception)
-        {
-            FikaHeadlessPlugin.FikaHeadlessLogger.LogError($"[Headless] Stage: HeadlessGame.Create FAILED: {exception}");
-            throw;
-        }
+        var headlessGame = HeadlessGame.Create(gameWorld, localGameDateTime, raidSettings.SelectedLocation, timeAndWeather,
+            raidSettings.WavesSettings, raidSettings.SelectedDateTime,
+            Bind<Callback<ExitStatus, Il2CppSystem.TimeSpan, ClientMetrics>>(startHandler, nameof(StartHandler.HandleStop)),
+            fixedDeltaTime, instance.PlayerUpdateQueue, instance.Session, raidLimits, localRaidSettings, raidSettings);
 
-        TraceStep("start: headless game created");
         startHandler.HeadlessGame = headlessGame;
 
         FikaHeadlessPlugin.FikaHeadlessLogger.LogInfo("[Headless] Stage: creating the headless game singleton");
-        TraceStep($"start: AbstractGame singleton for {headlessGame.GetType().Name}");
         Singleton<AbstractGame>.Create(headlessGame);
         unsubscriber.AddDisposable(headlessGame.Cast<AbstractGame>());
         unsubscriber.AddDisposable(Bind<Il2CppSystem.Action>(startHandler, nameof(StartHandler.ReleaseSingleton)));

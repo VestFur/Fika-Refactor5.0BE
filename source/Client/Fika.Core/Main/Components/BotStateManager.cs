@@ -73,20 +73,6 @@ public sealed class BotStateManager : MonoBehaviour
         return component;
     }
 
-    /// <summary>
-    /// Pumps the host controller's per-frame work, which is what invokes the game's own
-    /// <c>IBotGame.UpdateByUnity</c> subscribers.
-    /// <para>
-    /// (analysis/session-log-archive) One of those subscribers is native and dereferences a field that is still
-    /// null while the raid world is being built: <c>BotGroupHostility.UpdateHostilityStatusForAllPlayers</c> ->
-    /// <c>OwnedGroupCalcActionNextFrame</c> throws a NullReferenceException from its own native frame (seen
-    /// once per session in three sessions, always in the build-the-world window; see
-    /// analysis/session-log-archive/REPORT.md). The invoke is isolated in
-    /// <see cref="Fika.Core.Main.Utils.NativeActionEvent"/> now: the failure is reported as a [NativeUpdate]
-    /// WARN with its native frame, and this Update keeps its remaining work - above all the bot state batch
-    /// below - instead of being aborted for that frame.
-    /// </para>
-    /// </summary>
     private void Update()
     {
         _controller.Update?.Invoke();

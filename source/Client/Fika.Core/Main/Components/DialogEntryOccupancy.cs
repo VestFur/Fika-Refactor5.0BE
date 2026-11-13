@@ -21,10 +21,9 @@ public static class DialogEntryOccupancy
     private static readonly Dictionary<string, int> _occupants = new();
     private static readonly Dictionary<string, TaskCompletionSource<bool>> _claims = new();
     private static RaidDialogEntryController _native;
-    private static System.Action<string> _changed;
+    private static Il2CppSystem.Action<string> _changed;
     private static bool _applying;
     private static bool _requested;
-    private static readonly HashSet<int> _deadBuffer = new();
 
     public static IReadOnlyDictionary<string, int> Current => _occupants;
 
@@ -57,10 +56,7 @@ public static class DialogEntryOccupancy
         }
         if (FikaBackendUtils.IsServer && manager?.CoopHandler?.Players != null)
         {
-            // (2026-10-26 W34) Tick 每帧跑，这里原来每帧 new 一个 HashSet；改成复用同一个实例（先 Clear），
-            // 语义不变，只是把主机的每帧分配去掉。
-            _deadBuffer.Clear();
-            var dead = _deadBuffer;
+            var dead = new HashSet<int>();
             foreach (var occupant in _occupants.Values)
                 if (!manager.CoopHandler.Players.TryGetValue(occupant, out var player) ||
                     player.HealthController?.IsAlive != true || manager.CoopHandler.ExtractedPlayers.Contains(occupant))

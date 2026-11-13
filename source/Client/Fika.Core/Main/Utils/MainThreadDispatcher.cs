@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -140,20 +138,6 @@ internal static class MainThreadDispatcher
             $"{Environment.CurrentManagedThreadId} while Unity's main thread is {_threadId}; marshalling it.");
     }
 
-    /// <summary>
-    /// (analysis/stutter-frame-skip) A single queued action longer than this is named by its own line: the
-    /// 2026-10-13 20:01 raid measured dispatcherDrain=2045.91ms max=1883.05ms in one window and 4138.66ms
-    /// max=3934.25ms in another, i.e. one action of this queue held several frames, and the slot alone could
-    /// not say which continuation it was.
-    /// </summary>
-    private const double SlowActionMillis = 25d;
-
-    /// <summary>Upper bound of the slow-action lines inside one second.</summary>
-    private const int MaxSlowLinesPerSecond = 8;
-
-    private static int _slowLines;
-    private static long _slowWindowStart;
-
     public static void Drain(Action<Exception> onError)
     {
         VerifyThread();
@@ -171,26 +155,7 @@ internal static class MainThreadDispatcher
                 work.Action();
             }
             catch (Exception exception) { onError(exception); }
-            finally
-            {
-                SynchronizationContext.SetSynchronizationContext(previous);
-            }
-        }
-    }
-
-    private static string Describe(Action action)
-    {
-        try
-        {
-            var method = action.Method;
-            var type = method?.DeclaringType?.FullName;
-            var target = action.Target?.GetType().FullName;
-            return (type ?? "<unknown>") + "." + (method?.Name ?? "<unknown>")
-                + (target == null ? " (static)" : " target=" + target);
-        }
-        catch (Exception)
-        {
-            return "<unreadable delegate>";
+            finally { SynchronizationContext.SetSynchronizationContext(previous); }
         }
     }
 

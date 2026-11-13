@@ -411,13 +411,10 @@ public sealed class ObservedFirearmController : FirearmController
         }
     }
 
-    // AdjustShotVectors was an empty override here. An override of this (injected) type makes the
-    // interop emit a reverse-P/Invoke entry point for it (invoker + trampoline), which the runtime
-    // JIT-compiles for the first time inside the native callout that reaches it - where a failure is
-    // the uncatchable 0x80131506 fail fast rather than a managed exception. The behaviour (observed
-    // players must not adjust shot vectors locally) is now expressed on the native method instead:
-    // Main/Patches/HandsController/FirearmController_AdjustShotVectors_Patch.cs. See
-    // analysis/adjust-shot-vectors/REPORT.md.
+    public override void AdjustShotVectors(ref Vector3 position, ref Vector3 direction)
+    {
+        // Do nothing
+    }
 
     public override bool CanChangeCompassState(bool newState)
     {

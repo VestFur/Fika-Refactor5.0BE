@@ -6,7 +6,6 @@ using EFT;
 using EFT.InventoryLogic;
 using EFT.InventoryLogic.Operations;
 using Fika.Core.Main.BaseClasses;
-using Fika.Core.Main.Patches.World;
 using Fika.Core.Main.Players;
 using Fika.Core.Main.Utils;
 using Fika.Core.Networking.Packets.Generic;
@@ -84,34 +83,14 @@ public sealed class BotInventoryController : BaseInventoryController
     /// </summary>
     public override void PlantTripwire(ThrowWeap grenade, PlantingKit plantingKit, Vector3 fromPosition, Vector3 toPosition, Callback callback = null)
     {
-        // [PlantDiag] (analysis/plant-explosive-door): the native plant result always carries a
-        // DiscardResult for the grenade, so when the AI hands over a grenade that is no longer
-        // attached to any container, ItemManipulator.Discard dereferences Item.Parent and throws
-        // ("Trying to get parent of an item that doesn't have a parent: ...") out of
-        // PlantTripwireResult.Execute - one IL2CPP exception per attempt, five of them in the
-        // 2026-10-12 raid. The operation cannot succeed for a detached item, so it is refused
-        // before it is built and the refusal is logged once instead.
-        if (!PlantDiag.HasParent(grenade) || (plantingKit != null && !PlantDiag.HasParent(plantingKit)))
+        var gstruct = ItemManipulator.SimulatePlantTripwire(this, grenade, plantingKit);
+        if (!gstruct.Failed)
         {
-            
-            return;
-        }
-
-        try
-        {
-            var gstruct = ItemManipulator.SimulatePlantTripwire(this, grenade, plantingKit);
-            if (!gstruct.Failed)
-            {
                 MainThreadDispatcher.RunAsync(() => HandleOperation(new PlantTripwireOperation(GetAndIncrementNextOperationId(), this, gstruct.Value, fromPosition, toPosition, _fikaBot), callback))
                 .Forget();
-                return;
-            }
-            callback?.Invoke(gstruct.ToResult());
+            return;
         }
-        catch (System.Exception exception)
-        {
-            
-        }
+        callback?.Invoke(gstruct.ToResult());
     }
 
     private async Task HandleOperation(EFT.InventoryLogic.Operations.AbstractOperation operation, Callback callback)
@@ -136,22 +115,6 @@ public sealed class BotInventoryController : BaseInventoryController
             }
             handler.Operation.Dispose();
             handler.Callback?.Fail($"Can't execute {handler.Operation}", 1);
-        }
-        catch (System.Exception exception)
-        {
-            // [PlantDiag] (analysis/plant-explosive-door): a native operation can throw out of
-            // Execute (PlantTripwireResult.Execute does it for a detached grenade). Failing the
-            // callback keeps the AI bookkeeping intact and stops the exception from escaping into
-            // Fika.Core.TaskExtensions.Forget as a log storm.
-            try
-            {
-                handler.Operation.Dispose();
-            }
-            catch
-            {
-                // Disposing twice is not worth another exception.
-            }
-            handler.Callback?.Fail($"{operation?.GetType().Name} threw: {exception.Message}", 1);
         }
         finally
         {

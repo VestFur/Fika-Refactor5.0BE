@@ -15,7 +15,6 @@ using EFT.UI;
 using EFT.UI.Screens;
 using EFT.Weather;
 using Fika.Core.Main.ClientClasses;
-using Fika.Core.Main.Components;
 using Fika.Core.Main.FreeCamera;
 using Fika.Core.Main.Players;
 using Fika.Core.Main.Utils;
@@ -112,33 +111,6 @@ public class ClientGameController : BaseGameController
 #if DEBUG
         Logger.LogWarning("Client: Waiting for coopHandler.AmountOfHumans < expected players, expected: " + ExpectedHumans());
 #endif
-        // Judgement line (analysis/loading-screen-sync): the client's side of the same barrier. It waits
-        // for the characters (the other humans) and, in the second loop, for the host's ready count.
-        //
-        // What ends this wait, in this order:
-        //   * EnsureConnected - the transport (LiteNetLib's own thread keeps the connection and its acks
-        //     alive even while the host's main thread is busy loading a map, so "not connected" is the
-        //     only proof that the host is really gone);
-        //   * the ceiling from LoadSyncGate, which is longer inside a transit reload window - a connected
-        //     host that never makes progress cannot be waited for forever;
-        //   * a long application-level silence is *reported* (warning) but never ends the wait by itself.
-        // That split is what keeps a slow host alive: the fixed 40 s cap that aborted the 2026-10-11
-        // 18:58 transit join was an application-level stopwatch, not a liveness check.
-        var charactersStartedAt = UnityEngine.Time.realtimeSinceStartup;
-        var charactersCeiling = LoadSyncGate.ClientCeilingSeconds(FikaBackendUtils.IsTransit);
-        var nextCharacterReport = 0f;
-        var silentSeconds = 0;
-        var lastResponseCount = client.HostResponseCount;
-
-        string DescribeCharacterWait(int expectedHumans, int silentFor, float elapsed)
-        {
-            return "stage=characters role=client humans=" + _coopHandler.AmountOfHumans + "/" + expectedHumans
-                + " playerAmount=" + networkManager.PlayerAmount + " responses=" + client.HostResponseCount
-                + " hostLoaded=" + client.HostLoaded + " hostReady=" + client.HostReady
-                + " elapsed=" + elapsed.ToString("0") + "s, " + LoadSync.DescribePeerTraffic()
-                + ", " + DescribeLocalProgress() + " (" + LoadSync.DescribeScreen() + ")";
-        }
-
         do
         {
             await Task.Delay(100);
@@ -146,39 +118,6 @@ public class ClientGameController : BaseGameController
             var expectedHumans = ExpectedHumans();
             _abstractGame.SetMatchmakerStatus(LocaleUtils.UI_WAIT_FOR_OTHER_PLAYERS.Localized(),
                 expectedHumans == 0 ? 1f : Math.Min(1f, (float)_coopHandler.AmountOfHumans / expectedHumans));
-
-            if (client.HostResponseCount != lastResponseCount)
-            {
-                lastResponseCount = client.HostResponseCount;
-                silentSeconds = 0;
-            }
-            else
-            {
-                silentSeconds++;
-            }
-
-            var elapsed = UnityEngine.Time.realtimeSinceStartup - charactersStartedAt;
-            if (elapsed >= nextCharacterReport)
-            {
-                nextCharacterReport = elapsed + 5f;
-            }
-
-            if (silentSeconds >= LoadSyncGate.ClientSilentWarnSeconds && silentSeconds % 15 == 0)
-            {
-                LoadSync.Warn("ClientGameController.WaitForOtherPlayersToLoad",
-                    DescribeCharacterWait(expectedHumans, silentSeconds, elapsed)
-                    + " => no application-level response for " + silentSeconds + "s while the transport is connected: "
-                    + "the host's main thread is most likely loading its own copy of the raid; the wait continues until "
-                    + charactersCeiling + "s");
-            }
-
-            if (elapsed >= charactersCeiling)
-            {
-                throw new InvalidOperationException(
-                    "This client waited " + charactersCeiling + "s for the other players' characters. "
-                    + DescribeCharacterWait(expectedHumans, silentSeconds, elapsed)
-                    + " - see the [LoadSync] lines for the host's side of the barrier.");
-            }
         } while (_coopHandler.AmountOfHumans < ExpectedHumans());
 
         InformationPacket packet = new()
@@ -190,21 +129,6 @@ public class ClientGameController : BaseGameController
 #if DEBUG
         Logger.LogWarning("Client: Waiting for client.ReadyClients < expected players, expected: " + ExpectedPlayers());
 #endif
-        var readyStartedAt = UnityEngine.Time.realtimeSinceStartup;
-        var readyCeiling = LoadSyncGate.ClientCeilingSeconds(FikaBackendUtils.IsTransit);
-        var nextReadyReport = 0f;
-        var readySilentSeconds = 0;
-        var lastReadyResponseCount = client.HostResponseCount;
-
-        string DescribeReadyWait(int expectedPlayers, int silentFor, float elapsed)
-        {
-            return "stage=ready role=client readyClients=" + client.ReadyClients + "/" + expectedPlayers
-                + " playerAmount=" + networkManager.PlayerAmount + " responses=" + client.HostResponseCount
-                + " hostLoaded=" + client.HostLoaded + " hostReady=" + client.HostReady
-                + " elapsed=" + elapsed.ToString("0") + "s, " + LoadSync.DescribePeerTraffic()
-                + ", " + DescribeLocalProgress() + " (" + LoadSync.DescribeScreen() + ")";
-        }
-
         do
         {
             await Task.Delay(100);
@@ -212,38 +136,6 @@ public class ClientGameController : BaseGameController
             var expectedPlayers = ExpectedPlayers();
             _abstractGame.SetMatchmakerStatus(LocaleUtils.UI_WAIT_FOR_OTHER_PLAYERS.Localized(),
                 Math.Min(1f, (float)client.ReadyClients / expectedPlayers));
-
-            if (client.HostResponseCount != lastReadyResponseCount)
-            {
-                lastReadyResponseCount = client.HostResponseCount;
-                readySilentSeconds = 0;
-            }
-            else
-            {
-                readySilentSeconds++;
-            }
-
-            var elapsed = UnityEngine.Time.realtimeSinceStartup - readyStartedAt;
-            if (elapsed >= nextReadyReport)
-            {
-                nextReadyReport = elapsed + 5f;
-            }
-
-            if (readySilentSeconds >= LoadSyncGate.ClientSilentWarnSeconds && readySilentSeconds % 15 == 0)
-            {
-                LoadSync.Warn("ClientGameController.WaitForOtherPlayersToLoad",
-                    DescribeReadyWait(expectedPlayers, readySilentSeconds, elapsed)
-                    + " => no application-level response for " + readySilentSeconds + "s while the transport is connected; "
-                    + "the wait continues until " + readyCeiling + "s");
-            }
-
-            if (elapsed >= readyCeiling)
-            {
-                throw new InvalidOperationException(
-                    "This client waited " + readyCeiling + "s for the host's ready barrier. "
-                    + DescribeReadyWait(expectedPlayers, readySilentSeconds, elapsed)
-                    + " - see the [LoadSync] lines for the host's side of the barrier.");
-            }
         } while (client.ReadyClients < ExpectedPlayers());
 
         var finalPacket = new InformationPacket
@@ -251,23 +143,6 @@ public class ClientGameController : BaseGameController
             RemoteNetId = client.NetId
         };
         client.SendData(ref finalPacket, DeliveryMethod.ReliableOrdered);
-    }
-
-    /// <summary>
-    /// The progress this machine has published for itself, for the [LoadSync] lines ("local=92.5").
-    /// Never throws and never blocks: the screen is a pure managed read.
-    /// </summary>
-    private static string DescribeLocalProgress()
-    {
-        try
-        {
-            var screen = LoadingScreenUI.Instance;
-            return screen == null ? "local=absent (no screen)" : screen.DescribeLocalRow();
-        }
-        catch (Exception)
-        {
-            return "local=absent";
-        }
     }
 
     public override async Task GenerateWeathers()
@@ -347,15 +222,10 @@ public class ClientGameController : BaseGameController
 
     private bool CheckSpawnTogether()
     {
-        // (2026-10-19) Labyrinth: the five密室 are the map's whole point, so the group never spawns together
-        // there - by default, on a direct join and on a transit alike. The raid setting stays the explicit
-        // override: turning 'Random Labyrinth Spawns' off restores the plain 'spawn together' behaviour, and a
-        // raid setting that already asks for separate places is honoured as well. Every other map keeps the
-        // old default (together unless the setting says otherwise).
-        if (string.Equals(RaidSettings.SelectedLocation.Id, "labyrinth", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(RaidSettings.SelectedLocation.Id, "labyrinth", StringComparison.OrdinalIgnoreCase)
+            && FikaPlugin.Instance.Settings.RandomLabyrinthSpawns)
         {
-            return !FikaPlugin.Instance.Settings.RandomLabyrinthSpawns
-                && RaidSettings.PlayersSpawnPlace == EPlayersSpawnPlace.SamePlace;
+            return false;
         }
 
         return RaidSettings.PlayersSpawnPlace == EPlayersSpawnPlace.SamePlace;
@@ -374,15 +244,6 @@ public class ClientGameController : BaseGameController
         ClientSpawnRotation = _spawnPoint.Rotation;
     }
 
-    /// <summary>
-    /// Waits for the host to finish its own raid initialisation (HostLoaded, i.e. the host set
-    /// FikaServer.RaidInitialized at the end of its CoopGame.InitPlayer).
-    ///
-    /// Bounded by silence, not by a stopwatch: a host that keeps answering InformationPackets is still
-    /// loading its own copy of the raid and abandoning it would abort a join that is only slow (the
-    /// mistake that killed the 2026-10-11 18:58 transit join after a fixed 40 s). A host that stops
-    /// answering is a dead session, and the client reports it as such.
-    /// </summary>
     public async Task WaitForHostToLoad()
     {
         var client = FikaSingleton<FikaClient>.Instance;
@@ -390,75 +251,26 @@ public class ClientGameController : BaseGameController
         Logger.LogInfo("Waiting for host to init");
 
         InformationPacket packet = new();
-        var startedAt = UnityEngine.Time.realtimeSinceStartup;
-        var hostInitCeiling = LoadSyncGate.ClientCeilingSeconds(FikaBackendUtils.IsTransit);
-        var nextReport = 0f;
-        var silentSeconds = 0;
-        var lastResponseCount = client.HostResponseCount;
-
-        string DescribeHostInitWait(int silentFor, float elapsed)
-        {
-            return "stage=host-init role=client hostLoaded=" + client.HostLoaded + " hostReady=" + client.HostReady
-                + " responses=" + client.HostResponseCount + " elapsed=" + elapsed.ToString("0")
-                + "s, " + LoadSync.DescribePeerTraffic() + ", " + DescribeLocalProgress()
-                + " (" + LoadSync.DescribeScreen() + ")";
-        }
-
         do
         {
             _abstractGame.SetMatchmakerStatus(LocaleUtils.UI_WAIT_FOR_HOST_INIT.Localized());
-
-            // The transport is the liveness check: a host whose main thread is busy keeps the connection
-            // (and its acks) alive from LiteNetLib's own thread, a dead host does not.
-            if (client.ServerConnection?.ConnectionState != ConnectionState.Connected)
-            {
-                throw new InvalidOperationException(
-                    "Connection to the raid host was lost while waiting for its raid initialisation. "
-                    + DescribeHostInitWait(silentSeconds, UnityEngine.Time.realtimeSinceStartup - startedAt));
-            }
-
             client.SendData(ref packet, DeliveryMethod.ReliableOrdered);
-
-            if (client.HostResponseCount != lastResponseCount)
-            {
-                lastResponseCount = client.HostResponseCount;
-                silentSeconds = 0;
-            }
-            else
-            {
-                silentSeconds++;
-            }
-
-            var elapsed = UnityEngine.Time.realtimeSinceStartup - startedAt;
-            if (elapsed >= nextReport)
-            {
-                nextReport = elapsed + 5f;
-            }
-
-            if (silentSeconds >= LoadSyncGate.ClientSilentWarnSeconds && silentSeconds % 15 == 0)
-            {
-                LoadSync.Warn("ClientGameController.WaitForHostToLoad",
-                    DescribeHostInitWait(silentSeconds, elapsed)
-                    + " => no application-level response for " + silentSeconds + "s while the transport is connected; "
-                    + "the wait continues until " + hostInitCeiling + "s");
-            }
-
-            if (elapsed >= hostInitCeiling)
-            {
-                throw new InvalidOperationException(
-                    "This client waited " + hostInitCeiling + "s for the host's raid initialisation. "
-                    + DescribeHostInitWait(silentSeconds, elapsed) + " - see the [LoadSync] lines.");
-            }
 
             await Task.Delay(1000);
         } while (!client.HostLoaded);
-
     }
 
     public override async Task InitializeLoot(LocationSettings.Location location)
     {
         _abstractGame.SetMatchmakerStatus(LocaleUtils.UI_RETRIEVE_LOOT.Localized());
-        await RetrieveLootFromServer(true, location);
+        if (!FikaBackendUtils.IsReconnect)
+        {
+            await RetrieveLootFromServer(true, location);
+        }
+        else
+        {
+            await RetrieveLootFromServer(false, location);
+        }
         location.Loot = LootItems;
     }
 
@@ -571,14 +383,9 @@ public class ClientGameController : BaseGameController
             secretExfilPoints = ExfiltrationController.Instance.SecretEligiblePoints();
         }
 
-        // The game's ExtractionTimersPanel starts its slide/colour coroutines from inside SetTime,
-        // and Unity refuses that on the closed (inactive) panel. Drive it only while it is live.
-        if (FikaUiPanels.CanDrive(coopGame.GameUi.TimerPanel, "ClientGameController.Spawn.TimerPanel.SetTime"))
-        {
-            coopGame.GameUi.TimerPanel.SetTime(DateTimeExtensions.UtcNow,
-                coopGame.Profile.Info.Side, coopGame.GameTimer.EscapeTimeSeconds(),
-                exfilPoints, secretExfilPoints);
-        }
+        coopGame.GameUi.TimerPanel.SetTime(DateTimeExtensions.UtcNow,
+            coopGame.Profile.Info.Side, coopGame.GameTimer.EscapeTimeSeconds(),
+            exfilPoints, secretExfilPoints);
 
         if (FikaWorldControllers.Find<ClientClasses.ClientTransitController>(Singleton<GameWorld>.Instance.TransitController) is { } transitController)
         {
@@ -690,7 +497,7 @@ public class ClientGameController : BaseGameController
             _coopHandler.ExtractedPlayers.Add(fikaPlayer.NetId);
             _coopHandler.Players.Remove(fikaPlayer.NetId);
 
-            preloaderUI.StartBlackScreenShow(2f, 2f, (System.Action)(() => preloaderUI.FadeBlackScreen(2f, -2f)));
+            preloaderUI.StartBlackScreenShow(2f, 2f, (Il2CppSystem.Action)(() => preloaderUI.FadeBlackScreen(2f, -2f)));
 
             player.ActiveHealthController.SetDamageCoeff(0);
             player.ActiveHealthController.DamageMultiplier = 0;
@@ -707,7 +514,7 @@ public class ClientGameController : BaseGameController
             {
                 UnityEngine.Object.Destroy(TimeManager);
             }
-            if (FikaUiPanels.CanDrive(coopGame.GameUi.TimerPanel, "ClientGameController.Extract.TimerPanel.Close"))
+            if (coopGame.GameUi.TimerPanel.enabled)
             {
                 coopGame.GameUi.TimerPanel.Close();
             }

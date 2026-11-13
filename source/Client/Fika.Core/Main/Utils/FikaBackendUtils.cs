@@ -9,7 +9,6 @@ using Comfort.Common;
 using EFT;
 using EFT.UI;
 using EFT.UI.Matchmaker;
-using Fika.Core.Main.Components;
 using Fika.Core.Main.Patches.VOIP;
 using Fika.Core.Networking;
 using Fika.Core.Networking.Http;
@@ -62,6 +61,10 @@ public static class FikaBackendUtils
     /// </remarks>
     public static bool IsHeadless { get; set; }
     /// <summary>
+    /// If current session is a reconnect session
+    /// </summary>
+    public static bool IsReconnect { get; internal set; }
+    /// <summary>
     /// If this client is a player scav walking into a raid that already runs.
     /// Such a player is spawned as a scav and never joins the host's group.
     /// </summary>
@@ -94,6 +97,8 @@ public static class FikaBackendUtils
     public static FikaCustomRaidSettings CustomRaidSettings { get; set; } = new();
 
     internal static bool RequestFikaWorld;
+    internal static Vector3 ReconnectPosition;
+    internal static Vector2 ReconnectRotation;
 
     internal static MatchMakerAcceptScreen MatchMakerAcceptScreenInstance { get; set; }
     internal static PlayersRaidReadyPanel PlayersRaidReadyPanel { get; set; }
@@ -101,89 +106,13 @@ public static class FikaBackendUtils
 
     private static Profile _profile;
 
-    /// <summary>
-    /// Why the current join / raid start failed, or <see langword="null"/> while it is healthy.
-    /// The raid start reads this before it creates a game, so a failed preparation (no network
-    /// manager, no host endpoint, a backend error) aborts with a reason instead of continuing
-    /// into a half-initialised session.
-    /// </summary>
-    public static string JoinFailure { get; private set; }
-
-    public static bool JoinFailed
-    {
-        get
-        {
-            return JoinFailure != null;
-        }
-    }
-
-    /// <summary>Records the first failure of the current attempt and writes it to the stable log.</summary>
-    public static void MarkJoinFailed(string reason, Exception exception = null)
-    {
-        if (JoinFailure != null)
-        {
-            return;
-        }
-
-        JoinFailure = reason;
-        
-        if (exception != null)
-        {
-            
-        }
-    }
-
-    /// <summary>Clears the failure state so the next attempt starts clean.</summary>
-    public static void ClearJoinFailure()
-    {
-        if (JoinFailure == null)
-        {
-            return;
-        }
-
-        JoinFailure = null;
-        
-    }
-
-    /// <summary>
-    /// Drops the failure an <em>earlier</em> attempt recorded, at the moment a new attempt starts.
-    ///
-    /// CreateFikaGameCore reads <see cref="JoinFailed"/> before it creates anything and aborts the raid
-    /// with "The raid could not be started: " + <see cref="JoinFailure"/>. MarkJoinFailed keeps the first
-    /// reason of an attempt and only CleanUpVariables cleared it, so one failed join made every later
-    /// raid start fail instantly - with the previous attempt's reason, on a menu where nothing had gone
-    /// wrong yet. A failure of the *current* attempt is still recorded and shown exactly as before:
-    /// this is only called when a new attempt begins.
-    /// </summary>
-    public static void ClearLeftoverJoinFailure()
-    {
-        var previous = JoinFailure;
-        if (previous == null)
-        {
-            return;
-        }
-
-        JoinFailure = null;
-        FikaGlobals.LogInfo($"[Join] cleared the leftover join failure from a previous attempt: {previous}");
-        
-    }
-
     public static void CleanUpVariables()
     {
-        ClearJoinFailure();
-
         if (!IsTransit)
         {
             IsSpectator = false;
             IsHeadlessRequester = false;
             IsHeadlessGame = false;
-            // AP (analysis/nonfika-raid-inertness): the raid kind is a raid-scoped fact and used to survive
-            // the raid, so after a single Fika raid every "ClientType == EClientType.None" gate of the next
-            // native single-player raid answered "no, this is Fika" - and the port acted on that raid. The
-            // 2026-10-12 23:52 crash was played in exactly that state (the raid's own line says side=single).
-            // Cleared together with the other raid-scoped fields; a transit keeps it because the reload
-            // belongs to the same raid.
-            ClientType = EClientType.None;
         }
 
         MatchMakerAcceptScreenInstance = null;
@@ -191,7 +120,10 @@ public static class FikaBackendUtils
         MatchMakerGroupPreview = null;
 
         RequestFikaWorld = false;
+        IsReconnect = false;
         IsScavLateJoin = false;
+        ReconnectPosition = Vector3.zero;
+        ReconnectRotation = Vector2.zero;
         GroupPlayers?.Clear();
     }
 
@@ -270,21 +202,17 @@ public static class FikaBackendUtils
         }*/
 
         MatchJoinRequest body = new(serverId, profileId);
-        
         result = FikaRequestHandler.RaidJoin(body);
-        
 
         if (result.GameVersion != FikaPlugin.EFTVersionMajor)
         {
             errorMessage = string.Format(LocaleUtils.UI_ERROR_HOST_EFT_MISMATCH.Localized(), FikaPlugin.EFTVersionMajor, result.GameVersion);
-            MarkJoinFailed(errorMessage);
             return false;
         }
 
         if (result.Crc32 != FikaPlugin.Crc32)
         {
             errorMessage = string.Format(LocaleUtils.UI_ERROR_HOST_FIKA_MISMATCH.Localized(), FikaPlugin.Crc32, result.Crc32);
-            MarkJoinFailed(errorMessage);
             return false;
         }
 
@@ -309,9 +237,7 @@ public static class FikaBackendUtils
         CreateMatch body = new(raidCode, profileId, serverGuid, hostUsername, IsSpectator, timestamp, raidSettings, FikaPlugin.Crc32,
             raidSettings.Side, raidSettings.SelectedDateTime, CustomRaidSettings, reservationToken);
 
-        
         await FikaRequestHandler.RaidCreate(body);
-        
 
         GroupId = profileId;
         ClientType = EClientType.Host;

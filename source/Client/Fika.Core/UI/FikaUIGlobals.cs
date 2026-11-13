@@ -91,7 +91,7 @@ public static class FikaUIGlobals
         var screen = UnityEngine.Object.Instantiate(preloaderUI._criticalErrorScreenTemplate, container.transform, false);
         container.AddChildNode(screen);
         var context = screen.ShowFikaMessage(header, message, acceptCallback, waitingTime, endTimeCallback, buttonType);
-        context.OnClose += (System.Action)(() =>
+        context.OnClose += (Il2CppSystem.Action)(() =>
         {
             container.RemoveChildNode(screen);
             UnityEngine.Object.Destroy(screen.gameObject);
@@ -124,18 +124,18 @@ public static class FikaUIGlobals
         // Do not register its TimeOut/CloseSilent handlers a second time.
         var context = errorScreen.Show(title, message, waitingTime, buttonType, removeHtml);
         var completed = false;
-        context.OnAccept += (System.Action)(() =>
+        context.OnAccept += (Il2CppSystem.Action)(() =>
         {
             if (completed) return;
             completed = true;
             (timeOutCallback ?? closeManuallyCallback)?.Invoke();
         });
-        context.OnDecline += (System.Action)(() =>
+        context.OnDecline += (Il2CppSystem.Action)(() =>
         {
             completed = true;
             Application.Quit();
         });
-        context.OnClose += (System.Action)(() =>
+        context.OnClose += (Il2CppSystem.Action)(() =>
         {
             if (completed) return;
             completed = true;

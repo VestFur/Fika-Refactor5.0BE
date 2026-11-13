@@ -69,7 +69,6 @@ public static class NetManagerUtils
         }
 
         CreateLoadingScreenUI();
-        
 
         if (isServer)
         {
@@ -83,7 +82,6 @@ public static class NetManagerUtils
         var client = FikaGameObject.AddComponent<FikaClient>();
         FikaSingleton<FikaClient>.Create(client);
         _logger.LogInfo("FikaClient has created!");
-        
         FikaSingleton<IFikaNetworkManager>.Create(client);
     }
 
@@ -92,14 +90,12 @@ public static class NetManagerUtils
         if (LoadingScreenUI.Instance != null)
         {
             LoadingScreenUI.Instance.gameObject.SetActive(true);
-            
             return;
         }
 
         var loadingPrefab = InternalBundleLoader.Instance.GetFikaAsset(InternalBundleLoader.EFikaAsset.LoadingScreenUI);
         var loadingUi = GameObject.Instantiate(loadingPrefab, FikaGameObject.transform);
         LoadingScreenUI.Instance = loadingUi.GetComponent<LoadingScreenUI>();
-        
     }
 
     /// <summary>
@@ -111,7 +107,6 @@ public static class NetManagerUtils
         {
             LoadingScreenUI.Instance.ClearData();
             LoadingScreenUI.Instance.gameObject.SetActive(false);
-            
         }
     }
 
@@ -124,7 +119,6 @@ public static class NetManagerUtils
         {
             GameObject.Destroy(LoadingScreenUI.Instance);
             LoadingScreenUI.Instance = null;
-            
         }
     }
 
@@ -150,41 +144,12 @@ public static class NetManagerUtils
         if (isServer) FikaSingleton<FikaServer>.Instance?.ShutdownVOIP();
         else FikaSingleton<FikaClient>.Instance?.ShutdownVOIP();
 
-        // (analysis/transit-crash-unload) This method is reached from the world's own teardown
-        // (FikaHostGameWorld.Dispose / FikaClientGameWorld.Dispose) and from the raid-end path, i.e. at
-        // exactly the moment the world this process was using is gone. Everything that still points into
-        // that world - the routines the pump would keep stepping (the native session enumerator above all)
-        // and the static caches keyed by its native objects - is dropped here, once, before the rest of this
-        // teardown runs. Idempotent: a second call inside the same window only writes a line, and the next
-        // world (FikaClientWorld/FikaHostWorld.Create) opens a fresh epoch.
-        WorldLifecycle.MarkWorldTornDown(isServer
-            ? "NetManagerUtils.DestroyNetManager (host), transit=" + FikaBackendUtils.IsTransit
-            : "NetManagerUtils.DestroyNetManager (client), transit=" + FikaBackendUtils.IsTransit);
-
         if (FikaBackendUtils.IsTransit)
         {
-            // Judgement line (analysis/loading-screen-sync): this branch keeps the UDP session, the
-            // singletons and ClientType on purpose - the next raid of the same transit uses them. It
-            // must only ever be taken for a transit that is really continuing (see AbortFailedJoin,
-            // which clears the flag before it tears a failed join down).
-
             CreateLoadingScreenUI();
             LoadingScreenUI.Instance.ReInitAfterTransit();
 
             FikaSingleton<IFikaNetworkManager>.Instance.CoopHandler.CleanUpForTransit();
-
-            if (!isServer)
-            {
-                // The world of this client was just torn down and the next one is being created: open
-                // the world packet queue for that window (see FikaClient.TryQueueWorldPacket).
-                FikaSingleton<FikaClient>.Instance?.ArmWorldPacketQueue("transit world swap");
-
-                // (analysis/transit-reload-oom) This is the boundary the reported crash is missing a
-                // release at: the previous world is gone, the next one is not created yet. Record the
-                // swap so FikaRaidMemory releases the replaced raid's assets directly before the new
-                // level is loaded (FikaClientGameWorld.InitLevel), and print what is still held here.
-                FikaRaidMemory.NoteWorldSwap("DestroyNetManager: transit teardown, client world is down");
-            }
             if (isServer)
             {
                 var server = FikaSingleton<FikaServer>.Instance;
@@ -192,12 +157,6 @@ public static class NetManagerUtils
                 server.RaidInitialized = false;
                 server.ResetReadyClients();
                 server.LocationReceived = false;
-                // (analysis/transit-reload-oom) The host has the same two-maps-at-once exposure as the
-                // client - same process, same replaced world, same missing asset release - it only runs on
-                // a bigger machine, so it does not crash first. Record the swap here; FikaHostGameWorld
-                // releases the replaced raid's assets directly before its own new level is loaded (one shot
-                // per swap, gated on FikaBackendUtils.IsTransit, and never able to fail the load).
-                FikaRaidMemory.NoteWorldSwap("DestroyNetManager: transit teardown, host world is down");
                 return;
             }
 
@@ -209,7 +168,6 @@ public static class NetManagerUtils
             return;
         }
 
-
         DestroyLoadingScreenUI();
 
         FikaBackendUtils.ClientType = EClientType.None;
@@ -219,13 +177,6 @@ public static class NetManagerUtils
             if (isServer)
             {
                 var server = FikaSingleton<FikaServer>.Instance;
-                if (server == null)
-                {
-                    _logger.LogWarning("DestroyNetManager: no FikaServer to destroy");
-                    
-                    return;
-                }
-
                 if (!FikaSingleton<IFikaNetworkManager>.TryRelease(server))
                 {
                     _logger.LogError("Unable to release Server from Singleton!");
@@ -246,13 +197,6 @@ public static class NetManagerUtils
             }
 
             var client = FikaSingleton<FikaClient>.Instance;
-            if (client == null)
-            {
-                _logger.LogWarning("DestroyNetManager: no FikaClient to destroy");
-                
-                return;
-            }
-
             if (!FikaSingleton<IFikaNetworkManager>.TryRelease(client))
             {
                 _logger.LogError("Unable to release Client from Singleton!");
@@ -272,55 +216,6 @@ public static class NetManagerUtils
         }
     }
 
-    /// <summary>
-    /// Cleans up everything a *failed* join attempt left behind, so the player lands on a
-    /// usable main menu instead of a Fika loading screen stuck at 0 %.
-    ///
-    /// Called from the failure handler of the raid start; it never throws.
-    /// </summary>
-    public static void AbortFailedJoin(bool isServer, string reason)
-    {
-        var wasTransit = FikaBackendUtils.IsTransit;
-        try
-        {
-            
-            LoadSync.Warn("NetManagerUtils.AbortFailedJoin",
-                "aborting role=" + (isServer ? "host" : "client") + " (clientType=" + FikaBackendUtils.ClientType
-                + ", transit=" + wasTransit + "): " + reason + " => the raid start is given up, the session is torn down");
-
-            // A raid start that failed is not a transit that continues: the next raid will set the flag
-            // again from its own raid settings, while DestroyNetManager must take its full-teardown path
-            // here. Leaving the flag set (what this method used to do) kept the whole net manager, the
-            // UDP connection and the peer's view of this machine alive while ClientType was already
-            // cleared - which is what left the host waiting for a character that could never come
-            // (analysis/loading-screen-sync, host LogOutput.log:4730/4731) and what produced the
-            // "Received CharacterSyncPacket as server" lines on a client that was still connected.
-            FikaBackendUtils.IsTransit = false;
-            // A raid start that was given up is not a transit reload any more: the hold of the next reload
-            // must not be inherited by a later raid start (analysis/transit-reload-sync).
-            TransitReloadGate.Disarm("the raid start was given up (" + reason + ")");
-            DisableLoadingScreenUI();
-            DestroyLoadingScreenUI();
-            DestroyNetManager(isServer);
-        }
-        catch (Exception exception)
-        {
-            
-        }
-        finally
-        {
-            if (FikaBackendUtils.ClientType == EClientType.Client)
-            {
-                FikaBackendUtils.ClientType = EClientType.None;
-            }
-
-            LoadSync.Warn("NetManagerUtils.AbortFailedJoin",
-                "aborted: clientType=" + FikaBackendUtils.ClientType + ", transit=" + FikaBackendUtils.IsTransit
-                + ", connected=" + (FikaSingleton<FikaClient>.Instantiated && FikaSingleton<FikaClient>.Instance.ServerConnection != null)
-                + " => a peer that gave up is no longer connected, so the host's pre-raid barrier cannot wait for it");
-        }
-    }
-
     public static async Task InitNetManager(bool isServer)
     {
         if (FikaGameObject != null)
@@ -337,28 +232,16 @@ public static class NetManagerUtils
             }
 
             var client = FikaSingleton<FikaClient>.Instance;
-            if (client == null)
-            {
-                // CreateNetManager must have failed or the singleton was released in
-                // between. Report which step is missing instead of dereferencing null.
-                _logger.LogError("InitNetManager: FikaClient singleton was null!");
-                
-                throw new InvalidOperationException(
-                    "The Fika client was not created before the raid started (FikaClient singleton was null).");
-            }
-
             if (!client.Started)
             {
                 await client.Init();
             }
-            
             FikaEventDispatcher.DispatchEvent(new FikaNetworkManagerCreatedEvent(client));
             return;
         }
 
         _logger.LogError("InitNetManager: FikaGameObject was null!");
-        
-        throw new InvalidOperationException("The Fika game object was not created before the raid started.");
+        throw new NullReferenceException("FikaGameObject was null");
     }
 
     public static Task SetupGameVariables(FikaPlayer fikaPlayer)
@@ -412,38 +295,25 @@ public static class NetManagerUtils
 
         _logger.LogInfo("Creating CoopHandler...");
         var networkManager = FikaSingleton<IFikaNetworkManager>.Instance;
-        if (networkManager == null)
+        if (networkManager != null)
         {
-            // This used to hand back a NullReferenceException, which reached the raid start
-            // as the generic "Object reference not set to an instance of an object." box.
-            _logger.LogError("CreateCoopHandler: IFikaNetworkManager was null!");
-            
-            return Task.FromException(new InvalidOperationException(
-                "The Fika network manager was not created, so the raid could not be joined."));
+            if (FikaGameObject != null)
+            {
+                var coopHandler = FikaGameObject.AddComponent<CoopHandler>();
+                networkManager.CoopHandler = coopHandler;
+
+                if (!string.IsNullOrEmpty(FikaBackendUtils.GroupId))
+                {
+                    coopHandler.ServerId = FikaBackendUtils.GroupId;
+                    return Task.CompletedTask;
+                }
+
+                UnityEngine.Object.Destroy(coopHandler);
+                _logger.LogError("No ServerId found, deleting CoopHandler!");
+                throw new InvalidOperationException("No Server Id found");
+            }
         }
 
-        if (FikaGameObject == null)
-        {
-            _logger.LogError("CreateCoopHandler: FikaGameObject was null!");
-            
-            return Task.FromException(new InvalidOperationException(
-                "The Fika game object was not created, so the raid could not be joined."));
-        }
-
-        var coopHandler = FikaGameObject.AddComponent<CoopHandler>();
-        networkManager.CoopHandler = coopHandler;
-
-        if (string.IsNullOrEmpty(FikaBackendUtils.GroupId))
-        {
-            UnityEngine.Object.Destroy(coopHandler);
-            _logger.LogError("No ServerId found, deleting CoopHandler!");
-            
-            return Task.FromException(new InvalidOperationException(
-                "The raid group id was empty, so the host could not be contacted."));
-        }
-
-        coopHandler.ServerId = FikaBackendUtils.GroupId;
-        
-        return Task.CompletedTask;
+        return Task.FromException(new NullReferenceException("CreateCoopHandler: IFikaNetworkManager or FikaGameObject was null"));
     }
 }

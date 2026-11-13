@@ -3,7 +3,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using BitPacking;
 using Comfort.Common;
@@ -57,10 +56,6 @@ public class HostGameController : BaseGameController
         _botStateManager = BotStateManager.Create(_abstractGame, FikaSingleton<FikaServer>.Instance, this);
         _gameDateTime = gameDateTime;
 
-        // Native parity: the offline raid preparation EFT runs before the bot
-        // scenarios exist (see PrepareLocationForOfflineRaid).
-        PrepareLocationForOfflineRaid(location, wavesSettings);
-
         if (game is not AbstractGame abstractGame)
         {
             throw new NullReferenceException("Missing AbstractGame");
@@ -76,12 +71,11 @@ public class HostGameController : BaseGameController
 
         // Boss Scenario setup
         var bossSpawns = LocalGame.ModifyBossWaveSettings(ELocalMode.PVE_OFFLINE, wavesSettings, location.BossLocationSpawn);
-        bossSpawns = ApplyBossWaveCollapse(bossSpawns);
         // Every activation is logged before it reaches the native spawner. The
         // IL2CPP wrapper does not implicitly convert a managed method group to
-        // System.Action<T>, so bridge it explicitly and fall back to the
+        // Il2CppSystem.Action<T>, so bridge it explicitly and fall back to the
         // native method binding if the trampoline cannot be created.
-        System.Action<BossLocationSpawn> bossAction;
+        Il2CppSystem.Action<BossLocationSpawn> bossAction;
         try
         {
             Action<BossLocationSpawn> bossActionManaged = OnBossWaveActivated;
@@ -90,7 +84,7 @@ public class HostGameController : BaseGameController
         catch (Exception exception)
         {
             Logger.LogError($"[BossSpawn] Could not bridge the boss spawn action, activations will not be logged: {exception}");
-            bossAction = (System.Action<BossLocationSpawn>)_botsController.ActivateBotsByWave;
+            bossAction = (Il2CppSystem.Action<BossLocationSpawn>)_botsController.ActivateBotsByWave;
         }
         _bossSpawnScenario = BossSpawnScenario.Create(bossSpawns, bossAction);
         LogBossWaves("received", bossSpawns);
@@ -114,12 +108,6 @@ public class HostGameController : BaseGameController
     /// role (boss or escort) the host actually created during this raid.
     /// </summary>
     private readonly Dictionary<WildSpawnType, int> _bossRolesCreated = [];
-    /// <summary>
-    /// Role histogram of every bot created this raid plus the one-shot flag of the
-    /// [ZoneDiag] ambient line (see <see cref="LogAmbientBotCreation"/>).
-    /// </summary>
-    private readonly Dictionary<WildSpawnType, int> _botRolesCreated = [];
-    private bool _ambientScavLogged;
     protected readonly FikaServer _server;
     protected GameDateTime _gameDateTime;
 
@@ -133,13 +121,6 @@ public class HostGameController : BaseGameController
     private readonly float _botTimeoutDelay = 0.25f;
 
     private readonly NetDataWriter _writer = new();
-
-    /// <summary>
-    /// Peer ids this host already released through the pre-raid barrier backstop. A peer is disconnected
-    /// at most once per raid (idempotent): the set is checked when the peers are collected, so a second
-    /// backstop run - or a peer id that reappears - cannot produce a second disconnect for the same peer.
-    /// </summary>
-    private readonly HashSet<int> _gateReleasedPeers = [];
 
     public GameStatus Status
     {
@@ -185,19 +166,14 @@ public class HostGameController : BaseGameController
         }
     }
 
+    public event Action UpdateByUnity;
     private readonly NativeActionEvent _nativeUpdateByUnity = new();
-    /// <summary>Fika's own subscribers (artillery fire control) use a managed delegate.</summary>
-    public void add_UpdateByUnity(System.Action handler) => _nativeUpdateByUnity.Add(handler);
-    public void remove_UpdateByUnity(System.Action handler) => _nativeUpdateByUnity.Remove(handler);
-    /// <summary>
-    /// The game subscribes to <c>IBotGame.UpdateByUnity</c> with its own native
-    /// delegate, so the injected bridge forwards that ABI here.
-    /// </summary>
     public void add_UpdateByUnity(Il2CppSystem.Action handler) => _nativeUpdateByUnity.Add(handler);
     public void remove_UpdateByUnity(Il2CppSystem.Action handler) => _nativeUpdateByUnity.Remove(handler);
 
     private void InvokeUpdate()
     {
+        UpdateByUnity?.Invoke();
         _nativeUpdateByUnity.Invoke();
     }
 
@@ -290,39 +266,7 @@ public class HostGameController : BaseGameController
     /// <param name="profile"><see cref="Profile"/> to spawn</param>
     /// <param name="position">The <see cref="Vector3"/> position to spawn on</param>
     /// <returns></returns>
-    /// <summary>Tail of the one-at-a-time bot creation chain (from upstream 3.0.4).</summary>
-    private Task _botCreateTail = Task.CompletedTask;
-
-    /// <summary>
-    /// Tail of the one-at-a-time bot creation chain (from upstream 3.0.4).
-    /// <para>
-    /// A boss wave burst hands several profiles to <see cref="CreateBot"/> inside one frame (Interchange
-    /// activates 10 of 12 waves with EBotsSpawnMode.Anyway). Running those concurrently races on Bots, the coop
-    /// handler, the net id counter and the per-bot ack queue, and an Interchange raid was observed to die inside
-    /// the native Player.Create around the tenth bot of such a burst. Every creation now waits for the previous
-    /// one to finish.
-    /// </para>
-    /// </summary>
     private async Task<LocalPlayer> CreateBot(GameWorld gameWorld, Profile profile, Vector3 position)
-    {
-        var previous = _botCreateTail;
-        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _botCreateTail = gate.Task;
-
-        // Completed tasks resume synchronously, so the first bot pays nothing and every later one starts on the
-        // main thread right after the previous one.
-        await previous;
-        try
-        {
-            return await CreateBotCore(gameWorld, profile, position);
-        }
-        finally
-        {
-            gate.SetResult(true);
-        }
-    }
-
-    private async Task<LocalPlayer> CreateBotCore(GameWorld gameWorld, Profile profile, Vector3 position)
     {
 #if DEBUG
         Logger.LogWarning($"Creating bot {profile.Info.Settings.Role} at {position}");
@@ -417,9 +361,6 @@ public class HostGameController : BaseGameController
         _coopHandler.Players.Add(fikaBot.NetId, fikaBot);
         // Counted only once the bot is fully registered on the host.
         LogBossBotCreation(profile);
-        LogAmbientBotCreation(profile);
-
-        
 
         if (profile.Info.Settings.Role != WildSpawnType.shooterBTR)
         {
@@ -514,7 +455,7 @@ public class HostGameController : BaseGameController
         var botOwner = bot.AIData.BotOwner;
 
         _botsController.Bots.Remove(botOwner);
-        bot.HealthController.remove_DiedEvent((System.Action<EDamageType>)botOwner.OnDied);
+        bot.HealthController.remove_DiedEvent((Il2CppSystem.Action<EDamageType>)botOwner.OnDied);
         BotDespawn(botOwner);
         if (botOwner != null)
         {
@@ -657,7 +598,6 @@ public class HostGameController : BaseGameController
             return;
         }
 
-
         // A peer can disconnect while the remaining players are loading. Keep
         // the original upper bound so late joins do not extend this barrier,
         // but stop waiting for peers that are no longer connected.
@@ -667,53 +607,13 @@ public class HostGameController : BaseGameController
         Logger.LogWarning("Server: Waiting for coopHandler.AmountOfHumans < expected players, expected: " + ExpectedHumans());
 #endif
         _server.ReadyClients++;
-
-        // Judgement line (analysis/loading-screen-sync): the host's pre-raid barrier waits for the
-        // *characters* of the peers, i.e. for each peer's SendCharacter announcement - not for its
-        // loading progress and not for a packet the peer may have failed to apply. A peer whose raid
-        // start failed and left the session never announces a character, which is why this wait is now
-        // bounded and names the missing peer count in every line.
-        var barrierStartedAt = UnityEngine.Time.realtimeSinceStartup;
-        var nextBarrierReport = 0f;
-        var timedOut = false;
         do
         {
             await Task.Delay(100);
             var expectedHumans = ExpectedHumans();
             _abstractGame.SetMatchmakerStatus(LocaleUtils.UI_WAIT_FOR_OTHER_PLAYERS.Localized(),
                 expectedHumans == 0 ? 1f : Math.Min(1f, (float)_coopHandler.AmountOfHumans / expectedHumans));
-
-            var elapsed = UnityEngine.Time.realtimeSinceStartup - barrierStartedAt;
-            if (elapsed >= nextBarrierReport)
-            {
-                nextBarrierReport = elapsed + 5f;
-            }
-
-            if (elapsed >= LoadSync.PeerLoadTimeoutSeconds)
-            {
-                timedOut = true;
-                break;
-            }
         } while (_coopHandler.AmountOfHumans < ExpectedHumans());
-
-        if (timedOut)
-        {
-            var barrierState = DescribeBarrier(ExpectedHumans(), ExpectedPlayers(),
-                UnityEngine.Time.realtimeSinceStartup - barrierStartedAt);
-
-            // The backstop really fired: this is the one place where a peer is disconnected (see
-            // DisconnectPeersWithoutCharacter). The normal release above never disconnects anybody.
-            var released = DisconnectPeersWithoutCharacter(barrierState);
-            LoadSync.Warn("HostGameController.WaitForOtherPlayersToLoad",
-                barrierState + " => gave up after " + LoadSync.PeerLoadTimeoutSeconds.ToString("0")
-                + "s and starts the raid without the missing character(s); "
-                + (released == 0
-                    ? "no peer had to be disconnected (the missing character belongs to a peer that is already gone)"
-                    : "the gate was released without " + released + " peer(s)"));
-        }
-        else
-        {
-        }
 
         InformationPacket packet = new()
         {
@@ -726,35 +626,13 @@ public class HostGameController : BaseGameController
 #if DEBUG
         Logger.LogWarning("Server: Waiting for server.ReadyClients < expected players, expected: " + ExpectedPlayers());
 #endif
-        var readyStartedAt = UnityEngine.Time.realtimeSinceStartup;
-        var nextReadyReport = 0f;
-        var readyTimedOut = false;
         do
         {
             await Task.Delay(100);
             var expectedPlayers = ExpectedPlayers();
             _abstractGame.SetMatchmakerStatus(LocaleUtils.UI_WAIT_FOR_OTHER_PLAYERS.Localized(),
                 Math.Min(1f, (float)_server.ReadyClients / expectedPlayers));
-
-            var elapsed = UnityEngine.Time.realtimeSinceStartup - readyStartedAt;
-            if (elapsed >= nextReadyReport)
-            {
-                nextReadyReport = elapsed + 5f;
-            }
-
-            if (elapsed >= LoadSync.PeerLoadTimeoutSeconds)
-            {
-                readyTimedOut = true;
-                break;
-            }
         } while (_server.ReadyClients < ExpectedPlayers());
-
-        if (readyTimedOut)
-        {
-            LoadSync.Warn("HostGameController.WaitForOtherPlayersToLoad",
-                "stage=ready role=host readyClients=" + _server.ReadyClients + "/" + ExpectedPlayers()
-                + " => gave up after " + LoadSync.PeerLoadTimeoutSeconds.ToString("0") + "s; the raid starts with the players that reported ready");
-        }
 
         InformationPacket finalPacket = new()
         {
@@ -763,176 +641,6 @@ public class HostGameController : BaseGameController
         };
 
         _server.SendData(ref finalPacket, DeliveryMethod.ReliableOrdered);
-    }
-
-    /// <summary>
-    /// Disconnects the peers that are still connected and have never announced a character, at the moment
-    /// the pre-raid barrier gives up. Returns how many peers were actually disconnected.
-    ///
-    /// Why (analysis/loading-screen-sync): the barrier waits for every expected peer's *character*, and a
-    /// peer whose raid start failed stays connected while it will never announce one - in the 2026-10-11
-    /// 18:58 round that held the host on its loading screen from the client's failed start until that
-    /// client's process was closed. Releasing the gate while such a peer stays connected also keeps it in
-    /// the session: it receives raid traffic and its own session flags do not match the raid any more
-    /// (that is what produced "Received CharacterSyncPacket as server" on a client that was on the main
-    /// menu). Disconnecting it makes both sides consistent: the host stops expecting it (the standard
-    /// path decrements PlayerAmount, so ExpectedPlayers shrinks) and the peer sees a closed session.
-    ///
-    /// The rules this follows:
-    ///   * only at the moment the backstop fires - the normal release path never disconnects anybody;
-    ///   * only peers with no player (a peer that announced its character between the last poll and this
-    ///     call has Player != null and is left alone; a peer that already disconnected is not enumerated
-    ///     by NetServer at all, which is the "already gone" case);
-    ///   * idempotent: <see cref="_gateReleasedPeers"/> holds every peer id this backstop released, so a
-    ///     peer is disconnected at most once per raid;
-    ///   * through the standard entry only - NetPeer.Disconnect() -> NetManager.DisconnectPeer -> the
-    ///     disconnect packet plus the local disconnect event, i.e. the very same cleanup the host already
-    ///     runs for a peer that left on its own (FikaServer.OnPeerDisconnected: ready/assigned-net-id/
-    ///     profile/scav bookkeeping, RaidInteractionSync.OnDisconnected, the ClientDisconnected broadcast,
-    ///     PlayerAmount-- with the UpdateBackendData broadcast, the reconnect timer, the headless handling
-    ///     and the PeerDisconnectedEvent). Nothing in that path is changed by this method.
-    /// </summary>
-    private int DisconnectPeersWithoutCharacter(string barrierState)
-    {
-        var waiting = new List<Fika.Core.Networking.LiteNetLib.NetPeer>();
-        try
-        {
-            foreach (var raw in _server.NetServer)
-            {
-                if (raw is not Fika.Core.Networking.LiteNetLib.NetPeer peer || peer.Player != null)
-                {
-                    continue;
-                }
-
-                if (!_gateReleasedPeers.Add(peer.Id))
-                {
-                    continue;
-                }
-
-                waiting.Add(peer);
-            }
-        }
-        catch (Exception exception)
-        {
-            LoadSync.Warn("HostGameController.WaitForOtherPlayersToLoad",
-                "the peers of the barrier could not be enumerated (" + exception.GetType().Name + "): " + exception.Message
-                + " => the gate is released and every peer keeps its connection");
-            return 0;
-        }
-
-        if (waiting.Count == 0)
-        {
-            return 0;
-        }
-
-        var released = 0;
-        foreach (var peer in waiting)
-        {
-            var name = peer.Tag as string ?? ("peer#" + peer.Id);
-            LoadSync.Warn("HostGameController.WaitForOtherPlayersToLoad",
-                "releasing the gate: disconnecting peer=" + name + " after " + LoadSync.PeerLoadTimeoutSeconds.ToString("0")
-                + "s without a character announcement (" + barrierState + ")");
-            try
-            {
-                peer.Disconnect();
-                released++;
-                LoadSync.Warn("HostGameController.WaitForOtherPlayersToLoad",
-                    "-> the gate was released without peer=" + name + " (id=" + peer.Id
-                    + "): the connection is closed through the standard disconnect path, so the host's "
-                    + "OnPeerDisconnected cleanup runs for it exactly as for a peer that left on its own");
-            }
-            catch (Exception exception)
-            {
-                // Give the id back: the peer was not released, so a later backstop (or a later raid) may try again.
-                _gateReleasedPeers.Remove(peer.Id);
-                LoadSync.Warn("HostGameController.WaitForOtherPlayersToLoad",
-                    "-> peer=" + name + " (id=" + peer.Id + ") could not be disconnected: "
-                    + exception.GetType().Name + ": " + exception.Message
-                    + " => the gate is released anyway; that peer keeps its connection and the session keeps it in PlayerAmount");
-            }
-        }
-
-        return released;
-    }
-
-    /// <summary>
-    /// The state of the pre-raid barrier as one line, for the [LoadSync] reports: what the host expects,
-    /// what it has, who is still missing and what would release the wait.
-    /// </summary>
-    private string DescribeBarrier(int expectedHumans, int expectedPlayers, float elapsed)
-    {
-        var humans = _coopHandler == null ? -1 : _coopHandler.AmountOfHumans;
-        var missing = Math.Max(0, expectedHumans - humans);
-        return "stage=characters role=host humans=" + humans + "/" + expectedHumans
-            + " missing=" + missing + " waitingFor=[" + DescribePeersWithoutPlayer() + "]"
-            + " here=[" + DescribeSpawnedHumans() + "]"
-            + " playerAmount=" + _server.PlayerAmount + "/" + expectedPlayers
-            + " connectedPeers=" + _server.NetServer.ConnectedPeersCount
-            + " elapsed=" + elapsed.ToString("0") + "s, " + LoadSync.DescribePeerTraffic()
-            + " (" + LoadSync.DescribeScreen() + ")";
-    }
-
-    /// <summary>
-    /// The nicknames of the connected peers that have no player in this world yet - the "who am I waiting
-    /// for" half of a barrier line. A peer's nickname is the Tag the connection was accepted with
-    /// (FikaServer.OnPeerDisconnected reads it the same way).
-    /// </summary>
-    private string DescribePeersWithoutPlayer()
-    {
-        var names = new System.Text.StringBuilder();
-        try
-        {
-            foreach (var raw in _server.NetServer)
-            {
-                if (raw is not Fika.Core.Networking.LiteNetLib.NetPeer peer || peer.Player != null)
-                {
-                    continue;
-                }
-
-                if (names.Length > 0)
-                {
-                    names.Append(',');
-                }
-
-                names.Append(peer.Tag as string ?? ("peer#" + peer.Id));
-            }
-        }
-        catch (Exception exception)
-        {
-            return "unreadable (" + exception.GetType().Name + ")";
-        }
-
-        return names.Length == 0 ? "none" : names.ToString();
-    }
-
-    /// <summary>The nicknames of the human players this host has spawned in this raid.</summary>
-    private string DescribeSpawnedHumans()
-    {
-        var players = _coopHandler?.HumanPlayers;
-        if (players == null || players.Count == 0)
-        {
-            return "none";
-        }
-
-        var names = new System.Text.StringBuilder();
-        for (var i = 0; i < players.Count; i++)
-        {
-            if (i > 0)
-            {
-                names.Append(',');
-            }
-
-            try
-            {
-                names.Append(players[i].Profile.Nickname);
-            }
-            catch (Exception)
-            {
-                names.Append('?');
-            }
-        }
-
-        return names.ToString();
     }
 
     public override async Task GenerateWeathers()
@@ -984,11 +692,8 @@ public class HostGameController : BaseGameController
         yield return base.CountdownScreen(profile, profileId);
         _localPlayer.PacketSender.Init();
 
-        // Both of these used to be engine coroutines started from inside the countdown routine (i.e. from
-        // inside another coroutine's MoveNext - the shape that faulted during the host raid start, see
-        // analysis/host-raid-coroutine). They run on the Update driven pump now.
-        FikaRoutinePump.Instance.Start(SyncTraps(), "SyncTraps");
-        FikaRoutinePump.Instance.Start(CreateStashes(), "CreateStashes");
+        _gameWorld.StartCoroutine(SyncTraps());
+        _gameWorld.StartCoroutine(CreateStashes());
     }
 
     public override void CreateSpawnSystem(Profile profile)
@@ -1020,11 +725,6 @@ public class HostGameController : BaseGameController
             ((world, profile, position) => NativeTask.FromManaged(MainThreadDispatcher.RunAsync(() => CreateBot(world, profile, position)))));
         BotZone[] botZones = [.. LocationScene.GetAllObjects<BotZone>(false)];
 
-        // The zones the raid data names versus the zones the scene provides - the only
-        // place that difference is visible (the native spawner skips such a wave
-        // silently).
-        LogZoneDiagnostics(location, botZones);
-
         var useWaveControl = controllerSettings.BotAmount == EBotAmount.Horde;
 
         var limits = SetMaxBotsLimit(location);
@@ -1035,9 +735,16 @@ public class HostGameController : BaseGameController
             limits = 0;
         }
 
-        // One mapping for both budgets: the spawner's MaxBots and the ambient cap
-        // PrepareLocationForOfflineRaid falls back to (see ResolveBotBudget).
-        var numberOfBots = ResolveBotBudget(controllerSettings.BotAmount);
+        var numberOfBots = controllerSettings.BotAmount switch
+        {
+            EBotAmount.AsOnline => _backendSession.BackEndConfig.Config.MaxBotsAliveOnMap,
+            EBotAmount.NoBots => 0,
+            EBotAmount.Low => 15,
+            EBotAmount.Medium => 20,
+            EBotAmount.High => 25,
+            EBotAmount.Horde => 35,
+            _ => 15,
+        };
 
         _botsController.SetSettings(limits > 0 ? limits : numberOfBots, _backendSession.BackEndConfig.BotPresets, _backendSession.BackEndConfig.BotWeaponScatterings);
         _botsController.Init(_nativeBotGame, botCreator, botZones, SpawnSystem, _wavesSpawnScenario.BotLocationModifier,
@@ -1113,40 +820,17 @@ public class HostGameController : BaseGameController
     private void OnBossWaveActivated(BossLocationSpawn wave)
     {
         Logger.LogInfo($"[BossSpawn] Activating wave: {DescribeBossWave(wave)}");
-        LogBossWaveRequest(wave);
-
-        // (2026-10-26 W17, restored from upstream 3.0.4) One activation per 50 ms keeps a wave burst
-        // (Interchange activates 10 of 12 waves in one frame) from stacking that many bot creations in the
-        // same frame. CreateBot serialises them anyway; this keeps the frame itself from stalling, and the
-        // dispatcher keeps the continuation on Unity main thread, which the native activation requires.
-        _ = MainThreadDispatcher.RunAsync(async () =>
+        try
         {
-            try
-            {
-                await Task.Delay(BossWaveActivationSpacingMilliseconds);
-            }
-            catch (Exception)
-            {
-                // A cancelled wait must still activate the wave below.
-            }
-
-            try
-            {
-                _botsController.ActivateBotsByWave(wave);
-            }
-            catch (Exception exception)
-            {
-                // Never let a managed exception cross back into native timer or
-                // event code; report it instead so the wave can be investigated.
-                Logger.LogError($"[BossSpawn] Wave activation failed for '{wave?.BossName}': {exception}");
-            }
-        });
+            _botsController.ActivateBotsByWave(wave);
+        }
+        catch (Exception exception)
+        {
+            // Never let a managed exception cross back into native timer or
+            // event code; report it instead so the wave can be investigated.
+            Logger.LogError($"[BossSpawn] Wave activation failed for '{wave?.BossName}': {exception}");
+        }
     }
-
-    /// <summary>
-    /// Spacing between two boss wave activations, see <see cref="OnBossWaveActivated"/>.
-    /// </summary>
-    private const int BossWaveActivationSpacingMilliseconds = 50;
 
     /// <summary>
     /// Logs the boss wave list exactly as received from the server (after
@@ -1154,11 +838,6 @@ public class HostGameController : BaseGameController
     /// </summary>
     private void LogBossWaves(string stage, Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<BossLocationSpawn> waves)
     {
-        // (analysis/perf-diagnostics-cleanup) Boss/zone telemetry of this controller: the master switch
-        // ('Coop / Diagnostics', default off) closes it. The 2026-10-13 00:40 raid wrote 102 [BossSpawn] lines
-        // (one per boss-wave bot created) and 4 [ZoneDiag] lines - the largest in-raid family of that log.
-        // Nothing in this method changes what the raid does; it only describes it.
-        
         var length = waves?.Length ?? 0;
         Logger.LogInfo($"[BossSpawn] Boss wave list {stage}: {length} wave(s)");
         for (var index = 0; index < length; index++)
@@ -1190,76 +869,7 @@ public class HostGameController : BaseGameController
             Logger.LogInfo($"[BossSpawn] {stage}: {DescribeBossWave(wave)}");
         }
         Logger.LogInfo($"[BossSpawn] {stage}: {activated}/{length} wave(s) activated, {_bossSpawnScenario.Timers.Count} timer(s) armed");
-        LogIdleBossTriggers();
     }
-
-    /// <summary>
-    /// One line per boss wave activation stating what the wave asks the native
-    /// spawner for. Icebreaker's boss groups are gated behind triggered events
-    /// (wedges1-4), so "the boss never spawns" splits into two very different
-    /// cases that this line plus <see cref="LogIdleBossTriggers"/> tell apart:
-    /// the wave activated but the boss body is missing, or the wave was never
-    /// activated at all.
-    /// </summary>
-    private void LogBossWaveRequest(BossLocationSpawn wave)
-    {
-        
-        if (wave == null)
-        {
-            return;
-        }
-
-                LogIdleBossTriggers();
-    }
-
-    /// <summary>
-    /// Lists the botEvent triggers that still have waves waiting. A map whose boss
-    /// group only spawns on an event (Icebreaker: wedges1-4, Terminal: TB1-4) leaves
-    /// exactly one trace when the event never arrives - an armed wave and an
-    /// "idle" entry here. Without it, "no boss in the room" is indistinguishable
-    /// from "our port dropped the boss".
-    /// </summary>
-    private void LogIdleBossTriggers()
-    {
-        
-        var waves = _bossSpawnScenario?.BossSpawnWaves;
-        var length = waves?.Length ?? 0;
-        if (length == 0)
-        {
-            return;
-        }
-
-        Dictionary<string, int> idle = [];
-        for (var index = 0; index < length; index++)
-        {
-            var wave = waves[index];
-            if (wave == null || wave.Activated)
-            {
-                continue;
-            }
-
-            if (wave.TriggerType != SpawnTriggerType.botEvent || string.IsNullOrEmpty(wave.TriggerId))
-            {
-                continue;
-            }
-
-            idle.TryGetValue(wave.TriggerId, out var count);
-            idle[wave.TriggerId] = count + 1;
-        }
-
-        if (idle.Count == 0)
-        {
-                        return;
-        }
-
-        List<string> parts = [];
-        foreach (var pair in idle)
-        {
-            parts.Add($"{pair.Key}({pair.Value} wave(s))");
-        }
-
-        parts.Sort(StringComparer.Ordinal);
-            }
 
     /// <summary>
     /// Counts the boss and escort bots the native spawner actually asked the
@@ -1267,379 +877,16 @@ public class HostGameController : BaseGameController
     /// </summary>
     private void LogBossBotCreation(Profile profile)
     {
-        
-        var settings = profile?.Info?.Settings;
-        if (settings == null)
+        var role = profile.Info.Settings.Role;
+        LocaleUtils.IsBoss(role, out var bossName);
+        if (bossName == null && !role.ToString().StartsWith("follower", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
-
-        var role = settings.Role;
-        LocaleUtils.IsBoss(role, out var bossName);
-        var isFollower = role.ToString().StartsWith("follower", StringComparison.OrdinalIgnoreCase);
         _bossRolesCreated.TryGetValue(role, out var count);
         count++;
         _bossRolesCreated[role] = count;
-        // Deliberately role-agnostic: the previous predicate skipped every role that is
-        // neither in LocaleUtils' table nor named "follower*", so the bots of the
-        // post-0.14 map bosses (bossWedge, bossBullyBlackDiv, ...) were created in the
-        // raid but never appeared here - the log then reads exactly like "the bridge
-        // dropped the boss and kept the escorts".
-        Logger.LogInfo($"[BossSpawn] Created boss-wave bot: {role} " +
-            $"({bossName ?? (isFollower ? "escort" : "unlisted role")}) difficulty={settings.BotDifficulty} " +
-            $"profile={profile.Id}, {role} created so far={count}");
-    }
-
-    /// <summary>
-    /// Reports - and, with <see cref="CollapseBossWavesPerTrigger"/>, removes - the bossWedge
-    /// waves that share one trigger. Several entries under one trigger is how the map data
-    /// expresses "this event owns these positions", and the native scenario activates every
-    /// one of them (<c>BossSpawnScenario.Run</c> hands each activated wave to
-    /// <c>ActivateBotsByWave</c>; nothing de-duplicates them). Only <c>bossWedge</c> waves take
-    /// part in a group (<see cref="BossTriggerKey"/>); every other role is handed to the
-    /// scenario exactly as shipped.
-    ///
-    /// The user's expectation is one boss in the room, so the collapse runs by default and
-    /// keeps the group member with the largest escort count (the squad leader; ties go to
-    /// the first entry of the data). With <see cref="CollapseBossWavesPerTrigger"/> off the
-    /// shipped list stays byte-for-byte effective, which is how the native behaviour (three
-    /// Wedge bodies per event on Icebreaker) can be restored without a database change.
-    /// </summary>
-    private Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<BossLocationSpawn> ApplyBossWaveCollapse(
-        Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<BossLocationSpawn> waves)
-    {
-        var length = waves?.Length ?? 0;
-
-        // Only the bossWedge family forms groups (see BossTriggerKey): every other wave -
-        // another role, or a trigger-less/timer boss - is its own group, so the collapse
-        // cannot silence it.
-        Dictionary<string, int> groups = new(StringComparer.Ordinal);
-        Dictionary<string, int> keepers = new(StringComparer.Ordinal);
-        for (var index = 0; index < length; index++)
-        {
-            var wave = waves[index];
-            if (wave == null)
-            {
-                continue;
-            }
-
-            var key = BossTriggerKey(wave);
-            groups.TryGetValue(key, out var count);
-            groups[key] = count + 1;
-            // The user wants "a boss with its escorts", so the wave that asks the native
-            // spawner for the most followers is the one that survives; an equal escort
-            // count keeps the earlier entry of the data.
-            if (!keepers.TryGetValue(key, out var keeper) || wave.EscortCount > waves[keeper].EscortCount)
-            {
-                keepers[key] = index;
-            }
-        }
-
-        var duplicated = 0;
-        var shared = 0;
-        SortedSet<string> pairs = new(StringComparer.Ordinal);
-        foreach (var pair in groups)
-        {
-            if (pair.Value <= 1)
-            {
-                continue;
-            }
-
-            shared++;
-            duplicated += pair.Value - 1;
-            pairs.Add($"{pair.Key} x{pair.Value} keep=index{keepers[pair.Key]}");
-        }
-
-        if (!CollapseBossWavesPerTrigger)
-        {
-            
-
-            return waves;
-        }
-
-        HashSet<string> losers = new(StringComparer.Ordinal);
-        foreach (var pair in keepers)
-        {
-            losers.Add(pair.Key);
-        }
-
-        List<BossLocationSpawn> kept = new(length);
-        var disabled = 0;
-        for (var index = 0; index < length; index++)
-        {
-            var wave = waves[index];
-            if (wave == null)
-            {
-                kept.Add(null);
-                continue;
-            }
-
-            var key = BossTriggerKey(wave);
-            // keepers only exist for duplicated groups, so a trigger-less wave (own key,
-            // never in keepers) is always kept.
-            if (!losers.Contains(key) || keepers[key] == index)
-            {
-                kept.Add(wave);
-                continue;
-            }
-
-            // The waves that lose stay in the list (the scenario still subscribes them)
-            // but are marked as already activated, and both the event callback and the
-            // timer callback skip a wave in that state, so they can never reach the
-            // native spawner.
-            wave.Activated = true;
-            disabled++;
-        }
-
-        var result = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<BossLocationSpawn>(kept.Count);
-        for (var index = 0; index < kept.Count; index++)
-        {
-            result[index] = kept[index];
-        }
-
-        
-
-        return result;
-    }
-
-    /// <summary>
-    /// Groups the waves the way the map gates them: the trigger kind plus its id. A wave
-    /// without an id is its own group (an index-suffixed key), so two timed bosses of the
-    /// same role never collapse into one another.
-    ///
-    /// Only <see cref="WildSpawnType.bossWedge"/> participates: the user's rule is "do not
-    /// touch the shipped spawning except the boss", and the Icebreaker data also lists
-    /// duplicated triggers for pmcBotBlackDiv/bossBullyBlackDiv (hides1-3, stern0-3) whose
-    /// stacking is the data's business. Those waves get a key of their own - one group each -
-    /// so the collapse can never silence them.
-    /// </summary>
-    private static string BossTriggerKey(BossLocationSpawn wave)
-    {
-        if (wave.BossType != WildSpawnType.bossWedge || string.IsNullOrEmpty(wave.TriggerId))
-        {
-            return $"{wave.TriggerType}:index:{wave.GetHashCode()}";
-        }
-
-        return $"{wave.TriggerType}:{wave.TriggerId}";
-    }
-
-    /// <summary>
-    /// Native parity for the offline raid preparation EFT performs before any bot
-    /// scenario exists - <c>EFT.BaseLocalGame.smethod_1</c> (BaseLocalGame.cs:508-530):
-    /// it copies the Offline* spawn switches onto the live ones and scales the map's
-    /// ambient bot cap with the raid's bot amount. The headless host already ports it
-    /// (Fika.Headless/Classes/GameMode/HeadlessGame.cs:330-353), the coop host never
-    /// did, so a location that ships <c>NewSpawn=false</c> with
-    /// <c>OfflineNewSpawn=true</c> never started its non-wave spawn scenario. On
-    /// Icebreaker the non-wave scenario is the only zone-valid spawn system (its
-    /// <c>waves</c> still name zones of the Interchange), so that map stayed empty
-    /// apart from the boss waves.
-    /// </summary>
-    private void PrepareLocationForOfflineRaid(LocationSettings.Location location, WavesSettings wavesSettings)
-    {
-        var oldSpawn = location.OldSpawn;
-        var newSpawn = location.NewSpawn;
-        var rawBotMax = location.BotMax;
-        var coefficient = ResolveWaveCoefficient(wavesSettings.BotAmount);
-        var ambientCap = (int)(rawBotMax * coefficient);
-        var fallback = false;
-
-        if (MirrorOfflineSpawnFlags)
-        {
-            location.OldSpawn = location.OfflineOldSpawn;
-            location.NewSpawn = location.OfflineNewSpawn;
-        }
-
-        // A map that configures an ambient window (BotStop/BotSpawnTimeOn*) yet ships
-        // cap 0 expects the server to send the cap: SPT does that from
-        // bot.json/maxBotCap (PostDbLoadService.AdjustLocationBotValues). The fallback
-        // below stands in for a missing server cap, but the user's rule for Icebreaker
-        // is "no ambient scavengers" (2026-10-13), so it stays off and the map's own
-        // BotMax = 0 decides - the non-wave scenario runs with a budget of zero.
-        if (EnableAmbientBotCapFallback && ambientCap <= 0 && location.BotStop > 0)
-        {
-            ambientCap = Math.Min(ResolveBotBudget(wavesSettings.BotAmount), FallbackAmbientBotCap);
-            fallback = true;
-        }
-
-        location.BotMax = ambientCap;
-
-        // (analysis/perf-diagnostics-cleanup) A [ZoneDiag] probe line inside a functional method: with the
-        // master switch off the interpolation is not built; the assignments above are untouched.
-        
-    }
-
-    /// <summary>
-    /// Ambient cap used when a location ships cap 0 although it configures an ambient
-    /// spawn window. 18 is SPT's own <c>bot.json -> maxBotCap.default</c> (the value
-    /// the installs that still ship that table use for every map without a specific
-    /// entry), and it is still bounded by the raid's own bot budget.
-    /// </summary>
-    private const int FallbackAmbientBotCap = 18;
-
-    /// <summary>
-    /// Off by default since 2026-10-13: the user does not want ambient scavengers on
-    /// Icebreaker, so the map's data decides again (<c>BotMax = 0</c> -&gt; the non-wave
-    /// scenario computes a budget of zero and spawns nobody). Turn it on to give a map
-    /// that configures an ambient window yet ships cap 0 a fallback cap instead.
-    /// </summary>
-    internal static bool EnableAmbientBotCapFallback = false;
-
-    /// <summary>
-    /// Mirrors <c>OfflineOldSpawn/OfflineNewSpawn</c> onto the live spawn switches and
-    /// scales the ambient cap with the raid's bot amount, exactly like
-    /// <c>EFT.BaseLocalGame.smethod_1</c> and the headless host do. On its own it does
-    /// not spawn a single bot: the non-wave scenario additionally needs
-    /// <c>BotMax &gt; 0</c> (see <see cref="EnableAmbientBotCapFallback"/>). Turn it off
-    /// to keep the shipped flags untouched.
-    /// </summary>
-    internal static bool MirrorOfflineSpawnFlags = true;
-
-    /// <summary>
-    /// The user request of 2026-10-13: one map data set may list several boss waves for the
-    /// same trigger (Icebreaker's <c>wedges1-4</c> ship three each, in three different
-    /// rooms), and the native scenario activates every one of them, so a single event puts
-    /// three Wedge bodies on the ship. On (default) exactly one wave per trigger spawns -
-    /// the one with the most escorts, ties going to the first entry of the data - and the
-    /// others are marked <c>Activated</c> so they can never fire. Off restores the native
-    /// behaviour (every entry of the shipped list) without touching the database.
-    /// </summary>
-    /// <summary>
-    /// (analysis/boss-wedge-vanilla) Retired as a user setting: the collapse kept one boss wave per trigger
-    /// point, but in live co-op raids the boss then failed to spawn at all, so the vanilla mechanic is used
-    /// again. The field is kept (false) so <see cref="ApplyBossWaveCollapse"/> still reports the shipped wave
-    /// list, and the old configuration key is dropped from the file by FikaConfig.RetireRemovedEntries.
-    /// </summary>
-    internal static bool CollapseBossWavesPerTrigger = false;
-
-    /// <summary>
-    /// EFT's WAVE_COEF_* switch of <c>BaseLocalGame.smethod_1</c>, read exactly the way
-    /// the headless port reads it.
-    /// </summary>
-    private static float ResolveWaveCoefficient(EBotAmount botAmount)
-    {
-        var global = Singleton<GlobalConfiguration>.Instance;
-        return botAmount switch
-        {
-            EBotAmount.NoBots or EBotAmount.Low =>
-                global != null ? global.WAVE_COEF_LOW : BotInternalSettingsController.Core.WAVE_COEF_LOW,
-            EBotAmount.Medium =>
-                global != null ? global.WAVE_COEF_MID : BotInternalSettingsController.Core.WAVE_COEF_MID,
-            EBotAmount.High =>
-                global != null ? global.WAVE_COEF_HIGH : BotInternalSettingsController.Core.WAVE_COEF_HIGH,
-            EBotAmount.Horde =>
-                global != null ? global.WAVE_COEF_HORDE : BotInternalSettingsController.Core.WAVE_COEF_HORDE,
-            _ => 1f,
-        };
-    }
-
-    /// <summary>
-    /// The raid's bot budget: the spawner's MaxBots and the ambient cap fallback of
-    /// <see cref="PrepareLocationForOfflineRaid"/> share this mapping, so the ambient
-    /// spawner can never aim above the raid's own limit.
-    /// </summary>
-    private int ResolveBotBudget(EBotAmount botAmount)
-    {
-        return botAmount switch
-        {
-            EBotAmount.AsOnline => _backendSession.BackEndConfig.Config.MaxBotsAliveOnMap,
-            EBotAmount.NoBots => 0,
-            EBotAmount.Low => 15,
-            EBotAmount.Medium => 20,
-            EBotAmount.High => 25,
-            EBotAmount.Horde => 35,
-            _ => 15,
-        };
-    }
-
-    /// <summary>
-    /// One line about the zone names the raid data references versus the zones the
-    /// scene really provides. A location can ship wave entries that name another map's
-    /// zones (Icebreaker's <c>waves</c> and <c>OpenZones</c> still carry the Interchange
-    /// set) and the native spawner returns silently for such a wave
-    /// (EFT.BotSpawner.ActivateBotsByWave: <c>botZone == null</c> -&gt; no spawn), which
-    /// no log could show before.
-    /// </summary>
-    private void LogZoneDiagnostics(LocationSettings.Location location, BotZone[] botZones)
-    {
-        
-        HashSet<string> present = new(StringComparer.Ordinal);
-        for (var index = 0; index < botZones.Length; index++)
-        {
-            var zone = botZones[index];
-            if (zone != null && !string.IsNullOrEmpty(zone.name))
-            {
-                present.Add(zone.name);
-            }
-        }
-
-        var waves = location.waves;
-        var waveCount = waves?.Length ?? 0;
-        var wavesWithZone = 0;
-        SortedSet<string> missingWaveZones = new(StringComparer.Ordinal);
-        for (var index = 0; index < waveCount; index++)
-        {
-            var name = waves[index]?.SpawnPoints;
-            if (string.IsNullOrEmpty(name) || present.Contains(name))
-            {
-                wavesWithZone++;
-                continue;
-            }
-
-            missingWaveZones.Add(name);
-        }
-
-        SortedSet<string> missingOpenZones = new(StringComparer.Ordinal);
-        var openZones = location.OpenZones;
-        if (!string.IsNullOrEmpty(openZones))
-        {
-            foreach (var name in openZones.Split(','))
-            {
-                if (!string.IsNullOrEmpty(name) && !present.Contains(name))
-                {
-                    missingOpenZones.Add(name);
-                }
-            }
-        }
-
-        var ambient = location.NewSpawn && location.BotMax > 0;
-            }
-
-    /// <summary>
-    /// One-shot proof that the map's non-wave (ambient) spawn scenario is alive: the
-    /// first scavenger-role bot the host creates is logged once per raid. On a map
-    /// whose only zone-valid spawn system is the non-wave one (Icebreaker) this line
-    /// appears shortly after the raid start - or the ambient scenario never ran.
-    /// </summary>
-    private void LogAmbientBotCreation(Profile profile)
-    {
-        
-        var settings = profile?.Info?.Settings;
-        if (settings == null)
-        {
-            return;
-        }
-
-        var role = settings.Role;
-        _botRolesCreated.TryGetValue(role, out var count);
-        count++;
-        _botRolesCreated[role] = count;
-        if (_ambientScavLogged || !IsAmbientScavRole(role))
-        {
-            return;
-        }
-
-        _ambientScavLogged = true;
-            }
-
-    /// <summary>
-    /// The roles the ambient spawner picks from (<c>NonWavesSpawnScenario</c> weights
-    /// <c>assault</c> and <c>marksman</c>; their event variants share the bucket).
-    /// </summary>
-    private static bool IsAmbientScavRole(WildSpawnType role)
-    {
-        return role is WildSpawnType.assault or WildSpawnType.assaultGroup or WildSpawnType.marksman
-            or WildSpawnType.cursedAssault or WildSpawnType.crazyAssaultEvent or WildSpawnType.infectedAssault;
+        Logger.LogInfo($"[BossSpawn] Created boss-wave bot: {role} ({bossName ?? "escort"}) profile={profile.Id}, {role} created so far={count}");
     }
 
     private static string DescribeBossWave(BossLocationSpawn wave)
@@ -1727,14 +974,9 @@ public class HostGameController : BaseGameController
             secretExfilPoints = exfilController.SecretEligiblePoints();
         }
 
-        // The game's ExtractionTimersPanel starts its slide/colour coroutines from inside SetTime,
-        // and Unity refuses that on the closed (inactive) panel. Drive it only while it is live.
-        if (FikaUiPanels.CanDrive(coopGame.GameUi.TimerPanel, "HostGameController.Spawn.TimerPanel.SetTime"))
-        {
-            coopGame.GameUi.TimerPanel.SetTime(DateTimeExtensions.UtcNow,
-                coopGame.Profile.Info.Side, coopGame.GameTimer.EscapeTimeSeconds(),
-                exfilPoints, secretExfilPoints);
-        }
+        coopGame.GameUi.TimerPanel.SetTime(DateTimeExtensions.UtcNow,
+            coopGame.Profile.Info.Side, coopGame.GameTimer.EscapeTimeSeconds(),
+            exfilPoints, secretExfilPoints);
 
         if (FikaWorldControllers.Find<FikaHostTransitController>(Singleton<GameWorld>.Instance.TransitController) is { } transitController)
         {
@@ -1878,7 +1120,7 @@ public class HostGameController : BaseGameController
             _coopHandler.ExtractedPlayers.Add(fikaPlayer.NetId);
             _coopHandler.Players.Remove(fikaPlayer.NetId);
 
-            preloaderUI.StartBlackScreenShow(2f, 2f, (System.Action)(() => preloaderUI.FadeBlackScreen(2f, -2f)));
+            preloaderUI.StartBlackScreenShow(2f, 2f, (Il2CppSystem.Action)(() => preloaderUI.FadeBlackScreen(2f, -2f)));
 
             player.ActiveHealthController.SetDamageCoeff(0f);
             player.ActiveHealthController.DamageMultiplier = 0f;
@@ -1895,7 +1137,7 @@ public class HostGameController : BaseGameController
             {
                 UnityEngine.Object.Destroy(TimeManager);
             }
-            if (FikaUiPanels.CanDrive(coopGame.GameUi.TimerPanel, "HostGameController.Extract.TimerPanel.Close"))
+            if (coopGame.GameUi.TimerPanel.enabled)
             {
                 coopGame.GameUi.TimerPanel.Close();
             }
@@ -1949,25 +1191,6 @@ public class HostGameController : BaseGameController
             if (!FikaBackendUtils.IsHeadless)
                 NotificationManager.DisplayWarningNotification("NoLoot enabled, no loot will spawn and any stationary weapon WILL NOT WORK!");
             location.Loot = new JsonType.LootData();
-        }
-
-        // (2026-10-19, plan A) Terminal: put every player's equipment into the armory containers before the
-        // descriptor is built, so the containers arrive on every machine already holding the gear.
-        try
-        {
-            // (2026-10-19) Gate on the raid's own location id, not on the menu selection: the menu still holds the
-            // previous map during a transit, and an armory injection into a raid that is not the Terminal would
-            // touch a loot table it does not belong to.
-            if (TerminalArmory.Applies(location?.Id))
-            {
-                TerminalArmory.Inject(location, FikaSingleton<IFikaNetworkManager>.Instance?.CoopHandler);
-            }
-        }
-        catch (Exception exception)
-        {
-            // (2026-10-19) Loot initialisation must never fail because of the terminal armory: an exception here
-            // leaves the raid stuck on "loading loot pool" for every machine.
-            FikaGlobals.LogError($"[TerminalArmory] skipped, the raid keeps its normal loot: {exception}");
         }
 
         var lootDescriptor = ItemBinarySerializer.SerializeLootData(FilterLootForHostProfile(location.Loot),
@@ -2125,7 +1348,7 @@ public class HostGameController : BaseGameController
             var gameWorld = Singleton<GameWorld>.Instance;
             if (gameWorld.ServerShellingController != null)
             {
-                remove_UpdateByUnity(gameWorld.ServerShellingController.OnUpdate);
+                UpdateByUnity -= gameWorld.ServerShellingController.OnUpdate;
             }
             if (_botsController != null)
             {
@@ -2165,7 +1388,7 @@ public class HostGameController : BaseGameController
 
     public IEnumerator SyncTraps()
     {
-        yield return new WaitSeconds(5f);
+        yield return new WaitForSeconds(5);
 
         if (Location.EventTrapsData == null)
         {

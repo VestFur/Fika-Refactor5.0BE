@@ -50,7 +50,7 @@ public sealed partial class FikaClient
         var item = Singleton<ItemFactory>.Instance.CreateItem(packet.ItemId, packet.TemplateId, null);
         if (item == null)
         {
-            _logger.LogError($"Failed to create item [{packet.ItemId}] with templateId [{LogSafe.Ref(packet.TemplateId)}]");
+            _logger.LogError($"Failed to create item [{packet.ItemId}] with templateId [{packet.TemplateId}]");
             return;
         }
 
@@ -91,9 +91,7 @@ public sealed partial class FikaClient
 
     private void OnProceedResponsePacketReceived(ProceedResponsePacket packet)
     {
-        if (!string.IsNullOrEmpty(packet.Error) &&
-            (packet.Error.Contains("unbound player", StringComparison.Ordinal)
-             || packet.Error.Contains("Could not find player with id", StringComparison.Ordinal)))
+        if (!string.IsNullOrEmpty(packet.Error) && packet.Error.Contains("unbound player", StringComparison.Ordinal))
         {
             // The host never received our character announcement (a player scav
             // entering a running raid can send it before the link is up), so it
@@ -162,9 +160,7 @@ public sealed partial class FikaClient
     {
         if (LoadingScreenUI.Instance != null)
         {
-            // (analysis/loading-screen-peer-state) ApplyPeerProgress creates the row when this machine's
-            // re-arm dropped it, instead of losing the value to the row lookup (see LoadingScreenUI).
-            LoadingScreenUI.Instance.ApplyPeerProgress(packet.NetId, packet.Progress, "host");
+            LoadingScreenUI.Instance.SetProgress(packet.NetId, packet.Progress);
         }
     }
 
@@ -273,19 +269,6 @@ public sealed partial class FikaClient
 
         _coopHandler.CheckIds(packet.PlayerIds, _missingIds);
 
-        // (2026-10-17) The host's list is what the host has. When this machine's own net id is missing from
-        // it, the host has no player for us and every request of ours is answered with "unbound player"
-        // (weapon switches roll back to empty hands, item moves are never executed). The character is
-        // announced again; the same 3 s interval as the unbound answer bounds it, and QueueProfile
-        // deduplicates a repeated announcement, so this cannot spawn a second player.
-        if (NetId != 0 && !packet.PlayerIds.Contains(NetId)
-            && Environment.TickCount64 - _lastCharacterReannounce >= CharacterReannounceIntervalMs)
-        {
-            _lastCharacterReannounce = Environment.TickCount64;
-            FikaGlobals.LogWarning($"The host's character list does not contain us (netId {NetId}), re-announcing our character");
-            CoopGame.ReannounceLocalCharacter();
-        }
-
         if (_missingIds.Count > 0)
         {
             RequestPacket request = new()
@@ -308,21 +291,7 @@ public sealed partial class FikaClient
         var gameWorld = Singleton<GameWorld>.Instance;
         if (gameWorld == null)
         {
-            // The world is replaced by a transit: keep the packet of that swap window (as bytes, see
-            // FikaClient.TryQueueWorldPacket - the receive path hands the same WorldPacket instance to
-            // every receive) so it can be replayed into the new world. Outside the swap window a world
-            // packet cannot be applied at all and is counted instead of logged once per packet.
-            if (TryQueueWorldPacket(ref packet, "OnWorldPacketReceived"))
-            {
-                // The receive path keeps one WorldPacket instance for every receive
-                // (NetPacketProcessor.SubscribeReusable), and the payload was copied to bytes above, so
-                // the shared instance is flushed exactly like the applied path does. Without this the
-                // next receive would deserialize on top of this packet's lists.
-                packet?.Flush();
-                return;
-            }
-
-            ReportDroppedWorldPacket("OnWorldPacketReceived");
+            _logger.LogError("OnNewWorldPacketReceived: GameWorld was null!");
             return;
         }
 
@@ -486,15 +455,6 @@ public sealed partial class FikaClient
 
     private void OnTransitEventPacketReceived(TransitEventPacket packet)
     {
-        // The reload-start signal of a transit reload is answered *before* the controller lookup: in that
-        // window this machine has no world at all and therefore no transit controller, and queueing the
-        // signal for the controller of the next raid would deliver it far too late
-        // (analysis/transit-reload-sync).
-        if (TransitReloadGate.HandlePacket(packet))
-        {
-            return;
-        }
-
         var world = Singleton<GameWorld>.Instance;
         if (FikaWorldControllers.Find<ClientTransitController>(world?.TransitController) is not { } transit)
         {
@@ -607,19 +567,6 @@ public sealed partial class FikaClient
         }
     }
 
-    /// <summary>
-    /// BJ (analysis/terminal-rauf-card): the sentry access line of the terminal. The host owns the
-    /// emission of the native event, so this is where a peer learns that a player passed the card check -
-    /// and applies it through the native entry point of its own sentries
-    /// (<c>SentryBossLogic.OnTerminalAccessGained</c>), so its <c>BossSentryHostilityRule</c> answers the
-    /// same way the host's does.
-    /// </summary>
-    private void OnSentryAccessPacketReceived(SentryAccessPacket packet)
-    {
-        Main.Components.FikaSentryAccess.Receive(packet.ProfileId, packet.RaidId, packet.Granted, packet.FromClient != 0,
-            packet.HostAccessYes, packet.HostAccessNo, packet.HostAllies);
-    }
-
     private void OnFlareSuccessPacketReceived(FlareSuccessPacket packet)
     {
         if (Singleton<GameWorld>.Instance.MainPlayer.ProfileId == packet.ProfileId)
@@ -660,6 +607,189 @@ public sealed partial class FikaClient
         packet.SubPacket.Execute();
     }
 
+    private void OnReconnectPacketReceived(ReconnectPacket packet)
+    {
+        if (!packet.IsRequest)
+        {
+            var fikaGame = FikaSingleton<IFikaGame>.Instance;
+            if (fikaGame is not CoopGame reconnectGame || !FikaBackendUtils.IsReconnect ||
+                !reconnectGame.AcceptsReconnectPacket(packet))
+            {
+                return;
+            }
+
+            // The profile reply precedes local-player creation. World replies
+            // belong only to the later snapshot request in this raid.
+            if (packet.Type is not (ReconnectPacket.EReconnectDataType.OwnCharacter or
+                ReconnectPacket.EReconnectDataType.Failed) &&
+                (MyPlayer?.ProfileId != packet.ProfileId || ReconnectDone)) return;
+
+            switch (packet.Type)
+            {
+                case ReconnectPacket.EReconnectDataType.Throwable:
+                    if (packet.ThrowableData != null)
+                    {
+#if DEBUG
+                        _logger.LogWarning("Received reconnect packet for throwables: " + packet.ThrowableData.Count);
+#endif
+                        var localizedString = LocaleUtils.UI_SYNC_THROWABLES.Localized();
+                        fikaGame.GameController.GameInstance.SetMatchmakerStatus(localizedString);
+                        var smokeData = new Il2CppSystem.Collections.Generic.List<SmokeGrenadeNetworkData>();
+                        foreach (var item in packet.ThrowableData) smokeData.Add(item);
+                        Singleton<GameWorld>.Instance.OnSmokeGrenadesDeserialized(smokeData);
+                    }
+                    break;
+                case ReconnectPacket.EReconnectDataType.Interactives:
+                    {
+                        if (packet.InteractivesData != null)
+                        {
+#if DEBUG
+                            _logger.LogWarning("Received reconnect packet for interactives: " + packet.InteractivesData.Count);
+#endif
+                            var localizedString = LocaleUtils.UI_SYNC_INTERACTABLES.Localized();
+                            var worldInteractiveObjects = Singleton<GameWorld>.Instance.World._interactableObjectsForNetSync;
+                            Dictionary<int, WorldInteractiveObject.InteractiveObjectStatusInfo> netIdDictionary = [];
+                            {
+                                foreach (var data in packet.InteractivesData)
+                                {
+                                    netIdDictionary.Add(data.NetId, data);
+                                }
+                            }
+
+                            float total = packet.InteractivesData.Count;
+                            var progress = 0f;
+                            foreach (var item in worldInteractiveObjects)
+                            {
+                                if (netIdDictionary.TryGetValue(item.NetId, out var value))
+                                {
+                                    progress++;
+                                    fikaGame.GameController.GameInstance.SetMatchmakerStatus(localizedString, progress / total);
+                                    item.SetInitialSyncState(value);
+                                }
+                            }
+                        }
+                        break;
+                    }
+                case ReconnectPacket.EReconnectDataType.LampControllers:
+                    {
+                        if (packet.LampStates != null)
+                        {
+#if DEBUG
+                            _logger.LogWarning("Received reconnect packet for lampStates: " + packet.LampStates.Count);
+#endif
+                            var localizedString = LocaleUtils.UI_SYNC_LAMP_STATES.Localized();
+                            var lampControllerDictionary = LocationScene.GetAllObjects<LampController>(true).AsManaged()
+                                                    .Where(FikaGlobals.LampControllerNetIdNot0)
+                                                    .ToDictionary(FikaGlobals.LampControllerGetNetId);
+
+                            float total = packet.LampStates.Count;
+                            var progress = 0f;
+                            foreach (var lampState in packet.LampStates)
+                            {
+                                progress++;
+                                fikaGame.GameController.GameInstance.SetMatchmakerStatus(localizedString, progress / total);
+                                if (lampControllerDictionary.TryGetValue(lampState.Key, out var lampController))
+                                {
+                                    if (lampController.LampState != (Turnable.EState)lampState.Value)
+                                    {
+                                        lampController.Switch((Turnable.EState)lampState.Value);
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                case ReconnectPacket.EReconnectDataType.Windows:
+                    {
+#if DEBUG
+                        _logger.LogWarning("Received reconnect packet for windowBreakers: " +
+                            (packet.WindowBreakerStates?.Count ?? 0));
+#endif
+                        if (packet.WindowBreakerStates != null)
+                        {
+                            var windowBreakerStates = packet.WindowBreakerStates;
+                            var localizedString = LocaleUtils.UI_SYNC_WINDOWS.Localized();
+
+                            float total = packet.WindowBreakerStates.Count;
+                            var progress = 0f;
+                            foreach (var windowBreaker in LocationScene.GetAllObjects<WindowBreaker>(true).AsManaged()
+                                .Where(FikaGlobals.WindowBreakerAvailableToSync))
+                            {
+                                if (windowBreakerStates.TryGetValue(windowBreaker.NetId, out var hitPosition))
+                                {
+                                    progress++;
+
+                                    fikaGame.GameController.GameInstance.SetMatchmakerStatus(localizedString, progress / total);
+                                    try
+                                    {
+                                        // DamageInfo is a native reference
+                                        // wrapper on SPT 5. A default CLR
+                                        // value has no native object behind it.
+                                        DamageInfo damageInfo = new();
+                                        damageInfo.HitPoint = hitPosition;
+                                        windowBreaker.MakeHit(ref damageInfo, true);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogError("OnReconnectPacketReceived: Exception caught while setting up WindowBreakers: " + ex.Message);
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                case ReconnectPacket.EReconnectDataType.OwnCharacter:
+#if DEBUG
+                    _logger.LogWarning("Received reconnect packet for own player");
+#endif
+                    fikaGame.GameController.GameInstance.SetMatchmakerStatus(LocaleUtils.UI_RECEIVE_OWN_PLAYERS.Localized());
+                    if (fikaGame is CoopGame coopGame)
+                    {
+                        coopGame.ReceiveReconnectProfile(packet);
+                    }
+                    break;
+                case ReconnectPacket.EReconnectDataType.Finished:
+                    reconnectGame.ReceiveReconnectRevival(packet);
+                    QueueBtrPassengers(packet.BtrPassengers);
+                    QueueBtrServices(packet.BtrServices);
+                    fikaGame.GameController.GameInstance.SetMatchmakerStatus(LocaleUtils.UI_FINISH_RECONNECT.Localized());
+                    ReconnectDone = true;
+                    break;
+                case ReconnectPacket.EReconnectDataType.Failed:
+                    // AcceptsReconnectPacket already checked the pending profile
+                    // (or the active world request). During the first request
+                    // CoopGame.Profile is deliberately null, so ProfileId is
+                    // not available for a second comparison here.
+                    ReconnectError = packet.Error;
+                    break;
+                case ReconnectPacket.EReconnectDataType.WorldObjects:
+                    if (packet.WorldObjectUpdates != null)
+                    {
+                        // The peer can disconnect while the native world is
+                        // being torn down. Do not let a late snapshot throw
+                        // from the network callback and leave the reconnect
+                        // task waiting without an actionable error.
+                        if (FikaClientWorld == null)
+                        {
+                            ReconnectError = "Reconnect world was unavailable while applying world objects";
+                            break;
+                        }
+                        FikaClientWorld.SyncObjectPackets.AddRange(packet.WorldObjectUpdates);
+                    }
+                    break;
+                case ReconnectPacket.EReconnectDataType.Quests:
+                    if (MyPlayer != null && MyPlayer.FikaQuests is ClientQuestController clientQuestController)
+                    {
+                        clientQuestController.ReceiveReconnectQuestSync(packet.QuestSyncPackets);
+                    }
+                    else
+                    {
+                        _logger.LogError("Could not find own player to resync quests from host during reconnect");
+                    }
+                    break;
+            }
+        }
+    }
 
     private void OnWorldLootPacketReceived(WorldLootPacket packet)
     {
@@ -817,24 +947,8 @@ public sealed partial class FikaClient
         packet.Execute();
     }
 
-    /// <summary>
-    /// The last host state this client was told about, so the [LoadSync] line is written on a change
-    /// and not once per response (the loading wait polls once per second, for minutes).
-    /// </summary>
-    private bool _lastHostReceivedLocation;
-    private bool _lastHostLoaded;
-    private bool _lastHostReady;
-    private bool _hostStateReported;
-
     private void OnInformationPacketReceived(InformationPacket packet)
     {
-        // Counted before anything else: the loading wait uses this counter to tell a host that is
-        // still loading (it answers, only with HostReceivedLocation=false) from a host that is gone
-        // (no answer at all). Without that split the client aborted a perfectly healthy join after
-        // its fixed 40 s cap (analysis/loading-screen-sync).
-        NoteHostResponse();
-        ReportHostState(packet);
-
         if (_coopHandler != null)
         {
             var fikaGame = FikaSingleton<IFikaGame>.Instance;
@@ -855,30 +969,6 @@ public sealed partial class FikaClient
         {
             FikaSingleton<IFikaNetworkManager>.Instance.PlayerAmount = packet.AmountOfPeers;
         }
-    }
-
-    /// <summary>
-    /// One [LoadSync] line per *change* of the host's handshake state, i.e. the moment this client may
-    /// continue its own raid start. The four states are the whole gate between the two sides:
-    /// HostReceivedLocation (the host is at its own CreateFikaGameCore for this raid), HostLoaded
-    /// (the host finished InitPlayer), HostReady (the host's countdown runs), plus the response counter
-    /// that proves the host is still there.
-    /// </summary>
-    private void ReportHostState(InformationPacket packet)
-    {
-        if (_hostStateReported
-            && _lastHostReceivedLocation == packet.HostReceivedLocation
-            && _lastHostLoaded == packet.HostLoaded
-            && _lastHostReady == packet.HostReady)
-        {
-            return;
-        }
-
-        _hostStateReported = true;
-        _lastHostReceivedLocation = packet.HostReceivedLocation;
-        _lastHostLoaded = packet.HostLoaded;
-        _lastHostReady = packet.HostReady;
-
     }
 
     private void OnCommonPlayerPacketReceived(CommonPlayerPacket packet)

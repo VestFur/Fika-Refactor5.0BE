@@ -27,15 +27,6 @@ internal static class ClientDiscardGroundItemRepairPatch
     {
         try
         {
-            // AP (analysis/nonfika-raid-inertness): the repair spawns a ground item through GameWorld.ThrowItem,
-            // so it may only ever run inside a raid of ours. The handler it hangs off (our own client
-            // inventory operation handler) does not exist in a native raid, which is why this is a guard and
-            // not a fix - if it ever fires, the line names it.
-            if (FikaRaidGate.Skip("ClientDiscardGroundItemRepairPatch.Repair"))
-            {
-                return;
-            }
-
             if (handler == null)
             {
                 return;
@@ -77,7 +68,7 @@ internal static class ClientDiscardGroundItemRepairPatch
             }
 
             var lootItem = world.ThrowItem(item, player, new Il2CppSystem.Nullable<Vector3>());
-            FikaGlobals.LogWarning($"[DiscardRepair] the discard of {item.Id} ({LogSafe.Ref(item.TemplateId)}) left no ground item; " +
+            FikaGlobals.LogWarning($"[DiscardRepair] the discard of {item.Id} ({item.TemplateId}) left no ground item; " +
                 $"re-spawned it (lootItem={(lootItem == null ? "null" : "ok")}, netId={(lootItem == null ? -1 : lootItem.GetNetId())})");
         }
         catch (Exception exception)

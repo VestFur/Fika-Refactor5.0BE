@@ -41,26 +41,16 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
     [PatchPrefix]
     public static bool Prefix(ref Il2CppSystem.Threading.Tasks.Task __result, TarkovApplication __instance, TimeAndWeatherSettings timeAndWeather, ClientMetricsEvents metricsEvents, ClientMetricsConfig metricsConfig, GameWorld gameWorld)
     {
-        
-
         // The standalone Headless plugin owns LocalGameCreate on dedicated
         // hosts. Do not let the normal player-owned game factory race it if
-        // Harmony retains its prefix while enabling Headless's own patch.
+        // Harmony retains this prefix while enabling Headless's own patch.
         if (FikaBackendUtils.IsHeadless) return true;
 
         // A failed result operation may never consume the previous raid's
         // Scav descriptor. Starting any new raid invalidates that snapshot,
         // including when the next raid is a native single-player session.
         Main.Patches.Overrides.RaidEndProfile.Clear();
-        if (FikaBackendUtils.ClientType == EClientType.None)
-        {
-            // AP (analysis/nonfika-raid-inertness): this is the decisive moment - the raid that starts
-            // now is the native local game (the map selection screen without Fika), so the port has to
-            // stay out of it until it creates a game of its own again. Reported once per transition; the
-            // line is [Inert] raid kind=native source=... in the game log.
-            FikaRaidGate.NativeRaidStarted("LocalGameCreate with clientType=None");
-            return true;
-        }
+        if (FikaBackendUtils.ClientType == EClientType.None) return true;
 #if DEBUG
         Logger.LogInfo("TarkovApplication_LocalGameCreator_Patch:Prefix");
 
@@ -72,13 +62,6 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
         return false;
     }
 
-    /// <summary>
-    /// Entry point of the cooperative raid start. Any failure of the session setup is turned
-    /// into a clean abort here: the reason goes to BepInEx/Fika-diagnostics.log with its full
-    /// stack, the half-created session (client, loading screen) is torn down so the player
-    /// lands on a usable main menu, and a readable error screen replaces the bare
-    /// "Object reference not set to an instance of an object." box.
-    /// </summary>
     public static async Task CreateFikaGame(TarkovApplication instance, TimeAndWeatherSettings timeAndWeather,
         RaidSettings raidSettings, InputTree inputTree, GameDateTime localGameDateTime, float fixedDeltaTime,
         ClientMetricsEvents metricsEvents, ClientMetricsConfig metricsConfig,
@@ -86,57 +69,7 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
         CompositeDisposable unsubscriber, BundleLock bundleLock)
     {
         var isServer = FikaBackendUtils.IsServer;
-        
-        try
-        {
-            await CreateFikaGameCore(instance, timeAndWeather, raidSettings, inputTree, localGameDateTime,
-                fixedDeltaTime, metricsEvents, metricsConfig, gameWorld, menuOperation, unsubscriber, bundleLock);
-            
-        }
-        catch (Exception exception)
-        {
-            
-            FikaRaidGate.Disarm("the Fika game creation failed");
-            FikaBackendUtils.MarkJoinFailed(exception.Message, exception);
-            NetManagerUtils.AbortFailedJoin(isServer, "raid start failed: " + exception.Message);
-
-            try
-            {
-                Singleton<PreloaderUI>.Instance.ShowErrorScreen("FIKA RAID START FAILED",
-                    exception.Message + "\n\nSee BepInEx/LogOutput.log for the full stack trace.");
-            }
-            catch (Exception screenException)
-            {
-                
-            }
-
-            throw;
-        }
-    }
-
-    private static async Task CreateFikaGameCore(TarkovApplication instance, TimeAndWeatherSettings timeAndWeather,
-        RaidSettings raidSettings, InputTree inputTree, GameDateTime localGameDateTime, float fixedDeltaTime,
-        ClientMetricsEvents metricsEvents, ClientMetricsConfig metricsConfig,
-        GameWorld gameWorld, MainMenuShowOperation menuOperation,
-        CompositeDisposable unsubscriber, BundleLock bundleLock)
-    {
-        var isServer = FikaBackendUtils.IsServer;
-        // AP (analysis/nonfika-raid-inertness): the one place that knows a raid of ours really starts.
-        // Everything that asks FikaRaidGate.Skip before acting inside a raid is enabled by this line and
-        // by nothing else - not by the plugin being loaded, not by FikaBackendUtils.ClientType, which a
-        // finished raid used to leave at Host/Client for the rest of the session.
-        FikaRaidGate.Arm("CreateFikaGameCore(location=" + (raidSettings?.LocationId ?? "-") + ", role="
-            + (isServer ? "host" : "client") + ")");
-        
         var isTransit = FikaBackendUtils.IsTransit;
-
-        // A preparation that failed (no network manager, no host endpoint, a rejected join)
-        // must stop the raid start here: continuing is what produced the "0 % loading screen
-        // plus generic NullReferenceException" report.
-        if (FikaBackendUtils.JoinFailed)
-        {
-            throw new InvalidOperationException("The raid could not be started: " + FikaBackendUtils.JoinFailure);
-        }
 
         if (FikaPlugin.Instance.Settings.NoAI.Value)
         {
@@ -173,19 +106,10 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
 
         if (session == null)
         {
-            throw new InvalidOperationException(
-                "The backend session was null when the raid was initialized (the client is not logged in?).");
+            throw new NullReferenceException("Backend session was null when initializing game!");
         }
 
         var profile = session.GetProfileBySide(raidSettings.Side);
-
-        if (profile == null)
-        {
-            // session.GetProfileBySide returns null when the profile for the requested side
-            // was never loaded, and the next statement used to fault on it.
-            throw new InvalidOperationException(
-                $"The backend session has no {raidSettings.Side} profile, so the raid cannot be started for that side.");
-        }
 
         profile.Inventory.Stash = null;
         profile.Inventory.QuestStashItems = null;
@@ -294,21 +218,10 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
         startHandler.CoopGame = coopGame;
 
         Singleton<AbstractGame>.Create(coopGame);
-        // Register both raid-scoped cleanups through the game's own NON-generic
-        // CompositeDisposable.AddDisposable(Il2CppSystem.Action) overload. The generated
-        // AddDisposable<T>(T) overload must not be reached from here: its interop wrapper resolves the
-        // type argument through Il2CppClassPointerStore<T>, and that store only exists for
-        // interop-generated types, enums, primitives/strings and ClassInjector-registered types.
-        // Handing it a CLR delegate (System.Action) leaves NativeClassPtr at 0 and the generated
-        // MethodInfoStoreGeneric cctor dies with a TypeInitializationException inside Il2CppInterop's
-        // Class::FromIl2CppType hook (47888 run 2026-10-09 23:38, frame 9425). The game's own field is
-        // a native List<Action>, so the Action overload is also the semantically correct one.
-        // The two cleanups are plain managed lambdas declared on this class, never il2cpp delegates bound
-        // to an injected instance method (see AddRaidDisposable): an injected method's registered MethodInfo
-        // is reached by the engine through the interop invoker, which is the fatal path of
-        // analysis/delegate-targets/REPORT.md.
-        AddRaidDisposable(unsubscriber, "CoopGame.Dispose", () => coopGame.Dispose());
-        AddRaidDisposable(unsubscriber, "StartHandler.ReleaseSingleton", () => startHandler.ReleaseSingleton());
+        // Use the concrete Action overload. The generated generic closure
+        // cannot represent Fika's injected type or a CLR delegate type.
+        unsubscriber.AddDisposable(NativeDelegates.Bind<Il2CppSystem.Action>(coopGame, nameof(CoopGame.Dispose)));
+        unsubscriber.AddDisposable(NativeDelegates.Bind<Il2CppSystem.Action>(startHandler, nameof(StartHandler.ReleaseSingleton)));
         metricsEvents.SetGameCreated();
         FikaEventDispatcher.DispatchEvent(new AbstractGameCreatedEvent(coopGame));
 
@@ -335,262 +248,17 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
         }
     }
 
-    /// <summary>
-    /// Logs, once per session, that the file must never instantiate AddDisposable&lt;System.Action&gt;.
-    /// Reading the store only runs the managed type initializer of the type argument
-    /// (RunClassConstructor, no il2cpp call), so this measurement cannot fault; it documents the state
-    /// that aborted the 23:38 run as a named line.
-    /// </summary>
-    private static void ReportGenericOverloadHazard()
-    {
-        if (_genericAddDisposableHazardReported)
-        {
-            return;
-        }
-
-        _genericAddDisposableHazardReported = true;
-
-        long classPointer;
-        try
-        {
-            classPointer = Il2CppInterop.Runtime.Il2CppClassPointerStore<System.Action>.NativeClassPtr.ToInt64();
-        }
-        catch (Exception exception)
-        {
-            
-            return;
-        }
-
-        
-    }
-
-    /// <summary>
-    /// Registers one raid cleanup with the game's CompositeDisposable.
-    ///
-    /// The delegate target is always a managed lambda declared on this (plain managed, non-injected)
-    /// class. It must never be an il2cpp delegate built over an injected instance method
-    /// (<c>Il2CppSystem.Delegate.CreateDelegate</c> / <c>NativeDelegates.Bind</c>): such a delegate carries
-    /// the injected method's registered MethodInfo, and the engine reaches it through the interop invoker
-    /// whose closing <c>calli</c> targets the method's trampoline thunk - the pair coreclr fail-fasts on
-    /// ("attempted to call a UnmanagedCallersOnly method from managed code",
-    /// analysis/delegate-targets/REPORT.md). <c>CoopGame.Dispose</c> and
-    /// <c>StartHandler.ReleaseSingleton</c> were bound that way until round 8.
-    ///
-    /// The conversion below is the interop's managed-to-native delegate bridge
-    /// (<c>DelegateSupport.ConvertDelegate</c>): it builds its own reverse-P/Invoke trampoline whose body
-    /// performs one plain managed call into the lambda, i.e. the engine's invoke stops at managed code and
-    /// never enters an injected method's invoker. The result stays <c>Il2CppSystem.Action</c> so the
-    /// declaring type's own non-generic member is the better candidate: no generic method instantiation is
-    /// created, and the native delegate is stored in the game's List&lt;Action&gt; exactly as before.
-    /// </summary>
-    private static void AddRaidDisposable(CompositeDisposable unsubscriber, string label, System.Action cleanup)
-    {
-        if (unsubscriber is null)
-        {
-            throw new InvalidOperationException(
-                "The raid unsubscriber was null, so " + label + " could not be registered.");
-        }
-
-        ReportGenericOverloadHazard();
-
-        Il2CppSystem.Action action;
-        try
-        {
-            action = (Il2CppSystem.Action)cleanup;
-        }
-        catch (Exception exception)
-        {
-            
-            throw;
-        }
-
-        if (action is null)
-        {
-            throw new InvalidOperationException(
-                "The il2cpp delegate for " + label
-                + " came back null, so the raid cannot clean up after itself.");
-        }
-
-        try
-        {
-            unsubscriber.AddDisposable(action);
-        }
-        catch (Exception exception) when (exception is TypeInitializationException or TypeLoadException)
-        {
-            
-            throw;
-        }
-        catch (Exception exception)
-        {
-            
-            throw;
-        }
-
-        
-    }
-
-    /// <summary>
-    /// The measured probe above is a property of the interop, not of one call, so it is logged once.
-    /// </summary>
-    private static bool _genericAddDisposableHazardReported;
-
-    /// <summary>
-    /// Waits until the host confirms it received the local player's location.
-    ///
-    /// The loop used to dereference <see cref="FikaSingleton{T}.Instance"/> unconditionally and
-    /// never time out: a client that was never created (preparation aborted) threw the generic
-    /// NullReferenceException, and a client that never reached the host span here forever while
-    /// the Fika loading screen stayed at 0 %. It now waits for the client to appear, reports
-    /// its connection state every second and fails with a readable reason.
-    /// </summary>
-    /// <summary>
-    /// Waits until the host confirms it received the local player's location.
-    ///
-    /// Three different states used to look the same here, and the healthy case paid for it:
-    ///   * a host that is still loading its own map answers every poll with HostReceivedLocation=false;
-    ///   * a host whose main thread is blocked inside a long frame answers nothing at all while its
-    ///     socket thread keeps the connection alive;
-    ///   * a host that is gone stops answering *and* the transport drops.
-    /// A single fixed cap therefore aborted joins that only needed more time - in the 2026-10-11 18:58
-    /// round the host needed 145 s for TarkovStreets (host Fika-diagnostics.log 464548 -> 609164 ms)
-    /// while the client reached its own location wait after 89 s and aborted after a fixed 40 s
-    /// (client Fika-diagnostics.log 477018 -> 517290 ms); that abort is what left the host waiting for a
-    /// character that never came.
-    ///
-    /// What ends this wait, in this order:
-    ///   * the transport: <c>ServerConnection.ConnectionState != Connected</c> is the only proof that the
-    ///     host is gone (LiteNetLib's own thread maintains the connection, acks and keepalives, so it
-    ///     survives a busy host main thread);
-    ///   * <see cref="LoadSyncGate.ClientCeilingSeconds"/>, which is longer inside a transit reload
-    ///     window - a connected host that never makes progress cannot be waited for forever;
-    ///   * a long application-level silence is reported as a warning (every 15 s) and never ends the wait
-    ///     by itself. That is the difference to the fixed cap this join died on.
-    /// The counter of host responses and the local loading progress are in every [LoadSync] line, so a
-    /// run can be judged whether it succeeded or not.
-    /// </summary>
     private static async Task WaitForServerToReceiveLocation()
     {
         var packet = new InformationPacket();
+        var client = FikaSingleton<FikaClient>.Instance;
         var span = TimeSpan.FromSeconds(1);
-        var attempts = 0;
-        var discoveryLimit = (FikaPlugin.Instance.Settings.ConnectionTimeout?.Value ?? 30) + 10;
 
-        FikaClient client = null;
-        while (client == null)
+        do
         {
-            client = FikaSingleton<FikaClient>.Instance;
-            if (client != null)
-            {
-                break;
-            }
-
-            if (++attempts > discoveryLimit)
-            {
-                throw new InvalidOperationException(
-                    "The Fika client was never created, so the host could not be asked for the raid location.");
-            }
-
+            client.SendData(ref packet, DeliveryMethod.ReliableUnordered);
             await Task.Delay(span);
-        }
-
-        attempts = 0;
-        var locationCeiling = LoadSyncGate.ClientCeilingSeconds(FikaBackendUtils.IsTransit);
-        var silentSeconds = 0;
-        var lastResponseCount = client.HostResponseCount;
-        var reportedAt = 0;
-
-        string DescribeLocationWait()
-        {
-            return "stage=location role=client elapsed=" + attempts + "s responses=" + client.HostResponseCount
-                + " hostReceivedLocation=" + client.HostReceivedLocation + " hostLoaded=" + client.HostLoaded
-                + " hostReady=" + client.HostReady + ", transport="
-                + (client.ServerConnection == null ? "no peer" : client.ServerConnection.ConnectionState.ToString())
-                + " silentFor=" + silentSeconds + "s, ceiling=" + locationCeiling + "s, "
-                + LoadSync.DescribePeerTraffic() + ", " + DescribeLocalProgress()
-                + " (" + LoadSync.DescribeScreen() + ")";
-        }
-
-        while (!client.HostReceivedLocation)
-        {
-            if (client.ServerConnection == null && attempts > 5)
-            {
-                throw new InvalidOperationException(
-                    "The Fika client is not connected to the host, so the raid cannot be started. "
-                    + "The host session was reachable while joining (the ping handshake succeeded) but the game "
-                    + "connection never completed - check the host's UDP port and the firewall.");
-            }
-
-            if (client.ServerConnection != null && client.ServerConnection.ConnectionState != ConnectionState.Connected
-                && attempts > 5)
-            {
-                throw new InvalidOperationException(
-                    "The connection to the raid host was lost while this client waited for the location "
-                    + "acknowledgement. " + DescribeLocationWait());
-            }
-
-            try
-            {
-                client.SendData(ref packet, DeliveryMethod.ReliableUnordered);
-            }
-            catch (Exception exception)
-            {
-                
-                throw;
-            }
-
-            // A growing response counter means the host's *application* is answering; the flags inside
-            // those responses say how far its own raid start is. Silence with a live transport means the
-            // host's main thread is busy (its own map load) - that is a warning, not a failure.
-            if (client.HostResponseCount != lastResponseCount)
-            {
-                lastResponseCount = client.HostResponseCount;
-                silentSeconds = 0;
-            }
-            else
-            {
-                silentSeconds++;
-            }
-
-            if (attempts >= reportedAt)
-            {
-                reportedAt = attempts + 5;
-            }
-
-            if (silentSeconds >= LoadSyncGate.ClientSilentWarnSeconds && silentSeconds % 15 == 0)
-            {
-                LoadSync.Warn("WaitForServerToReceiveLocation", DescribeLocationWait()
-                    + " => no application-level response for " + silentSeconds + "s while the transport is "
-                    + (client.ServerConnection?.ConnectionState.ToString() ?? "gone")
-                    + ": the host's main thread is most likely loading its own copy of the raid; the wait continues until "
-                    + locationCeiling + "s");
-            }
-
-            if (++attempts > locationCeiling)
-            {
-                throw new InvalidOperationException(
-                    "The host has not acknowledged the raid location within " + locationCeiling + " seconds. "
-                    + DescribeLocationWait() + " - see the [LoadSync] lines for how far the host's own raid start got.");
-            }
-
-            await Task.Delay(span);
-        }
-
-    }
-
-    /// <summary>
-    /// The progress this machine has published for itself, for the [LoadSync] lines ("local=92.5").
-    /// </summary>
-    private static string DescribeLocalProgress()
-    {
-        try
-        {
-            var screen = LoadingScreenUI.Instance;
-            return screen == null ? "local=absent (no screen)" : screen.DescribeLocalRow();
-        }
-        catch (Exception)
-        {
-            return "local=absent";
-        }
+        } while (!client.HostReceivedLocation);
     }
 
     private static TimeSpan GetRaidMinutes(int defaultMinutes)
@@ -659,23 +327,23 @@ internal class ScreenUpdater : IDisposable
     public static string StatusText { get; private set; }
 
     private readonly CoopGame _coopGame;
-    private readonly System.Action<EMatchingStage, Il2CppSystem.Nullable<float>> _updateStatus;
+    private readonly Il2CppSystem.Action<EMatchingStage, Il2CppSystem.Nullable<float>> _updateStatus;
 
     public ScreenUpdater(MatchmakerPlayersController controller, CoopGame game)
     {
         _coopGame = game;
-        
+        // Nullable<float> is a boxed native value type. Bind the native method
+        // directly; DelegateSupport cannot marshal it through a CLR Action.
+        _updateStatus = NativeDelegates.Bind<Il2CppSystem.Action<EMatchingStage, Il2CppSystem.Nullable<float>>>(
+            controller, nameof(MatchmakerPlayersController.UpdateMatchingStatus));
+        game.OnMatchingStatusChanged += _updateStatus;
     }
 
     public static void SetStatusText(string text) => StatusText = text;
 
     public void Dispose()
     {
-        if (_updateStatus is not null)
-        {
-            _coopGame.OnMatchingStatusChanged -= _updateStatus;
-        }
-
+        _coopGame.OnMatchingStatusChanged -= _updateStatus;
         StatusText = null;
     }
 }

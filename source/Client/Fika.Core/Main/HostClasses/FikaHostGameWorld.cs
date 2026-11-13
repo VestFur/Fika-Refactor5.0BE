@@ -92,10 +92,7 @@ public class FikaHostGameWorld : ClientLocalGameWorld
 
     public override void AfterPlayerTick(float dt)
     {
-        // (analysis/cutscene-rig-play) Host half of the same repair as the client world: the native per-frame
-        // step of ClientLocalGameWorld is what drives the cutscene controllers (and everything else the port
-        // made Fika own) on a normal raid. Off by default - one constant switches it on - and it never throws
-        // into the raid tick.
+        // Do nothing
     }
 
     public override GrenadeFactory CreateGrenadeFactory()
@@ -111,82 +108,16 @@ public class FikaHostGameWorld : ClientLocalGameWorld
             InitLevelManaged(itemFactory, config, loadBundlesAndCreatePools, resources, progress, ct)));
     }
 
-    /// <summary>
-    /// Level initialisation of a host raid: this is the step behind the loading screen progress
-    /// bar, and it runs *before* <c>TarkovApplication.LocalGameCreate</c> ever sees the raid.
-    ///
-    /// It is instrumented because it used to be the silent dead end of the whole raid start: a
-    /// failure of the base call here aborted the map load - no loading screen dismissal, no
-    /// LocalGameCreate, no Fika log line - and the client dropped back to the main menu with the
-    /// progress bar at 0 % (2026-10-09 22:58:53.574, NotSupportedException from the native base
-    /// call machinery).
-    /// </summary>
     private async Task InitLevelManaged(ItemFactory itemFactory, ObjectsFactoryConfig config, bool loadBundlesAndCreatePools,
         Il2CppSystem.Collections.Generic.List<ResourceKey> resources, Il2CppSystem.IProgress<InitLevelProgress> progress,
         Il2CppSystem.Threading.CancellationToken ct)
     {
-        if (_insideBaseInitLevel)
-        {
-            // The native base call would have redispatched virtually into this override: fail
-            // loudly instead of re-entering until the loading screen is stuck forever.
-            var recursion = new InvalidOperationException("InitLevel re-entered while the native base call was still in flight; "
-                + "the generated wrapper of this interop build dispatches virtually after all.");
-            
-            throw recursion;
-        }
-
-        
-        _insideBaseInitLevel = true;
-        try
-        {
-            // The alignment anchor of a transit reload (analysis/transit-reload-sync): this is the moment
-            // this host starts creating the next map, and the clients that already ended their own raid are
-            // waiting for exactly this signal before they create their level. A host that never sends it is
-            // not waited for - the clients release themselves through the bounded fallbacks of
-            // TransitReloadGate - and the host itself never waits for a peer.
-            if (FikaBackendUtils.IsServer && FikaBackendUtils.IsTransit)
-            {
-                TransitReloadGate.AnnounceHostReloadStart(Server, LocationId ?? "unknown");
-            }
-
-            // (analysis/transit-reload-oom) Symmetrical to the client: directly before the native level
-            // load the replaced raid's world is already disposed and this raid's bundles are not loaded
-            // yet, so this is the one point where the previous map's assets can be handed back to the
-            // system without touching anything this raid needs. Only a continuing transit schedules it
-            // (FikaRaidMemory.NoteWorldSwap is gated on FikaBackendUtils.IsTransit), it runs at most once
-            // per swap, and FikaRaidMemory.ReleaseWorldSwapAsync never faults - the level load below must
-            // never be able to fail because of the release.
-            try
-            {
-                await FikaRaidMemory.ReleaseWorldSwapAsync("new map: before the native level load (host)");
-            }
-            catch (Exception releaseException)
-            {
-                            }
-            
-            
-            await global::Fika.Core.Main.Utils.NativeBaseCalls.Call72(this, itemFactory, config, loadBundlesAndCreatePools, resources, progress, ct).AsManaged();
-            
-            
-            Fika.Core.Main.Components.RaidInteractionSync.LevelReady(this);
-            System.Action<MineDirectional> mineExplode = (System.Action<MineDirectional>)OnMineExplode;
-            MineManager.OnExplosion += mineExplode;
-            _mineExplodeHandler = mineExplode;
-            
-        }
-        catch (Exception exception)
-        {
-            
-            throw;
-        }
-        finally
-        {
-            _insideBaseInitLevel = false;
-        }
+        await global::Fika.Core.Main.Utils.NativeBaseCalls.Call72(this, itemFactory, config, loadBundlesAndCreatePools, resources, progress, ct).AsManaged();
+        Fika.Core.Main.Components.RaidInteractionSync.LevelReady(this);
+        Il2CppSystem.Action<MineDirectional> mineExplode = (Il2CppSystem.Action<MineDirectional>)OnMineExplode;
+        MineManager.OnExplosion += mineExplode;
+        _mineExplodeHandler = mineExplode;
     }
-
-    /// <summary>Guards against a virtual redispatch of the native base call (see InitLevelManaged).</summary>
-    private bool _insideBaseInitLevel;
 
     /// <summary>
     /// Triggers when a <see cref="MineDirectional"/> explodes
@@ -213,7 +144,7 @@ public class FikaHostGameWorld : ClientLocalGameWorld
         NetManagerUtils.DestroyNetManager(true);
     }
 
-    private System.Action<MineDirectional> _mineExplodeHandler;
+    private Il2CppSystem.Action<MineDirectional> _mineExplodeHandler;
 
     public override void InitAirdrop(string lootTemplateId = null, bool takeNearbyPoint = false, Vector3 position = default)
     {

@@ -10,8 +10,7 @@ public class MapCachingPatch : ModulePatch
 {
     protected override MethodBase GetTargetMethod()
     {
-        // The display class ordinal changed with the build (216 on the ported build, 237 on 47888).
-        return LoadMapAndDataTargets.Resolve("_LoadMapAndData_b__0");
+        return AccessTools.Method(typeof(TarkovApplication.__c__DisplayClass216_0), "_LoadMapAndData_b__0");
     }
 
     [PatchPrefix]

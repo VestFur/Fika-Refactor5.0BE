@@ -32,38 +32,23 @@ public sealed class TarkovApplication_LocalGamePreparer_Patch : ModulePatch
         if (FikaBackendUtils.ClientType == EClientType.None)
             return;
 
-        // A new raid start owns a clean failure state: without this, the reason an earlier attempt
-        // recorded kept aborting every later start at CreateFikaGameCore ("The raid could not be
-        // started: <old reason>"), including host raids. A failure of this attempt still wins.
-        FikaBackendUtils.ClearLeftoverJoinFailure();
-
-        var isServer = FikaBackendUtils.IsServer;
-        
         try
         {
-            await Prepare(__instance, isServer);
-            
+            await Prepare(__instance);
         }
         catch (Exception exception)
         {
-            // This prefix is async void and the native method body keeps running while it
-            // awaits, so a swallowed failure here used to let the raid start continue with a
-            // network manager that was never created or connected: the Fika loading screen
-            // then sits at 0 % and the raid start throws further down the line. Mark the
-            // attempt as failed, so the raid start can abort with the real reason.
-            FikaBackendUtils.MarkJoinFailed("The Fika network preparation failed: " + exception.Message, exception);
             Logger.LogError($"LocalGameMatching preparation failed: {exception}");
-            
         }
     }
 
-    private static async Task Prepare(TarkovApplication __instance, bool isServer)
+    private static async Task Prepare(TarkovApplication __instance)
     {
         Logger.LogDebug("TarkovApplication_LocalGamePreparer_Patch:Prefix");
-        
 
         FikaBackendUtils.RequestFikaWorld = true;
 
+        var isServer = FikaBackendUtils.IsServer;
         if (!isServer && !string.IsNullOrEmpty(FikaBackendUtils.HostLocationId))
         {
             if (string.Equals(__instance._raidSettings.LocationId, "sandbox", StringComparison.OrdinalIgnoreCase)
@@ -94,10 +79,7 @@ public sealed class TarkovApplication_LocalGamePreparer_Patch : ModulePatch
             {
                 NetManagerUtils.StartPinger();
             }
-
-            
             await NetManagerUtils.InitNetManager(isServer);
-            
 
             if (isServer)
             {

@@ -68,13 +68,13 @@ public class ButtonHandler : MonoBehaviour, IPointerExitHandler, IPointerEnterHa
     public void OnPointerEnter(PointerEventData eventData)
     {
         StopAllCoroutines();
-        StartCoroutine(EngineCoroutines.Wrap(ShowButton(), "ButtonHandler.ShowButton"));
+        StartCoroutine(ShowButton().WrapToIl2Cpp());
     }
 
     public void OnPointerExit(PointerEventData eventData)
     {
         StopAllCoroutines();
-        StartCoroutine(EngineCoroutines.Wrap(FadeButton(), "ButtonHandler.FadeButton"));
+        StartCoroutine(FadeButton().WrapToIl2Cpp());
     }
 }
 

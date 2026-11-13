@@ -96,12 +96,6 @@ public sealed class HeadlessRequesterWebSocket : IDisposable
                 await ReceiveLoopAsync(socket, _stop.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (_stop.IsCancellationRequested) { return; }
-            catch (Exception ex) when (_stop.IsCancellationRequested && WebSocketShutdown.IsTeardown(ex))
-            {
-                // The socket is being closed while the application quits: the released operations are the
-                // normal end of this loop (see WebSocketShutdown), not a connection problem.
-                return;
-            }
             catch (Exception ex)
             {
                 // Keep the connection waiter pending across transient failures;
@@ -118,7 +112,8 @@ public sealed class HeadlessRequesterWebSocket : IDisposable
                 }
                 socket?.Dispose();
             }
-            if (!await WebSocketShutdown.WaitBeforeReconnectAsync(TimeSpan.FromSeconds(2), _stop.Token).ConfigureAwait(false)) return;
+            try { await Task.Delay(TimeSpan.FromSeconds(2), _stop.Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) when (_stop.IsCancellationRequested) { return; }
         }
     }
 
@@ -128,21 +123,7 @@ public sealed class HeadlessRequesterWebSocket : IDisposable
         using var message = new MemoryStream();
         while (socket.State == WebSocketState.Open && !token.IsCancellationRequested)
         {
-            WebSocketReceiveResult result;
-            try
-            {
-                result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception exception) when (token.IsCancellationRequested && WebSocketShutdown.IsTeardown(exception))
-            {
-                // The socket was closed while this read was pending: the normal end of the loop.
-                return;
-            }
-
+            var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token).ConfigureAwait(false);
             if (result.MessageType == WebSocketMessageType.Close) return;
             if (result.MessageType != WebSocketMessageType.Text) continue;
             message.Write(buffer, 0, result.Count);
@@ -184,7 +165,7 @@ public sealed class HeadlessRequesterWebSocket : IDisposable
                 throw new InvalidOperationException("TarkovApplication was not available for the headless join");
             }
 
-            var success = await MatchMakerUIScript.JoinMatch(tarkovApplication.Session.Profile.Id, data.MatchId, null, _stop.Token);
+            var success = await MatchMakerUIScript.JoinMatch(tarkovApplication.Session.Profile.Id, data.MatchId, null, false, _stop.Token);
             if (!_disposed && success)
                 FikaBackendUtils.MatchMakerAcceptScreenInstance.GameStart().HandleExceptions();
             else if (!success) FikaBackendUtils.IsHeadlessRequester = false;

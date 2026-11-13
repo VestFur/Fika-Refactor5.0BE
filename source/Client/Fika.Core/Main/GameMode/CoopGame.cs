@@ -31,7 +31,6 @@ using Fika.Core.Main.BaseClasses;
 using Fika.Core.Main.ClientClasses;
 using Fika.Core.Main.Components;
 using Fika.Core.Main.Patches.BTR;
-using Fika.Core.Main.Patches.World;
 using Fika.Core.Main.Players;
 using Fika.Core.Main.Utils;
 using Fika.Core.Modding;
@@ -107,26 +106,22 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
     private Func<LocalPlayer, EftGamePlayerOwner> _func_1;
     private FikaPlayer _localPlayer;
+    private string _pendingReconnectProfileId;
+    private ReconnectInventoryState _reconnectInventoryState;
+    private ReconnectHandsState _reconnectHands;
+    private bool _hasReconnectPosition;
+    private bool _hasReconnectHands;
+    private bool _reconnectWorldRequested;
+    private ushort _lastReconnectFirstOperationId = ushort.MaxValue;
+    private readonly RevivalStateClock _reconnectRevivalClock = new();
     private readonly RaidSaveState _deathSave = new();
     private float _voipDistance;
-    private System.Action<EDamageType> _onLocalPlayerDied;
+    private Il2CppSystem.Action<EDamageType> _onLocalPlayerDied;
     private float _nextHandsRepairTime;
     private float _nextInteractionRepairTime;
     private float _stuckInteractionSince;
-    /// <summary>
-    /// Handle of the Update driven session start routine. The routine itself lives on
-    /// <see cref="Fika.Core.Main.Utils.SessionPump"/>, a plain managed static class: a private method of
-    /// this injected class would be registered with il2cpp (own trampoline thunk + shared managed
-    /// invoker), which is the construction that fail-fasted the 2026-10-10 host raid. The field stays
-    /// internal only so that helper can hold the handle (analysis/delegate-targets).
-    /// </summary>
-    internal FikaRoutinePump.RoutineHandle _sessionRoutine;
-    /// <summary>Set by the <see cref="SessionRun"/> override, which the native session coroutine calls.</summary>
-    internal bool _sessionRunReached;
     private int _handsRepairAttempts;
     private bool _handsRepairInFlight;
-    private bool _nativeHandsSelectionNoted;
-    private bool _handsProcessCompletedNoted;
 
     // Hands lock watchdog ("operating too fast"). The timers live here so the
     // per-frame plugin hook can keep calling one watchdog per concern.
@@ -154,43 +149,14 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         FikaSingleton<IFikaNetworkManager>.Instance.RaidSide = localRaidSettings.playerSide;
 
         var gameTime = backendDateTime;
-
-        // (analysis/map-fixed-time) Some maps pin their own clock. The native matchmaker panel
-        // (EFT.UI.Matchmaker.LocationConditionsPanel) carries one static "<map>FixedTime" value per such
-        // map (Icebreaker) and feeds exactly that value into the raid time selector, so the live game
-        // gives the player no time choice there. A Fika raid never runs that panel, so the raid started
-        // on whatever the raid settings held - on this port usually the -1 ("follow the world clock")
-        // the Fika raid settings screen leaves behind. Use the map's own time instead.
-        //
-        // A transit is excluded on purpose: it continues a raid whose clock is already past the pinned
-        // time, so pinning it again would rewind the clock for that machine.
-        // 'Coop / Honor Map Fixed Time' off = the player's own setting, i.e. exactly the behaviour before
-        // this block existed (one flip = the old path).
-        var fixedHour = 0;
-        var fixedMinute = 0;
-        var fixedSource = "none";
-        var honorFixedTime = FikaPlugin.Instance.Settings.HonorMapFixedTime.Value
-            && !FikaBackendUtils.IsScavLateJoin && !FikaBackendUtils.IsTransit
-            && MapFixedTime.TryGet(location.Id, out fixedHour, out fixedMinute, out fixedSource);
-        var effectiveHourOfDay = honorFixedTime ? fixedHour : timeAndWeather.HourOfDay;
-        var fixedField = honorFixedTime
-            ? fixedHour.ToString("D2") + ":" + fixedMinute.ToString("D2") + " (" + fixedSource + ")"
-            : "none";
-        _logger.LogInfo($"Raid time: hourOfDay={effectiveHourOfDay} " +
-            $"({(honorFixedTime ? "map fixed time" : effectiveHourOfDay == -1 ? "current world time" : "custom")}), " +
+        _logger.LogInfo($"Raid time: hourOfDay={timeAndWeather.HourOfDay} " +
+            $"({(timeAndWeather.HourOfDay == -1 ? "current world time" : "custom")}), " +
             $"server={FikaBackendUtils.IsServer}, scav={FikaBackendUtils.IsScav}, " +
-            $"worldHour={backendDateTime.StatedGameDateTime.Hour}, " +
-            $"fixed={fixedField}, playerHourOfDay={timeAndWeather.HourOfDay}, " +
-            $"isRandomTime={timeAndWeather.IsRandomTime}");
-        if (honorFixedTime)
-        {
-            _logger.LogInfo($"[MapFixedTime] {location.Id} carries a fixed clock time: using {fixedField} and ignoring " +
-                $"the player's hourOfDay={timeAndWeather.HourOfDay}");
-        }
-        if (effectiveHourOfDay != -1)
+            $"worldHour={backendDateTime.StatedGameDateTime.Hour}");
+        if (timeAndWeather.HourOfDay != -1)
         {
             var currentTime = backendDateTime.StatedGameDateTime;
-            Il2CppSystem.DateTime newTime = new(currentTime.Year, currentTime.Month, currentTime.Day, effectiveHourOfDay,
+            Il2CppSystem.DateTime newTime = new(currentTime.Year, currentTime.Month, currentTime.Day, timeAndWeather.HourOfDay,
                 currentTime.Minute, currentTime.Second, currentTime.Millisecond);
             gameTime = new(backendDateTime.StatedRealDateTime, newTime, backendDateTime.TimeFactor);
             gameTime.Reset(newTime);
@@ -276,7 +242,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             _game.LocalPlayer = player;
             var gamePlayerOwner = EftGamePlayerOwner.Create(player, _inputTree, _insurance, _backEndSession,
                 _gameUI, _game.GameDateTime, _location);
-            gamePlayerOwner.OnLeave += (System.Action)_game.LocalLeaveGame;
+            gamePlayerOwner.OnLeave += (Il2CppSystem.Action)_game.LocalLeaveGame;
             return gamePlayerOwner;
         }
     }
@@ -299,18 +265,11 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     /// <summary>
     /// The countdown deploy screen
     /// </summary>
-    /// <remarks>
-    /// Only the native <see cref="SessionRun(Il2CppSystem.Action)"/> coroutine calls this, and the pump has
-    /// already run the countdown by the time it does (the pump starts that coroutine itself, step 3). What is
-    /// returned is therefore a finished *native* enumerator instead of the managed wrapper
-    /// (<c>InitSessionUIManaged().WrapToIl2Cpp()</c>) this used to hand the engine: the engine crashed while it
-    /// released exactly such a wrapper one frame after this method's caller ran during the host raid start
-    /// (analysis/host-raid-coroutine).
-    /// </remarks>
-    public override Il2CppSystem.Collections.IEnumerator InitSessionUI()
+    public override Il2CppSystem.Collections.IEnumerator InitSessionUI() => InitSessionUIManaged().WrapToIl2Cpp();
+
+    private IEnumerator InitSessionUIManaged()
     {
-        
-        return NativeRoutines.Completed();
+        yield return GameController.CountdownScreen(Profile, ProfileId);
     }
 
     public override Il2CppSystem.Threading.Tasks.Task<LocalPlayer> PlayerFactory(GameWorld gameWorld, int playerId, Vector3 position, Quaternion rotation,
@@ -332,7 +291,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         Func<float> getAimingSensitivity, IStatisticsManager statisticsManager, IEftSession session,
         ELocalMode localMode)
     {
-        if (!TransitController.IsTransit(profile.Id, out int _))
+        if (!TransitController.IsTransit(profile.Id, out int _) && !FikaBackendUtils.IsReconnect)
         {
             profile.SetSpawnedInSession(false);
         }
@@ -340,7 +299,17 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         var fikaPlayer = await FikaPlayer.Create(gameWorld, playerId, position, rotation, "Player", "Main_", EPointOfView.FirstPerson,
             profile, false, UpdateQueue, armsUpdateMode, Player.EUpdateMode.Auto,
             AppEnvironment.Config.CharacterController.ClientPlayerMode, getSensitivity, getAimingSensitivity,
-            statisticsManager, new ClientViewFilter(), session, playerId, FikaSingleton<IFikaNetworkManager>.Instance.StrictInventorySync);
+            statisticsManager, new ClientViewFilter(), session, playerId, FikaSingleton<IFikaNetworkManager>.Instance.StrictInventorySync,
+            FikaBackendUtils.IsReconnect
+                ? _reconnectInventoryState ?? throw new InvalidOperationException("Reconnect inventory snapshot is missing")
+                : null);
+        _reconnectInventoryState = null;
+
+        if (FikaBackendUtils.IsReconnect)
+        {
+            _reconnectHands?.RestoreLastItem(fikaPlayer);
+            fikaPlayer.StageReconnectRevival(_reconnectRevivalClock.Capture());
+        }
 
         fikaPlayer.Location = Location.Id;
         var coopHandler = GameController.CoopHandler;
@@ -368,18 +337,26 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
         await NetManagerUtils.SetupGameVariables(fikaPlayer);
 
-        if (!GameController.IsServer)
+        if (!GameController.IsServer && !FikaBackendUtils.IsReconnect)
         {
             AnnounceCharacter(fikaPlayer);
         }
         else
         {
             FikaGlobals.LogInfo($"Not announcing a character: isServer={GameController.IsServer}, " +
-                $"scavLateJoin={FikaBackendUtils.IsScavLateJoin}");
+                $"isReconnect={FikaBackendUtils.IsReconnect}, scavLateJoin={FikaBackendUtils.IsScavLateJoin}");
         }
 
         _logger.LogInfo("Adding debug component...");
         GameController.CreateDebugComponent();
+
+        if (FikaBackendUtils.IsReconnect && _hasReconnectPosition)
+        {
+            fikaPlayer.Teleport(FikaBackendUtils.ReconnectPosition);
+            fikaPlayer.MovementContext.Rotation = FikaBackendUtils.ReconnectRotation;
+            fikaPlayer.MovementContext.CachedRotation = FikaBackendUtils.ReconnectRotation;
+            _hasReconnectPosition = false;
+        }
 
         return fikaPlayer;
     }
@@ -439,34 +416,23 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
         gameWorld.ClientBroadcastSyncController = new ClientBroadcastSyncController();
 
-        // (analysis/cutscene-native-registration) The last entry of this list the port was missing. The native
-        // method_4 creates this whole controller family and every controller registers its per-frame caller in
-        // the same place; the two cutscene controllers were created by the world factory instead and never
-        // registered anywhere, which is why nothing ever ticked them (gate:ticks engine=0). Created and registered here,
-        // where the native build does it.
-        try
-        {
-            GameController.InitCutsceneControllers(gameWorld);
-        }
-        catch (Exception error)
-        {
-            _logger.LogError("InitCutsceneControllers failed: " + error.GetType().Name + ": " + error.Message);
-        }
-
         var config = AppEnvironment.Config;
         if (config.FixedFrameRate > 0f)
         {
             FixedDeltaTime = 1f / config.FixedFrameRate;
         }
 
-        
+        if (FikaBackendUtils.IsReconnect)
+        {
+            await GetReconnectProfile(ProfileId);
+        }
+
         try
         {
             var player = await CreateLocalPlayer()
                 ?? throw new NullReferenceException("InitPlayer: Player was null!");
             _players.Add(player.ProfileId, player);
             _playerOwner = _func_1(player);
-            
 
             // The stock SPT 5 LocalGame path registers the local player with
             // the native world immediately after PlayerFactory returns. Fika
@@ -512,6 +478,18 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
         GameController.CoopHandler.ShouldSync = true;
 
+        if (FikaBackendUtils.IsReconnect)
+        {
+            await Reconnect();
+            foreach (var item in _playerOwner.Player.ActiveHealthController.BodyState)
+            {
+                if (item.Value.Health.AtMinimum)
+                {
+                    item.Value.IsDestroyed = true;
+                }
+            }
+        }
+
         // Calling the inherited IL2CPP virtual wrapper here can re-enter the
         // native BaseLocalGame.Run path. On SPT 5 that path invokes
         // LocalBotsSpawnInitialization and bypasses Fika's host/client bot
@@ -536,51 +514,22 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         }
         await PrepareSession().AsManaged();
         EnsurePlayerOwnerReady();
+        _localPlayer.ApplyReconnectRevival();
+        if (_reconnectHands != null && !_localPlayer.Downed && _localPlayer.HealthController.IsAlive)
+        {
+            try
+            {
+                await _reconnectHands.Restore(_localPlayer);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Reconnect hands restore failed; using normal startup selection: {ex.Message}");
+                _hasReconnectHands = false;
+            }
+        }
+        _reconnectHands = null;
         RepairLocalHands(force: true);
-        EnsureRaidCameraActive();
         FikaEventDispatcher.DispatchEvent(new GameWorldStartedEvent(GameWorld));
-    }
-
-    /// <summary>
-    /// (2026-10-17) Re-activates the camera manager when a raid start left it switched off. This class
-    /// switches it off itself (CameraManager.Instance.IsActive = false, in InitPlayer) and the only place
-    /// that switches it back on is the countdown teardown. A transit reload does not run that teardown when
-    /// its overlay never came up, and the machine then stayed on a black frame after the next map loaded
-    /// (reported for the host after the Shoreline -> Terminal transfer). Only an inactive manager is
-    /// touched, so a normal raid start - which already has it active - is left exactly as it was.
-    /// </summary>
-    private static void EnsureRaidCameraActive()
-    {
-        try
-        {
-            if (!CameraManager.Exist)
-            {
-                return;
-            }
-
-            var cameraManager = CameraManager.Instance;
-            if (cameraManager == null || cameraManager.IsActive)
-            {
-                return;
-            }
-
-            cameraManager.IsActive = true;
-            cameraManager.Blur(false, 0f);
-            cameraManager.SetZBlur(false);
-            var blur = cameraManager._blur;
-            if (blur != null)
-            {
-                blur.Disable();
-                blur._value = 0f;
-                blur.enabled = false;
-            }
-
-            FikaGlobals.LogWarning("[RaidCamera] the camera manager was inactive after the raid start; re-activated it");
-        }
-        catch (Exception exception)
-        {
-            FikaGlobals.LogWarning("[RaidCamera] could not re-activate the camera manager: " + exception.Message);
-        }
     }
 
     /// <summary>
@@ -590,33 +539,13 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     /// </summary>
     public void RepairLocalHands(bool force = false)
     {
+        // A reconnect snapshot may intentionally contain empty hands. Never
+        // let the startup weapon fallback replace that authoritative state.
+        if (_hasReconnectHands) return;
         if (_localPlayer == null || _playerOwner == null || Status is not (GameStatus.Running or GameStatus.Started))
             return;
-        if (_localPlayer.Downed || !_localPlayer.HealthController.IsAlive)
+        if (_localPlayer.Downed || _localPlayer.AwaitingReconnectRevival || !_localPlayer.HealthController.IsAlive)
             return;
-
-        // The native selection this repair duplicates runs from
-        // PlayerOwner.Run(): its vmethod_0 calls Player.SetFirstAvailableItem
-        // while the hands controller is an EmptyHandsController, and the
-        // equipment gate it uses (Player.IsItemCanBeEquipped = reachable place
-        // + CheckAction) cannot be satisfied before the owner is running. In
-        // the 2026-10-10 host raid every early probe still consumed one of the
-        // eight attempts (LogOutput.log 7481..7496 = attempts 1..8 during the
-        // countdown), so the two forced repairs after "Raid has been started"
-        // were dropped by the attempt budget and the raid started with empty
-        // hands. Wait for the owner instead of counting probes that cannot
-        // succeed; the budget stays for the retries that can.
-        if (_playerOwner.State != EFT.PlayerOwner.EState.Started)
-        {
-            return;
-        }
-
-        if (_localPlayer.HandsController?.TryCast<Player.EmptyHandsController>() == null)
-        {
-            NoteNativeHandsSelection();
-            NoteNativeHandsProcessCompleted();
-            return;
-        }
 
         if (!force && Time.time < _nextHandsRepairTime)
             return;
@@ -625,80 +554,12 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         if (_handsRepairInFlight || _handsRepairAttempts >= 8)
             return;
 
+        if (_localPlayer.HandsController?.TryCast<Player.EmptyHandsController>() == null)
+            return;
+
         _handsRepairAttempts++;
         _logger.LogInfo($"RepairLocalHands attempt {_handsRepairAttempts}: owner={_playerOwner.State}, hands={_localPlayer.HandsController?.GetType().FullName}");
         RestoreFirstAvailableItem("RepairLocalHands");
-    }
-
-    /// <summary>
-    /// One line per raid once the local player owns something other than the
-    /// startup EmptyHandsController. The stock startup path is
-    /// <c>PlayerOwner.Run()</c> -&gt; <c>Player.SetFirstAvailableItem</c>, so this
-    /// line proves the native selection reached the weapon: the next log either
-    /// carries it (native path completed) or carries the RepairLocalHands
-    /// warnings instead (the safety net had to run).
-    /// </summary>
-    private void NoteNativeHandsSelection()
-    {
-        if (_nativeHandsSelectionNoted)
-        {
-            return;
-        }
-
-        _nativeHandsSelectionNoted = true;
-        try
-        {
-            var hands = _localPlayer.HandsController;
-            _logger.LogInfo($"[HandsRepair] native hands selection completed: hands={hands?.GetType().FullName}, " +
-                $"item={hands?.Item?.Id}, process={_localPlayer.ProcessStatus}, " +
-                $"operation={DescribeHandsOperation(hands)}");
-        }
-        catch (Exception exception)
-        {
-            _logger.LogWarning($"[HandsRepair] could not describe the selected hands controller: {exception.Message}");
-        }
-    }
-
-    /// <summary>
-    /// One line per raid as soon as the native hands switch is provably finished: a real controller is
-    /// in hands and the player level process gate is back to None. The 2026-10-10 09:45 raid never
-    /// reached that state - its process stayed Scheduled from the first switch until the raid ended -
-    /// so this line (next to the "stayed locked" warnings) is what proves the switch completes now.
-    /// </summary>
-    private void NoteNativeHandsProcessCompleted()
-    {
-        if (_handsProcessCompletedNoted || _localPlayer.ProcessStatus != Player.EProcessStatus.None)
-        {
-            return;
-        }
-
-        _handsProcessCompletedNoted = true;
-        var hands = _localPlayer.HandsController;
-        _logger.LogInfo($"[HandsRepair] hands process completed: hands={hands?.GetType().FullName}, " +
-            $"item={hands?.Item?.Id}, process={_localPlayer.ProcessStatus}, " +
-            $"operation={DescribeHandsOperation(hands)}");
-    }
-
-    /// <summary>
-    /// The hands operation is the exact field the native <c>ItemHandsController.ManualUpdate</c>
-    /// dereferences (<c>CurrentHandsOperation.Update(deltaTime)</c>), and it is only assigned by
-    /// <c>InitiateOperation</c> inside the controller's <c>Spawn</c>. A null operation while a real
-    /// controller is set is the state that produced the 300 k-line NullReference flood of the
-    /// 2026-10-10 09:45 raid (<c>ItemHandsController.ManualUpdate</c> &lt;-
-    /// <c>FirearmController.ManualUpdate</c> &lt;- <c>Player.ArmsUpdate</c>): the operation factory
-    /// dictionary was never built, so the spawn aborted before the first operation was set.
-    /// </summary>
-    private static string DescribeHandsOperation(Player.AbstractHandsController hands)
-    {
-        try
-        {
-            var operation = hands?.TryCast<Player.ItemHandsController>()?.CurrentHandsOperation;
-            return operation == null ? "<null>" : operation.GetIl2CppType().Name;
-        }
-        catch (Exception exception)
-        {
-            return "unreadable (" + exception.GetType().Name + ")";
-        }
     }
 
     /// <summary>
@@ -718,21 +579,10 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         _handsRepairInFlight = true;
         try
         {
-            // Every hands switch is an EFT.Player.Process gated by
-            // Player.ProcessStatus: while it is not None the native scheduler
-            // skips the next Proceed (the same gate RepairHandsLock releases).
-            // A switch whose DropCurrentController never completed leaves it
-            // set, so the repair would otherwise be skipped silently.
-            if (_localPlayer.ProcessStatus != Player.EProcessStatus.None)
-            {
-                _logger.LogWarning($"{tag} clearing the hands process status {_localPlayer.ProcessStatus} left by an unfinished switch");
-                _localPlayer.ProcessStatus = Player.EProcessStatus.None;
-            }
-
-            var weapon = FindFirstEquippedWeapon(out var source);
+            var weapon = FindFirstEquippedWeapon();
             if (weapon != null)
             {
-                _logger.LogInfo($"{tag} selected weapon {weapon.Id} ({weapon.GetType().FullName}) from {source}");
+                _logger.LogInfo($"{tag} selected weapon {weapon.Id} ({weapon.GetType().FullName})");
                 // Calling FikaPlayer.Proceed directly bypasses the native
                 // TrySetLastEquippedWeapon path that can be a no-op while
                 // the managed owner is being brought up.
@@ -745,7 +595,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             // leaving the player without any hands at all.
             if (includeMelee)
             {
-                var melee = FindEquipment(out _)?.GetSlot(EquipmentSlot.Scabbard)?.ContainedItem
+                var melee = _localPlayer.Equipment?.GetSlot(EquipmentSlot.Scabbard)?.ContainedItem
                     ?.GetItemComponent<KnifeComponent>();
                 if (melee != null)
                 {
@@ -755,10 +605,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
                 }
             }
 
-            // Keep the historic wording (existing diagnostics match on it) and
-            // append the per-slot truth: whether the slot was empty, held a
-            // non-weapon or held a weapon the native gate refused.
-            _logger.LogWarning($"{tag} found no weapon in FirstPrimaryWeapon/SecondPrimaryWeapon/Holster [{DescribeWeaponSlots()}]");
+            _logger.LogWarning($"{tag} found no weapon in FirstPrimaryWeapon/SecondPrimaryWeapon/Holster");
         }
         catch (Exception ex)
         {
@@ -782,13 +629,6 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     /// </summary>
     public void RepairLocalInteractionState()
     {
-        // [LootDiag] (analysis/pickup-auto-fallback, Z4): per-frame pickup-path bookkeeping only -
-        // a 60 s mode heartbeat while a raid runs, and one reset as soon as it stopped, so a switch
-        // never survives into the next raid. It must run before the null guard below: between
-        // raids the local player is already gone and the switch still has to be cleared.
-        GroundLootPickup.TickPickupModeWatchdog(_localPlayer,
-            Status is GameStatus.Running or GameStatus.Started);
-
         if (_localPlayer == null || _playerOwner == null)
         {
             return;
@@ -797,7 +637,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         {
             return;
         }
-        if (_localPlayer.Downed || !_localPlayer.HealthController.IsAlive)
+        if (_localPlayer.Downed || _localPlayer.AwaitingReconnectRevival || !_localPlayer.HealthController.IsAlive)
         {
             _stuckInteractionSince = 0f;
             _stuckHandsSince = 0f;
@@ -834,13 +674,6 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             return;
         }
 
-        // [InvDiag] (2026-10-27, T3) The two interaction-lock signals the state switch below cannot see:
-        // MovementContext.CanInteract held, and the animator's interaction schedule denied. NativeInteractionRelease
-        // already treats both as "stuck", but nothing ever polled them - only the Pickup/Plant state name was watched,
-        // so a lost ground loot take that left the schedule denied kept every later take refused for the whole raid.
-        NativeInteractionRelease.WatchLostInteractionSchedule(_localPlayer,
-            _localPlayer.InventoryController?.TryCast<BaseInventoryController>()?.PendingOperationCount ?? 0, Time.time);
-
         // Only EPlayerState.Pickup: a ground item take animates for well under two
         // seconds, while container searching (Loot), planting, door breaching and
         // normal interactions legitimately last for seconds and must not be
@@ -871,17 +704,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         }
 
         var stuckState = movementContext.CurrentState.Name;
-        var heldFor = Time.time - _stuckInteractionSince;
         _stuckInteractionSince = 0f;
-        // [LootDiag] (analysis/pickup-auto-fallback, Z4): snapshot the native pickup state machine
-        // before the release below rewrites it, then switch this machine's ground loot takes to
-        // the Fika bypass (once per raid, only for a real EPlayerState.Pickup stick - see
-        // GroundLootPickup.NoteStuckPickup). The release stays exactly as it was.
-        GroundLootPickup.DiagnoseStuckState(movementContext, stuckState, heldFor);
-        GroundLootPickup.NoteStuckPickup(_localPlayer, stuckState, heldFor);
-        // The native pickup continuation (MovementContext.PickupAction) is lost when the take-item
-        // animation event never fires. Run it once before releasing the state.
-        global::Fika.Core.Main.Utils.PickupContinuationRepair.TryRepair(_localPlayer, movementContext, stuckState, heldFor);
         _logger.LogWarning($"Local player stayed in {stuckState} for more than {timeout} seconds; releasing the native interaction state");
         NativeInteractionRelease.Release(_localPlayer, "stuck-pickup-state");
     }
@@ -918,7 +741,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             return;
         }
         if (Status is not (GameStatus.Running or GameStatus.Started)
-            || _localPlayer.Downed || !_localPlayer.HealthController.IsAlive)
+            || _localPlayer.Downed || _localPlayer.AwaitingReconnectRevival || !_localPlayer.HealthController.IsAlive)
         {
             ResetInventoryGateWatch();
             return;
@@ -1108,7 +931,6 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         _logger.LogWarning($"[HandsRepair] attempt {_handsLockRepairs}: the local hands stayed locked for " +
             $"{stuckFor:F1}s (process={processStatus}, hands={handsName}" +
             $"{(handsDestroyed ? ", destroyed" : string.Empty)}{(handsTransitional ? ", transitional" : string.Empty)}, " +
-            $"operation={DescribeHandsOperation(hands)}, " +
             $"inventoryLocked={playerInventoryController?.Locked}, " +
             $"inventoryBlocked={inventoryController?.IsInventoryBlocked()}, " +
             $"pendingProceedCallbacks={_localPlayer.PendingProceedCallbacks}); releasing");
@@ -1185,12 +1007,11 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         }
     }
 
-    private Weapon FindFirstEquippedWeapon(out string source)
+    private Weapon FindFirstEquippedWeapon()
     {
-        var equipment = FindEquipment(out source);
         foreach (var slotType in FikaGlobals.WeaponSlots)
         {
-            var item = equipment?.GetSlot(slotType)?.ContainedItem;
+            var item = _localPlayer.Equipment.GetSlot(slotType)?.ContainedItem;
             var weapon = item?.TryCast<Weapon>();
             if (weapon != null && _localPlayer.IsItemCanBeEquipped(weapon))
                 return weapon;
@@ -1198,77 +1019,171 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         return null;
     }
 
-    /// <summary>
-    /// The equipment the engine itself reads. <c>Player.SetFirstAvailableItem</c>
-    /// walks <c>InventoryController.Inventory.Equipment</c>; on a stock player
-    /// that is the same object as <c>Player.Equipment</c>, but Fika replaces the
-    /// inventory tree over the network and only the controller is guaranteed to
-    /// point at the live one, so prefer the controller and fall back to the
-    /// player. The caller logs which face answered, because a repair that reads
-    /// the wrong tree selects nothing.
-    /// </summary>
-    private InventoryEquipment FindEquipment(out string source)
+    internal bool AcceptsReconnectPacket(ReconnectPacket packet)
     {
-        try
-        {
-            var fromController = _localPlayer.InventoryController?.Inventory?.Equipment;
-            if (fromController != null)
-            {
-                source = "InventoryController.Inventory";
-                return fromController;
-            }
-        }
-        catch (Exception exception)
-        {
-            FikaGlobals.LogWarning($"[HandsRepair] reading InventoryController.Inventory failed: {exception.Message}");
-        }
-
-        source = "Player.Equipment";
-        return _localPlayer.Equipment;
+        // GetReconnectProfile clears Profile while waiting for the first
+        // response, so ProfileId is not a reliable filter in that phase.
+        if (_pendingReconnectProfileId != null)
+            return (packet.Type is ReconnectPacket.EReconnectDataType.OwnCharacter or
+                ReconnectPacket.EReconnectDataType.Failed) &&
+                packet.ProfileId == _pendingReconnectProfileId;
+        return _reconnectWorldRequested &&
+            packet.Type != ReconnectPacket.EReconnectDataType.OwnCharacter &&
+            packet.ProfileId == ProfileId;
     }
 
-    /// <summary>
-    /// Per-slot state of the equipment the repair just read. Printed only when no
-    /// weapon was selected, so the next log distinguishes "no weapon in the slot"
-    /// from "weapon present, native gate refused it" - the historic line cannot,
-    /// and both were reported as the same warning while the raid started empty.
-    /// </summary>
-    private string DescribeWeaponSlots()
+    internal void ReceiveReconnectProfile(ReconnectPacket packet)
     {
-        var equipment = FindEquipment(out var source);
-        var description = new System.Text.StringBuilder("source=").Append(source);
-        if (equipment == null)
+        // Scope the snapshot to this game and this request. A late/duplicate
+        // response must not replace the profile of an already-created player.
+        if (_pendingReconnectProfileId == null) return;
+        if (packet.Profile == null || packet.Profile.Id != _pendingReconnectProfileId)
+            throw new InvalidOperationException("Reconnect response belongs to a different profile");
+        // Retries can produce two responses for the same request. A response whose inventory
+        // position is older than the one already accepted must not overwrite the snapshot.
+        if (packet.FirstOperationId < _lastReconnectFirstOperationId)
         {
-            return description.Append(", equipment=null").ToString();
+            FikaGlobals.LogWarning($"Reconnect: ignoring a stale own-character response " +
+                $"(operation {packet.FirstOperationId} < accepted {_lastReconnectFirstOperationId})");
+            return;
         }
 
-        foreach (var slotType in FikaGlobals.WeaponSlots)
+        _lastReconnectFirstOperationId = packet.FirstOperationId;
+        var inventoryState = new ReconnectInventoryState(packet.Profile.Id, packet.ControllerId, packet.FirstOperationId);
+        packet.Profile.Health = packet.ProfileHealthClass;
+        _reconnectInventoryState = inventoryState;
+        _reconnectHands = new ReconnectHandsState(packet);
+        _hasReconnectHands = packet.ControllerType != EHandsControllerType.None;
+        _reconnectRevivalClock.Restore(packet.RevivalState);
+        FikaBackendUtils.ReconnectPosition = packet.PlayerPosition;
+        FikaBackendUtils.ReconnectRotation = packet.PlayerRotation;
+        _hasReconnectPosition = true;
+        _pendingReconnectProfileId = null;
+        // Publish last: GetReconnectProfile waits for this before creating the player.
+        Profile = packet.Profile;
+    }
+
+    internal void ReceiveReconnectRevival(ReconnectPacket packet)
+    {
+        if (!FikaBackendUtils.IsReconnect || packet.ProfileId != ProfileId || _localPlayer == null ||
+            !_localPlayer.AwaitingReconnectRevival) return;
+        _localPlayer.StageReconnectRevival(packet.RevivalState);
+    }
+
+    private async Task GetReconnectProfile(string profileId)
+    {
+        _pendingReconnectProfileId = profileId;
+        _reconnectInventoryState = null;
+        _reconnectHands = null;
+        _hasReconnectHands = false;
+        _hasReconnectPosition = false;
+        _reconnectWorldRequested = false;
+        // Stale-response detection must not survive into the next reconnect request.
+        _lastReconnectFirstOperationId = ushort.MaxValue;
+        Profile = null;
+
+        ReconnectPacket reconnectPacket = new()
         {
-            description.Append(", ").Append(slotType).Append('=');
-            try
+            IsRequest = true,
+            InitialRequest = true,
+            ProfileId = profileId
+        };
+        var client = FikaSingleton<FikaClient>.Instance;
+        client.ReconnectError = null;
+        client.SendData(ref reconnectPacket, DeliveryMethod.ReliableOrdered);
+
+        // The host can still be registering the raid when this request lands (fresh raid,
+        // transit, host restart), and one refused request must not end the session. Retry the
+        // whole handshake a bounded number of times before giving up with the host's reason.
+        const int reconnectAttempts = 3;
+        const double attemptTimeoutSeconds = 45.0;
+        for (var attempt = 1; attempt <= reconnectAttempts; attempt++)
+        {
+            var attemptStartedAt = Time.unscaledTimeAsDouble;
+
+            do
             {
-                var item = equipment.GetSlot(slotType)?.ContainedItem;
-                if (item == null)
+                await Task.Delay(250);
+                if (client.ReconnectError != null) break;
+                if (Time.unscaledTimeAsDouble - attemptStartedAt > attemptTimeoutSeconds) break;
+            } while (Profile == null);
+
+            if (Profile != null)
+            {
+                if (attempt > 1)
                 {
-                    description.Append("empty");
-                    continue;
+                    FikaGlobals.LogInfo($"Reconnect profile received on attempt {attempt}/{reconnectAttempts}");
                 }
+                break;
+            }
 
-                description.Append(item.Id).Append(" (").Append(item.GetIl2CppType().FullName).Append(", ");
-                var weapon = item.TryCast<Weapon>();
-                description.Append(weapon == null
-                    ? "not-a-weapon"
-                    : (_localPlayer.IsItemCanBeEquipped(weapon) ? "selectable" : "gate-refused"));
-                description.Append(')');
-            }
-            catch (Exception exception)
+            var failure = client.ReconnectError
+                ?? $"Host did not return the reconnect profile within {attemptTimeoutSeconds:0}s";
+            if (attempt >= reconnectAttempts)
             {
-                description.Append("read-failed: ").Append(exception.Message);
+                throw new InvalidOperationException(failure);
             }
+
+            FikaGlobals.LogWarning($"Reconnect attempt {attempt}/{reconnectAttempts} failed ({failure}); retrying in 3 s");
+            await Task.Delay(3000);
+            client.ReconnectError = null;
+            Profile = null;
+            _pendingReconnectProfileId = profileId;
+            reconnectPacket = new ReconnectPacket
+            {
+                IsRequest = true,
+                InitialRequest = true,
+                ProfileId = profileId
+            };
+            client.SendData(ref reconnectPacket, DeliveryMethod.ReliableOrdered);
         }
 
-        return description.ToString();
+        await Singleton<ObjectsFactory>.Instance.LoadBundlesAndCreatePools(ObjectsFactory.PoolsCategory.Raid, ObjectsFactory.AssemblyType.Local,
+            Profile.GetAllPrefabPaths(true).AsManaged().ToNativeList(), JobYieldPriority.General,
+            null, new Il2CppSystem.Threading.CancellationToken()).AsManaged();
     }
+
+    private async Task Reconnect()
+    {
+        SetMatchmakerStatus(LocaleUtils.UI_RECONNECTING.Localized());
+
+        ReconnectPacket reconnectPacket = new()
+        {
+            IsRequest = true,
+            ProfileId = ProfileId
+        };
+        var client = FikaSingleton<FikaClient>.Instance;
+        client.ReconnectDone = false;
+        client.ReconnectError = null;
+        _reconnectWorldRequested = true;
+        var requestedAt = Time.unscaledTimeAsDouble;
+        client.SendData(ref reconnectPacket, DeliveryMethod.ReliableOrdered);
+
+        do
+        {
+            await Task.Delay(1000);
+            if (client.ReconnectError != null) throw new InvalidOperationException(client.ReconnectError);
+            if (Time.unscaledTimeAsDouble - requestedAt > 120) throw new TimeoutException("Host did not finish the reconnect snapshot");
+        } while (!client.ReconnectDone);
+
+        var worldSpawns = client.FikaClientWorld?.WorldSpawns;
+        while (worldSpawns is { HasPending: true } || client.HasPendingMapLoads)
+        {
+            await Task.Delay(100);
+            if (client.ReconnectError != null) throw new InvalidOperationException(client.ReconnectError);
+            if (Time.unscaledTimeAsDouble - requestedAt > 240) throw new TimeoutException("World objects did not finish loading during reconnect");
+        }
+        if (worldSpawns?.Failure != null) throw new InvalidOperationException(worldSpawns.Failure);
+        if (client.ReconnectError != null) throw new InvalidOperationException(client.ReconnectError);
+
+        var packet = new ClearSnapshotterPacket
+        {
+            NetId = client.NetId
+        };
+        client.SendData(ref packet, DeliveryMethod.ReliableOrdered, true);
+    }
+
+
 
     /// <summary>
     /// Creates the local player
@@ -1306,13 +1221,21 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
         GameController.ExfilManager = gameObject.AddComponent<FikaExfilManager>();
 
+        // Signal flare exits only react to a flare fired on the machine that owns
+        // it; this component relays the activation to the host and back so a
+        // client's flare actually unlocks the exit for its squad.
+        if (gameObject.GetComponent<FikaFlareExfilManager>() == null)
+        {
+            gameObject.AddComponent<FikaFlareExfilManager>();
+        }
+
         // SPT consumes the entry requirement while creating the initial raid
-        // request.  A transit raid already carries the authoritative
-        // profile/transition state; consuming the requirement
+        // request.  A reconnect and a transit raid already carry the
+        // authoritative profile/transition state; consuming the requirement
         // here again removes another key charge (and, for a consumed key,
         // makes the next map fail its access check).
         var isTransitRaid = FikaBackendUtils.IsTransit || TransitController.IsTransit(Profile.Id, out int _);
-        if (!isTransitRaid &&
+        if (!FikaBackendUtils.IsReconnect && !isTransitRaid &&
             Profile.Side != EPlayerSide.Savage && Profile.Info.Level >= Location.MinPlayerLvlAccessKeys)
         {
             var access = Location.GetAccessRequirements(EGameMode.Pve,
@@ -1348,7 +1271,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         LocalPlayer myPlayer;
         try
         {
-            if (Profile.Side != EPlayerSide.Savage)
+            if (Profile.Side != EPlayerSide.Savage && !FikaBackendUtils.IsReconnect)
             {
                 GenerateNewDogTagId();
             }
@@ -1369,15 +1292,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             throw;
         }
 
-        // Runs while the local player is created, i.e. inside the raid start. A delegate bind that
-        // throws here aborts the join (that is exactly how the Nullable<float> matchmaker delegate
-        // killed a raid), so the subscription degrades to "the host is not told about exfiltration
-        // interactions" instead.
-        if (NativeDelegates.TryBindManaged<System.Action<ExfiltrationPoint, bool>>(this, nameof(OnEpInteraction),
-                "CoopGame.OnEpInteraction", out var onEpInteraction))
-        {
-            myPlayer.OnEpInteraction += onEpInteraction;
-        }
+        myPlayer.OnEpInteraction += NativeDelegates.Bind<Il2CppSystem.Action<ExfiltrationPoint, bool>>(this, nameof(OnEpInteraction));
 
         _localPlayer = myPlayer.TryCast<FikaPlayer>()
             ?? throw new InvalidOperationException("Local player factory did not return a FikaPlayer");
@@ -1433,7 +1348,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         MainThreadDispatcher.Post(() =>
         {
             if (FikaSingleton<IFikaGame>.Instance is not CoopGame coopGame || coopGame._localPlayer == null) return;
-            if (coopGame.GameController.IsServer) return;
+            if (coopGame.GameController.IsServer || FikaBackendUtils.IsReconnect) return;
             AnnounceCharacter(coopGame._localPlayer);
         });
     }
@@ -1481,45 +1396,13 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         return NativeTask.FromManaged(MainThreadDispatcher.RunAsync(() => GameController.StartBotSystemsAndCountdown(controllerSettings, GameWorld)));
     }
 
-    // The native callback is forwarded unchanged: SessionRun's interop parameter is Il2CppSystem.Action,
-    // and a managed closure cannot be marshalled into a native delegate slot.
-    //
-    // The engine calls this from the native PrepareSession (StartCoroutine(SessionRun(complete))) and drives
-    // whatever is returned through its coroutine scheduler. Returning a managed enumerator here
-    // (SessionRunManaged(...).WrapToIl2Cpp(), the 3.0.0 shape) is the hazard that faulted during the host raid
-    // start (analysis/host-raid-coroutine), so the sequence runs on the Update driven pump and the engine
-    // receives an already finished *native* enumerator instead.
-    public override Il2CppSystem.Collections.IEnumerator SessionRun(Il2CppSystem.Action runCallback)
+    public override Il2CppSystem.Collections.IEnumerator SessionRun(Il2CppSystem.Action runCallback) => SessionRunManaged(runCallback).WrapToIl2Cpp();
+
+    private IEnumerator SessionRunManaged(Il2CppSystem.Action runCallback)
     {
-        // The sequence itself is not a member of this class (see SessionPump): this injected method is
-        // called by the engine through the override's vtable slot (a native entry, which is the
-        // legitimate direction), and it must not hand any *injected* method to the native side.
-        SessionPump.Start(this, runCallback ?? FikaGlobals.EmptyNativeAction);
-        return NativeRoutines.Completed();
+        yield return GameController.FinishRaidSetup();
+        yield return global::Fika.Core.Main.Utils.NativeBaseCalls.Call69(this, runCallback);
     }
-
-    // The session start sequence (FinishRaidSetup -> the countdown screen -> the native session coroutine)
-    // used to be here as the private methods StartSessionPump/SessionSequence. It now lives on
-    // Fika.Core.Main.Utils.SessionPump, a plain managed static class: Il2CppInterop registers every
-    // declared method of an injected class with il2cpp - including private ones - and builds a native
-    // trampoline thunk plus a shared managed invoker for each of them. The invoker's closing calli into
-    // such a thunk is what fail-fasted the 2026-10-10 host raid, and the thunk named in that crash was
-    // exactly this class's StartSessionPump (analysis/run-2026-10-10-1553/scan-thunk-result.txt,
-    // analysis/delegate-targets/REPORT.md). The engine's own entry points stay here: the
-    // SessionRun(Il2CppSystem.Action) override above and the parameterless SessionRun()/FixedUpdate()
-    // overrides below.
-
-    /// <summary>Journal labels of the three steps; constants so the journal never allocates for them.</summary>
-    internal const string BoundarySequenceStep1 = "SessionSequence step 1/3 FinishRaidSetup (pump)";
-
-    /// <summary>Journal label of the countdown step - the step the 10:37 crash died inside.</summary>
-    internal const string BoundarySequenceStep2 = "SessionSequence step 2/3 CountdownScreen (pump)";
-
-    /// <summary>Journal label of the step that proves the countdown body returned (written immediately).</summary>
-    internal const string BoundarySequenceStep2Done = "SessionSequence step 2/3 done CountdownScreen returned (pump)";
-
-    /// <summary>Journal label of the native-coroutine step.</summary>
-    internal const string BoundarySequenceStep3 = "SessionSequence step 3/3 native session coroutine (pump)";
 
     public override void Spawn()
     {
@@ -1527,7 +1410,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         {
             coopClientHealthController.Start();
         }
-        _onLocalPlayerDied ??= (System.Action<EDamageType>)HealthController_DiedEvent;
+        _onLocalPlayerDied ??= (Il2CppSystem.Action<EDamageType>)HealthController_DiedEvent;
         _playerOwner.Player.HealthController.remove_DiedEvent(_onLocalPlayerDied);
         _playerOwner.Player.HealthController.add_DiedEvent(_onLocalPlayerDied);
         _playerOwner.Init();
@@ -1542,36 +1425,14 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     /// </summary>
     public override void SessionRun()
     {
-        // The native session coroutine the pump starts (step 3 of SessionSequence) calls this after its
-        // InitSessionUI step; the pump watches the flag to prove the native sequence really ran.
-        _sessionRunReached = true;
-        
-
-        // il2cpp -> managed: an exception here would unwind into the native coroutine with no managed frame
-        // above it, i.e. it would be the runtime's problem instead of a log line. It is caught, reported once
-        // and swallowed, so the native coroutine still reaches the run callback that releases PrepareSession.
-        FikaBoundaries.Run("CoopGame.SessionRun -> GameController.SetupEventsAndExfils",
-            () => GameController.SetupEventsAndExfils(_playerOwner.Player));
+        GameController.SetupEventsAndExfils(_playerOwner.Player);
         SessionStartTime = DateTimeExtensions.Now;
     }
 
     public override void FixedUpdate()
     {
-        // Do nothing, except give the Update driven pump a second, in-scene tick: the session start and the
-        // countdown path are no longer engine coroutines, so if the plugin behaviour ever stopped ticking they
-        // would stall silently. FikaRoutinePump.Tick is frame guarded - only the first tick of a frame runs.
-        // il2cpp calls this directly, so it is a boundary of its own and is guarded like the plugin Update.
-        FikaBoundaries.Run(BoundaryFixedUpdate, static () => FikaRoutinePump.Instance.Tick());
+        // Do nothing
     }
-
-    /// <summary>Journal label of the native InitSessionUI callout.</summary>
-    internal const string BoundaryInitSessionUI = "CoopGame.InitSessionUI (native coroutine -> managed)";
-
-    /// <summary>Journal label of the native SessionRun callout.</summary>
-    internal const string BoundarySessionRun = "CoopGame.SessionRun (native coroutine -> managed)";
-
-    /// <summary>Journal label of the FixedUpdate callout.</summary>
-    internal const string BoundaryFixedUpdate = "CoopGame.FixedUpdate (il2cpp -> managed)";
 
     /// <summary>
     /// Updates a <see cref="ExfiltrationPoint"/> from the server
@@ -1591,18 +1452,6 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
     public override void Dispose()
     {
-        if (_sessionRoutine != null)
-        {
-            FikaRoutinePump.Instance.Stop(_sessionRoutine, "the game is being disposed");
-            _sessionRoutine = null;
-        }
-
-        // (analysis/transit-crash-unload) The game of one raid is being disposed: from here on the world of
-        // that raid is gone for every holder in this process. Dropping the cross-raid holders here as well
-        // (idempotent - the world component and DestroyNetManager call the same method) covers the paths
-        // that reach Dispose without a world teardown, e.g. a raid start that was cancelled.
-        Fika.Core.Main.Utils.WorldLifecycle.MarkWorldTornDown("CoopGame.Dispose");
-
         ClientHearingTable.Instance = null;
         foreach (var player in _players.Values)
         {
@@ -1772,7 +1621,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         {
             Destroy(GameController.TimeManager);
         }
-        if (FikaUiPanels.CanDrive(GameUi.TimerPanel, "CoopGame.HandleLocalPlayerDeath.TimerPanel.Close"))
+        if (GameUi.TimerPanel != null && GameUi.TimerPanel.enabled)
         {
             GameUi.TimerPanel.Close();
         }
@@ -1923,7 +1772,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
         Status = GameStatus.Stopping;
         GameTimer.TryStop();
-        if (FikaUiPanels.CanDrive(gameUI.TimerPanel, "CoopGame.Stop.TimerPanel.Close"))
+        if (gameUI.TimerPanel.isActiveAndEnabled)
         {
             gameUI.TimerPanel.Close();
         }
@@ -1931,7 +1780,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         {
             EnvironmentManager.Instance.Stop();
         }
-        MonoBehaviourSingleton<PreloaderUI>.Instance.StartBlackScreenShow(1f, 1f, (System.Action)stopManager.ExitOverride);
+        MonoBehaviourSingleton<PreloaderUI>.Instance.StartBlackScreenShow(1f, 1f, (Il2CppSystem.Action)stopManager.ExitOverride);
         AppEnvironment.Config.UseSpiritPlayer = false;
     }
 
@@ -1959,6 +1808,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         if (player.InventoryController?.TryCast<ClientInventoryController>() is { } clientInventoryController)
         {
             clientInventoryController.SyncInventoryToProfile();
+            clientInventoryController.LogInventorySnapshot("before-profile-descriptor");
         }
 
         SessionResult parameters = new()
@@ -1976,6 +1826,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
         if (player.InventoryController?.TryCast<ClientInventoryController>() is { } clientInventoryControllerAfterDescriptor)
         {
+            clientInventoryControllerAfterDescriptor.LogInventorySnapshot("after-profile-descriptor");
         }
 
         var sentItems = GetOwnSentItems(player.ProfileId).ToDictionary(pair => pair.Key,
@@ -2130,7 +1981,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         {
             GameTimer.TryStop();
         }
-        if (FikaUiPanels.CanDrive(gameUI.TimerPanel, "CoopGame.StopFromCancel.TimerPanel.Close"))
+        if (gameUI.TimerPanel.enabled)
         {
             gameUI.TimerPanel.Close();
         }
@@ -2139,7 +1990,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         {
             EnvironmentManager.Instance.Stop();
         }
-        MonoBehaviourSingleton<PreloaderUI>.Instance.StartBlackScreenShow(1f, 1f, (System.Action)stopManager.ExitOverride);
+        MonoBehaviourSingleton<PreloaderUI>.Instance.StartBlackScreenShow(1f, 1f, (Il2CppSystem.Action)stopManager.ExitOverride);
         AppEnvironment.Config.UseSpiritPlayer = false;
     }
 
@@ -2194,15 +2045,8 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         }
         _players.Clear();
         GameController.CleanUp();
-        // AP (analysis/nonfika-raid-inertness): the raid of ours is over here, so the raid-kind gate is
-        // closed before the next raid - whoever starts it - is prepared.
-        Fika.Core.Main.Utils.FikaRaidGate.Disarm("CoopGame.CleanUp");
         FikaBackendUtils.CleanUpVariables();
         BTRSide_Patches.Passengers.Clear();
-        // A pooled host operation must not survive into the next raid and time out there.
-        global::Fika.Core.Main.HostClasses.HostOperationWatchdog.Reset();
-        // (analysis/transit-crash-unload) Last stop of a raid: nothing of this world may stay reachable.
-        Fika.Core.Main.Utils.WorldLifecycle.MarkWorldTornDown("CoopGame.CleanUp");
     }
 
     private class ExitManager
@@ -2229,10 +2073,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
                 _logger.LogWarning("Early death save did not complete successfully; continuing with normal raid-end saving: " + exception);
             }
 
-            if (FikaUiPanels.CanDrive(baseLocalGame_0.GameUi.TimerPanel, "CoopGame.ExitAsync.TimerPanel.Close"))
-            {
-                baseLocalGame_0.GameUi.TimerPanel.Close();
-            }
+            baseLocalGame_0.GameUi.TimerPanel.Close();
 
             if (baseLocalGame_0._playerOwner != null)
             {
@@ -2256,7 +2097,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             MonoBehaviourSingleton<BetterAudio>.Instance?.FadeOutVolumeAfterRaid();
 
             var duration = DateTimeExtensions.Now - baseLocalGame_0.SessionStartTime;
-            StaticManager.Instance.WaitSeconds(delay, (System.Action)(System.Action)(() =>
+            StaticManager.Instance.WaitSeconds(delay, (Il2CppSystem.Action)(System.Action)(() =>
             {
                 baseLocalGame_0.Status = GameStatus.Stopped;
                 baseLocalGame_0._callback.Invoke(new Result<ExitStatus, Il2CppSystem.TimeSpan, ClientMetrics>(exitStatus, duration, baseLocalGame_0.CollectMetrics()));

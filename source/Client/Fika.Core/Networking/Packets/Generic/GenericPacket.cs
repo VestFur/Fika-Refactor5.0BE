@@ -1,4 +1,4 @@
-// © 2026 Lacyway All Rights Reserved
+﻿// © 2026 Lacyway All Rights Reserved
 
 using Fika.Core.Networking.Pooling;
 
@@ -15,7 +15,7 @@ public sealed class GenericPacket : INetReusable
 
     public void Execute()
     {
-        SubPacket?.Execute();
+        SubPacket.Execute();
     }
 
     public void Deserialize(NetDataReader reader)
@@ -23,15 +23,6 @@ public sealed class GenericPacket : INetReusable
         NetId = reader.GetInt();
         Type = reader.GetEnum<EGenericSubPacketType>();
         SubPacket = GenericSubPacketPoolManager.Instance.GetPacket<IPoolSubPacket>(Type);
-        // (2026-10-26 W22) Unknown sub-packet type (a peer on a different build): the pool reports it and returns
-        // null. Skipping the body leaves this packet inert instead of throwing inside the network poll loop.
-        if (SubPacket == null)
-        {
-            reader.SkipBytes(reader.AvailableBytes);
-            Type = default;
-            return;
-        }
-
         SubPacket.Deserialize(reader);
     }
 

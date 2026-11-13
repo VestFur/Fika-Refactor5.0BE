@@ -1,4 +1,4 @@
-﻿using Fika.Core.Networking.Packets;
+using Fika.Core.Networking.Packets;
 using Fika.Core.Networking.Packets.Generic;
 using Fika.Core.Networking.Packets.Generic.SubPackets;
 
@@ -35,7 +35,8 @@ internal sealed class GenericSubPacketPoolManager : BasePacketPoolManager<EGener
             SendCharacterPacket.CreateInstance,         // EGenericSubPacketType.SendCharacterPacket = 15
             SyncableItemPacket.CreateInstance,          // EGenericSubPacketType.SyncableItem = 16
             SpawnAI.CreateInstance,                    // EGenericSubPacketType.SpawnAI = 17
-            DialogEntryPacket.CreateInstance           // EGenericSubPacketType.DialogEntry = 18
+            DialogEntryPacket.CreateInstance,          // EGenericSubPacketType.DialogEntry = 18
+            FlareShootReport.CreateInstance             // EGenericSubPacketType.FlareShootReport = 19
         ];
     }
 }

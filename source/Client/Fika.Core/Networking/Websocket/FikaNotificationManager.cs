@@ -26,14 +26,6 @@ internal sealed class FikaNotificationManager : IDisposable
     public string SessionId { get; }
     public bool Connected => _webSocket?.State == WebSocketState.Open;
 
-    /// <summary>
-    /// <see cref="Connected"/> for callers that must not care whether the manager exists yet.
-    /// The presence roster is empty until this socket is up (the server registers a player in
-    /// the socket's connection handler), so the panel asks this before it decides that "nobody
-    /// is online" is the truth.
-    /// </summary>
-    public static bool IsConnected => Instance is { } instance && instance.Connected;
-
     private readonly object _sync = new();
     private readonly CancellationTokenSource _stop = new();
     private ClientWebSocket _webSocket;
@@ -47,54 +39,6 @@ internal sealed class FikaNotificationManager : IDisposable
         SessionId = RequestHandler.SessionId;
         Url = $"{Host}/fika/notification/";
         _ = ConnectLoopAsync();
-    }
-
-    /// <summary>
-    /// Creates the single notification client and records which call site asked for it.
-    ///
-    /// This socket is the client's presence registration: the server adds the player to its
-    /// online list in the connection handler of <c>/fika/notification/</c>
-    /// (<c>FikaServer.WebSockets.NotificationWebSocket.OnConnectionAsync</c> ->
-    /// <c>PresenceService.AddPlayerPresence</c>). If it is never opened, <c>/fika/presence/get</c>
-    /// answers an empty array and the main menu roster shows no row at all - not even the local
-    /// player, which is exactly what the 47888 run showed after the application-level patch went
-    /// dead on the renamed game method.
-    ///
-    /// Creation is asked for from two hooks (the application notification initializer and, as a
-    /// fallback, <c>MenuScreen.Awake</c>), so it has to stay idempotent: a second manager would
-    /// open a second socket and the server treats a second connection of the same session as a
-    /// reconnect, aborting the socket it already had.
-    /// </summary>
-    /// <param name="source">The call site that asked for the manager.</param>
-    /// <returns>The manager that is now alive.</returns>
-    internal static FikaNotificationManager EnsureCreated(string source)
-    {
-        var existing = Instance;
-        if (existing != null)
-        {
-            return existing;
-        }
-
-        // Called from a patch postfix, so a failure here must not travel into the game method
-        // that was patched: it is reported instead and the fallback hook gets another chance.
-        try
-        {
-            var created = new FikaNotificationManager();
-            if (FikaPlugin.Instance != null)
-            {
-                FikaPlugin.Instance.NotificationManager = created;
-            }
-
-            
-            _logger.LogInfo($"Notification websocket client created by {source} ({created.Url})");
-            return created;
-        }
-        catch (Exception exception)
-        {
-            
-            _logger.LogError($"Notification websocket client could not be created by {source}: {exception}");
-            return null;
-        }
     }
 
     public void Connect()
@@ -147,13 +91,6 @@ internal sealed class FikaNotificationManager : IDisposable
                 await ReceiveLoopAsync(socket, _stop.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (_stop.IsCancellationRequested) { break; }
-            catch (Exception ex) when (_stop.IsCancellationRequested && WebSocketShutdown.IsTeardown(ex))
-            {
-                // Close() aborts the socket, and everything that was in flight on it comes back as one of
-                // these. That is the normal end of this loop and not a finding: nothing is logged, and the
-                // connection waiter is not faulted - nobody is waiting on it any more.
-                break;
-            }
             catch (Exception ex)
             {
                 _connected.TrySetException(ex);
@@ -167,10 +104,7 @@ internal sealed class FikaNotificationManager : IDisposable
                 }
                 socket?.Dispose();
             }
-            if (!await WebSocketShutdown.WaitBeforeReconnectAsync(TimeSpan.FromSeconds(10), _stop.Token).ConfigureAwait(false))
-            {
-                break;
-            }
+            if (!_stop.IsCancellationRequested) await Task.Delay(TimeSpan.FromSeconds(10), _stop.Token).ConfigureAwait(false);
         }
     }
 
@@ -180,24 +114,7 @@ internal sealed class FikaNotificationManager : IDisposable
         using var message = new MemoryStream();
         while (socket.State == WebSocketState.Open && !token.IsCancellationRequested)
         {
-            WebSocketReceiveResult result;
-            try
-            {
-                result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                // The manager is closing: the pending read was cancelled, which is exactly how this loop
-                // is supposed to end. It is not a warning and must not be logged as one.
-                return;
-            }
-            catch (Exception exception) when (token.IsCancellationRequested && WebSocketShutdown.IsTeardown(exception))
-            {
-                // Close() aborts the socket; the read that was in flight comes back as an aborted,
-                // disposed or failed stream instead of a clean close frame.
-                return;
-            }
-
+            var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), token).ConfigureAwait(false);
             if (result.MessageType == WebSocketMessageType.Close) return;
             if (result.MessageType != WebSocketMessageType.Text) continue;
             message.Write(buffer, 0, result.Count);

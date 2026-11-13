@@ -43,7 +43,7 @@ public class ArtilleryServerProjectilesPool_CreateNewPoolElement_Patch : ModuleP
         };
         projectile.SetExplosiveItemParams(__instance._artilleryShellingSettings.ProjectileExplosionParams);
         __instance._poolItems.Add(projectile);
-        host.add_UpdateByUnity(projectile.OnUpdate);
+        host.UpdateByUnity += projectile.OnUpdate;
         return false;
     }
 }

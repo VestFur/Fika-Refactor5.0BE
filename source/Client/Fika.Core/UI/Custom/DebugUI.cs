@@ -36,8 +36,8 @@ public class DebugUI : MonoBehaviour
     private bool _isServer;
     private List<FikaPlayer> _alivePlayers;
     private List<FikaPlayer> _aliveBots;
-    private readonly Dictionary<FikaPlayer, System.Action<EFT.Player, EFT.IPlayer, EFT.Ballistics.DamageInfo, EBodyPart>> _playerDeathHandlers = new();
-    private readonly Dictionary<FikaPlayer, System.Action<EFT.Player, EFT.IPlayer, EFT.Ballistics.DamageInfo, EBodyPart>> _botDeathHandlers = new();
+    private readonly Dictionary<FikaPlayer, EFT.OnPlayerDead> _playerDeathHandlers = new();
+    private readonly Dictionary<FikaPlayer, EFT.OnPlayerDead> _botDeathHandlers = new();
 
     private int Ping
     {
@@ -226,7 +226,7 @@ public class DebugUI : MonoBehaviour
 
     private void AddPlayer(FikaPlayer player)
     {
-        System.Action<EFT.Player, EFT.IPlayer, EFT.Ballistics.DamageInfo, EBodyPart> handler = PlayerDied;
+        var handler = Fika.Core.NativeDelegates.Bind<EFT.OnPlayerDead>(this, nameof(PlayerDied));
         _playerDeathHandlers[player] = handler;
         player.OnPlayerDead += handler;
         _alivePlayers.Add(player);
@@ -241,7 +241,7 @@ public class DebugUI : MonoBehaviour
 
     private void AddBot(FikaPlayer bot)
     {
-        System.Action<EFT.Player, EFT.IPlayer, EFT.Ballistics.DamageInfo, EBodyPart> handler = BotDied;
+        var handler = Fika.Core.NativeDelegates.Bind<EFT.OnPlayerDead>(this, nameof(BotDied));
         _botDeathHandlers[bot] = handler;
         bot.OnPlayerDead += handler;
         _aliveBots.Add(bot);

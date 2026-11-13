@@ -57,7 +57,7 @@ public class ArtilleryShellingControllerServer_Init_Patch : ModulePatch
 
         instance._offlineMode = true;
         if (fikaGame.GameController is HostGameController hostGameController)
-            hostGameController.add_UpdateByUnity(instance.OnUpdate);
+            hostGameController.UpdateByUnity += instance.OnUpdate;
 
         var mapConfiguration = instance._currentMapConfiguration;
         if (mapConfiguration.PlanedShellingOn)

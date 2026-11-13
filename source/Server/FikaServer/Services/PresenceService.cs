@@ -1,4 +1,4 @@
-using FikaServer.Models.Enums;
+﻿using FikaServer.Models.Enums;
 using FikaServer.Models.Fika.Presence;
 using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
@@ -45,9 +45,6 @@ public class PresenceService(SaveServer saveServer, TimeUtil timeUtil, ISptLogge
         if (!saveServer.GetProfiles().TryGetValue(sessionID, out var profile) ||
             profile.CharacterData?.PmcData?.Info is null)
         {
-            // This used to return silently, which made "the client connected but never showed
-            // up in the online list" indistinguishable from "the client never connected".
-            logger.Warning($"[Fika Presence] {sessionID} connected but has no PMC profile; no presence entry was created");
             return;
         }
 
@@ -87,28 +84,6 @@ public class PresenceService(SaveServer saveServer, TimeUtil timeUtil, ISptLogge
             {
                 return;
             }
-        }
-
-        // Leaving the loop means this session has no entry. The dictionary used to be filled by
-        // the notification websocket alone (NotificationWebSocket.OnConnectionAsync), so a client
-        // whose /fika/notification/ socket never connected had every presence update dropped in
-        // silence - and /fika/presence/get answered an empty array, which left the main menu
-        // roster without a single row, not even the local player's.
-        // A presence update is proof that the player is online, so it creates the missing entry.
-        // The websocket close handler still removes it when the client leaves.
-        FikaPlayerPresence created = new()
-        {
-            Nickname = profile.CharacterData.PmcData.Info.Nickname,
-            Level = profile.CharacterData.PmcData.Info.Level ?? 0,
-            Activity = NewPresence.Activity,
-            ActivityStartedTimestamp = timeUtil.GetTimeStamp(),
-            RaidInformation = NewPresence.RaidInformation is { } raidInfo ? raidInfo with { } : null
-        };
-
-        if (_onlinePlayers.TryAdd(sessionID, created))
-        {
-            logger.Info($"[Fika Presence] Registered {created.Nickname} from a presence update " +
-                $"(no notification socket had registered them yet; activity={created.Activity})");
         }
     }
 

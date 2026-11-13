@@ -32,11 +32,7 @@ public static class LighthouseTraderZone_Patches
             var allowedPlayers = __instance.allowedPlayers;
             var unallowedPlayers = __instance.unallowedPlayers;
             if (allPlayers.Contains(player)) return false;
-            if (NativeDelegates.TryBindManaged<System.Action<EFT.Player, EFT.IPlayer, EFT.Ballistics.DamageInfo, EBodyPart>>(
-                    __instance, nameof(LighthouseTraderZone.OnPlayerDieInZone), "LighthouseTraderZone.OnPlayerDead", out var dieInZone))
-                {
-                    player.OnPlayerDead += dieInZone;
-                }
+            player.OnPlayerDead += NativeDelegates.Bind<OnPlayerDead>(__instance, nameof(LighthouseTraderZone.OnPlayerDieInZone));
             var flag = player.RecodableItemsHandler.TryToGetRecodableComponent(out RadioTransmitterRecodableComponent radioTransmitterRecodableComponent);
 
             if (player.IsAI && __instance.IsValidAiPlayer(player))
@@ -47,11 +43,7 @@ public static class LighthouseTraderZone_Patches
                 if (coopHandler.MyPlayer == player)
                 {
                     //Todo: Might have to patch SetAgressor as the host and other clients might need to know IsAgressorInLighthouseTraderZone
-                    if (NativeDelegates.TryBindManaged<System.Action<Player, IPlayer>>(
-                        __instance, nameof(LighthouseTraderZone.SetAgressor), "LighthouseTraderZone.SetAgressor", out var agressor))
-                    {
-                        player.ActiveHealthController.OnApplyDamageByPlayer += agressor;
-                    }
+                    player.ActiveHealthController.OnApplyDamageByPlayer += NativeDelegates.Bind<Il2CppSystem.Action<Player, IPlayer>>(__instance, nameof(LighthouseTraderZone.SetAgressor));
                 }
 
                 return false;
@@ -65,28 +57,20 @@ public static class LighthouseTraderZone_Patches
             if (!__instance.IsValidPlayer(radioTransmitterRecodableComponent.Handler))
             {
                 unallowedPlayers.Add(player);
-                // 47888 exposes LighthouseTraderZone.OnPlayerAllowStatusChanged as an event, which cannot be
-                // raised from outside. Notify our own subscribers instead of the zone event.
-                FikaGlobals.LogInfo($"[Lighthouse] player {player.RaidId} is no longer allowed in the trader zone (the 47888 event cannot be raised from outside)");
+                LighthouseTraderZone.OnPlayerAllowStatusChanged?.Invoke(player.RaidId, false);
             }
             else
             {
                 allowedPlayers.Add(player);
-                radioTransmitterRecodableComponent.OnRadioTransmitterStatusChanged += NativeDelegates.BindManaged<System.Action<RadioTransmitterStatus>>(__instance, nameof(LighthouseTraderZone.OnPlayerChangeRadioTransmitterStatus));
+                radioTransmitterRecodableComponent.OnRadioTransmitterStatusChanged += NativeDelegates.Bind<Il2CppSystem.Action<RadioTransmitterStatus>>(__instance, nameof(LighthouseTraderZone.OnPlayerChangeRadioTransmitterStatus));
 
                 if (coopHandler.MyPlayer == player)
                 {
                     //Todo: Might have to patch SetAgressor as the host and other clients might need to know IsAgressorInLighthouseTraderZone
-                    if (NativeDelegates.TryBindManaged<System.Action<Player, IPlayer>>(
-                        __instance, nameof(LighthouseTraderZone.SetAgressor), "LighthouseTraderZone.SetAgressor", out var agressor))
-                    {
-                        player.ActiveHealthController.OnApplyDamageByPlayer += agressor;
-                    }
+                    player.ActiveHealthController.OnApplyDamageByPlayer += NativeDelegates.Bind<Il2CppSystem.Action<Player, IPlayer>>(__instance, nameof(LighthouseTraderZone.SetAgressor));
                 }
 
-                // 47888 exposes LighthouseTraderZone.OnPlayerAllowStatusChanged as an event, which cannot be
-                // raised from outside. Notify our own subscribers instead of the zone event.
-                FikaGlobals.LogInfo($"[Lighthouse] player {player.RaidId} is allowed in the trader zone again (the 47888 event cannot be raised from outside)");
+                LighthouseTraderZone.OnPlayerAllowStatusChanged?.Invoke(player.RaidId, true);
             }
 
             allPlayers.Add(player);
@@ -112,7 +96,7 @@ public static class LighthouseTraderZone_Patches
                 return false;
             }
 
-            player.OnPlayerDead -= NativeDelegates.BindManaged<System.Action<EFT.Player, EFT.IPlayer, EFT.Ballistics.DamageInfo, EBodyPart>>(__instance, nameof(LighthouseTraderZone.OnPlayerDieInZone));
+            player.OnPlayerDead -= NativeDelegates.Bind<OnPlayerDead>(__instance, nameof(LighthouseTraderZone.OnPlayerDieInZone));
             player.RecodableItemsHandler.TryToGetRecodableComponent(out RadioTransmitterRecodableComponent radioTransmitterRecodableComponent);
 
             if (__instance.allowedPlayers.Contains(player))
@@ -121,12 +105,12 @@ public static class LighthouseTraderZone_Patches
 
                 if (radioTransmitterRecodableComponent != null)
                 {
-                    radioTransmitterRecodableComponent.OnRadioTransmitterStatusChanged -= NativeDelegates.BindManaged<System.Action<RadioTransmitterStatus>>(__instance, nameof(LighthouseTraderZone.OnPlayerChangeRadioTransmitterStatus));
+                    radioTransmitterRecodableComponent.OnRadioTransmitterStatusChanged -= NativeDelegates.Bind<Il2CppSystem.Action<RadioTransmitterStatus>>(__instance, nameof(LighthouseTraderZone.OnPlayerChangeRadioTransmitterStatus));
                 }
 
                 if (coopHandler.MyPlayer == player)
                 {
-                    player.ActiveHealthController.OnApplyDamageByPlayer -= NativeDelegates.BindManaged<System.Action<Player, IPlayer>>(__instance, nameof(LighthouseTraderZone.SetAgressor));
+                    player.ActiveHealthController.OnApplyDamageByPlayer -= NativeDelegates.Bind<Il2CppSystem.Action<Player, IPlayer>>(__instance, nameof(LighthouseTraderZone.SetAgressor));
                 }
             }
             else

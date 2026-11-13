@@ -1,7 +1,5 @@
 using Fika.Core.Main.BaseClasses;
 using CommonAssets.Scripts.ArtilleryShelling.Client;
-using CommonAssets.Scripts.Game;
-using EFT.Interactive.SecretExfiltrations;
 using EFT.InventoryLogic;
 using EFT.Vehicle;
 using EFT.Weather;
@@ -62,10 +60,6 @@ public abstract class BaseGameController
         IsServer = FikaBackendUtils.IsServer;
 
         Logger = BepInEx.Logging.Logger.CreateLogSource(GetType().Name);
-
-        // (analysis/session-log-archive) This source is where the game-mode classes write their judge lines
-        // ([ZoneDiag], [BossDiag] from the host controller). Offering it to the mirror puts them into
-        // Fika-diagnostics.log too, which is the file that survives the next start; 
     }
 
     public ManualLogSource Logger { get; set; }
@@ -158,17 +152,7 @@ public abstract class BaseGameController
     protected GameWorld _gameWorld;
     protected IEftSession _backendSession;
     protected Coroutine _extractRoutine;
-    // The VOIP fix used to be an engine coroutine. It is started from inside the countdown routine, i.e. from
-    // inside another coroutine's MoveNext - the shape that faulted (analysis/host-raid-coroutine) - so it runs
-    // on the Update driven pump now and is stopped through the pump handle.
-    private FikaRoutinePump.RoutineHandle _voipAudioFixRoutine;
-    // In-raid HUD restore (analysis/inraid-ui): the pump handle of the routine that switches the HUD
-    // hierarchy back on after a skipped countdown body. Kept so a second call cannot stack a second copy.
-    private FikaRoutinePump.RoutineHandle _inRaidHudRestoreRoutine;
-    // Opening countdown (analysis/countdown-restore): the pump handle of the post-processing re-assert routine
-    // (step 4/4), i.e. the body of statement 5/8 started by the countdown restore path. Kept so a second call
-    // cannot stack a second copy and so CleanUp can stop it.
-    private FikaRoutinePump.RoutineHandle _countdownReassertRoutine;
+    private Coroutine _voipAudioFixRoutine;
     private readonly List<GameObject> _mutedVoiceSources = [];
 
     public void SetLocalPlayer(FikaPlayer player)
@@ -271,7 +255,7 @@ public abstract class BaseGameController
 
     public IEnumerator CreateStashes()
     {
-        WaitSeconds waitForSeconds = new(0.5f);
+        WaitForSeconds waitForSeconds = new(0.5f);
         if (_gameWorld.TransitController != null)
         {
             while (_gameWorld.TransitController.TransferItemsController == null)
@@ -339,15 +323,8 @@ public abstract class BaseGameController
     /// </summary>
     public virtual IEnumerator FinishRaidSetup()
     {
-        // Round 3 (analysis/countdown-bisect-round3): the 13:45 run froze Time.frameCount at 17849 for
-        // 3.1 s inside this step - the pump wrote its tick label and then the main thread wrote nothing at
-        // all until the frame after - and no label named the statement. Every statement of this routine
-        // that can take real time therefore writes its own label before it runs and a RETURNED label after
-        // it. Diagnostics only: no switch, no behaviour change, two writes per raid per statement.
-
         if (!FikaBackendUtils.IsHeadless)
             LoadingScreenUI.Instance.UpdateAndBroadcast(90f);
-
 
         _abstractGame.SetMatchmakerStatus(LocaleUtils.UI_FINISHING_RAID_INIT.Localized());
 
@@ -357,13 +334,11 @@ public abstract class BaseGameController
             var musicTask = Singleton<GUISounds>.Instance.FadeBackgroundMusicAsync(false, Il2CppSystem.Threading.CancellationToken.None);
             while (!musicTask.IsCompleted)
                 yield return endOfFrame;
-
         }
 
         AudioUtils.ResetAudioBuffer();
 
         _gameWorld.TriggersModule = _abstractGame.gameObject.AddComponent<LocalFikaTriggersModule>();
-
         _gameWorld.FillLampControllers();
         if (Location.Id == "laboratory")
         {
@@ -381,20 +356,16 @@ public abstract class BaseGameController
 #if DEBUG
         Logger.LogWarning($"Running season handler for season: {Season}");
 #endif
-        // The season statement includes its own per-frame wait, so the RETURNED label follows the loop: a
-        // trail that ends on the label above is a routine that was inside the season work.
         var runSeason = seasonController.Run(Season, SeasonsSettings, FikaBackendUtils.IsHeadless);
         while (!runSeason.IsCompleted)
         {
             yield return endOfFrame;
         }
 
-
         if (MonoBehaviourSingleton<RadioBroadcastController>.Instantiated)
         {
             MonoBehaviourSingleton<RadioBroadcastController>.Instance.StartBroadcast();
         }
-
     }
 
     public abstract Task GenerateWeathers();
@@ -403,7 +374,7 @@ public abstract class BaseGameController
     {
         FikaBackendUtils.GroupPlayers.Clear();
 
-        var timeBeforeDeployLocal = Singleton<GlobalConfiguration>.Instance.TimeBeforeDeployLocal;
+        var timeBeforeDeployLocal = FikaBackendUtils.IsReconnect ? 3 : Singleton<GlobalConfiguration>.Instance.TimeBeforeDeployLocal;
 #if DEBUG
         timeBeforeDeployLocal = 3;
 #endif
@@ -411,308 +382,37 @@ public abstract class BaseGameController
 
         NetManagerUtils.DisableLoadingScreenUI();
 
-        // ---------------------------------------------------------------------------------------
-        // Bisect surface (round 1: analysis/countdown-bisect, round 2: analysis/countdown-bisect-round2).
-        // Round 1 put the three cosmetic statements behind a switch and shipped them off; the 11:17 run
-        // still died inside this body with all three off, and the trail did not name a statement because
-        // its persistor had stopped 14 s earlier. Round 2 therefore bisects the *kept* statements too:
-        // every one of them has its own label and its own switch (all shipped ON), the label is written to
-        // the crash trail immediately - one WriteFile on this thread, through the label handle - and the
-        // master switch 'Skip Countdown Body' (shipped ON) skips them all and jumps straight to the deploy
-        // wait, which is the raid that starts no matter which statement is the aborter.
-        // ---------------------------------------------------------------------------------------
-
         var dateTime = DateTimeExtensions.Now.AddSeconds(timeBeforeDeployLocal);
-        var bisect = CountdownBisect.Read();
-        // The opening countdown (analysis/countdown-restore) is an independent read: it decides whether the
-        // countdown the player sees is put back below, while the master switch keeps skipping the body. It is
-        // reported on its own line so the next crash is read against the switches that were really in force.
-        var restore = CountdownRestore.Read();
-        // Set by the master-switch branch below when the restore path really put the overlay up: only then does
-        // the teardown after the deploy wait have anything to take down.
-        var countdownOverlayShown = false;
-        
-        
-
-        // Line 389 - cosmetic, switch 'Show Final Countdown Screen' (default off).
-        // The interop does expose what this call needs: the controller's ctor
-        // (EFT.Profile, Il2CppSystem.DateTime) and ShowScreen(EFT.UI.Screens.EScreenState) on its
-        // generic ScreenController base, with EScreenState.Root = 2. The call is therefore well formed and is
-        // kept exactly as upstream wrote it - it is off by default only because it is the first managed
-        // call site in the body and its call target is a doubly nested generic interop type, which is the
-        // shape a JIT/call-site decision dies on.
-        if (!bisect.SkipBody && bisect.Screen)
-        {
-            new MatchmakerFinalCountdown.FinalCountdownScreenController(profile, dateTime).ShowScreen(EScreenState.Root);
-        }
-
-        // Lines 390-394: the raid start audio fade. NOT cosmetic, despite what the bisect round called it.
-        // While the master switch skipped this body, BetterAudio never faded back in, so every sound except
-        // the player's own stayed at the menu's faded-out volume (reported 2026-10-10: "everything is quiet
-        // except the player"). It runs unconditionally now; neither bisect switch gates it any more.
+        new MatchmakerFinalCountdown.FinalCountdownScreenController(profile, dateTime).ShowScreen(EScreenState.Root);
         if (MonoBehaviourSingleton<AmbientAudioSystem>.Instantiated)
         {
             MonoBehaviourSingleton<AmbientAudioSystem>.Instance.Initialize();
         }
-
         MonoBehaviourSingleton<BetterAudio>.Instance.FadeInVolumeBeforeRaid(timeBeforeDeployLocal);
+        Singleton<GUISounds>.Instance.BackgroundMusicActive = false;
+        Singleton<GUISounds>.Instance.StopMenuBackgroundMusicWithDelay(timeBeforeDeployLocal);
+        _abstractGame.GameUi.gameObject.SetActive(true);
+        _abstractGame.GameUi.TimerPanel.ProfileId = profileId;
+        yield return new WaitForSeconds(timeBeforeDeployLocal);
 
-        // Lines 395-396 - cosmetic, switch 'Raid Start Menu Music' (default off).
-        if (!bisect.SkipBody && bisect.MenuMusic)
+        // SPT 5 can leave the final-countdown post-processing/screen state
+        // active when Fika bypasses the native LocalGame startup coroutine.
+        // The result is a live raid with a permanently blurred background.
+        // Restore the raid view after the countdown has elapsed, without
+        // touching gameplay effects such as damage/death blur later in raid.
+        RestoreRaidViewAfterCountdown();
+        // The native countdown screen can apply its camera post-processing one
+        // frame after the screen is closed. Re-assert the clear state for a few
+        // frames so the first-person view cannot remain permanently blurred.
+        _abstractGame.StartCoroutine(RestoreRaidViewAfterCountdownRoutine());
+
+        SyncTransitControllers(profileId);
+        FikaEventDispatcher.DispatchEvent(new FikaRaidStartedEvent(FikaBackendUtils.IsServer));
+
+        if (FikaSingleton<IFikaNetworkManager>.Instance.AllowVOIP && !FikaBackendUtils.IsHeadless)
         {
-            Singleton<GUISounds>.Instance.BackgroundMusicActive = false;
-            Singleton<GUISounds>.Instance.StopMenuBackgroundMusicWithDelay(timeBeforeDeployLocal);
+            _voipAudioFixRoutine = _abstractGame.StartCoroutine(FixVOIPAudioDevice());
         }
-
-        // The master switch: not one native object is touched in this body. If the trail's last label is
-        // the SKIP line below, the aborter is not in this body at all - the next candidates are the deploy
-        // wait and whatever else runs while it is pending.
-        if (bisect.SkipBody)
-        {
-            
-
-            // ---------------------------------------------------------------------------------------
-            // The opening countdown (analysis/countdown-restore).
-            //
-            // The master switch is what removes the countdown the player sees: with it ON this routine jumps
-            // straight to the deploy wait, so the wait happens with no countdown screen up and the player
-            // deploys out of a screen that never counted anything down. This block puts the countdown back
-            // *without* turning the master switch off: it runs statement 389 (the vanilla
-            // FinalCountdownScreenController overlay), the deploy wait below is that overlay's clock, and the
-            // teardown after the wait closes it again and restores what it left behind.
-            //
-            // Why it can run at all: the routine is no longer the suspect. The trail of the last raids shows
-            // the whole flow - body entered, master switch, the wait, body done - and the fail fast that made
-            // the master switch necessary was raised *while this routine was parked in the wait*, by a native
-            // -> managed callout into Fika's own observed-player override (analysis/countdown-bisect-round3
-            // section 1.2), not by a statement of this body. Everything this block runs obeys the three rules
-            // the port's crashes produced: no managed read of an engine WaitForSeconds (the wait is the
-            // managed WaitSeconds), no engine coroutine started from managed code, no engine reflection into an
-            // injected method - both call sites of this path are managed -> native on a *native* object (the
-            // countdown screen controller, the EFT screen manager).
-            //
-            // Nothing here runs while the body runs: with the master switch OFF the statements above show the
-            // countdown themselves under their own switches, and this path stays out of the way.
-            // ---------------------------------------------------------------------------------------
-            countdownOverlayShown = CountdownRestore.ShowIfEnabled(restore, profile, dateTime);
-        }
-        else
-        {
-            // Kept statement 1/8: the raid needs the game UI (native hierarchy activation).
-            if (bisect.GameUi)
-            {
-                _abstractGame.GameUi.gameObject.SetActive(true);
-            }
-            else
-            {
-            }
-
-            // Kept statement 2/8: the extraction timer's profile binding - a managed call into a native
-            // MonoBehaviour setter, the same panel the port had to guard in analysis/ui-log-noise.
-            if (bisect.TimerPanel)
-            {
-                _abstractGame.GameUi.TimerPanel.ProfileId = profileId;
-            }
-            else
-            {
-            }
-        }
-
-        // Kept statement 3/8: the deploy wait. Its completion is what writes 'step 2/3 done'.
-        // It runs with the master switch on and off: the skip path keeps the deploy timing, so the session
-        // sequence, the native session coroutine and everything downstream keep the same schedule.
-        if (bisect.DeployWait)
-        {
-            // Round 3: the wait is bracketed at both ends. The 13:45 trail ended on the line above and
-            // nothing in it said whether the process died while this routine was parked or in the first
-            // statement after the wait - these two labels make that readable, and the pump writes its own
-            // 'pump wait: ...' pair around the same wait (FikaRoutinePump.Routine.TraceWaitEntered/Returned).
-            yield return new WaitSeconds(timeBeforeDeployLocal);
-        }
-
-
-        // ---------------------------------------------------------------------------------------------
-        // The countdown's teardown (analysis/countdown-restore), steps 2/4-4/4.
-        //
-        // It runs only when the restore path above really put the overlay up: a raid with the master switch
-        // off ran the upstream statements instead, and a raid whose overlay switch is off has nothing to take
-        // down - the trail writes which of the two it was instead of leaving a silent gap. Every step is its
-        // own label and its own switch, so a trail that ends here names the step that died, and the switch of
-        // that step is the one line that takes it out again.
-        // ---------------------------------------------------------------------------------------------
-        if (countdownOverlayShown)
-        {
-
-            // Step 2/4 - take the overlay down again. On its own switch: "the overlay could not be closed" and
-            // "the raid view was not restored" are different faults and must not share a label.
-            CountdownRestore.CloseIfEnabled(restore);
-
-            // Step 3/4 - the raid view the countdown left behind: the same statement 4/8 the vanilla tail
-            // runs, with its owner re-ready, reused rather than re-derived. It runs after the close on
-            // purpose: closing the screen is what the restore then has to clean up after.
-            if (restore.ViewRestore)
-            {
-                if (FikaBoundaries.Run(CountdownRestore.BoundaryViewRestore, () => RestoreRaidViewAfterCountdown()))
-                {
-                }
-            }
-            else
-            {
-            }
-
-            // Step 4/4 - the native screen can apply its post-processing one frame after it closed (the reason
-            // statement 5/8 exists). Started on the Update pump: a managed enumerator handed to the engine
-            // from inside this routine is the shape that faulted (analysis/host-raid-coroutine).
-            if (restore.Reassert)
-            {
-                if (FikaBoundaries.Run(CountdownRestore.BoundaryReassert, () =>
-                {
-                    _countdownReassertRoutine = FikaRoutinePump.Instance.Start(RestoreRaidViewAfterCountdownRoutine(),
-                        "RestoreRaidViewAfterCountdown (countdown restore)");
-                }))
-                {
-                }
-            }
-            else
-            {
-            }
-
-        }
-        else
-        {
-        }
-
-        // Round 3 gate: the post-wait block (statements 4/8-8/8) has its own master switch now, so the
-        // shipped default reaches the session sequence with the whole countdown tail short-circuited. It is
-        // skipped when 'Skip Post Wait Block' is on (the shipped default) or when 'Skip Countdown Body' is
-        // on; the trail writes which of the two did it, so a raid that starts is never mistaken for a raid
-        // in which a tail statement ran.
-        var runPostWait = !bisect.SkipBody && !bisect.SkipPostWait;
-        if (!runPostWait)
-        {
-        }
-        else
-        {
-        }
-
-        if (runPostWait)
-        {
-            // Kept statement 4/8: SPT 5 can leave the final-countdown post-processing/screen state active
-            // when Fika bypasses the native LocalGame startup coroutine - a live raid with a permanently
-            // blurred background. Restore the raid view after the countdown has elapsed, without touching
-            // gameplay effects such as damage/death blur later in raid.
-            if (bisect.RestoreRaidView)
-            {
-                RestoreRaidViewAfterCountdown();
-            }
-            else
-            {
-            }
-
-            // Kept statement 5/8: the native countdown screen can apply its camera post-processing one
-            // frame after the screen is closed. Re-assert the clear state for a few frames so the
-            // first-person view cannot remain permanently blurred. Driven by the Update pump instead of the
-            // engine: a managed enumerator handed to the engine from inside this routine is the shape that
-            // faulted during the host raid start (analysis/host-raid-coroutine).
-            if (bisect.RestoreRoutine)
-            {
-                FikaBoundaries.Run(CountdownBisect.BoundaryRestoreRoutine, () =>
-                {
-                    FikaRoutinePump.Instance.Start(RestoreRaidViewAfterCountdownRoutine(), "RestoreRaidViewAfterCountdown");
-                });
-            }
-            else
-            {
-            }
-
-            // Kept statement 6/8: the transit controllers.
-            if (bisect.SyncTransits)
-            {
-                SyncTransitControllers(profileId);
-            }
-            else
-            {
-            }
-
-            // Kept statement 7/8: the raid-started event. Inside a boundary of its own: a subscriber that
-            // throws must not unwind into the pump (it is reported as a [Boundary] failure instead).
-            if (bisect.RaidStartedEvent)
-            {
-                FikaBoundaries.Run(CountdownBisect.BoundaryRaidStartedEvent, () =>
-                {
-                    FikaEventDispatcher.DispatchEvent(new FikaRaidStartedEvent(FikaBackendUtils.IsServer));
-                });
-            }
-            else
-            {
-            }
-
-            // Kept statement 8/8: the VOIP device fix (Dissonance natives), started on the pump.
-            if (bisect.VoipFix)
-            {
-                FikaBoundaries.Run(CountdownBisect.BoundaryVoipFix, () =>
-                {
-                    if (FikaSingleton<IFikaNetworkManager>.Instance.AllowVOIP && !FikaBackendUtils.IsHeadless)
-                    {
-                        _voipAudioFixRoutine = FikaRoutinePump.Instance.Start(FixVOIPAudioDevice(), "FixVOIPAudioDevice");
-                    }
-                });
-            }
-            else
-            {
-            }
-
-        }
-
-        // ---------------------------------------------------------------------------------------------
-        // In-raid HUD restore (analysis/inraid-ui).
-        //
-        // Statements 1/8 and 2/8 are the two statements that switch the raid HUD hierarchy on. While a
-        // master switch is ON they do not run, and the HUD then never appears in the raid at all: the
-        // GameUI root stays inactive, so the extraction timer panel (EFT.UI.ExtractionTimersPanel, whose
-        // GameObject is 'TimerPanel') and the battle-UI screen (EFT.UI.BattleUIScreen, created by
-        // CoopGame.EnsurePlayerOwnerReady) stay inactive with it. The symptom is the one reported on
-        // 2026-10-10: the timer key does nothing - no extraction point list, no remaining time, no
-        // extraction countdown.
-        //
-        // This block restores the HUD without re-enabling either skipped statement:
-        //   * it runs only when the body really was skipped (bisect.SkipBody), so a raid with the master
-        //     switch OFF keeps the upstream behaviour exactly as it is;
-        //   * it runs as a pump routine, i.e. its first step executes a frame later and off the back of
-        //     the session sequence, on the same Update tick the countdown itself used;
-        //   * every engine call in it sits in its own FikaBoundaries.Run/try-catch, so a step that fails
-        //     is named in the journal and the raid continues;
-        //   * it reuses the two calls the skipped statements make and nothing else - it does not run the
-        //     cosmetic statements, the post-wait statements or the VOIP fix.
-        //
-        // The one behaviour it adds on top of a plain re-run of 1/8 and 2/8 is the SetTime re-push: the
-        // panel's extraction list is filled at spawn, and that drive is skipped while the panel is closed
-        // (HostGameController.cs:991, 4 [PanelGuard] lines in the 21:35 raid), so activating the hierarchy
-        // alone would show an empty panel. SetTime is the same call the spawn path makes.
-        // ---------------------------------------------------------------------------------------------
-        if (bisect.SkipBody && ReadRestoreHudFlag())
-        {
-            try
-            {
-                _inRaidHudRestoreRoutine = FikaRoutinePump.Instance.Start(RestoreInRaidHudRoutine(),
-                    "RestoreInRaidHud");
-                
-            }
-            catch (Exception exception)
-            {
-                FikaBoundaries.Fail(CountdownBisect.BoundaryHudRestore, exception);
-            }
-        }
-        else if (!bisect.SkipBody)
-        {
-            
-        }
-        else
-        {
-            
-        }
-
-        
     }
 
     private void RestoreRaidViewAfterCountdown(bool initializeOwner = true)
@@ -815,35 +515,10 @@ public abstract class BaseGameController
                         distort.Distortion = 0f;
                     }
 
-                    // [NvgDiag] Night and thermal vision are rendered by the camera
-                    // effects themselves: BSG.CameraEffects.NightVision /
-                    // ThermalVision blit their material in OnPreCull and clear it,
-                    // their command buffer and the _NightVisionOn shader global in
-                    // OnDisable. Pressing the device key only calls Switch(bool) on
-                    // the already running component, and nothing inside the effect
-                    // ever re-enables it. Disabling them here therefore killed night
-                    // vision for the rest of the raid: the key and the headwear state
-                    // still reacted, the picture never changed. Force them into a
-                    // clean "off" state instead of switching the components off.
-                    ResetVisionEffect(cameraManager.NightVision, "NightVision");
-                    ResetVisionEffect(cameraManager.ThermalVision, "ThermalVision");
-
                     var zBlur = cameraManager.NightVisionZBlur;
-                    if (zBlur != null)
+                    if (zBlur != null && zBlur.IsApplied)
                     {
-                        if (zBlur.IsApplied)
-                        {
-                            zBlur.Apply(false);
-                        }
-
-                        if (!zBlur.enabled)
-                        {
-                            // The night vision effect drives this blur through its
-                            // Construct(NightVisionZBlur) field; a disabled component
-                            // would silently drop it once the device is switched on.
-                            zBlur.enabled = true;
-                            Logger.LogWarning($"[NvgRepair] NightVisionZBlur was disabled at raid start; re-enabled it");
-                        }
+                        zBlur.Apply(false);
                     }
 
                     // A few SPT 5 post-process components can remain enabled
@@ -851,12 +526,8 @@ public abstract class BaseGameController
                     // IL2CPP Fika raid their native materials are not always
                     // initialized, and the component then writes a solid
                     // black frame even though the FPS camera itself is active.
-                    // These are menu/countdown presentation effects.  The night
-                    // and thermal vision effects are NOT in this list any more:
-                    // they are gameplay effects that EFT only ever re-applies by
-                    // calling Switch(bool) on the component it created, so
-                    // switching them off disabled them for the whole raid - see
-                    // analysis/night-vision/REPORT.md.
+                    // These are menu/countdown presentation effects; gameplay
+                    // effects are re-applied by EFT when actually needed.
                     foreach (var effect in camera.GetComponents<MonoBehaviour>())
                     {
                         if (effect == null)
@@ -865,11 +536,9 @@ public abstract class BaseGameController
                         }
 
                         var effectName = effect.GetType().Name;
-                        // The vision effects (NightVision / ThermalVision /
-                        // NightVisionZBlur) are deliberately absent: they must stay
-                        // enabled for the whole raid, see ResetVisionEffect below.
-                        if (effectName is "CC_Vintage" or "DesaturateEffect" or
-                            "PostprocessGrayscale" or "DistortCameraFX")
+                        if (effectName is "ThermalVision" or "NightVision" or "CC_Vintage" or
+                            "DesaturateEffect" or "PostprocessGrayscale" or "DistortCameraFX" or
+                            "NightVisionZBlur")
                         {
                             effect.enabled = false;
                         }
@@ -880,8 +549,9 @@ public abstract class BaseGameController
                     // Unity component name as a fallback.
                     foreach (var effectName in new[]
                     {
-                        "CC_Vintage", "DesaturateEffect",
-                        "PostprocessGrayscale", "DistortCameraFX"
+                        "ThermalVision", "NightVision", "CC_Vintage",
+                        "DesaturateEffect", "PostprocessGrayscale",
+                        "DistortCameraFX", "NightVisionZBlur"
                     })
                     {
                         var component = camera.GetComponent(effectName);
@@ -967,117 +637,6 @@ public abstract class BaseGameController
         }
     }
 
-    /// <summary>
-    /// Puts a native vision camera effect (<c>BSG.CameraEffects.NightVision</c> or
-    /// <c>ThermalVision</c>) into a clean "off" state <b>without</b> disabling the
-    /// component.
-    /// <para>
-    /// Both effects render from <c>OnPreCull</c>, which Unity only calls while the
-    /// behaviour is enabled. Their <c>OnDisable</c> clears the night vision material
-    /// and the <c>_NightVisionOn</c> shader global, and neither effect ever enables
-    /// itself again - the device key only calls <c>Switch(bool)</c> on the running
-    /// component. Turning the components off here (as the countdown cleanup used to
-    /// do) is therefore what made night vision unusable for the rest of the raid.
-    /// An effect that is enabled and has <c>On == false</c> draws nothing: its
-    /// OnPreCull returns after writing 0 to the shader global, so the leftover-menu
-    /// black frame this cleanup was written for cannot come back through this path.
-    /// </para>
-    /// </summary>
-    private void ResetVisionEffect(Behaviour effect, string label)
-    {
-        if (effect == null)
-        {
-            return;
-        }
-
-        try
-        {
-            if (!effect.enabled)
-            {
-                effect.enabled = true;
-                Logger.LogWarning($"[NvgRepair] {label} was disabled at raid start; re-enabled it " +
-                    "so the headwear device key can drive it");
-            }
-
-            // The camera effects live in BSG.CameraEffects (night vision) and the
-            // global namespace (thermal vision); this file's EFT.InventoryLogic
-            // import would otherwise resolve these names to the item classes.
-            if (effect.TryCast<BSG.CameraEffects.NightVision>() is { } nightVision)
-            {
-                if (nightVision.InProcessSwitching)
-                {
-                    nightVision.FastForwardSwitch();
-                }
-
-                // (2026-10-17) A player wearing the device with it switched on keeps it: forcing the
-                // effect off here made the headwear and the picture disagree for the rest of the raid.
-                if (IsDeviceSwitchedOn(nightVision: true))
-                {
-                    return;
-                }
-
-                if (nightVision.On)
-                {
-                    nightVision.Switch(false);
-                }
-
-                return;
-            }
-
-            if (effect.TryCast<global::ThermalVision>() is { } thermal)
-            {
-                if (thermal.InProcessSwitching)
-                {
-                    thermal.FastForwardSwitch();
-                }
-
-                if (IsDeviceSwitchedOn(nightVision: false))
-                {
-                    return;
-                }
-
-                if (thermal.On)
-                {
-                    thermal.Switch(false);
-                }
-            }
-        }
-        catch (Exception exception)
-        {
-            Logger.LogError($"[NvgRepair] resetting {label} failed: {exception.Message}");
-        }
-    }
-
-    /// <summary>
-    /// Whether the local player's night-vision (or thermal) headwear device is switched on. Read through
-    /// the observer of the player, the same source the device key writes. Any failure answers false, i.e.
-    /// the cleanup keeps the behaviour it had before this guard existed.
-    /// </summary>
-    private static bool IsDeviceSwitchedOn(bool nightVision)
-    {
-        try
-        {
-            var player = GamePlayerOwner.MyPlayer;
-            if (player == null)
-            {
-                return false;
-            }
-
-            if (nightVision)
-            {
-                var component = player.NightVisionObserver?.Component;
-                return component != null && component.Togglable.On;
-            }
-
-            var thermal = player.ThermalVisionObserver?.Component;
-            return thermal != null && thermal.Togglable.On;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
     private IEnumerator RestoreRaidViewAfterCountdownRoutine()
     {
         // Run after the native screen's close/LateUpdate callbacks too.
@@ -1100,180 +659,6 @@ public abstract class BaseGameController
         }
     }
 
-    /// <summary>
-    /// The 'Countdown: Restore In-Raid HUD' switch (config, default ON). A missing entry means ON: the raid
-    /// HUD is what the player sees, and the element itself reports and continues.
-    /// </summary>
-    private static bool ReadRestoreHudFlag()
-    {
-        try
-        {
-            var settings = FikaPlugin.Instance?.Settings;
-            if (settings?.CountdownRestoreHud is null)
-            {
-                return true;
-            }
-
-            return settings.CountdownRestoreHud.Value;
-        }
-        catch (Exception exception)
-        {
-            
-            return true;
-        }
-    }
-
-    /// <summary>
-    /// Restores the in-raid HUD after a countdown body that a master switch skipped (analysis/inraid-ui).
-    ///
-    /// The two statements that switch the HUD hierarchy on - 1/8 <c>GameUi.gameObject.SetActive(true)</c> and
-    /// 2/8 <c>GameUi.TimerPanel.ProfileId = profileId</c> - are skipped while 'Skip Countdown Body' is ON, and
-    /// the whole hierarchy (the GameUI root, <c>EFT.UI.ExtractionTimersPanel</c> and the
-    /// <c>EFT.UI.BattleUIScreen</c> created by <see cref="CoopGame.EnsurePlayerOwnerReady"/>) then stays
-    /// inactive for the entire raid: the timer key shows nothing and no engine coroutine may run on those
-    /// panels.
-    ///
-    /// This routine repeats those two statements and the panel's spawn-time <c>SetTime</c> drive, on the
-    /// Update pump, one step per frame, every step inside <see cref="FikaBoundaries.Run"/> so a failure is
-    /// named in the journal instead of unwinding into the session sequence. Nothing else of the countdown
-    /// body runs.
-    /// </summary>
-    private IEnumerator RestoreInRaidHudRoutine()
-    {
-        try
-        {
-            var gameUi = _abstractGame?.GameUi;
-            if (gameUi == null)
-            {
-                
-                yield break;
-            }
-
-            // Let the deploy frame settle before the hierarchy is switched on. A skipped body means this
-            // routine was started in the frame the countdown body returned, which is also the frame the
-            // session sequence moves into its last step; two frames keep the hierarchy activation out of
-            // that step's window.
-            yield return null;
-            yield return null;
-
-            // ---- 1/8 (equivalent): activate the HUD hierarchy -------------------------------------------------
-            var gameUiObject = FikaUiPanels.DescribeObject(gameUi, "the game UI reference could not be read");
-            try
-            {
-                if (gameUi.gameObject.activeSelf)
-                {
-                    
-                }
-                else
-                {
-                    // This is statement 1/8 of the countdown, the one call that switches the whole HUD on.
-                    // Its five guarded siblings in the game code are only added when it can run: see
-                    // FikaBoundaries.Run.
-                    gameUi.gameObject.SetActive(true);
-                    
-                }
-            }
-            catch (Exception exception)
-            {
-                
-            }
-
-            // ---- 2/8 (equivalent): bind the extraction timer panel and fill it -------------------------------
-            var timerPanel = gameUi.TimerPanel;
-            if (timerPanel == null)
-            {
-                
-                yield break;
-            }
-
-            var profileId = _abstractGame.ProfileId;
-            if (!string.IsNullOrEmpty(profileId))
-            {
-                FikaBoundaries.Run("HudRestore: bind the extraction timer panel (countdown statement 2/8)",
-                    () => timerPanel.ProfileId = profileId);
-            }
-
-            // The panel's extraction list is filled at spawn, and that drive is skipped while the panel is
-            // closed (HostGameController.Spawn -> FikaUiPanels.CanDrive). Activating the hierarchy alone
-            // would therefore show an empty panel, so the same SetTime the spawn path makes is repeated here
-            // - now that the panel is live.
-            if (_abstractGame is CoopGame coopGame && !FikaBackendUtils.IsHeadless)
-            {
-                FikaBoundaries.Run("HudRestore: re-push the extraction list into the panel (SetTime, as at spawn)",
-                    () =>
-                    {
-                        // The list this profile is entitled to, resolved exactly as the spawn path does it
-                        // (HostGameController.Spawn): the scav sets come from the scav claim, everyone else
-                        // from the profile's eligible points.
-                        var exfilController = ExfiltrationController.Instance;
-                        if (exfilController == null)
-                        {
-                            
-                            return;
-                        }
-
-                        exfilController.InitSecretExfils(_localPlayer);
-                        ExfiltrationPoint[] exfilPoints;
-                        SecretExfiltrationPoint[] secretExfilPoints;
-                        if (coopGame.Profile?.Info?.Side == EPlayerSide.Savage)
-                        {
-                            exfilController.ScavExfiltrationClaim(_localPlayer.Position, coopGame.ProfileId,
-                                coopGame.Profile.FenceInfo.AvailableExitsCount);
-                            var mask = exfilController.GetScavExfiltrationMask(coopGame.ProfileId);
-                            exfilPoints = exfilController.ScavExfiltrationClaim(mask, _localPlayer.ProfileId);
-                            secretExfilPoints = exfilController.GetScavSecretExits();
-                        }
-                        else
-                        {
-                            exfilPoints = exfilController.EligiblePoints(coopGame.Profile);
-                            secretExfilPoints = exfilController.SecretEligiblePoints();
-                        }
-
-                        // Same call, same arguments as HostGameController.Spawn - the panel is live now, so
-                        // the slide/colour coroutines it starts from inside SetTime are allowed to run.
-                        timerPanel.SetTime(DateTimeExtensions.UtcNow, coopGame.Profile.Info.Side,
-                            coopGame.GameTimer.EscapeTimeSeconds(), exfilPoints, secretExfilPoints);
-                    });
-            }
-
-            // ---- the panel that shows the raid time: it is revealed by the battle-UI screen, the same call
-            // the vanilla owner path makes. Idempotent when the screen is already current. -------------------
-            if (_localPlayer?.HealthController?.IsAlive == true)
-            {
-                FikaBoundaries.Run("HudRestore: re-assert the extraction timer panel (Reveal)",
-                    () => timerPanel.Reveal());
-            }
-
-            // ---- read the result back: the HUD is either live now or the journal says why not ----------------
-            yield return null;
-
-            var gameUiLive = false;
-            var timerPanelLive = false;
-            try
-            {
-                gameUiLive = gameUi.gameObject.activeInHierarchy;
-            }
-            catch (Exception)
-            {
-            }
-
-            try
-            {
-                timerPanelLive = timerPanel.gameObject.activeInHierarchy;
-            }
-            catch (Exception)
-            {
-            }
-
-            
-        }
-        finally
-        {
-            // The handle is cleared whether the routine finished or died: the next raid starts a new one.
-            _inRaidHudRestoreRoutine = null;
-        }
-    }
-
     private IEnumerator FixVOIPAudioDevice()
     {
         // Todo: Find root causes and fix elegantly...
@@ -1284,7 +669,7 @@ public abstract class BaseGameController
             yield break;
         }
         comms.IsMuted = false;
-        yield return new WaitSeconds(1f);
+        yield return new WaitForSeconds(1);
         // The user can start push-to-talk during this delay. Do not mute the
         // native capture after the VOIP controller has entered Talking.
         if (comms != null && !(_localPlayer?.IsVoipTalking ?? false))
@@ -1317,7 +702,7 @@ public abstract class BaseGameController
             }
         }
 
-        yield return new WaitSeconds(2f);
+        yield return new WaitForSeconds(2);
 
         foreach (var source in _mutedVoiceSources)
             if (source != null) source.SetActive(true);
@@ -1371,17 +756,6 @@ public abstract class BaseGameController
         }
     }
 
-    /// <summary>
-    /// (analysis/cutscene-native-registration) The cutscene pair of the world controllers, created and
-    /// registered where the native <c>BaseLocalGame&lt;TPlayerOwner&gt;.method_4</c> creates this whole family:
-    /// the raid start coroutine of this port (<c>CoopGame.InitPlayer</c>). The creation itself lives in
-    /// <see cref="Fika.Core.Main.Components.CutsceneBoundary.CreateCutsceneControllers"/> - the same method the
-    /// rollback path (world-factory creation) calls - so only one place ever creates them; the registration on
-    /// the native per-frame hook happens in the same call and is idempotent.
-    /// </summary>
-    public void InitCutsceneControllers(GameWorld gameWorld) =>
-        Fika.Core.Main.Components.CutsceneBoundary.InitCutsceneControllers(gameWorld);
-
     public void InitHalloweenEvent(GlobalConfiguration instance, GameWorld gameWorld, LocationSettings.Location location)
     {
         if (instance != null && instance.EventSettings.EventActive && !instance.EventSettings.LocationsToIgnore.Contains(location.Id))
@@ -1431,13 +805,13 @@ public abstract class BaseGameController
                     if (IsServer)
                     {
                         // The IL2CPP wrapper does not implicitly convert a managed method
-                        // group to System.Action<T>; create the bridge explicitly.
+                        // group to Il2CppSystem.Action<T>; create the bridge explicitly.
                         Action<BtrSpawnOnThePathEvent> spawnManaged = OnBtrSpawn;
                         Il2CppSystem.Action<BtrSpawnOnThePathEvent> spawn = spawnManaged;
                         Action<BtrServicePurchaseEvent> purchaseManaged = OnBtrServicePurchase;
                         Il2CppSystem.Action<BtrServicePurchaseEvent> purchase = purchaseManaged;
-                        _btrSpawn = GlobalEventsController.Instance.SubscribeOnEvent<BtrSpawnOnThePathEvent>(spawn);
-                        _btrServicePurchase = GlobalEventsController.Instance.SubscribeOnEvent<BtrServicePurchaseEvent>(purchase);
+                        _btrSpawn = GlobalEventsController.Instance.SubscribeOnEvent(spawn);
+                        _btrServicePurchase = GlobalEventsController.Instance.SubscribeOnEvent(purchase);
                     }
                 }
             }
@@ -1619,25 +993,8 @@ public abstract class BaseGameController
     {
         if (_voipAudioFixRoutine != null)
         {
-            FikaRoutinePump.Instance.Stop(_voipAudioFixRoutine, "the game controller is being cleaned up");
+            _abstractGame.StopCoroutine(_voipAudioFixRoutine);
             _voipAudioFixRoutine = null;
-        }
-
-        // The HUD restore only runs in the first frames after the countdown; stopping it here covers the
-        // raid that ends inside that window. It clears its own handle when it finishes.
-        if (_inRaidHudRestoreRoutine != null)
-        {
-            FikaRoutinePump.Instance.Stop(_inRaidHudRestoreRoutine, "the game controller is being cleaned up");
-            _inRaidHudRestoreRoutine = null;
-        }
-
-        // The countdown's re-assert runs for a bounded number of frames right after the deploy wait; stopping it
-        // here covers a raid that ends inside that window. The routine is removed from the pump when it finishes,
-        // and Stop() on a handle whose routine is no longer running is a documented no-op.
-        if (_countdownReassertRoutine != null)
-        {
-            FikaRoutinePump.Instance.Stop(_countdownReassertRoutine, "the game controller is being cleaned up");
-            _countdownReassertRoutine = null;
         }
         foreach (var source in _mutedVoiceSources)
             if (source != null) source.SetActive(true);

@@ -39,13 +39,13 @@ namespace Fika.Core;
 /// </summary>
 [BepInPlugin("com.fika.core", "Fika.Core", FikaVersion)]
 [BepInProcess("EscapeFromTarkov.exe")]
-[BepInDependency("com.sptushonka.custom", BepInDependency.DependencyFlags.HardDependency)] // This is used so that we guarantee to load after spt-custom, that way we can disable its patches
-[BepInDependency("com.sptushonka.singleplayer", BepInDependency.DependencyFlags.HardDependency)] // This is used so that we guarantee to load after spt-singleplayer, that way we can disable its patches
-[BepInDependency("com.sptushonka.core", BepInDependency.DependencyFlags.HardDependency)] // This is used so that we guarantee to load after spt-core, that way we can disable its patches
-[BepInDependency("com.sptushonka.debugging", BepInDependency.DependencyFlags.HardDependency)] // This is used so that we guarantee to load after spt-debugging, that way we can disable its patches
+[BepInDependency("sptushonka.custom", BepInDependency.DependencyFlags.HardDependency)] // This is used so that we guarantee to load after spt-custom, that way we can disable its patches
+[BepInDependency("sptushonka.singleplayer", BepInDependency.DependencyFlags.HardDependency)] // This is used so that we guarantee to load after spt-singleplayer, that way we can disable its patches
+[BepInDependency("sptushonka.core", BepInDependency.DependencyFlags.HardDependency)] // This is used so that we guarantee to load after spt-core, that way we can disable its patches
+[BepInDependency("sptushonka.debugging", BepInDependency.DependencyFlags.HardDependency)] // This is used so that we guarantee to load after spt-debugging, that way we can disable its patches
 public sealed class FikaPlugin : BasePlugin
 {
-    public const string FikaVersion = "3.0.4";
+    public const string FikaVersion = "3.0.3";
     public const string FikaNATPunchMasterServer = "natpunch.project-fika.com";
     public const ushort FikaNATPunchMasterPort = 6790;
 
@@ -127,17 +127,12 @@ public sealed class FikaPlugin : BasePlugin
         // and never drained, which looks exactly like the game freezing.
         AddComponent<FikaPluginBehaviour>();
 
-        
-        
-
         FikaNativeTypes.RegisterAll(Log);
         BundleLoaderPlugin = new();
 
         GetNatPunchServerConfig();
         EnableModulePatches();
         DisableSPTPatches();
-
-        
 
         GetClientConfig();
 
@@ -162,7 +157,7 @@ public sealed class FikaPlugin : BasePlugin
 
         ConsoleScreen.Processor.RegisterCommand("debug", (Il2CppSystem.Action<bool>)FikaCommands.Debug, "Toggle debug window");
         ConsoleScreen.Processor.RegisterCommand("openAdminUI", (Il2CppSystem.Action)FikaCommands.OpenAdminUI, "Opens the Admin UI as the raid host");
-        ConsoleScreen.Processor.RegisterCommand("clear", (System.Action)FikaCommands.Clear, "Clears the console output");
+        ConsoleScreen.Processor.RegisterCommand("clear", (Il2CppSystem.Action)FikaCommands.Clear, "Clears the console output");
 
         if (Settings.AllowItemSending)
         {
@@ -216,8 +211,8 @@ public sealed class FikaPlugin : BasePlugin
 
     private void ShowServerCheckFailMessage()
     {
-        Fika.Core.Main.Utils.MessageBoxHelper.Show($"Failed to verify server mod version.\nMake sure that the server mod is installed and up-to-date!\nRequired Server Version: {_requiredServerVersion}",
-                "FIKA ERROR", Fika.Core.Main.Utils.MessageBoxHelper.MessageBoxType.OK);
+        MessageBoxHelper.Show($"Failed to verify server mod version.\nMake sure that the server mod is installed and up-to-date!\nRequired Server Version: {_requiredServerVersion}",
+                "FIKA ERROR", MessageBoxHelper.MessageBoxType.OK);
         Application.Quit();
     }
 #endif
@@ -230,29 +225,15 @@ public sealed class FikaPlugin : BasePlugin
     /// </remarks>
     private async Task RunChecks()
     {
-        
-        // First-chance probe: names the object the engine is working on when the menu fault
-        // fires (see FirstChanceFaultProbe). It only observes; 
-        
-        
-        ReportStartupSettings();
         await Task.Delay(5000);
 #if !DEBUG
-        try
-        {
-            VerifyServerVersion();
-        }
-        catch (Exception exception)
-        {
-            // The server check already reports its own failure to the user; 
-        }
+        VerifyServerVersion();
 #endif
         await ModHandler.VerifyMods(_patchManager);
 
         if (Crc32 == 0)
         {
             Log.LogError($"RunChecks: {LocaleUtils.UI_MOD_VERIFY_FAIL.Localized()}");
-            
         }
 
         _patchManager = null;
@@ -264,79 +245,8 @@ public sealed class FikaPlugin : BasePlugin
         catch (Exception ex)
         {
             Log.LogError($"RunChecks: {ex.Message}");
-            
-        }
-
-        if (WanIP == null)
-        {
-            // Degradation, not a failure: the WAN address is only ever read by the raid
-            // host (FikaServer.Init) to advertise itself. Every other path - including the
-            // whole client join path - works without it, so this must never abort anything.
-            Log.LogWarning("RunChecks: no public IP address is known. Hosting a raid for players outside "
-                + "your network will not work (set 'Force IP' in the network settings to announce one); "
-                + "joining a raid is unaffected.");
-            
-        }
-        else
-        {
-            
-        }
-
-        
-    }
-
-    /// <summary>
-    /// Writes the settings that change what the next join attempt does into the stable
-    /// diagnostics file, so a captured failure can be read against the config that produced it.
-    ///
-    /// RunChecks runs at frame 1, which is *before* the locales are ready and therefore before
-    /// <see cref="FikaConfig.SetupConfig"/> has bound the entries: every entry property is still
-    /// null at that moment, and reading one of them made this diagnostic report a
-    /// NullReferenceException about itself on its very first use (2026-10-09 22:57:25). The
-    /// entries are read defensively here and the report is repeated once the config is bound, so
-    /// the file still ends up with the settings the run actually used.
-    /// </summary>
-    private void ReportStartupSettings()
-    {
-        try
-        {
-            var settings = Settings;
-            if (settings is null)
-            {
-                
-                return;
-            }
-
-            // 'SetupConfig' binds every one of these at once, so one of them is a valid probe.
-            var bound = settings.EnableOnlinePlayers is not null;
-            if (bound && _boundSettingsReported)
-            {
-                return;
-            }
-
-            _boundSettingsReported = bound;
-            
-
-            
-
-            
-        }
-        catch (Exception exception)
-        {
-            
         }
     }
-
-    /// <summary>Reads a boolean entry that may not be bound yet (see <see cref="ReportStartupSettings"/>).</summary>
-    private static string ReadFlag(BepInEx.Configuration.ConfigEntry<bool> entry)
-    {
-        return entry is null ? "unbound" : entry.Value.ToString();
-    }
-
-    /// <summary>Reads an integer entry that may not be bound yet (see <see cref="ReportStartupSettings"/>).</summary>
-
-    /// <summary>True once the config report was written with the entries that were really bound.</summary>
-    private bool _boundSettingsReported;
 
     private void GetClientConfig()
     {
@@ -386,9 +296,6 @@ public sealed class FikaPlugin : BasePlugin
             if (!FikaBackendUtils.IsHeadless &&
                 LocaleUtils.BEPINEX_H_ADVANCED.Localized() == "F_BepInEx_H_Advanced") return;
             Settings.SetupConfig();
-            // Now that the entries exist, record the settings this run really uses (the frame-1
-            // report could only say "not bound yet").
-            ReportStartupSettings();
             LocalesLoaded = true;
             FikaVersionLabel_Patch.UpdateVersionLabel();
             Log.LogInfo($"Locales and configuration are ready ({Config.Count} entries).");

@@ -89,7 +89,7 @@ public sealed class FikaBot : FikaPlayer
 
         player.Pedometer.Stop();
         player._handsController = EmptyHandsController.CreateController<EmptyHandsController>(player);
-        player._handsController.Spawn(1f, (System.Action)FikaGlobals.EmptyAction);
+        player._handsController.Spawn(1f, (Il2CppSystem.Action)FikaGlobals.EmptyAction);
 
         // SPT 5's native BotOwner setter establishes IsAI when the owner is
         // attached. Marking it early makes EmitStepNoise dereference a missing
@@ -115,7 +115,7 @@ public sealed class FikaBot : FikaPlayer
         // "SPT Dynamic Maps" see a PMC as a PMC. Scav and boss roles are untouched.
         FikaGlobals.ApplyFactionSide(player, "bot");
 
-        
+        MapMarkerDiagnostics.Log(player, "bot");
 
         OnPlayerSpawned?.Invoke(player);
 
@@ -197,7 +197,13 @@ public sealed class FikaBot : FikaPlayer
             var mainPlayer = Singleton<GameWorld>.Instance?.MainPlayer?.TryCast<FikaPlayer>();
             if (mainPlayer == null)
             {
-                                return;
+                // A dedicated host has no local player: there is nobody on this machine to share
+                // the experience with or to run the teammate kill conditions for. The killer's own
+                // machine credits the kill (it receives the death with the killer id and runs the
+                // native OnBeenKilledByAggressor locally), so this is a skip, not a lost kill.
+                FikaGlobals.LogInfo($"[CorpseSync] killcredit=skipped-no-local-player victim={ProfileId}, " +
+                    $"role={Profile.Info.Settings.Role}, killer={aggressor.ProfileId}");
+                return;
             }
 
             if (!mainPlayer.HealthController.IsAlive)
@@ -318,7 +324,7 @@ public sealed class FikaBot : FikaPlayer
                     if (aggressor.gameObject.name.StartsWith("Player_") || aggressor.IsYourPlayer)
                     {
                         FikaNotifications.DisplayMessageNotification(string.Format(LocaleUtils.KILLED_BOSS.Localized(),
-                            [ColorizeText(EColor.GREEN, LastAggressor.Profile.GetDisplayName()), ColorizeText(EColor.BROWN, name)]),
+                            [ColorizeText(EColor.GREEN, LastAggressor.Profile.Info.MainProfileNickname), ColorizeText(EColor.BROWN, name)]),
                             iconType: EFT.Communications.ENotificationIconType.Friend);
                     }
                 }

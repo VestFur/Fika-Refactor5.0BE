@@ -66,8 +66,8 @@ class FikaVOIPController : Il2CppSystem.Object, IPlayerVoipController, IDisposab
     }
 
     private readonly MicrophoneFailState _microphoneFailState;
-    private readonly System.Action<bool> _voipToggle;
-    private readonly System.Action<string> _deviceChanged;
+    private readonly Il2CppSystem.Action<bool> _voipToggle;
+    private readonly Il2CppSystem.Action<string> _deviceChanged;
     private Il2CppSystem.Action _unbindEnabled;
     private Il2CppSystem.Action _unbindDevice;
     private string _requestedDevice;
@@ -590,8 +590,6 @@ class FikaVOIPController : Il2CppSystem.Object, IPlayerVoipController, IDisposab
     }
     public event Action<string> AbuseNotification;
     private readonly NativeActionEvent _nativeAbuseNotification = new();
-    // IPlayerVoipController declares the event accessors with the IL2CPP
-    // delegate type; the System.Action accessors are the *_Managed helpers.
     public void add_AbuseNotification(Il2CppSystem.Action handler) => _nativeAbuseNotification.Add(handler);
     public void remove_AbuseNotification(Il2CppSystem.Action handler) => _nativeAbuseNotification.Remove(handler);
 

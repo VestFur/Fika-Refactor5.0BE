@@ -32,7 +32,7 @@ public sealed record FikaConfigClient
     public bool UseInertia { get; set; } = true;
 
     [JsonPropertyName("sharedQuestProgression")]
-    public bool SharedQuestProgression { get; set; } = true;
+    public bool SharedQuestProgression { get; set; }
 
     [JsonPropertyName("canEditRaidSettings")]
     public bool CanEditRaidSettings { get; set; } = true;

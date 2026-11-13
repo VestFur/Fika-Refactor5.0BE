@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -113,15 +113,6 @@ internal static class MultiSelect
                         _getCountMethod = AccessTools.Method(_multiSelectType, "GetCount");
                         _getItemsMethod = AccessTools.Method(_multiSelectType, "GetItems");
                         _applyMethod = AccessTools.Method(_multiSelectType, "Apply");
-                    }
-
-                    // A version present in the plugin list but carrying a renamed controller is
-                    // not usable: every accessor below dereferences these MethodInfos without a
-                    // null check, so an unresolved member has to turn the feature off here
-                    // instead of throwing on the first multiselect action.
-                    if (_multiSelectType == null || _getCountMethod == null || _getItemsMethod == null || _applyMethod == null)
-                    {
-                        _uIFixesLoaded = false;
                     }
                 }
             }

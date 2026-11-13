@@ -1,4 +1,4 @@
-using SPTarkov.Server.Core.Models.Common;
+﻿using SPTarkov.Server.Core.Models.Common;
 using System.Text.Json.Serialization;
 
 namespace FikaServer.Models.Fika.Config;

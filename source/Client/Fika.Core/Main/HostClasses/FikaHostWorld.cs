@@ -69,29 +69,12 @@ public class FikaHostWorld : World
             RagdollPackets = new(8)
         };
         hostWorld._grenadeData = new(16);
-        // (analysis/transit-crash-unload) A fresh world exists from here on: the teardown window of
-        // WorldLifecycle ends and the [LoadCost] window of the swap is closed with its summary line.
-        Fika.Core.Main.Utils.WorldLifecycle.MarkWorldUp("FikaHostWorld.Create");
         // Bind the registered native method directly. DelegateSupport cannot
         // convert a managed Action carrying the boxed DamageInfo value type.
-        // DamageInfo travels by value, which is the shape this interop refuses to marshal into a
-        // CLR delegate. Window-hit synchronisation is an enhancement, so a refused bind disables
-        // that one packet instead of taking the host raid down with it.
-        if (NativeDelegates.TryBindManaged<System.Action<WindowBreaker, DamageInfo, WindowBreakingConfig.Crack, float>>(
-                hostWorld, nameof(WindowBreaker_OnWindowHitAction), "FikaHostWorld.WindowHit", out var windowHit))
-        {
-            WindowBreaker.OnWindowHitAction += windowHit;
-            hostWorld._windowHitHandler = windowHit;
-        }
-        else
-        {
-            hostWorld._windowHitHandler = null;
-        }
-        // (analysis/cutscene-world-factory, superseded by analysis/cutscene-native-registration) The two
-        // cutscene controllers used to be created here, inside the port's replacement of the native
-        // GameWorld.Create<T> body. That body never created them (4.0 EFT/GameWorld.cs:1111-1123) - the native
-        // position is the raid-start coroutine, which this port replaces with CoopGame.InitPlayer, and there
-        // they are now created AND registered on their per-frame hook. This call is the rollback path only:
+        var windowHit = NativeDelegates.Bind<Il2CppSystem.Action<WindowBreaker, DamageInfo, WindowBreakingConfig.Crack, float>>(
+            hostWorld, nameof(WindowBreaker_OnWindowHitAction));
+        WindowBreaker.OnWindowHitAction += windowHit;
+        hostWorld._windowHitHandler = windowHit;
         return hostWorld;
     }
 
@@ -100,18 +83,11 @@ public class FikaHostWorld : World
         if (_windowHitHandler != null)
             WindowBreaker.OnWindowHitAction -= _windowHitHandler;
         if (ReferenceEquals(_server?.FikaHostWorld, this)) _server.FikaHostWorld = null;
-        // (analysis/transit-crash-unload) The world this component belongs to is going away: drop every
-        // list and packet it still held for it, so nothing of the replaced raid can reach the next world
-        // through the surviving FikaServer. The network ids in _terminalGrenadeIds are raid scoped.
-        LootSyncPackets?.Clear();
-        _grenadeData?.Clear();
-        _terminalGrenadeIds.Clear();
-        WorldPacket?.Flush();
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call75(this);
     }
 
-    private System.Action<WindowBreaker, DamageInfo, WindowBreakingConfig.Crack, float> _windowHitHandler;
-    private System.Action<IObserverToPlayerBridge, BorderZone, float, bool> _borderZoneShotHandler;
+    private Il2CppSystem.Action<WindowBreaker, DamageInfo, WindowBreakingConfig.Crack, float> _windowHitHandler;
+    private Il2CppSystem.Action<IObserverToPlayerBridge, BorderZone, float, bool> _borderZoneShotHandler;
 
     private void WindowBreaker_OnWindowHitAction(WindowBreaker windowBreaker, DamageInfo damageInfo, WindowBreakingConfig.Crack crack, float angle)
     {
@@ -216,7 +192,7 @@ public class FikaHostWorld : World
     {
         foreach (var borderZone in zones)
         {
-            _borderZoneShotHandler ??= (System.Action<IObserverToPlayerBridge, BorderZone, float, bool>)OnBorderZoneShot;
+            _borderZoneShotHandler ??= (Il2CppSystem.Action<IObserverToPlayerBridge, BorderZone, float, bool>)OnBorderZoneShot;
             borderZone.PlayerShotEvent += _borderZoneShotHandler;
         }
     }

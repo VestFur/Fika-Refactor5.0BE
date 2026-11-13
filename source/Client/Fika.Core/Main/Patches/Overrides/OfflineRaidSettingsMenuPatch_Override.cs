@@ -64,7 +64,7 @@ public sealed class OfflineRaidSettingsMenuPatch_Override : ModulePatch
         {
             overloadCheckmark.GetComponent<CanvasGroup>().SetUnlockStatus(true, true);
             overloadCheckmark.transform.GetChild(2).gameObject.SetActive(false); // tooltip
-            overloadCheckmark.GetComponent<UpdatableToggle>().Bind((System.Action<bool>)(value => FikaBackendUtils.CustomRaidSettings.DisableOverload = value));
+            overloadCheckmark.GetComponent<UpdatableToggle>().Bind((Il2CppSystem.Action<bool>)(value => FikaBackendUtils.CustomRaidSettings.DisableOverload = value));
         }
 
         var legsStaminaCheckmark = GameObject.Find("DisableLegsStaminaCheckmark");
@@ -72,7 +72,7 @@ public sealed class OfflineRaidSettingsMenuPatch_Override : ModulePatch
         {
             legsStaminaCheckmark.GetComponent<CanvasGroup>().SetUnlockStatus(true, true);
             legsStaminaCheckmark.transform.GetChild(2).gameObject.SetActive(false); // tooltip
-            legsStaminaCheckmark.GetComponent<UpdatableToggle>().Bind((System.Action<bool>)(value => FikaBackendUtils.CustomRaidSettings.DisableLegStamina = value));
+            legsStaminaCheckmark.GetComponent<UpdatableToggle>().Bind((Il2CppSystem.Action<bool>)(value => FikaBackendUtils.CustomRaidSettings.DisableLegStamina = value));
         }
 
         var armsStaminaCheckmark = GameObject.Find("DisableArmsStaminaCheckmark");
@@ -80,7 +80,7 @@ public sealed class OfflineRaidSettingsMenuPatch_Override : ModulePatch
         {
             armsStaminaCheckmark.GetComponent<CanvasGroup>().SetUnlockStatus(true, true);
             armsStaminaCheckmark.transform.GetChild(2).gameObject.SetActive(false); // tooltip
-            armsStaminaCheckmark.GetComponent<UpdatableToggle>().Bind((System.Action<bool>)(value => FikaBackendUtils.CustomRaidSettings.DisableArmStamina = value));
+            armsStaminaCheckmark.GetComponent<UpdatableToggle>().Bind((Il2CppSystem.Action<bool>)(value => FikaBackendUtils.CustomRaidSettings.DisableArmStamina = value));
         }
 
         // Remove redundant settings and add our own "Random" to make the setting clear, while also renaming index 0 to "Together"
@@ -127,7 +127,7 @@ public sealed class OfflineRaidSettingsMenuPatch_Override : ModulePatch
         // If enforced from server, this will be true by default
         if (!raidSettings.TimeAndWeatherSettings.IsRandomWeather)
         {
-            __instance._randomWeatherToggle.Bind((System.Action<bool>)ToggleWeather);
+            __instance._randomWeatherToggle.Bind((Il2CppSystem.Action<bool>)ToggleWeather);
             __instance._randomTimeToggle.gameObject.GetComponent<CanvasGroup>().SetUnlockStatus(false, false);
 
             var weatherToggle = GameObject.Find("RandomWeatherCheckmark");

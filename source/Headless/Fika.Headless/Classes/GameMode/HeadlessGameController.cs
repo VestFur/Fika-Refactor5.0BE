@@ -7,6 +7,7 @@ using EFT.GlobalEvents;
 using EFT.Interactive;
 using EFT.UI;
 using Fika.Core;
+using Fika.Core.Main.Components;
 using Fika.Core.Main.GameMode;
 using Fika.Core.Main.Utils;
 using Fika.Core.Networking;
@@ -40,6 +41,13 @@ internal class HeadlessGameController : HostGameController
         // each remote client applies its own eligibility and performs its own extract.
         var exfilController = ExfiltrationController.Instance;
         HeadlessExfilManager ??= _abstractGame.gameObject.AddComponent<HeadlessExfilManager>();
+
+        // The headless host is the authority for remote flare activations. It has
+        // no local player, so the manager only relays and applies reports here.
+        if (_abstractGame.gameObject.GetComponent<FikaFlareExfilManager>() == null)
+        {
+            _abstractGame.gameObject.AddComponent<FikaFlareExfilManager>();
+        }
         if (exfilController != null)
         {
             HeadlessExfilManager.Run(exfilController.ExfiltrationPoints, exfilController.SecretExfiltrationPoints);
@@ -59,25 +67,10 @@ internal class HeadlessGameController : HostGameController
                 // Transit history belongs to each remote player. The
                 // dedicated host's LocalRaidSettings describe only the host
                 // profile and can diverge after players cross maps.
-                ushort transitionCount;
-                bool eventPlayer;
-                if (transitController.summonedTransits.TryGetValue(activePlayer.ProfileId, out var history))
+                if (!transitController.summonedTransits.TryGetValue(activePlayer.ProfileId, out var history))
                 {
-                    transitionCount = (ushort)System.Math.Clamp(history.count, 0, ushort.MaxValue);
-                    eventPlayer = history.events;
-                }
-                else
-                {
-                    // Same fallback as FikaServer.CreateNativeTransitInitialization. A peer
-                    // without a host side history keeps the count it built from the raid
-                    // settings it received, so report the raid wide transition state (the
-                    // object LocalRaidSettings.transition points at, see
-                    // Headless_LocalGameCreator_Patch) instead of skipping the snapshot:
-                    // skipping it left the peer without any transit initialization.
-                    var transitData = FikaBackendUtils.TransitData;
-                    transitionCount = (ushort)System.Math.Clamp(transitData?.transitionCount ?? 0, 0, ushort.MaxValue);
-                    eventPlayer = transitData != null && transitData.transitionType.HasFlagNoBox(ELocationTransition.Event);
-                    Logger.LogWarning($"[Transit] No host side transit history for {activePlayer.ProfileId}; sending an initialization snapshot from the raid transition state (count={transitionCount}, event={eventPlayer})");
+                    Logger.LogWarning($"Skipping Headless transit initialization for {activePlayer.ProfileId}: no player history");
+                    continue;
                 }
                 var enabledPointIds = new System.Collections.Generic.List<int>();
                 var registeredPointId = -1;
@@ -101,8 +94,8 @@ internal class HeadlessGameController : HostGameController
                     PlayerRaidId = activePlayer.RaidId,
                     Points = ActiveTransitPoints(transitController),
                     CompletedQuestRequirementMetByPointId = CompletedQuestRequirements(activePlayer),
-                    TransitionCount = transitionCount,
-                    EventPlayer = eventPlayer
+                    TransitionCount = (ushort)history.count,
+                    EventPlayer = history.events
                 };
 
                 var initPacket = new TransitEventPacket

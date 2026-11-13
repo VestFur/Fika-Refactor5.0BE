@@ -11,7 +11,6 @@ using Fika.Core.Main.GameMode;
 using Fika.Core.Main.Utils;
 using Fika.Core.Networking.Http;
 using Fika.Core.Networking.Models;
-using SPTushonka.Common.Http;
 
 namespace Fika.Core.Networking;
 
@@ -49,25 +48,7 @@ public class FikaPingingClient : INetEventListener, INatPunchListener, IDisposab
     private bool _natIntroductionRequested;
     private readonly CancellationTokenSource _cts;
     private bool _disposed;
-    private string _serverId;
     private const float _responseWaitSeconds = 1f;
-
-    /// <summary>Longest raw response body kept in a single log line.</summary>
-    private const int MaxLoggedBodyChars = 512;
-
-    /// <summary>
-    /// Why <see cref="Init"/> refused to start pinging, or <see langword="null"/> while it did not
-    /// fail. The join screens append it to their error box: "the host never published an address" and
-    /// "the address exists but does not answer" need different words for the player.
-    /// </summary>
-    public string FailureReason { get; private set; }
-
-    /// <summary>
-    /// True when the server that holds the match answered with something that is not a usable host
-    /// record, i.e. the missing address is on the host's side. False for a transport/backend failure
-    /// (no answer or a non-2xx status), where checking our own server connection is the useful advice.
-    /// </summary>
-    public bool HostAddressMissing { get; private set; }
 
     public FikaPingingClient()
     {
@@ -93,25 +74,8 @@ public class FikaPingingClient : INetEventListener, INatPunchListener, IDisposab
         _candidates = [];
         _writer = new();
 
-        _serverId = serverId;
         GetHostRequest body = new(serverId);
-        GetHostResponse result;
-        try
-        {
-            result = FikaRequestHandler.GetHost(body);
-        }
-        catch (Exception exception)
-        {
-            // The server answered, but not with a host record: an unknown match id answers an empty
-            // body, a broken or unreachable backend throws out of the transport (and its message
-            // carries the HTTP status). Both are reported with the raw answer before the join stops.
-            HostAddressMissing = FikaRequestHandler.LastGetHostResponseBody != null;
-            FailureReason = $"The raid server did not return a host record for '{serverId}' "
-                + $"(/fika/raid/gethost): {exception.GetBaseException().Message}";
-            LogHostLookupFailure(serverId, "Host lookup failed");
-            return false;
-        }
-
+        var result = FikaRequestHandler.GetHost(body);
         FikaBackendUtils.ServerGuid = result.ServerGuid;
         _logger.LogInfo(result.ToString());
 
@@ -120,10 +84,7 @@ public class FikaPingingClient : INetEventListener, INatPunchListener, IDisposab
 
         if (result.Port == 0)
         {
-            HostAddressMissing = true;
-            FailureReason = $"The host has not published an address on that server (their side): "
-                + $"'/fika/raid/gethost' returned port 0 for server '{serverId}'.";
-            LogHostLookupFailure(serverId, "Host port was empty when pinging");
+            _logger.LogError("Host port was empty when pinging!");
             return false;
         }
 
@@ -153,10 +114,7 @@ public class FikaPingingClient : INetEventListener, INatPunchListener, IDisposab
 
         if (_endPoints.Count == 0 && !result.NatPunch)
         {
-            HostAddressMissing = true;
-            FailureReason = $"The host has not published an address on that server (their side): "
-                + $"the advertised address(es) [{DescribeAddresses(result.IPs)}] could not be used (port {result.Port}).";
-            LogHostLookupFailure(serverId, "Host did not provide a usable address for pinging");
+            _logger.LogError("Host did not provide a usable address for pinging!");
             return false;
         }
 
@@ -187,17 +145,7 @@ public class FikaPingingClient : INetEventListener, INatPunchListener, IDisposab
             catch (Exception exception)
             {
                 _logger.LogWarning($"Cannot use NAT punching server {natPunchServerIP}:{natPunchServerPort}: {exception.Message}");
-                if (_endPoints.Count == 0)
-                {
-                    // NAT punching was the only way in and its server is unusable, so no address is
-                    // left to try. Same report as the other "no address" exits.
-                    HostAddressMissing = true;
-                    FailureReason = $"The host has not published an address on that server (their side): "
-                        + "no usable address was advertised and the NAT punch server could not be used.";
-                    LogHostLookupFailure(serverId,
-                        "Host did not provide a usable address for pinging (its NAT punch server is unusable too)");
-                    return false;
-                }
+                if (_endPoints.Count == 0) return false;
             }
         }
 
@@ -219,52 +167,7 @@ public class FikaPingingClient : INetEventListener, INatPunchListener, IDisposab
         _logger.LogInfo("Send NAT Introduce Request task stopped.");
     }
 
-    /// <summary>
-    /// One log line that says everything needed to tell "the host never published an address" from
-    /// "the address exists but nothing answers": who was asked, on which server, with which HTTP
-    /// status and which raw answer, plus the plain-language conclusion.
-    /// </summary>
-    private void LogHostLookupFailure(string serverId, string summary)
-    {
-        var body = FikaRequestHandler.LastGetHostResponseBody;
-        var failure = FikaRequestHandler.LastGetHostFailure;
-        var message = $"[FikaPingingClient] {summary}: the host has not published an address on that server (their side); "
-            + $"serverId={serverId}, server={FikaRequestHandler.ServerHost}, "
-            + $"http={(failure == null ? "2xx (the http layer throws for every other status)" : failure)}, "
-            + $"body={(body == null ? "<none: no body was returned>" : Abbreviate(body))}";
-        _logger.LogError(message);
-        
-    }
-
-    private static string DescribeAddresses(string[] addresses)
-    {
-        if (addresses == null || addresses.Length == 0)
-        {
-            return "none";
-        }
-
-        return string.Join(", ", addresses.Select(address => string.IsNullOrWhiteSpace(address) ? "<blank>" : address));
-    }
-
-    /// <summary>
-    /// The addresses this attempt worked with: the ones that were pinged and the ones that answered.
-    /// Both matter, because an endpoint leaves the ping list as soon as it replies.
-    /// </summary>
-    private string DescribeEndpoints()
-    {
-        var pinged = _endPoints is { Count: > 0 }
-            ? string.Join(", ", _endPoints.Select(endpoint => endpoint.ToString()))
-            : "none";
-        var answered = _candidates is { Count: > 0 }
-            ? string.Join(", ", _candidates.Select(candidate => candidate.ToString()))
-            : "none";
-        return $"pinged=[{pinged}], answered=[{answered}]";
-    }
-
-    private static string Abbreviate(string value) =>
-        value.Length <= MaxLoggedBodyChars ? value : value[..MaxLoggedBodyChars] + $"...(+{value.Length - MaxLoggedBodyChars} chars)";
-
-    public async Task<bool> AttemptToPingHost(string knockMessage, CancellationToken ct = default)
+    public async Task<bool> AttemptToPingHost(string knockMessage, bool reconnect, CancellationToken ct = default)
     {
         var deadline = Time.realtimeSinceStartup + 12.5f;
         while (!Rejected && !Received &&
@@ -272,7 +175,7 @@ public class FikaPingingClient : INetEventListener, INatPunchListener, IDisposab
                 Time.realtimeSinceStartup - _firstResponseTime < _responseWaitSeconds)))
         {
             ct.ThrowIfCancellationRequested();
-            PingEndPoint(knockMessage);
+            PingEndPoint(knockMessage, reconnect);
             if (NetClient != null)
             {
                 NetClient.PollEvents();
@@ -284,11 +187,6 @@ public class FikaPingingClient : INetEventListener, INatPunchListener, IDisposab
 
         if (!Received)
         {
-            // (analysis/transit-timeout-crash) The handshake gave up without ever reaching a host: the
-            // ping loop returned false after its 12.5 s deadline. One line states it as an event,
-            // because it happens *before* a raid exists and therefore before any [LoadSync] line.
-            var pingedCount = _endPoints?.Count ?? 0;
-            
             var logError = "Unable to connect to the session!";
             if (Rejected)
             {
@@ -298,21 +196,7 @@ public class FikaPingingClient : INetEventListener, INatPunchListener, IDisposab
             {
                 logError += " Session already in progress and you are not active in the session!";
             }
-
-            // The server did hand out an address this time (Init returned true), so the failure is on
-            // the wire, not in the match record: name the server, the address that was tried and the
-            // body the server answered with when the join started.
-            var body = FikaRequestHandler.LastGetHostResponseBody;
-            var failure = FikaRequestHandler.LastGetHostFailure;
-            logError += $" serverId={_serverId}, server={FikaRequestHandler.ServerHost}, tried={DescribeEndpoints()}, "
-                + $"http={(failure == null ? "2xx (the http layer throws for every other status)" : failure)}, "
-                + $"body={(body == null ? "<none: no body was returned>" : Abbreviate(body))}";
             FikaGlobals.LogError(logError);
-            _logger.LogError(logError);
-            
-
-            FailureReason = $"The host's server did publish an address ({DescribeEndpoints()}), but nothing answered on it. "
-                + "The host's port is not reachable from here (closed, not forwarded, or a stale address).";
         }
 
         return Received;
@@ -336,7 +220,8 @@ public class FikaPingingClient : INetEventListener, INatPunchListener, IDisposab
     /// Sends a ping message to the configured endpoints.
     /// </summary>
     /// <param name="message">The message to send.</param>
-    public void PingEndPoint(string message)
+    /// <param name="reconnect">Whether this is a reconnect attempt.</param>
+    public void PingEndPoint(string message, bool reconnect = false)
     {
         if (_disposed) return;
         // Finalize selection after wait window
@@ -357,6 +242,7 @@ public class FikaPingingClient : INetEventListener, INatPunchListener, IDisposab
 
         _writer.Reset();
         _writer.Put(message);
+        _writer.Put(reconnect);
 
         foreach (var ipEndPoint in _endPoints)
         {

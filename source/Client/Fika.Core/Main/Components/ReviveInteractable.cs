@@ -43,9 +43,9 @@ internal sealed class ReviveInteractable : InteractableObject
     private GamePlayerOwner _owner;
     private FikaPlayer _localPlayer;
     private CorpseRagdoll _ragdoll;
-    private System.Action<EPlayerState, EPlayerState> _stateChangedHandler;
-    private System.Action<EPhysicalCondition, EPhysicalCondition> _physicalConditionHandler;
-    private System.Action _preCollisionHandler;
+    private MovementContext.OnStateChangeDelegate _stateChangedHandler;
+    private Il2CppSystem.Action<EPhysicalCondition, EPhysicalCondition> _physicalConditionHandler;
+    private Il2CppSystem.Action _preCollisionHandler;
     private bool _ragdollActive;
     private bool _reviveInProgress;
 
@@ -59,13 +59,13 @@ internal sealed class ReviveInteractable : InteractableObject
         component._finishLootingDelegate = (Callback)component.FinishLooting;
         // These handlers were installed by Player.Init in native code. Managed
         // trampolines have different identities and cannot remove those handlers.
-        component._stateChangedHandler = NativeDelegates.BindManaged<System.Action<EPlayerState, EPlayerState>>(
-            observedPlayer, nameof(Player.MovementContextOnStateChanged));
-        component._physicalConditionHandler = NativeDelegates.BindManaged<System.Action<EPhysicalCondition, EPhysicalCondition>>(
-            observedPlayer.ProceduralWeaponAnimation,
+        component._stateChangedHandler = NativeDelegates.Find<MovementContext.OnStateChangeDelegate>(
+            observedPlayer.MovementContext.OnStateChanged, observedPlayer, nameof(Player.MovementContextOnStateChanged));
+        component._physicalConditionHandler = NativeDelegates.Find<Il2CppSystem.Action<EPhysicalCondition, EPhysicalCondition>>(
+            observedPlayer.MovementContext.PhysicalConditionChanged, observedPlayer.ProceduralWeaponAnimation,
             nameof(observedPlayer.ProceduralWeaponAnimation.PhysicalConditionUpdated));
-        component._preCollisionHandler = NativeDelegates.BindManaged<System.Action>(
-            observedPlayer, nameof(Player.IkStoreRaw));
+        component._preCollisionHandler = NativeDelegates.Find<Il2CppSystem.Action>(
+            observedPlayer.ProceduralWeaponAnimation.OnPreCollision, observedPlayer, nameof(Player.IkStoreRaw));
         component.Init();
         return component;
     }

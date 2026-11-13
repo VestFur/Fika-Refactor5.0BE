@@ -5,5 +5,9 @@
     <BepInExCore>$(GameDir)\BepInEx\core</BepInExCore>
     <InteropDir>$(GameDir)\BepInEx\interop</InteropDir>
     <SptClientDir>$(GameDir)\BepInEx\plugins\sptushonka</SptClientDir>
+    <!-- Alternate output roots (obj-t3/, bin-t4/, ...) are used to keep experimental
+         builds away from the checked-in obj/ and bin/ trees; their generated sources
+         must never enter the compile set. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);obj*/**;bin*/**</DefaultItemExcludes>
   </PropertyGroup>
 </Project>

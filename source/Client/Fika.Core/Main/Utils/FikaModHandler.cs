@@ -32,14 +32,8 @@ public class FikaModHandler
 
     public FikaModHandler()
     {
-        // SPTushonka 5.0.0 registers its plugins under the com.sptushonka.* GUIDs, older
-        // builds used the bare sptushonka.* names. Accept both and never dereference a
-        // null PluginInfo: a single lookup miss used to throw out of this constructor
-        // and the chainloader then discarded the whole plugin.
-        var plugins = IL2CPPChainloader.Instance.Plugins;
-        var present = plugins.TryGetValue("com.sptushonka.core", out var pluginInfo)
-            || plugins.TryGetValue("sptushonka.core", out pluginInfo);
-        SPTCoreVersion = present ? pluginInfo.Metadata.Version : null;
+        IL2CPPChainloader.Instance.Plugins.TryGetValue("sptushonka.core", out var pluginInfo);
+        SPTCoreVersion = pluginInfo.Metadata.Version;
     }
 
     public async Task VerifyMods(PatchManager manager)

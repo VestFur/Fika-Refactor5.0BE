@@ -49,19 +49,9 @@ public class ClientPacketSender : MonoBehaviour, IPacketSender
     {
         get
         {
-            // (analysis/perf-multiplayer) The same conjunction, cheapest and least often true first. The ping
-            // key is false on virtually every frame, and every predicate behind it is an il2cpp read (the
-            // player, the preloader console, the game status), so putting the key test in front removes up to
-            // six native reads per frame from a client's frame - the game's frame every second of a raid.
-            // Only the order changes: all predicates are side-effect free reads of the same values.
-            return FikaPlugin.Instance.Settings.UsePingSystem.Value
-                && Input.GetKey(FikaPlugin.Instance.Settings.PingButton.Value.MainKey)
-                && _lastPingTime < DateTime.Now.AddSeconds(-3)
-                && _player.IsYourPlayer
-                && FikaGlobals.AreModifiersPressed(FikaPlugin.Instance.Settings.PingButton.Value)
-                && !MonoBehaviourSingleton<PreloaderUI>.Instance.Console.IsConsoleVisible
-                && !FikaChatUIScript.IsActive
-                && FikaSingleton<IFikaGame>.Instance is CoopGame coopGame && coopGame.Status is GameStatus.Started
+            return FikaPlugin.Instance.Settings.UsePingSystem.Value && _player.IsYourPlayer && Input.GetKey(FikaPlugin.Instance.Settings.PingButton.Value.MainKey)
+                && FikaGlobals.AreModifiersPressed(FikaPlugin.Instance.Settings.PingButton.Value) && !MonoBehaviourSingleton<PreloaderUI>.Instance.Console.IsConsoleVisible
+                && _lastPingTime < DateTime.Now.AddSeconds(-3) && !FikaChatUIScript.IsActive && FikaSingleton<IFikaGame>.Instance is CoopGame coopGame && coopGame.Status is GameStatus.Started
                 && !_player.IsInventoryOpened;
         }
     }
@@ -95,24 +85,7 @@ public class ClientPacketSender : MonoBehaviour, IPacketSender
         }
     }
 
-    /// <summary>
-    /// (analysis/perf-round2) The state sender is one slot of the frame-cost probe: this is where the client
-    /// serialises and sends its own player state at 'Send Rate' Hz, on the main thread.
-    /// </summary>
     protected void Update()
-    {
-        
-        try
-        {
-            UpdateMeasured();
-        }
-        finally
-        {
-            
-        }
-    }
-
-    private void UpdateMeasured()
     {
         if (!SendState)
         {
@@ -135,13 +108,10 @@ public class ClientPacketSender : MonoBehaviour, IPacketSender
 
     protected void LateUpdate()
     {
-        
         if (CanPing)
         {
             SendPing();
         }
-
-        
     }
 
     private void SendPing()
@@ -234,7 +204,7 @@ public class ClientPacketSender : MonoBehaviour, IPacketSender
             abstractPing.Initialize(ref hitPoint, userData, pingColor);
 
             NetworkManager.SendGenericPacket(Networking.Packets.Generic.EGenericSubPacketType.Ping,
-                PingPacket.FromValue(hitPoint, pingType, pingColor, _player.Profile.GetDisplayName(), localeId), true);
+                PingPacket.FromValue(hitPoint, pingType, pingColor, _player.Profile.Info.MainProfileNickname, localeId), true);
 
             if (FikaPlugin.Instance.Settings.PlayPingAnimation.Value && _player.HealthController.IsAlive)
             {

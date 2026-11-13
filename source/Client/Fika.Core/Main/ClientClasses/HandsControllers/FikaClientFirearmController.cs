@@ -542,7 +542,7 @@ public class FikaClientFirearmController : Player.FirearmController
 
     public override bool ToggleLauncher(Il2CppSystem.Action callback = null)
     {
-        var flag = global::Fika.Core.Main.Utils.NativeBaseCalls.Call32(this, callback ?? FikaGlobals.EmptyNativeAction);
+        var flag = global::Fika.Core.Main.Utils.NativeBaseCalls.Call32(this, callback);
         if (flag)
         {
             _packet.Type = EFirearmSubPacketType.ToggleLauncher;
@@ -587,10 +587,9 @@ public class FikaClientFirearmController : Player.FirearmController
         _packet.SubPacket = FlareShotPacket.FromValue(shotPosition, forward, flareItem.TemplateId, false);
         _fikaPlayer.PacketSender.NetworkManager.SendNetReusable(ref _packet, DeliveryMethod.ReliableOrdered, true);
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call36(this, flareItem, shotPosition, forward);
-        // Green ("ExitActivate") flares activate a flare exfiltration point for the shooter and,
-        // by default, its squad. The native detector zone only records the flare on the machine
-        // that saw it succeed, so a client reports it to the host here.
-        global::Fika.Core.Main.Components.FikaFlareExfil.OnLocalFlareShot(flareItem, shotPosition);
+        // Feeding the flare relay: the native detector zone decides whether this
+        // shot was inside a signal flare zone, the probe only measures latency.
+        global::Fika.Core.Main.Components.FikaFlareExfilManager.NotifyLocalFlareShot();
     }
 
     public override void CreateRocketShot(Ammo rocketItem, Vector3 shotPosition, Vector3 forward, Transform smokeport = null)

@@ -30,18 +30,16 @@ public class ClientQuestController(Profile profile, InventoryController inventor
     /// Used to prevent errors when subscribing to the event
     /// </summary>
     private bool _eventsSubscribed;
-    // Profile.OnItemZoneDropped, Player.OnSpecialPlaceVisited and
-    // InventoryController.AddItemEvent are managed events in 47888.
-    private System.Action<string, string> _itemZoneDropped;
-    private System.Action<string, int> _specialPlaceVisited;
-    private System.Action<AddItemEventArgs> _itemAdded;
+    private Il2CppSystem.Action<string, string> _itemZoneDropped;
+    private Il2CppSystem.Action<string, int> _specialPlaceVisited;
+    private Il2CppSystem.Action<AddItemEventArgs> _itemAdded;
 
     public virtual void LateInit()
     {
         if (_eventsSubscribed) return;
-        _itemZoneDropped = Profile_OnItemZoneDropped;
-        _specialPlaceVisited = Player_OnSpecialPlaceVisited;
-        _itemAdded = InventoryController_AddItemEvent;
+        _itemZoneDropped = (Il2CppSystem.Action<string, string>)Profile_OnItemZoneDropped;
+        _specialPlaceVisited = (Il2CppSystem.Action<string, int>)Player_OnSpecialPlaceVisited;
+        _itemAdded = (Il2CppSystem.Action<AddItemEventArgs>)InventoryController_AddItemEvent;
         _eventsSubscribed = true;
         _player.Profile.OnItemZoneDropped += _itemZoneDropped;
         _player.OnSpecialPlaceVisited += _specialPlaceVisited;
@@ -212,6 +210,94 @@ public class ClientQuestController(Profile profile, InventoryController inventor
         return result;
     }
 
+    internal void ReceiveReconnectQuestSync(List<QuestSyncPacket> packets)
+    {
+        var shouldReset = _canSendAndReceive;
+        var shouldSend = _sendQuestSync;
+        _canSendAndReceive = false;
+        _sendQuestSync = false;
+
+        try
+        {
+            for (var i = 0; i < packets.Count; i++)
+            {
+                var packet = packets[i];
+                switch (packet.Type)
+                {
+                    case QuestSyncPacket.EQuestSyncType.Conditional:
+                        QuestConditionValueChanged(packet.QuestId, packet.ConditionId, packet.Value);
+                        break;
+                    case QuestSyncPacket.EQuestSyncType.ItemDrop:
+                        Profile.ItemDroppedAtPlace(packet.ItemId, packet.ZoneId);
+                        break;
+                    case QuestSyncPacket.EQuestSyncType.PlaceVisited:
+                        _player.SpecialPlaceVisited(packet.ZoneId, 0);
+                        break;
+                    case QuestSyncPacket.EQuestSyncType.PickUpQuestItem:
+                        if (!ReferenceEquals(packet.ItemId, null)) LootReconnectQuestItem(packet.ItemId);
+                        break;
+                }
+            }
+        }
+        finally
+        {
+            _canSendAndReceive = shouldReset;
+            _sendQuestSync = shouldSend;
+        }
+    }
+
+    private void LootReconnectQuestItem(MongoID itemId)
+    {
+        // The authoritative profile may already contain this quest item.
+        foreach (var existing in _player.Inventory.QuestRaidItems.GetAllItems())
+        {
+            if (existing.QuestItem && existing.TemplateId == itemId) return;
+        }
+
+        var gameWorld = _player.GameWorld?.TryCast<FikaClientGameWorld>();
+        if (gameWorld == null) return;
+        var lootItems = gameWorld._questLootItems;
+
+#if DEBUG
+        FikaGlobals.LogInfo($"Looking for quest item [{itemId}]");
+#endif
+
+        for (var i = lootItems.Count - 1; i >= 0; i--)
+        {
+            var lootItem = lootItems[i];
+#if DEBUG
+            FikaGlobals.LogInfo($"Scanning quest item [{lootItem.Item.TemplateId}]");
+#endif
+            if (lootItem.Item.TemplateId == itemId)
+            {
+                var item = gameWorld.CreateReconnectQuestItem(lootItem, true, _player);
+                var playerInventory = _player.InventoryController;
+                var equipment = playerInventory.Inventory.Equipment?.TryCast<CompoundItem>();
+                if (equipment == null) return;
+                var pickupResult = ItemManipulator.QuickFindAppropriatePlace(item, playerInventory,
+                    equipment.ToEnumerable(),
+                    ItemManipulator.EMoveItemOrder.PickUp, true);
+
+                if (pickupResult.Succeeded && playerInventory.CanExecute(pickupResult.Value))
+                {
+                    playerInventory.RunNetworkTransaction(pickupResult.Value, (Callback)(result =>
+                    {
+                        if (IsDisposed) return;
+                        if (result.Succeed) lootItems.Remove(lootItem);
+                        else FikaGlobals.LogError($"Quest item reconnect pickup failed for {itemId}: {result.Error}");
+                    }));
+                }
+                else
+                {
+                    FikaGlobals.LogError($"There was an error when looting the quest item [{item.LocalizedShortName()}] during resync: {pickupResult.Error}");
+                }
+
+                return;
+            }
+        }
+
+        FikaGlobals.LogError($"Could not find item [{itemId}] during resync");
+    }
 
     public void QuestConditionValueChanged(string questId, MongoID conditionId, double value)
     {

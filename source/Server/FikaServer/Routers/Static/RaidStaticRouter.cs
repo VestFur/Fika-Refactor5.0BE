@@ -1,4 +1,4 @@
-using FikaServer.Callbacks;
+﻿using FikaServer.Callbacks;
 using FikaServer.Models.Fika.Routes.Headless;
 using FikaServer.Models.Fika.Routes.Raid;
 using FikaServer.Models.Fika.Routes.Raid.Create;

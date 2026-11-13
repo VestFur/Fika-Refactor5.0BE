@@ -1,4 +1,4 @@
-﻿namespace Fika.Core.Networking.Packets.Generic;
+namespace Fika.Core.Networking.Packets.Generic;
 
 /// <summary>
 /// Represents generic game-level packet events unrelated to specific systems.
@@ -96,7 +96,13 @@ public enum EGenericSubPacketType : byte
     SpawnAI,
 
     /// <summary>Trader dialog entry occupancy.</summary>
-    DialogEntry
+    DialogEntry,
+
+    /// <summary>
+    /// Flare-fired report for signal-flare exits: client to host, then the host's
+    /// canonical broadcast of the activation scope.
+    /// </summary>
+    FlareShootReport
 
     /// <summary>
     /// Train synchronization event (commented out).

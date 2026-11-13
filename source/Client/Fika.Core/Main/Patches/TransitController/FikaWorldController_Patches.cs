@@ -89,40 +89,6 @@ public sealed class FikaTransitInteractPatch : ModulePatch
     }
 }
 
-/// <summary>
-/// (2026-10-19) A Fika client does not own the transit bookkeeping the native requirements read (group size,
-/// party members), so every point answered "this transit point cannot be used right now" and the interact
-/// prompt never became usable. The host validates the interaction itself (<c>InteractWithTransit</c>), so the
-/// client-side requirement check is answered true and the existing packet does the rest.
-/// </summary>
-public sealed class FikaTransitClientRequirementsPatch : ModulePatch
-{
-    protected override MethodBase GetTargetMethod() =>
-        AccessTools.DeclaredMethod(typeof(TransitPoint), nameof(TransitPoint.CheckInitialRequirements));
-
-    [PatchPrefix]
-    private static bool Prefix(ref bool __result)
-    {
-        if (!Fika.Core.Main.Utils.FikaBackendUtils.IsClient) return true;
-        __result = true;
-        return false;
-    }
-}
-
-public sealed class FikaTransitClientPartySizePatch : ModulePatch
-{
-    protected override MethodBase GetTargetMethod() =>
-        AccessTools.DeclaredMethod(typeof(TransitPoint), nameof(TransitPoint.CheckAlivePartySizeRequirement));
-
-    [PatchPrefix]
-    private static bool Prefix(ref bool __result)
-    {
-        if (!Fika.Core.Main.Utils.FikaBackendUtils.IsClient) return true;
-        __result = true;
-        return false;
-    }
-}
-
 public sealed class FikaTransitExtractPatch : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.DeclaredMethod(typeof(LocalTransitController), nameof(LocalTransitController.Transit));

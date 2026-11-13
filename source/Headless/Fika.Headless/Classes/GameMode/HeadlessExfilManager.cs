@@ -5,7 +5,6 @@ using EFT;
 using EFT.Interactive;
 using EFT.Interactive.SecretExfiltrations;
 using Fika.Core;
-using Fika.Core.Main.Utils;
 using Fika.Core.Networking;
 using Fika.Core.Networking.Packets.Generic;
 using Fika.Core.Networking.Packets.Generic.SubPackets;
@@ -27,22 +26,18 @@ public sealed class HeadlessExfilManager : MonoBehaviour
     }
 
     private HeadlessGame _game;
-    private System.Action<ExfiltrationPoint, EExfiltrationStatus> _statusChanged;
+    private Il2CppSystem.Action<ExfiltrationPoint, EExfiltrationStatus> _statusChanged;
     private readonly Dictionary<IntPtr, ExfiltrationPoint> _boundPoints = [];
     private readonly Dictionary<IntPtr, ExfiltrationPoint> _countdownPoints = [];
-    private readonly List<ExfiltrationPoint> _countdownSnapshot = [];
 
     private void Awake()
     {
         _game = gameObject.GetComponent<HeadlessGame>();
-        _statusChanged = (System.Action<ExfiltrationPoint, EExfiltrationStatus>)OnStatusChanged;
+        _statusChanged = (Il2CppSystem.Action<ExfiltrationPoint, EExfiltrationStatus>)OnStatusChanged;
     }
 
     public void Run(ExfiltrationPoint[] points, SecretExfiltrationPoint[] secretPoints)
     {
-        // Which exits wait for a manual activation is what tells a green flare exit from a plain
-        // one; the classification also feeds the countdown suppression below.
-        Fika.Core.Main.Components.FikaFlareExfil.CaptureInitialStatus(points, secretPoints);
         ReleaseBindings(false);
 
         foreach (var point in points ?? [])
@@ -75,24 +70,7 @@ public sealed class HeadlessExfilManager : MonoBehaviour
         if (_game == null || _game.Status != GameStatus.Started)
             return;
 
-        // A headless host has no FikaExfilManager, so this is the only place that re-sends the
-        // current flare grants to the peers (late joiners, lost packets).
-        Fika.Core.Main.Components.FikaFlareExfil.HostTick();
-
-        // (2026-10-27 W44) 这个 Update 每帧跑，`.Values.ToArray()` 每帧都会分配一个新数组
-        // （哪怕倒计时字典是空的）。改成复用同一个缓冲：先拷进缓冲、再遍历，语义不变。
-        if (_countdownPoints.Count == 0)
-        {
-            return;
-        }
-
-        _countdownSnapshot.Clear();
-        foreach (var pair in _countdownPoints)
-        {
-            _countdownSnapshot.Add(pair.Value);
-        }
-
-        foreach (var point in _countdownSnapshot)
+        foreach (var point in _countdownPoints.Values.ToArray())
         {
             if (_game.PastTime - point.ExfiltrationStartTime > point.Settings.ExfiltrationTime &&
                 _countdownPoints.Remove(point.Pointer))
@@ -118,17 +96,8 @@ public sealed class HeadlessExfilManager : MonoBehaviour
         if (point.ExfiltrationStartTime is <= 0 and > -90)
         {
             point.ExfiltrationStartTime = _game.PastTime;
-            if (Fika.Core.Main.Components.FikaFlareExfil.IsGatedPoint(point.Settings.Name))
-            {
-                // Identity-less countdown replication would open a flare exit on every peer. The
-                // activation reaches the covered players as a grant instead.
-                Fika.Core.Main.Components.FikaFlareExfil.LogCountdownSuppressed(point.Settings.Name);
-            }
-            else
-            {
-                FikaSingleton<IFikaNetworkManager>.Instance.SendGenericPacket(EGenericSubPacketType.ExfilCountdown,
-                    ExfilCountdown.FromValue(point.Settings.Name, point.ExfiltrationStartTime), true);
-            }
+            FikaSingleton<IFikaNetworkManager>.Instance.SendGenericPacket(EGenericSubPacketType.ExfilCountdown,
+                ExfilCountdown.FromValue(point.Settings.Name, point.ExfiltrationStartTime), true);
         }
 
         _countdownPoints[point.Pointer] = point;
@@ -136,77 +105,16 @@ public sealed class HeadlessExfilManager : MonoBehaviour
 
     public void Stop() => ReleaseBindings(true);
 
-    /// <summary>
-    /// Releases every point this manager bound. Teardown runs from <see cref="OnDestroy"/>
-    /// and from <see cref="Run"/> (rebinding), so it must never throw. By the time the
-    /// manager is destroyed the game can already have destroyed the points (scene unload,
-    /// transit, application quit); the native <c>ExfiltrationPoint.Disable()</c> then
-    /// throws a NullReferenceException from inside IL2CPP. Destroyed points are skipped and
-    /// every point is released on its own, so one bad point cannot abort the release of the
-    /// others. The dictionary is consumed before the loop, which keeps repeated calls a no-op.
-    /// </summary>
     private void ReleaseBindings(bool disablePoints)
     {
         _countdownPoints.Clear();
-
-        // Take the bindings first: a point that fails must not leave a partially
-        // released dictionary behind for a later Stop() call.
-        var boundPoints = _boundPoints.Values.ToArray();
+        foreach (var point in _boundPoints.Values.ToArray())
+        {
+            point.OnStatusChanged -= _statusChanged;
+            if (disablePoints)
+                point.Disable();
+        }
         _boundPoints.Clear();
-
-        var skipped = 0;
-        var failures = 0;
-        string firstFailure = null;
-
-        for (var i = 0; i < boundPoints.Length; i++)
-        {
-            var point = boundPoints[i];
-            // Unity reports a destroyed point as null through the Unity object
-            // operator; the native Disable() on it throws from inside IL2CPP.
-            if (point == null)
-            {
-                skipped++;
-                continue;
-            }
-
-            try
-            {
-                point.OnStatusChanged -= _statusChanged;
-                if (disablePoints)
-                    point.Disable();
-            }
-            catch (System.Exception exception)
-            {
-                failures++;
-                firstFailure ??= DescribePoint(point) + ": " + exception.Message;
-            }
-        }
-
-        if (failures > 0)
-        {
-            FikaGlobals.LogWarning($"[ExfilTeardown] released exfil bindings: {skipped} destroyed, {failures} failed; first: {firstFailure}");
-        }
-        else if (skipped > 0)
-        {
-            FikaGlobals.LogInfo($"[ExfilTeardown] skipped {skipped} already destroyed exfiltration point(s)");
-        }
-    }
-
-    /// <summary>
-    /// Best-effort point name for the teardown log lines: a point that is already
-    /// destroyed can throw while reading its own settings.
-    /// </summary>
-    private static string DescribePoint(ExfiltrationPoint point)
-    {
-        try
-        {
-            var name = point?.Settings?.Name;
-            return string.IsNullOrEmpty(name) ? "<unnamed>" : name;
-        }
-        catch
-        {
-            return "<unreadable>";
-        }
     }
 
     private void OnDestroy() => Stop();

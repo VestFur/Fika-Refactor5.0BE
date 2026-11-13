@@ -61,11 +61,11 @@ public class ObservedStationaryState : StationaryPlayerState
             ? MovementContext.AGSRotationFunction : MovementContext.UtesRotationFunction;
         Stage = EStationaryStage.Main;
         var player = MovementContext._player;
-        var changed = NativeDelegates.BindManaged<System.Action<Player.AbstractHandsController, Player.AbstractHandsController>>(this, nameof(OnHandsControllerChanged));
-        var changing = NativeDelegates.BindManaged<System.Action>(this, nameof(MovementContextOnHandsChangedEvent));
+        var changed = NativeDelegates.Bind<Il2CppSystem.Action<Player.AbstractHandsController, Player.AbstractHandsController>>(this, nameof(OnHandsControllerChanged));
+        var changing = NativeDelegates.Bind<Il2CppSystem.Action>(this, nameof(MovementContextOnHandsChangedEvent));
         player.OnHandsControllerChanged += changed;
         player.HandsChangingEvent += changing;
-        _handsChangingEventUnsubscribe = (System.Action)(() =>
+        _handsChangingEventUnsubscribe = (Il2CppSystem.Action)(() =>
         {
             player.OnHandsControllerChanged -= changed;
             player.HandsChangingEvent -= changing;

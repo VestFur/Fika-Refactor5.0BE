@@ -607,18 +607,18 @@ public partial class FreeCamera : MonoBehaviour
         {
             if (!_nightVision.On && !_thermalVision.On)
             {
-                _nightVision.Switch(true);
+                _nightVision.On = true;
                 _freecamUI.VisionText.Value.SetText("N: Enable thermals");
             }
             else if (_nightVision.On && !_thermalVision.On)
             {
-                _nightVision.Switch(false);
-                _thermalVision.Switch(true);
+                _nightVision.On = false;
+                _thermalVision.On = true;
                 _freecamUI.VisionText.Value.SetText("N: Disable thermals");
             }
             else if (_thermalVision.On)
             {
-                _thermalVision.Switch(false);
+                _thermalVision.On = false;
                 _freecamUI.VisionText.Value.SetText("N: Enable nightvision");
             }
         }

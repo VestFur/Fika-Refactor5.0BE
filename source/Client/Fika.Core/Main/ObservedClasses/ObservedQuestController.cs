@@ -113,6 +113,60 @@ public class ObservedQuestController(Profile profile, InventoryController invent
         return string.Equals(left.ToString(), right.ToString(), System.StringComparison.Ordinal);
     }
 
+    public bool TryGetReconnectQuestSyncPackets(out List<QuestSyncPacket> packets)
+    {
+        if (_questsDict.Count == 0 && _zoneDrops.Count == 0 && _visitedPlaces.Count == 0 && _lootedQuestItems.Count == 0)
+        {
+            packets = null;
+            return false;
+        }
+
+        packets = new List<QuestSyncPacket>(_questsDict.Count + _zoneDrops.Count + _visitedPlaces.Count + _lootedQuestItems.Count);
+        foreach ((var questId, var questInformation) in _questsDict)
+        {
+            foreach (var quest in questInformation)
+            {
+                packets.Add(new QuestSyncPacket
+                {
+                    Type = QuestSyncPacket.EQuestSyncType.Conditional,
+                    QuestId = questId,
+                    ConditionId = quest.ConditionId,
+                    Value = quest.Value
+                });
+            }
+        }
+
+        for (var i = 0; i < _zoneDrops.Count; i++)
+        {
+            var zoneDrop = _zoneDrops[i];
+            packets.Add(new QuestSyncPacket
+            {
+                Type = QuestSyncPacket.EQuestSyncType.ItemDrop,
+                ItemId = zoneDrop.ItemId,
+                ZoneId = zoneDrop.ZoneId
+            });
+        }
+
+        for (var i = 0; i < _visitedPlaces.Count; i++)
+        {
+            packets.Add(new QuestSyncPacket
+            {
+                Type = QuestSyncPacket.EQuestSyncType.PlaceVisited,
+                ZoneId = _visitedPlaces[i]
+            });
+        }
+
+        for (var i = 0; i < _lootedQuestItems.Count; i++)
+        {
+            packets.Add(new QuestSyncPacket
+            {
+                Type = QuestSyncPacket.EQuestSyncType.PickUpQuestItem,
+                ItemId = _lootedQuestItems[i]
+            });
+        }
+
+        return true;
+    }
 
     protected override void DisposeNative() => DisposeObservedNative();
 

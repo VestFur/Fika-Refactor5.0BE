@@ -1,4 +1,4 @@
-// © 2026 Lacyway All Rights Reserved
+﻿// © 2026 Lacyway All Rights Reserved
 
 using System;
 using Comfort.Common;
@@ -35,7 +35,7 @@ public sealed class BotInventoryOperationHandler : IDisposable
     {
         if (result.Failed)
         {
-            FikaGlobals.LogWarning($"BotInventoryOperationHandler: Operation has failed! Controller: {_inventoryController.Name}, Operation ID: {Operation.Id}, Operation: {LogSafe.Ref(Operation)}, Error: {result.Error}");
+            FikaGlobals.LogWarning($"BotInventoryOperationHandler: Operation has failed! Controller: {_inventoryController.Name}, Operation ID: {Operation.Id}, Operation: {Operation}, Error: {result.Error}");
         }
 
         Callback?.Invoke(result);

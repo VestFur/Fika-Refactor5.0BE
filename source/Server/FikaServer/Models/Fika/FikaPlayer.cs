@@ -1,4 +1,4 @@
-namespace FikaServer.Models.Fika;
+﻿namespace FikaServer.Models.Fika;
 
 public record FikaPlayer
 {

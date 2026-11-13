@@ -16,22 +16,6 @@ internal static class UnityEventCompatExtensions
         evt.AddListener(action);
     }
 
-    /// <summary>
-    /// Counterpart of <see cref="AddListener(UnityEvent, Action)"/>.
-    ///
-    /// The conversion is cached per managed delegate (Il2CppInterop keeps a
-    /// ConditionalWeakTable keyed by the CLR delegate), so converting the *same* delegate
-    /// instance again yields the same native listener and the removal actually finds it.
-    /// Passing a fresh method group would create a second, different listener and leave the
-    /// first one registered - which is how a native event ends up holding a delegate whose
-    /// target the managed side has already dropped.
-    /// </summary>
-    public static void RemoveListener(this UnityEvent evt, Action listener)
-    {
-        UnityAction action = listener;
-        evt.RemoveListener(action);
-    }
-
     public static void AddListener<T>(this UnityEvent<T> evt, Action<T> listener)
     {
         UnityAction<T> action = listener;

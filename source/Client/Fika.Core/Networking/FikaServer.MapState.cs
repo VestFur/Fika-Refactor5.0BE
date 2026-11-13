@@ -38,16 +38,11 @@ public sealed partial class FikaServer
             BtrSpawn.FromValue(spawn.Position, spawn.Rotation, spawn.PlayerRaidId, _btrSpawnGeneration), true);
     }
 
-    /// <summary>
-    /// Hands a peer that joined a running raid the world state it cannot have seen: transit history and
-    /// points, the event generators, Kolotun and the BTR. Sent when a peer reports its transit
-    /// controllers, i.e. once per late join.
-    /// </summary>
-    private void SendMapStateSnapshot(Player player, NetPeer peer)
+    private void SendMapStateForReconnect(Player player, NetPeer peer)
     {
         var world = Singleton<GameWorld>.Instance;
         // The optional Headless plugin supplies its own TransitController
-        // subclass. Read the shared native state so these snapshots work
+        // subclass. Read the shared native state so reconnect snapshots work
         // for both the playable host and Headless host.
         var transit = world?.TransitController;
         if (transit != null)
@@ -61,21 +56,10 @@ public sealed partial class FikaServer
                 };
                 SendDataToPeer(ref historyPacket, DeliveryMethod.ReliableOrdered, peer);
             }
-            // CreateInitialization (the Fika transit controller) needs a host side history
-            // entry for that profile. The native fallback below builds the snapshot without
-            // one, so a peer that connects while the raid is already running is served either
-            // way and never stays without transit points.
             var init = FikaWorldControllers.Find<FikaHostTransitController>(transit)?.CreateInitialization(player)
                 ?? CreateNativeTransitInitialization(transit, player,
                     FikaSingleton<Main.GameMode.IFikaGame>.Instance?.GameController?.RaidSettings?.SelectedDateTime ?? default);
-            if (init != null)
-            {
-                SendDataToPeer(ref init, DeliveryMethod.ReliableOrdered, peer);
-            }
-            else
-            {
-                _logger.LogWarning($"[Transit] No initialization snapshot could be built for {player?.ProfileId}; the peer keeps its locally created transit state");
-            }
+            if (init != null) SendDataToPeer(ref init, DeliveryMethod.ReliableOrdered, peer);
             foreach (var point in transit.pointsById.Values)
             {
                 if (!transit.transitPlayers.ContainsKey(player.ProfileId) ||
@@ -133,39 +117,11 @@ public sealed partial class FikaServer
         }
     }
 
-    /// <summary>
-    /// Builds the transit initialization snapshot for a player whose state this server can
-    /// describe. It deliberately does not require a host side transit history: a peer reports
-    /// one through BaseGameController.SyncTransitControllers, and that report only runs from
-    /// countdown statement 6/8, which the cooperative settings can skip. Without the history
-    /// fallback a peer that connected mid raid received no initialization at all and its
-    /// transit points stayed unusable.
-    /// </summary>
-    private TransitEventPacket CreateNativeTransitInitialization(TransitController transit, Player player,
+    private static TransitEventPacket CreateNativeTransitInitialization(TransitController transit, Player player,
         EDateTime fallbackTime)
     {
-        if (player == null || transit == null)
-        {
+        if (player == null || !transit.summonedTransits.TryGetValue(player.ProfileId, out var history))
             return null;
-        }
-
-        ushort transitionCount;
-        bool eventPlayer;
-        if (transit.summonedTransits.TryGetValue(player.ProfileId, out var history))
-        {
-            transitionCount = (ushort)System.Math.Clamp(history.count, 0, ushort.MaxValue);
-            eventPlayer = history.events;
-        }
-        else
-        {
-            // The peer keeps the count it built from the raid settings it received, so report
-            // the same raid wide transition state (the object the local raid settings point
-            // at) instead of a zeroed history, which would take its transit points away.
-            var transitData = FikaBackendUtils.TransitData;
-            transitionCount = (ushort)System.Math.Clamp(transitData?.transitionCount ?? 0, 0, ushort.MaxValue);
-            eventPlayer = transitData != null && transitData.transitionType.HasFlagNoBox(ELocationTransition.Event);
-            _logger.LogWarning($"[Transit] No host side transit history for {player.ProfileId}; sending an initialization snapshot from the raid transition state (count={transitionCount}, event={eventPlayer})");
-        }
 
         var points = new Il2CppSystem.Collections.Generic.Dictionary<int, JsonType.LocationSettings.Location.TransitParameters>();
         var requirements = new Il2CppSystem.Collections.Generic.Dictionary<int, bool>();
@@ -195,7 +151,7 @@ public sealed partial class FikaServer
             {
                 PlayerRaidId = player.RaidId, Points = points,
                 CompletedQuestRequirementMetByPointId = requirements,
-                TransitionCount = transitionCount, EventPlayer = eventPlayer
+                TransitionCount = (ushort)history.count, EventPlayer = history.events
             },
             EnabledPointIds = enabled.ToArray(), RegisteredPointId = registered,
             KeyId = key, SelectedTime = time

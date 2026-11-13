@@ -44,12 +44,12 @@ namespace Fika.Headless;
 
 [BepInPlugin("com.fika.headless", "Fika.Headless", HeadlessVersion)]
 [BepInDependency("com.fika.core", BepInDependency.DependencyFlags.HardDependency)]
-[BepInDependency("com.sptushonka.custom", BepInDependency.DependencyFlags.HardDependency)]
+[BepInDependency("sptushonka.custom", BepInDependency.DependencyFlags.HardDependency)]
 public class FikaHeadlessPlugin : BasePlugin
 {
     // 1.5.3: the plugin is mode-gated. It only arms the dedicated-host payload
     // for a confirmed host; in normal play it installs nothing at all.
-    public const string HeadlessVersion = "1.5.5";
+    public const string HeadlessVersion = "1.5.3";
 
     public static FikaHeadlessPlugin Instance { get; private set; }
     public static ManualLogSource FikaHeadlessLogger;
@@ -206,7 +206,7 @@ public class FikaHeadlessPlugin : BasePlugin
     /// </summary>
     private void InstallObserverPatches()
     {
-        Fika.Core.PatchManager manager = new(this, true);
+        PatchManager manager = new(this, true);
         var installed = 0;
         foreach (var type in HeadlessPatchCatalog.ObserverPatches)
         {
@@ -312,7 +312,7 @@ public class FikaHeadlessPlugin : BasePlugin
 
         // The deferred patches: manual per-class installation, so an unarmed
         // plugin has installed none of them.
-        Fika.Core.PatchManager manager = new(this, true);
+        PatchManager manager = new(this, true);
         var installed = 0;
         List<string> failed = [];
         foreach (var type in patches)
@@ -337,7 +337,7 @@ public class FikaHeadlessPlugin : BasePlugin
         {
             try
             {
-                Fika.Core.PatchManager botManager = new(this, true);
+                PatchManager botManager = new(this, true);
                 botManager.EnablePatch(new BotStandBy_Update_Transpiler());
             }
             catch (Exception exception)
@@ -623,7 +623,7 @@ public class FikaHeadlessPlugin : BasePlugin
                 new AcceptableValueList<string>(
                     nameof(HeadlessRunMode.Auto), nameof(HeadlessRunMode.Headless), nameof(HeadlessRunMode.Disabled))));
 
-        UpdateRate = Config.Bind("Headless", "Update Rate", 30,
+        UpdateRate = Config.Bind("Headless", "Update Rate", 60,
             new ConfigDescription("How often the server should update (frame cap / tick rate). Only works if your machine can actually reach the selected setting",
             new AcceptableValueRange<int>(30, 120)));
 
@@ -1085,7 +1085,7 @@ public class FikaHeadlessPlugin : BasePlugin
                 $"profile={mainProfile != null}, profileInfo={mainProfile?.Info != null}, " +
                 $"allProfiles={matchingSession?.AllProfiles?.Length ?? -1}, " +
                 $"pet={petProfile != null}, petInfo={petProfile?.Info != null}, " +
-                $"petIdNull={mainProfile?.PetId is null}, petProfileIdNull={petProfile?.Id is null}, " +
+                $"petId={mainProfile?.PetId}, petProfileId={petProfile?.Id}, " +
                 $"bonus={mainProfile?.BonusController != null}, " +
                 $"selectedLocation={raidSettings.SelectedLocation != null}, locationTable={raidSettings._locationSettings != null}, " +
                 $"social={matchingSession?.SocialNetwork != null}, itemUi={ItemUiContext.Instance != null}, " +

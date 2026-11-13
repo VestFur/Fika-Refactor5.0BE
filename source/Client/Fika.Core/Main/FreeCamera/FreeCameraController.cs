@@ -98,7 +98,7 @@ public class FreeCameraController : MonoBehaviour
     private DisablerCullingObjectBase[] _allCullingObjects;
     private List<PerfectCullingBakeGroup> _previouslyActiveBakeGroups;
     private bool _hasEnabledCulling;
-    private System.Action<EDamageType> _diedHandler;
+    private Il2CppSystem.Action<EDamageType> _diedHandler;
 
     protected void Awake()
     {
@@ -146,7 +146,7 @@ public class FreeCameraController : MonoBehaviour
         _allCullingObjects = FindObjectsOfType<DisablerCullingObjectBase>();
         _previouslyActiveBakeGroups = [];
 
-        _diedHandler = (System.Action<EDamageType>)MainPlayer_DiedEvent;
+        _diedHandler = (Il2CppSystem.Action<EDamageType>)MainPlayer_DiedEvent;
         Player.ActiveHealthController.DiedEvent += _diedHandler;
 
         if (CoopHandler.TryGetCoopHandler(out var cHandler))
@@ -281,7 +281,7 @@ public class FreeCameraController : MonoBehaviour
     {
         if (!_isSpectator)
         {
-            yield return new WaitSeconds(5f);
+            yield return new WaitForSeconds(5);
         }
 
         var cameraClassInstance = CameraManager.Instance;

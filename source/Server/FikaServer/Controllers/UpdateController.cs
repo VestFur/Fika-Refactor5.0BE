@@ -1,4 +1,4 @@
-using FikaServer.Models.Fika.Routes.Raid.Join;
+﻿using FikaServer.Models.Fika.Routes.Raid.Join;
 using FikaServer.Models.Fika.Routes.Update;
 using FikaServer.Services;
 using SPTarkov.DI.Annotations;

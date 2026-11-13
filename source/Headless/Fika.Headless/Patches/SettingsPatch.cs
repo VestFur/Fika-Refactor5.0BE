@@ -124,15 +124,13 @@ public static class FikaHeadlessSettingsManager
         await gameSettings.Game.Settings.EnableHideoutPreload.SetValue(false);
         await gameSettings.Game.Settings.Language.SetValue("en");
 
-        // (2026-10-27 W47) 无头宿主不需要画面：渲染分辨率 1024x768 -> 640x360，只降填充率/后处理开销，
-        // bot 生成与模拟走同一套逻辑，不受分辨率影响。此前试过 -nographics 直接不要图形设备，结果 bot 创建时原生崩溃（W46）。
-        EftResolution resolution = new(640, 360);
+        EftResolution resolution = new(1024, 768);
         await gameSettings.Graphics.Settings.DisplaySettings.SetValue(new()
         {
             AspectRatio = EFTAspectHelper.SuitableAspectRatio(ref resolution),
             Display = 0,
             FullScreenMode = FullScreenMode.Windowed,
-            Resolution = new(640, 360)
+            Resolution = new(1024, 768)
         });
 
         await gameSettings.Sound.Save();

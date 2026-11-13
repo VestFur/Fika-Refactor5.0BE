@@ -23,8 +23,7 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
     private readonly HashSet<(string ItemId, string ZoneId)> _pendingDrops = [];
 
     private bool _isItemBeingDropped;
-    // Profile.OnItemZoneDropped is a managed event in 47888.
-    private System.Action<string, string> _sharedItemZoneDropped;
+    private Il2CppSystem.Action<string, string> _sharedItemZoneDropped;
 
     public override void Init()
     {
@@ -70,7 +69,7 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
         base.LateInit();
         if (_acceptedTypes.Contains("PlaceBeacon") && _sharedItemZoneDropped == null)
         {
-            _sharedItemZoneDropped = Shared_Profile_OnItemZoneDropped;
+            _sharedItemZoneDropped = (Il2CppSystem.Action<string, string>)Shared_Profile_OnItemZoneDropped;
             _player.Profile.OnItemZoneDropped += _sharedItemZoneDropped;
         }
     }
@@ -348,11 +347,7 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
         }
     }
 
-    // (2026-10-17) A quest whose objectives are complete but which has not been handed in yet sits in
-    // AvailableForFinish and still receives shared progress (the last kill of a quest frequently arrives
-    // in exactly that state - the shared counter was thrown away before).
-    private bool IsQuestActive(Quest quest) =>
-        quest.QuestStatus == EQuestStatus.Started || quest.QuestStatus == EQuestStatus.AvailableForFinish;
+    private bool IsQuestActive(Quest quest) => quest.QuestStatus == EQuestStatus.Started;
 
     private bool HasQuestForItem(string itemId, string zoneId, out string questName)
     {
@@ -405,52 +400,10 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
             FikaGlobals.LogInfo($"CounterCreator Type {CounterCreator.type}");
 #endif
 
-            var creatorType = CounterCreator.type.ToString();
-            if (_acceptedTypes.Contains(creatorType))
+            if (_acceptedTypes.Contains(CounterCreator.type.ToString()))
             {
                 return true;
             }
-
-            // (2026-10-17) Kill objectives are not always wrapped in an "Elimination" counter: 8 of the 204
-            // kill conditions of the live database sit inside a "Completion" (and a few inside "Multi")
-            // counter, which the whitelist above never matched - those kills were shared nowhere and the
-            // failure was silent. The composite is accepted only when it really carries a kill condition and
-            // kill sharing is enabled, so no other composite type changes behaviour.
-            if (_acceptedTypes.Contains("Elimination")
-                && (creatorType is "Completion" || creatorType is "Multi")
-                && HasKillCondition(CounterCreator))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// True when the composite counter carries a kill condition among its sub-conditions.
-    /// </summary>
-    private static bool HasKillCondition(ConditionCounterCreator counterCreator)
-    {
-        try
-        {
-            var conditions = counterCreator.Conditions;
-            if (conditions == null)
-            {
-                return false;
-            }
-
-            for (var i = 0; i < conditions.Count; i++)
-            {
-                var condition = conditions[i];
-                if (condition != null && condition.TryCast<ConditionKills>() != null)
-                {
-                    return true;
-                }
-            }
-        }
-        catch (Exception)
-        {
         }
 
         return false;

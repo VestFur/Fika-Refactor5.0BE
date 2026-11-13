@@ -15,7 +15,7 @@ public sealed class ObservedCorpseCulling : IDisposable
     private ObservedCullingObject _gClass999;
     private bool _ragdollDone;
     private bool _localVisible = true;
-    private System.Action<bool> _visibilityChangedHandler;
+    private Il2CppSystem.Action<bool> _visibilityChangedHandler;
 
     public ObservedCorpseCulling(ObservedPlayer observedPlayer, Corpse observedCorpse)
     {
@@ -24,7 +24,7 @@ public sealed class ObservedCorpseCulling : IDisposable
         _gClass999 = new(observedPlayer.PlayerBones.Spine3.Original,
             EFTHardSettings.Instance.CULLING_PLAYER_SPHERE_DEAD_BODY_RADIUS,
             EFTHardSettings.Instance.CULLING_PLAYER_DEAD_BODY_DISTANCE);
-        _visibilityChangedHandler = (System.Action<bool>)ChangeVisibility;
+        _visibilityChangedHandler = (Il2CppSystem.Action<bool>)ChangeVisibility;
         _gClass999.OnVisibilityChanged += _visibilityChangedHandler;
         _gClass999.Register();
     }

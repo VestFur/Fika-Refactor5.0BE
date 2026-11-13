@@ -53,7 +53,7 @@ public sealed class HostInventoryOperationHandler : IDisposable
         {
             if (!result.Succeed)
             {
-                FikaGlobals.LogError($"[{Time.frameCount}][{InventoryController.Name}] {InventoryController.ID} - Local operation failed: {Operation.Id} - {LogSafe.Ref(Operation)}\r\nError: {result.Error}");
+                FikaGlobals.LogError($"[{Time.frameCount}][{InventoryController.Name}] {InventoryController.ID} - Local operation failed: {Operation.Id} - {Operation}\r\nError: {result.Error}");
             }
             Callback?.Invoke(result);
         }

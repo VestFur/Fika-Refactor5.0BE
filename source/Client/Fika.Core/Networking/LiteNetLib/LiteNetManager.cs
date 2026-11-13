@@ -1,4 +1,4 @@
-#if UNITY_2018_3_OR_NEWER
+﻿#if UNITY_2018_3_OR_NEWER
 #define UNITY_SOCKET_FIX
 #endif
 using System;
@@ -155,30 +155,6 @@ public partial class LiteNetManager : IEnumerable<LiteNetPeer>
     /// If true - receive event will be called from "receive" thread immediately otherwise on PollEvents call
     /// </summary>
     public bool UnsyncedReceiveEvent = false;
-
-    /// <summary>
-    /// (analysis/stutter-frame-skip) Upper bound of the arrived events <see cref="PollEvents"/> delivers in
-    /// one call; 0 (the default) keeps the unbounded behaviour this file always had.
-    ///
-    /// <para>
-    /// Why it exists: everything the socket received since the last call - every packet of every peer - is
-    /// delivered by one <see cref="PollEvents"/> call, and the caller (the game's frame) pays the whole
-    /// delivery, including the deserialisation of each packet, in that one frame. The 2026-10-13 20:01 raid
-    /// measured the caller's step at 76-306 ms in 101 of its 103 in-raid windows. With a budget the rest of
-    /// the list stays in this queue and is delivered by the next call, in order, without being dropped: the
-    /// same events reach the same listener, one frame later at most.
-    /// </para>
-    /// </summary>
-    public int MaxEventsPerPoll;
-
-    /// <summary>Events the last <see cref="PollEvents"/> call delivered (0 while <see cref="UnsyncedEvents"/> is on).</summary>
-    public int LastPollEventCount;
-
-    /// <summary>Largest <see cref="LastPollEventCount"/> of this manager's lifetime.</summary>
-    public int MaxPollEventCount;
-
-    /// <summary>Events left in the queue by the budget, summed over the manager's lifetime.</summary>
-    public long DeferredEventCount;
 
     /// <summary>
     /// If true - delivery event will be called from "receive" thread immediately otherwise on PollEvents call
@@ -1450,65 +1426,19 @@ public partial class LiteNetManager : IEnumerable<LiteNetPeer>
         }
 
         NetEvent pendingEvent;
-        NetEvent pendingTail;
         lock (_eventLock)
         {
             pendingEvent = _pendingEventHead;
-            pendingTail = _pendingEventTail;
             _pendingEventHead = null;
             _pendingEventTail = null;
         }
 
-        // (analysis/stutter-frame-skip) The budget is read once per call, so a caller that changes it sees the
-        // new value on its next call. Zero keeps the original unbounded loop exactly as it was.
-        var budget = MaxEventsPerPoll;
-        var delivered = 0;
         while (pendingEvent != null)
         {
             var next = pendingEvent.Next;
             ProcessEvent(pendingEvent);
-            delivered++;
-
-            if (budget > 0 && delivered >= budget && next != null)
-            {
-                // Put the rest back in front of whatever arrived while this call ran; the snapshot's tail is
-                // still known here, so re-linking is O(1) and the delivery order is unchanged.
-                pendingEvent.Next = null;
-                lock (_eventLock)
-                {
-                    pendingTail.Next = _pendingEventHead;
-                    if (_pendingEventHead == null)
-                    {
-                        _pendingEventTail = pendingTail;
-                    }
-
-                    _pendingEventHead = next;
-                }
-
-                DeferredEventCount += CountEvents(next);
-                break;
-            }
-
             pendingEvent = next;
         }
-
-        LastPollEventCount = delivered;
-        if (delivered > MaxPollEventCount)
-        {
-            MaxPollEventCount = delivered;
-        }
-    }
-
-    /// <summary>Length of a detached event chain; used only by the budget path above.</summary>
-    private static int CountEvents(NetEvent head)
-    {
-        var count = 0;
-        for (var node = head; node != null; node = node.Next)
-        {
-            count++;
-        }
-
-        return count;
     }
 
     /// <summary>

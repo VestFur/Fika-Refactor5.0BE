@@ -78,6 +78,13 @@ public sealed class ClientHealthController : PlayerHealthController
         _bledOut = state.BledOut || !state.IsAlive;
     }
 
+    internal void KillAfterReconnect()
+    {
+        _bledOut = true;
+        IsAlive = true;
+        Kill(EDamageType.Undefined);
+    }
+
     /// <summary>
     /// Checks if any other players are alive that can revive
     /// </summary>

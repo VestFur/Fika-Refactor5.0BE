@@ -275,7 +275,7 @@ public sealed class ObservedInventoryController : Player.PlayerInventoryControll
 
     private void HandleInProcess(Item item, ItemAddress to, IInventoryOperation operation, Callback callback)
     {
-        Player.__c__DisplayClass1642_0 handler = new()
+        Player.__c__DisplayClass1637_0 handler = new()
         {
             __4__this = _fikaPlayer,
             callback = callback

@@ -448,7 +448,7 @@ public static class EFTSerializationExtensions
         writer.Put(target.MainProfileNickname);
         writer.Put(target.Name);
         writer.PutEnum(target.Side);
-            // 47888 removed ProfileInfoDescriptor.PrestigeLevel: keep the writer and reader symmetric
+        writer.Put(target.PrestigeLevel);
         writer.PutEnum(target.ColliderType);
         writer.Put(target.WeaponName);
         writer.PutEnum(target.Category);
@@ -468,7 +468,7 @@ public static class EFTSerializationExtensions
             MainProfileNickname = reader.GetString(),
             Name = reader.GetString(),
             Side = reader.GetEnum<EPlayerSide>(),
-            // PrestigeLevel: not present in the 47888 descriptor (see the matching writer change)
+            PrestigeLevel = reader.GetInt(),
             ColliderType = reader.GetEnum<EBodyPartColliderType>(),
             WeaponName = reader.GetString(),
             Category = reader.GetEnum<EMemberCategory>(),
@@ -3649,7 +3649,7 @@ public static class EFTSerializationExtensions
         writer.Put(target.Nickname);
         writer.Put(target.MainProfileNickname);
         writer.PutEnum(target.Side);
-            // 47888 removed ProfileInfoDescriptor.PrestigeLevel: keep the writer and reader symmetric
+        writer.Put(target.PrestigeLevel);
         writer.Put(target.RegistrationDate);
         writer.Put(target.SavageLockTime);
         writer.Put(target.GroupId);
@@ -3685,7 +3685,7 @@ public static class EFTSerializationExtensions
             Nickname = reader.GetString(),
             MainProfileNickname = reader.GetString(),
             Side = reader.GetEnum<EPlayerSide>(),
-            // PrestigeLevel: not present in the 47888 descriptor (see the matching writer change)
+            PrestigeLevel = reader.GetInt(),
             RegistrationDate = reader.GetInt(),
             SavageLockTime = reader.GetDouble(),
             GroupId = reader.GetString(),
@@ -5114,7 +5114,7 @@ public static class EFTSerializationExtensions
         writer.PutEnum(target.Side);
         writer.PutTimeSpan(new System.TimeSpan(target.Time.Ticks));
         writer.Put(target.Level);
-            // 47888 removed ProfileInfoDescriptor.PrestigeLevel: keep the writer and reader symmetric
+        writer.Put(target.PrestigeLevel);
         writer.PutEnum(target.BodyPart);
         writer.Put(target.Weapon);
         writer.Put(target.Distance);
@@ -5135,7 +5135,7 @@ public static class EFTSerializationExtensions
             Side = reader.GetEnum<EPlayerSide>(),
             Time = new Il2CppSystem.TimeSpan(reader.GetTimeSpan().Ticks),
             Level = reader.GetInt(),
-            // PrestigeLevel: not present in the 47888 descriptor (see the matching writer change)
+            PrestigeLevel = reader.GetInt(),
             BodyPart = reader.GetEnum<EBodyPart>(),
             Weapon = reader.GetString(),
             Distance = reader.GetFloat(),
@@ -5196,7 +5196,7 @@ public static class EFTSerializationExtensions
         writer.Put(target.Nickname);
         writer.PutEnum(target.Side);
         writer.Put(target.Level);
-            // 47888 removed ProfileInfoDescriptor.PrestigeLevel: keep the writer and reader symmetric
+        writer.Put(target.PrestigeLevel);
         writer.PutEnum(target.MemberCategory);
         writer.PutEnum(target.SelectedMemberCategory);
         writer.Put(target.SavageLockTime);
@@ -5216,7 +5216,7 @@ public static class EFTSerializationExtensions
             Nickname = reader.GetString(),
             Side = reader.GetEnum<EPlayerSide>(),
             Level = reader.GetInt(),
-            // PrestigeLevel: not present in the 47888 descriptor (see the matching writer change)
+            PrestigeLevel = reader.GetInt(),
             MemberCategory = reader.GetEnum<EMemberCategory>(),
             SelectedMemberCategory = reader.GetEnum<EMemberCategory>(),
             SavageLockTime = reader.GetDouble(),

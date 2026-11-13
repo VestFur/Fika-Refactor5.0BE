@@ -34,16 +34,6 @@ internal static class HeadlessWindow
     /// <summary>Win32 <c>SW_MINIMIZE</c>.</summary>
     private const int SwMinimize = 6;
 
-    /// <summary>Win32 <c>SW_HIDE</c>.</summary>
-    private const int SwHide = 0;
-
-    /// <summary>
-    /// (2026-10-27 W38 / TARGETS T6) 无头主机"只留控制台、不显示图形界面"：默认把游戏窗口**隐藏**（SW_HIDE）
-    /// 而不是最小化（SW_MINIMIZE）——最小化仍占任务栏并保留可见窗口，而用户要桌面只剩 BepInEx 控制台。
-    /// 置 false 可退回旧的最小化行为。
-    /// </summary>
-    internal static bool HideInsteadOfMinimize = true;
-
     /// <summary>Unity's player window class, preferred when several windows qualify.</summary>
     private const string UnityWindowClass = "UnityWndClass";
 
@@ -313,14 +303,6 @@ internal static class HeadlessWindow
 
     private static void Minimise(IntPtr window, ManualLogSource log)
     {
-        // (2026-10-27 W38 / T6) 无头主机默认直接隐藏窗口：桌面只留 BepInEx 控制台。
-        if (HideInsteadOfMinimize)
-        {
-            ShowWindow(window, SwHide);
-            log.LogInfo($"[Headless] Window: hid the game window (ShowWindow SW_HIDE); visibleNow={IsWindowVisible(window)}");
-            return;
-        }
-
         if (IsIconic(window))
         {
             log.LogInfo("[Headless] Window: the game window is already minimised");

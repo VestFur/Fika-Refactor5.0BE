@@ -1,4 +1,4 @@
-using FikaServer.Models.Fika.Config;
+﻿using FikaServer.Models.Fika.Config;
 using FikaServer.Models.Fika.Routes.Client;
 using FikaServer.Models.Fika.Routes.Client.Check;
 using SPTarkov.Common.Models.Logging;
@@ -12,7 +12,7 @@ namespace FikaServer.Services;
 public class ClientService(ISptLogger<ClientService> logger, SaveServer saveServer,
     ClientModHashesService fikaClientModHashesService, FikaServerConfig fikaServerConfig)
 {
-    private readonly List<string> _requiredMods = ["com.fika.core", "com.sptushonka.custom", "com.sptushonka.singleplayer", "com.sptushonka.core", "com.sptushonka.debugging"];
+    private readonly List<string> _requiredMods = ["com.fika.core", "sptushonka.custom", "sptushonka.singleplayer", "sptushonka.core", "sptushonka.debugging"];
     private readonly HashSet<string> _allowedMods = ["com.bepis.bepinex.configurationmanager", "com.fika.headless"];
     private bool _hasRequiredOrOptionalMods;
 

@@ -51,18 +51,6 @@ public sealed class PatchManager
         "Fika.Core.Main.Patches.GameWorldPatches.GameWorld_Create_Patch"
     };
 
-    /// <summary>
-    /// Patches that are intentionally absent from this build, kept next to the patch count so the
-    /// startup log states the reason instead of silently dropping them. Every entry must correspond to a
-    /// patch type carrying <see cref="IgnoreAutoPatchAttribute"/> (Fika.PatchChecks reports those as
-    /// "conditional"); this list is the human readable half of that decision.
-    /// </summary>
-    private static readonly string[] DeliberateSkips =
-    {
-        "MuzzleManager_Play_Patch: duplicate of SPTushonka.Custom MemoryImprovements.MuzzleManagerPlayPatch, and its explicit interface " +
-        "implementation is not detourable with Il2CppInterop 1.6.7 (the generated stub loads NativeInterfaceMethodInfoPtr_, not NativeMethodInfoPtr_)"
-    };
-
     public void EnablePatches()
     {
         if (!_autoPatch) return;
@@ -81,29 +69,15 @@ public sealed class PatchManager
             catch (Exception exception)
             {
                 failed.Add(patch.GetType().Name);
-                // GetTargetMethod is invoked through reflection, so every failure arrives as a
-                // TargetInvocationException whose Message says nothing. Log the real reason (and the
-                // signature the patch expected) instead - "Exception has been thrown by the target of an
-                // invocation." cost a round of guessing when the font guard's byref lookup failed.
-                var reason = exception is TargetInvocationException { InnerException: { } inner }
-                    ? inner.GetType().Name + ": " + inner.Message
-                    : exception.GetType().Name + ": " + exception.Message;
-                _logger.LogError($"{patch.GetType().Name}: {reason}");
-                
+                _logger.LogError($"{patch.GetType().Name}: {exception.Message}");
             }
         }
         if (failed.Count == 0)
         {
             _logger.LogInfo($"Verified {_enabled.Count} Fika patches");
+            return;
         }
-        else
-        {
-            _logger.LogWarning($"Verified {_enabled.Count} Fika patches - not applied: {string.Join(", ", failed)}");
-        }
-        if (DeliberateSkips.Length > 0)
-        {
-            _logger.LogWarning($"Deliberately skipped {DeliberateSkips.Length} patch(es): {string.Join(" | ", DeliberateSkips)}");
-        }
+        _logger.LogWarning($"Verified {_enabled.Count} Fika patches - not applied: {string.Join(", ", failed)}");
     }
 
     internal static IEnumerable<Type> GetAutomaticPatches(Assembly assembly)

@@ -30,6 +30,8 @@ public sealed partial class FikaClient
     private BTRView _readyBtrView;
     private ShapshotBTRMessage _pendingBtrState;
     private bool _hasBtrState;
+    private List<ReconnectPacket.BtrPassengerReconnectState> _pendingBtrPassengers;
+    private List<TraderServiceAvailabilityData> _pendingBtrServices;
     private RunddansStateEvent _pendingRunddans;
     private System.Collections.Generic.Dictionary<int, float> _pendingRunddansDurability;
     private System.Collections.Generic.Dictionary<int, long> _pendingRunddansDateTimes;
@@ -38,29 +40,9 @@ public sealed partial class FikaClient
     private float _kolotunStateDeadline;
     private readonly Queue<EventControllerEventPacket> _pendingRunddansMessages = new();
     private SyncTransitControllersPacket? _pendingTransitHistory;
-
-    /// <summary>
-    /// Map-state generation of the pending transit history (see <see cref="_mapStateGeneration"/>).
-    /// </summary>
-    private int _pendingTransitHistoryGeneration;
-
     private readonly Dictionary<(int NetId, string ItemId), float> _pendingEventItems = new();
-
-    /// <summary>
-    /// Counts the world generations of this session. It is raised by <see cref="ClearMapState"/>, i.e. once
-    /// per world swap (a transit reload tears the world down long before the next one exists), and it is the
-    /// only thing that decides whether a queued transit event still belongs to the world that is being
-    /// created: entries of generation N-1 are the ones that arrived in the swap window, anything older has
-    /// already survived a whole world without being consumed and is dropped (analysis/transit-reload-sync).
-    /// </summary>
-    private int _mapStateGeneration;
-
-    /// <summary>Transit events that were queued since the last world swap, and their types.</summary>
-    private int _transitQueueReceivedThisWindow;
-    private int _transitQueueDroppedThisWindow;
-    private readonly Dictionary<string, int> _transitQueueTypesThisWindow = new();
     internal bool HasPendingMapLoads => _pendingBtrStashes != null || _pendingTransitStashes != null ||
-        _pendingBtrSpawn != null || _hasBtrState ||
+        _pendingBtrSpawn != null || _pendingBtrPassengers != null || _pendingBtrServices != null || _hasBtrState ||
         _pendingRunddans != null || _pendingRunddansStarted || _pendingRunddansMessages.Count > 0 ||
         _pendingKolotunState.HasValue ||
         _pendingTransitHistory.HasValue || _pendingEventItems.Count > 0;
@@ -84,6 +66,8 @@ public sealed partial class FikaClient
         _pendingBtrSpawn = null;
         _readyBtrView = null;
         _hasBtrState = false;
+        _pendingBtrPassengers = null;
+        _pendingBtrServices = null;
         _appliedBtrGeneration = 0;
         _pendingRunddans = null;
         _pendingRunddansDurability = null;
@@ -92,100 +76,9 @@ public sealed partial class FikaClient
         _pendingRunddansMessages.Clear();
         _pendingKolotunState = null;
         _kolotunStateDeadline = 0f;
-        // A world swap *is* the transit reload window: a transit tears the world down long before the next
-        // one exists, so the transit state that arrived in between belongs to the raid that is being created
-        // now and must survive this reset. Only what is provably older than one generation (it already
-        // survived a whole world without being consumed) is dropped, and the swap reports what it saw
-        // (analysis/transit-reload-sync; the queue used to be cleared here, which threw every event of the
-        // window away - including the host's initialization snapshot of the new raid).
-        _mapStateGeneration++;
-        var droppedAtSwap = DropStaleTransitQueue(_mapStateGeneration);
-        if (_pendingTransitHistory != null && _pendingTransitHistoryGeneration < _mapStateGeneration - 1)
-        {
-            droppedAtSwap++;
-            _pendingTransitHistory = null;
-        }
-        ReportTransitQueueAtWorldSwap(_mapStateGeneration, droppedAtSwap);
+        _pendingTransitHistory = null;
         _pendingEventItems.Clear();
-    }
-
-    /// <summary>
-    /// The transit-event half of the world swap: the entries of the window are kept for the new raid's
-    /// transit controller, everything older is dropped and counted.
-    /// </summary>
-    /// <returns>The number of entries that were dropped.</returns>
-    private int DropStaleTransitQueue(int generation)
-    {
-        if (_pendingTransitEvents.Count == 0)
-        {
-            return 0;
-        }
-
-        var kept = new List<(TransitEventPacket Packet, int Generation)>(_pendingTransitEvents.Count);
-        var dropped = 0;
-        while (_pendingTransitEvents.TryDequeue(out var entry))
-        {
-            if (entry.Generation < generation - 1)
-            {
-                dropped++;
-                DropStaleTransitEvent(entry.Packet, entry.Generation, "a world swap");
-                continue;
-            }
-
-            kept.Add(entry);
-        }
-
-        foreach (var entry in kept)
-        {
-            _pendingTransitEvents.Enqueue(entry);
-        }
-
-        return dropped;
-    }
-
-    /// <summary>True when an entry of this generation can still belong to the world that is now in place.</summary>
-    private bool IsTransitEventGenerationCurrent(int generation)
-    {
-        return generation >= _mapStateGeneration - 1;
-    }
-
-    /// <summary>Counts one dropped entry and names it in the diagnostics file (the swap line carries the totals).</summary>
-    private void DropStaleTransitEvent(TransitEventPacket packet, int generation, string site)
-    {
-        _transitQueueDroppedThisWindow++;
-    }
-
-    /// <summary>One line per world swap that saw transit traffic: what arrived, what was kept, what was dropped.</summary>
-    private void ReportTransitQueueAtWorldSwap(int generation, int droppedAtSwap)
-    {
-        var kept = _pendingTransitEvents.Count;
-        var history = _pendingTransitHistory == null ? "none" : "kept";
-        if (_transitQueueReceivedThisWindow == 0 && kept == 0 && droppedAtSwap == 0 && _pendingTransitHistory == null)
-        {
-            // Nothing arrived in the window and nothing is waiting: a normal raid start stays silent.
-            return;
-        }
-
-        var types = new System.Text.StringBuilder();
-        foreach (var entry in _transitQueueTypesThisWindow)
-        {
-            if (types.Length > 0) types.Append(',');
-            types.Append(entry.Key).Append('=').Append(entry.Value);
-        }
-
-
-        _transitQueueReceivedThisWindow = 0;
-        _transitQueueDroppedThisWindow = 0;
-        _transitQueueTypesThisWindow.Clear();
-    }
-
-    /// <summary>Counts one queued transit event for the swap line of the next world.</summary>
-    internal void NoteTransitEventQueued(TransitEventPacket.ETransitEventType type)
-    {
-        _transitQueueReceivedThisWindow++;
-        var key = type.ToString();
-        _transitQueueTypesThisWindow.TryGetValue(key, out var count);
-        _transitQueueTypesThisWindow[key] = count + 1;
+        _pendingTransitEvents.Clear();
     }
 
     private void QueueStashes(StashesPacket packet)
@@ -214,31 +107,23 @@ public sealed partial class FikaClient
         _readyBtrView = view;
     }
 
-    /// <summary>
-    /// (2026-10-26 W28) Shows the BTR view on a client. The native path shows it from its own server-side code, so a
-    /// Fika client receives position, rotation and the sound controller but never the mesh: the vehicle is audible
-    /// and invisible. <c>BTRView._viewVisible</c> and <c>ShowView()</c> exist in the interop surface
-    /// (analysis/_re-btr.txt), so this asks exactly once, and only while the view is still hidden.
-    /// </summary>
-    private static void EnsureBtrViewVisible(BTRView view)
-    {
-        try
-        {
-            if (view == null) return;
-            if (view._viewVisible) return;
-            view.ShowView();
-            FikaGlobals.LogInfo("[BtrDiag] view shown by Fika (the native client path never calls ShowView)");
-        }
-        catch (System.Exception exception)
-        {
-            FikaGlobals.LogError($"BTR view could not be shown: {exception}");
-        }
-    }
-
     private void QueueBtrState(ShapshotBTRMessage state)
     {
         _pendingBtrState = state;
         _hasBtrState = true;
+    }
+
+    private void QueueBtrPassengers(List<ReconnectPacket.BtrPassengerReconnectState> passengers)
+    {
+        // The host always sends a passenger list, including on maps where no
+        // BTR view will ever spawn. An empty list must not hold reconnect open.
+        _pendingBtrPassengers = passengers is { Count: > 0 } ? passengers : null;
+    }
+
+    private void QueueBtrServices(List<TraderServiceAvailabilityData> services)
+    {
+        if (services == null) return;
+        _pendingBtrServices = services;
     }
 
     private void QueueRunddansState(EventControllerEventPacket packet)
@@ -287,7 +172,6 @@ public sealed partial class FikaClient
     private void QueueTransitHistory(SyncTransitControllersPacket packet)
     {
         _pendingTransitHistory = packet;
-        _pendingTransitHistoryGeneration = _mapStateGeneration;
         BindMapWorld();
     }
 
@@ -314,21 +198,9 @@ public sealed partial class FikaClient
         {
             if (_pendingTransitHistory is { } history && world.TransitController != null)
             {
-                if (!IsTransitEventGenerationCurrent(_pendingTransitHistoryGeneration))
-                {
-                    // It was queued before the previous world and never consumed: it cannot describe the
-                    // raid that is running now (analysis/transit-reload-sync).
-                    LoadSync.Warn("FikaClient.ApplyPendingMapState",
-                        "the pending transit history for " + history.ProfileId + " was dropped: it was queued in map-state generation "
-                        + _pendingTransitHistoryGeneration + " and this world is generation " + _mapStateGeneration);
-                    _pendingTransitHistory = null;
-                }
-                else
-                {
-                    world.TransitController.summonedTransits[history.ProfileId] =
-                        new(history.RaidId, history.Count, history.Maps, history.Events);
-                    _pendingTransitHistory = null;
-                }
+                world.TransitController.summonedTransits[history.ProfileId] =
+                    new(history.RaidId, history.Count, history.Maps, history.Events);
+                _pendingTransitHistory = null;
             }
             if (_pendingBtrStashes != null && ApplyTransferStashes(world.BtrController?.TransferItemsController, _pendingBtrStashes, "BTR"))
                 _pendingBtrStashes = null;
@@ -337,9 +209,15 @@ public sealed partial class FikaClient
             if ((_pendingBtrStashes != null || _pendingTransitStashes != null) && Time.unscaledTime > _stashDeadline)
             {
                 _logger.LogError("Transfer stash initialization timed out waiting for map controllers");
+                ReconnectError = "Transfer stash initialization timed out waiting for map controllers";
                 _pendingBtrStashes = _pendingTransitStashes = null;
             }
             var btr = world.BtrController;
+            if (_pendingBtrServices != null && MyPlayer != null)
+            {
+                MyPlayer.ReceiveTraderServicesData(_pendingBtrServices);
+                _pendingBtrServices = null;
+            }
             if (_readyBtrView != null && btr?.BtrView != null && btr.BtrView.Pointer == _readyBtrView.Pointer)
             {
                 if (_pendingBtrSpawn != null)
@@ -348,17 +226,14 @@ public sealed partial class FikaClient
                     _pendingBtrSpawn = null;
                     GlobalEventsController.CreateEvent<BtrSpawnOnThePathEvent>().Invoke(spawn.Position, spawn.Rotation, spawn.PlayerRaidId);
                     _appliedBtrGeneration = spawn.Generation;
-                    // (2026-10-26 W28) 客机"只听见 BTR 声音、看不见车"：BTRView 的 ShowView() 是私有方法，
-                    // 只有原生主机路径会调它；客机走 InitClient + SyncViewFromServer，位置/音效都对，但
-                    // 网格一直停在隐藏态。车一出现在路上就把它显出来，且只在隐藏时动一次。
-                    EnsureBtrViewVisible(btr.BtrView);
                 }
                 if (_hasBtrState && _appliedBtrGeneration > 0)
                 {
                     _readyBtrView.SyncViewFromServer(ref _pendingBtrState);
-                    EnsureBtrViewVisible(_readyBtrView);
                     _hasBtrState = false;
                 }
+                if (_pendingBtrPassengers != null && ApplyBtrPassengers(world, btr))
+                    _pendingBtrPassengers = null;
             }
             if (_pendingRunddans != null && MyPlayer != null &&
                 FikaWorldControllers.Find<Main.ClientClasses.ClientRunddansController>(world.RunddansController) is { } events)
@@ -391,6 +266,7 @@ public sealed partial class FikaClient
             else if (_pendingKolotunState.HasValue && Time.unscaledTime > _kolotunStateDeadline)
             {
                 _logger.LogError("Kolotun state timed out waiting for the map controller");
+                ReconnectError = "Kolotun state timed out waiting for the map controller";
                 _pendingKolotunState = null;
             }
             if (FikaWorldControllers.Find<Main.ClientClasses.ClientRunddansController>(world.RunddansController) is { } runddans)
@@ -407,7 +283,7 @@ public sealed partial class FikaClient
                     {
                         // Transit initialization precedes Runddans initialization.
                         // A map with Runddans but no transit controller will never
-                        // gain one, so this pending flag must not stay set forever.
+                        // gain one, so this pending flag must not stall reconnect.
                         _pendingRunddansStarted = false;
                     }
                 }
@@ -435,6 +311,7 @@ public sealed partial class FikaClient
         catch (Exception ex)
         {
             _logger.LogError($"Map state initialization failed: {ex}");
+            ReconnectError = "Map state initialization failed: " + ex.Message;
             ClearMapState();
         }
     }
@@ -447,8 +324,8 @@ public sealed partial class FikaClient
             var exists = false;
             foreach (var current in controller._transferContainers)
                 if (current.Id == stash.Id) { exists = true; break; }
-            // A late join can deliver the same snapshot twice; repeated snapshots within this
-            // controller must preserve its live items and owners instead of registering them twice.
+            // Reconnect builds a new controller; repeated snapshots within this controller
+            // must preserve its live items and owners instead of registering them twice.
             if (!exists) controller.InitTransferContainer(stash, name);
             var grids = new List<Grid>();
             var found = false;
@@ -468,4 +345,80 @@ public sealed partial class FikaClient
         return true;
     }
 
+    private bool ApplyBtrPassengers(GameWorld world, BtrController controller)
+    {
+        if (controller?.BtrView == null || _pendingBtrPassengers == null) return false;
+        var resolved = new List<(Player Player, BTRSide Side, ReconnectPacket.BtrPassengerReconnectState Snapshot)>();
+        foreach (var snapshot in _pendingBtrPassengers)
+        {
+            var player = _coopHandler.HumanPlayers.Find(x => x.RaidId == snapshot.PlayerRaidId);
+            if (player == null) return false;
+            var side = controller.BtrView.GetBtrSide(snapshot.SideId);
+            if (side == null) return false;
+            resolved.Add((player, side, snapshot));
+        }
+        // Reconnect can deliver this snapshot before every observed player is
+        // spawned. Resolve the full set first so retries do not repeatedly
+        // apply the early passengers while waiting for a later one.
+        foreach (var (player, side, snapshot) in resolved)
+        {
+            if (controller.BtrVehicle?.IsPassenger(player, out _) != true)
+            {
+                side.AddPassenger(player, snapshot.SlotId);
+            }
+            player.BtrState = snapshot.State;
+            ApplyBtrPassengerRuntimeState(controller.BtrView, side, player, snapshot.State);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Reconnect snapshots contain the passenger state, but the native BTR
+    /// passenger list does not recreate the movement/input side effects that
+    /// the normal GoIn/GoOut animation path applies.  Restore those effects
+    /// synchronously after adding the passenger so a reconnect cannot leave a
+    /// player rendered in the vehicle while still walking or sending movement.
+    /// </summary>
+    private static void ApplyBtrPassengerRuntimeState(BTRView view, BTRSide side, Player player, EPlayerBtrState state)
+    {
+        if (player == null) return;
+        try
+        {
+            var inside = state is EPlayerBtrState.Inside or EPlayerBtrState.GoIn or EPlayerBtrState.Approach;
+            if (inside)
+            {
+                player.MovementContext.IsAxesIgnored = true;
+                player.InputDirection = new(0, 0);
+                if (player.TryCast<FikaPlayer>() is { } fika)
+                {
+                    fika.PacketSender.SendState = false;
+                    if (state is EPlayerBtrState.GoIn or EPlayerBtrState.Approach)
+                        fika.HideWeapon();
+                }
+                if (state == EPlayerBtrState.Inside)
+                    player.CharacterController.isEnabled = false;
+                view._soundController?.UpdateBtrAudioRoom(EnvironmentType.Indoor, player);
+                side.ApplyLocalPassenger();
+                return;
+            }
+
+            // A snapshot normally contains only active passengers.  Keep the
+            // outside branch defensive for an in-flight GoOut snapshot.
+            if (state is EPlayerBtrState.GoOut or EPlayerBtrState.Outside)
+            {
+                if (state == EPlayerBtrState.Outside)
+                {
+                    side.RemovePassenger(player);
+                    player.CharacterController.isEnabled = true;
+                    player.MovementContext.IsAxesIgnored = false;
+                    if (player.TryCast<FikaPlayer>() is { } fika) fika.PacketSender.SendState = true;
+                    view._soundController?.UpdateBtrAudioRoom(EnvironmentType.Outdoor, player);
+                }
+            }
+        }
+        catch (System.Exception ex)
+        {
+            FikaGlobals.LogWarning($"BTR reconnect passenger runtime restore failed for {player.ProfileId}: {ex.Message}");
+        }
+    }
 }

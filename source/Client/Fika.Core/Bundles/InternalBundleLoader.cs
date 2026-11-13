@@ -55,58 +55,20 @@ internal class InternalBundleLoader
 
         return asset switch
         {
-            EFikaAsset.Ping => LoadPrefab("BasePingPrefab.prefab"),
-            EFikaAsset.SendItemMenu => LoadPrefab("SendItemMenu.prefab"),
-            EFikaAsset.MainMenuUI => LoadPrefab("MainMenuUI.prefab"),
-            EFikaAsset.MatchmakerUI => LoadPrefab("NewMatchMakerUI.prefab"),
-            EFikaAsset.PlayerUI => LoadPrefab("PlayerFriendlyUI.prefab"),
-            EFikaAsset.FreecamUI => LoadPrefab("FreecamUI.prefab"),
-            EFikaAsset.ListPlayer => LoadPrefab("ListPlayer.prefab"),
-            EFikaAsset.AdminUI => LoadPrefab("AdminSettingsUI.prefab"),
-            EFikaAsset.FikaChatUI => LoadPrefab("FikaChatUI.prefab"),
-            EFikaAsset.RaidAdminUI => LoadPrefab("RaidAdminUI.prefab"),
-            EFikaAsset.LoadingScreenUI => LoadPrefab("LoadingScreenUI.prefab"),
-            EFikaAsset.DebugUI => LoadPrefab("DebugUI.prefab"),
+            EFikaAsset.Ping => _masterBundle.LoadAsset("BasePingPrefab.prefab", Il2CppInterop.Runtime.Il2CppType.Of<GameObject>()).Cast<GameObject>(),
+            EFikaAsset.SendItemMenu => _masterBundle.LoadAsset("SendItemMenu.prefab", Il2CppInterop.Runtime.Il2CppType.Of<GameObject>()).Cast<GameObject>(),
+            EFikaAsset.MainMenuUI => _masterBundle.LoadAsset("MainMenuUI.prefab", Il2CppInterop.Runtime.Il2CppType.Of<GameObject>()).Cast<GameObject>(),
+            EFikaAsset.MatchmakerUI => _masterBundle.LoadAsset("NewMatchMakerUI.prefab", Il2CppInterop.Runtime.Il2CppType.Of<GameObject>()).Cast<GameObject>(),
+            EFikaAsset.PlayerUI => _masterBundle.LoadAsset("PlayerFriendlyUI.prefab", Il2CppInterop.Runtime.Il2CppType.Of<GameObject>()).Cast<GameObject>(),
+            EFikaAsset.FreecamUI => _masterBundle.LoadAsset("FreecamUI.prefab", Il2CppInterop.Runtime.Il2CppType.Of<GameObject>()).Cast<GameObject>(),
+            EFikaAsset.ListPlayer => _masterBundle.LoadAsset("ListPlayer.prefab", Il2CppInterop.Runtime.Il2CppType.Of<GameObject>()).Cast<GameObject>(),
+            EFikaAsset.AdminUI => _masterBundle.LoadAsset("AdminSettingsUI.prefab", Il2CppInterop.Runtime.Il2CppType.Of<GameObject>()).Cast<GameObject>(),
+            EFikaAsset.FikaChatUI => _masterBundle.LoadAsset("FikaChatUI.prefab", Il2CppInterop.Runtime.Il2CppType.Of<GameObject>()).Cast<GameObject>(),
+            EFikaAsset.RaidAdminUI => _masterBundle.LoadAsset("RaidAdminUI.prefab", Il2CppInterop.Runtime.Il2CppType.Of<GameObject>()).Cast<GameObject>(),
+            EFikaAsset.LoadingScreenUI => _masterBundle.LoadAsset("LoadingScreenUI.prefab", Il2CppInterop.Runtime.Il2CppType.Of<GameObject>()).Cast<GameObject>(),
+            EFikaAsset.DebugUI => _masterBundle.LoadAsset("DebugUI.prefab", Il2CppInterop.Runtime.Il2CppType.Of<GameObject>()).Cast<GameObject>(),
             _ => throw new ArgumentOutOfRangeException(nameof(asset), "Invalid type was given")
         };
-    }
-
-    /// <summary>
-    /// Loads a prefab and reports a missing asset instead of forwarding it to
-    /// <c>Cast&lt;T&gt;()</c>.
-    /// </summary>
-    /// <remarks>
-    /// <c>Cast&lt;T&gt;()</c> resolves the il2cpp class of the wrapped pointer. When the bundle
-    /// does not contain the asset the returned wrapper carries a null native pointer, and that
-    /// class lookup faults inside GameAssembly (0xC0000005, read at address 0x0) instead of
-    /// throwing a managed exception - it is not a CLR NullReferenceException and cannot be
-    /// caught by the callers. Returning null makes the consumer skip its own feature.
-    /// </remarks>
-    private GameObject LoadPrefab(string name)
-    {
-        var loaded = _masterBundle.LoadAsset(name, Il2CppInterop.Runtime.Il2CppType.Of<GameObject>());
-        if (loaded is null || loaded.Pointer == IntPtr.Zero)
-        {
-            FikaGlobals.LogError($"[BundleLoader] '{name}' is missing from the Fika master bundle; the feature that needs it is skipped");
-            return null;
-        }
-
-        return loaded.Cast<GameObject>();
-    }
-
-    /// <summary>
-    /// Sprite counterpart of <see cref="LoadPrefab(string)"/>.
-    /// </summary>
-    private Sprite LoadSprite(string name)
-    {
-        var loaded = _masterBundle.LoadAsset(name, Il2CppInterop.Runtime.Il2CppType.Of<Sprite>());
-        if (loaded is null || loaded.Pointer == IntPtr.Zero)
-        {
-            FikaGlobals.LogError($"[BundleLoader] '{name}' is missing from the Fika master bundle; the feature that needs it is skipped");
-            return null;
-        }
-
-        return loaded.Cast<Sprite>();
     }
 
     /// <summary>
@@ -117,12 +79,12 @@ internal class InternalBundleLoader
     {
         Dictionary<EFikaSprite, Sprite> sprites = [];
 
-        sprites.Add(EFikaSprite.PingPoint, LoadSprite("PingPoint.png"));
-        sprites.Add(EFikaSprite.PingPlayer, LoadSprite("PingPlayer.png"));
-        sprites.Add(EFikaSprite.PingLootableContainer, LoadSprite("PingLootableContainer.png"));
-        sprites.Add(EFikaSprite.PingDoor, LoadSprite("PingDoor.png"));
-        sprites.Add(EFikaSprite.PingDeadBody, LoadSprite("PingDeadBody.png"));
-        sprites.Add(EFikaSprite.PingLootItem, LoadSprite("PingLootItem.png"));
+        sprites.Add(EFikaSprite.PingPoint, _masterBundle.LoadAsset("PingPoint.png", Il2CppInterop.Runtime.Il2CppType.Of<Sprite>()).Cast<Sprite>());
+        sprites.Add(EFikaSprite.PingPlayer, _masterBundle.LoadAsset("PingPlayer.png", Il2CppInterop.Runtime.Il2CppType.Of<Sprite>()).Cast<Sprite>());
+        sprites.Add(EFikaSprite.PingLootableContainer, _masterBundle.LoadAsset("PingLootableContainer.png", Il2CppInterop.Runtime.Il2CppType.Of<Sprite>()).Cast<Sprite>());
+        sprites.Add(EFikaSprite.PingDoor, _masterBundle.LoadAsset("PingDoor.png", Il2CppInterop.Runtime.Il2CppType.Of<Sprite>()).Cast<Sprite>());
+        sprites.Add(EFikaSprite.PingDeadBody, _masterBundle.LoadAsset("PingDeadBody.png", Il2CppInterop.Runtime.Il2CppType.Of<Sprite>()).Cast<Sprite>());
+        sprites.Add(EFikaSprite.PingLootItem, _masterBundle.LoadAsset("PingLootItem.png", Il2CppInterop.Runtime.Il2CppType.Of<Sprite>()).Cast<Sprite>());
 
         return sprites;
     }

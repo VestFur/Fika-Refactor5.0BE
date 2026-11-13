@@ -16,31 +16,11 @@ internal static class BotFirstAidPending
         internal readonly FikaBot Bot = bot;
         internal readonly AITaskManager Manager = manager;
         internal readonly Il2CppSystem.Nullable<int> Variant = variant;
-        // Kept as the interop's own delegate type: it is handed straight back to the native
-        // TryApplyToCurrentPart(Nullable<int>, Il2CppSystem.Action) overload when the request is
-        // resumed, so no CLR trampoline is ever built for it.
         internal readonly Il2CppSystem.Action Callback = callback;
         internal int TaskId;
     }
 
     private static readonly Dictionary<IntPtr, Request> Requests = new();
-
-    /// <summary>
-    /// Drops every pending request at a world teardown (analysis/transit-crash-unload). A request holds a
-    /// native bot, its AITaskManager and the native callback of the medical action it was refused for; all
-    /// three belong to the world that just ended, so resuming one afterwards would enter a released bot.
-    /// Returns the number of requests dropped.
-    /// </summary>
-    internal static int ClearForWorldTeardown()
-    {
-        var count = Requests.Count;
-        if (count > 0)
-        {
-            Requests.Clear();
-        }
-
-        return count;
-    }
 
     internal static bool Begin(BotFirstAid aid, Il2CppSystem.Nullable<int> variant, Il2CppSystem.Action callback)
     {
@@ -60,7 +40,7 @@ internal static class BotFirstAidPending
 
     private static void Schedule(Request request) =>
         request.TaskId = request.Manager.RegisterDelayedTask(request.Aid._owner, 0.1f,
-            (System.Action)(() => Resume(request)));
+            (Il2CppSystem.Action)(() => Resume(request)));
 
     private static void Resume(Request request)
     {

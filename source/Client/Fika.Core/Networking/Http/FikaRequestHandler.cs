@@ -27,14 +27,6 @@ public static class FikaRequestHandler
         _httpClient = RequestHandler.HttpClient;
     }
 
-    /// <summary>
-    /// Resolves the WAN address this machine announces when it hosts a raid.
-    ///
-    /// Returns <see langword="null"/> when no provider answers. This is a degradation and
-    /// never a failure: the address is read by exactly one caller (FikaServer.Init, the raid
-    /// host) and the client join path does not touch it. Throwing here used to turn an
-    /// offline install into a "RunChecks" error line that hid the real problem.
-    /// </summary>
     public static async Task<IPAddress> GetPublicIP()
     {
         var client = _httpClient.HttpClient;
@@ -52,37 +44,6 @@ public static class FikaRequestHandler
             "https://ipv6.icanhazip.com/",
             "https://ifconfig.co/ip"
         ];
-
-        // The first provider that fails is the one that explains the whole lookup, and every provider
-        // after it usually repeats the same transport failure. Reported once per cause accordingly: the
-        // first failure keeps the full evidence (message, stack, inner exceptions), the others are one
-        // line each without a stack. Before this, one reset TLS handshake produced one stack block per
-        // provider plus the first-chance entries of every throw inside HttpClient
-        // (2026-10-10, analysis/log-noise-cleanup: api.ipify.org reset the handshake, 10 first-chance
-        // entries, ~54 lines of stack for a single provider failure).
-        string firstFailure = null;
-
-        void ReportFailure(string url, AddressFamily family, string reason, Exception exception)
-        {
-            if (firstFailure == null)
-            {
-                firstFailure = url + ": " + reason;
-                if (exception == null)
-                {
-                    FikaGlobals.LogWarning($"Request to {url} timed out after 5 seconds.");
-                    
-                }
-                else
-                {
-                    FikaGlobals.LogWarning($"Could not get public IP address from [{url}]. Error: {reason}");
-                    
-                }
-
-                return;
-            }
-
-            
-        }
 
         async Task<IPAddress> Query(string[] urls, AddressFamily family)
         {
@@ -110,11 +71,11 @@ public static class FikaRequestHandler
                 }
                 catch (OperationCanceledException)
                 {
-                    ReportFailure(url, family, "timed out after 5 seconds", null);
+                    FikaGlobals.LogWarning($"Request to {url} timed out after 5 seconds.");
                 }
                 catch (Exception ex)
                 {
-                    ReportFailure(url, family, ex.GetBaseException().Message, ex);
+                    FikaGlobals.LogWarning($"Could not get public IP address from [{url}]. Error: {ex.Message}");
                 }
             }
 
@@ -137,14 +98,7 @@ public static class FikaRequestHandler
             }
         }
 
-        const string failure = "Could not retrieve or parse the external IP address from any provider.";
-        // Degraded from error to warning, with the first reason in the same line: no provider answering
-        // costs the raid host its announced WAN address (set 'Force IP' to announce one) and leaves the
-        // join path untouched. The reason itself is what a tester needs, and it used to be buried under
-        // the per-provider stack blocks.
-        FikaGlobals.LogWarning(firstFailure == null ? failure : failure + " First failure: " + firstFailure);
-        
-        return null;
+        throw new Exception("Could not retrieve or parse the external IP address from any provider.");
     }
 
     private static byte[] EncodeBody<T>(T o)
@@ -267,67 +221,9 @@ public static class FikaRequestHandler
         await PutJsonAsync("/fika/raid/create", data);
     }
 
-    /// <summary>
-    /// The backend address this client is pointed at (for example https://127.0.0.1:6969), for
-    /// diagnostics only. The launcher owns this value; it is printed next to every host lookup
-    /// failure so a report says which server was asked.
-    /// </summary>
-    public static string ServerHost
-    {
-        get
-        {
-            try
-            {
-                var host = RequestHandler.Host;
-                return string.IsNullOrWhiteSpace(host) ? "<empty>" : host;
-            }
-            catch (Exception exception)
-            {
-                return "<unavailable: " + exception.GetBaseException().Message + ">";
-            }
-        }
-    }
-
-    /// <summary>
-    /// Raw JSON of the last <see cref="GetHost"/> answer, or <see langword="null"/> when that call
-    /// produced none. The join path prints it when a host answers without an address: the decoded DTO
-    /// alone cannot show whether the server sent an empty list, a "null" body for an unknown match or
-    /// something else entirely.
-    /// </summary>
-    public static string LastGetHostResponseBody { get; private set; }
-
-    /// <summary>
-    /// Transport-level failure of the last <see cref="GetHost"/> call, or <see langword="null"/> when
-    /// it returned. The HTTP layer (SPTushonka's Client.SendAsync) throws
-    /// "Http response status code: {code}" for every non-2xx answer and never hands the body back, so
-    /// the status is only ever visible here, as this text. Reading the status separately would need a
-    /// change inside that layer; a raw-body channel for the one call that matters avoids it.
-    /// </summary>
-    public static string LastGetHostFailure { get; private set; }
-
     public static GetHostResponse GetHost(GetHostRequest data)
     {
-        LastGetHostResponseBody = null;
-        LastGetHostFailure = null;
-
-        var payload = EncodeBody(data);
-        byte[] response;
-        try
-        {
-            // Same transport path as PostJson: only the transfer runs off-thread.
-            response = Task.Run(() => _httpClient.PostAsync("/fika/raid/gethost", payload))
-                .GetAwaiter()
-                .GetResult();
-        }
-        catch (Exception exception)
-        {
-            LastGetHostFailure = exception.GetBaseException().Message;
-            throw;
-        }
-
-        // Kept before decoding so a body that fails to deserialize is still readable.
-        LastGetHostResponseBody = Encoding.UTF8.GetString(response);
-        return FikaJson.Deserialize<GetHostResponse>(LastGetHostResponseBody);
+        return PostJson<GetHostRequest, GetHostResponse>("/fika/raid/gethost", data);
     }
 
     public static LobbyEntry[] LocationRaids(RaidSettings data)

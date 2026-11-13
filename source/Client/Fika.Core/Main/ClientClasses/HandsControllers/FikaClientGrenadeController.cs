@@ -252,6 +252,6 @@ public class FikaClientGrenadeController : Player.GrenadeHandsController
     {
         _packet.Type = EFirearmSubPacketType.CancelGrenade;
         _fikaPlayer.PacketSender.NetworkManager.SendNetReusable(ref _packet, DeliveryMethod.ReliableOrdered, true);
-        global::Fika.Core.Main.Utils.NativeBaseCalls.Call60(this, controller, animationSpeed, callback ?? FikaGlobals.EmptyNativeAction, fastDrop);
+        global::Fika.Core.Main.Utils.NativeBaseCalls.Call60(this, controller, animationSpeed, callback, fastDrop);
     }
 }

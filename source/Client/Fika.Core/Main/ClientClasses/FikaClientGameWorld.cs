@@ -37,9 +37,6 @@ public class FikaClientGameWorld : ClientLocalGameWorld
     public FikaClientWorld FikaClientWorld { get; private set; }
     public Il2CppSystem.Collections.Generic.Dictionary<int, Turnable> TurnableDict => Turnables;
 
-    /// <summary>Guards against a virtual redispatch of the native base call (see InitLevel).</summary>
-    private bool _insideBaseInitLevel;
-
     public static FikaClientGameWorld Create(GameObject gameObject, ObjectsFactory objectsFactory, EUpdateQueue updateQueue, Il2CppSystem.Nullable<MongoID> currentProfileId)
     {
         var gameWorld = gameObject.AddComponent<FikaClientGameWorld>();
@@ -113,50 +110,8 @@ public class FikaClientGameWorld : ClientLocalGameWorld
     {
         return NativeTask.FromManaged(MainThreadDispatcher.RunAsync(async () =>
         {
-            // Same window as the host side: a failure of the base call aborts the map load
-            // before LocalGameCreate and used to leave no trace of its own.
-            if (_insideBaseInitLevel)
-            {
-                var recursion = new InvalidOperationException("InitLevel re-entered while the native base call was still in flight; "
-                    + "the generated wrapper of this interop build dispatches virtually after all.");
-                
-                throw recursion;
-            }
-
-            
-            _insideBaseInitLevel = true;
-            try
-            {
-                // (analysis/transit-reload-oom) Directly before the native level load is the only point at
-                // which the replaced raid's assets can still be released: the previous world is gone (its
-                // assets are unreachable, so the pass can free them) and this world's own bundles are not
-                // loaded yet (so the pass cannot free anything the raid being started needs). Without it the
-                // second map of a transit was loaded on top of the first one and the process died with the
-                // Unity allocation failure of LogOutput.log:4880.
-                await FikaRaidMemory.ReleaseWorldSwapAsync("new map: before the native level load");
-                
-                // The alignment anchor of a transit reload (analysis/transit-reload-sync): this machine
-                // ended its raid as soon as the host's landing arrived, so it reaches this point ~45 s
-                // before the host reaches its own level creation. Waiting here - after the released world
-                // swap and directly before the level is created - starts both machines' level load in the
-                // same second, and it returns immediately for every raid start that is not a transit reload.
-                await TransitReloadGate.WaitForHostReloadStartAsync("the level of the joined raid");
-                
-                await NativeBaseCalls.Call72(this, itemFactory, config, loadBundlesAndCreatePools, resources, progress, ct).AsManaged();
-                
-                
-                Fika.Core.Main.Components.RaidInteractionSync.LevelReady(this);
-                
-            }
-            catch (Exception exception)
-            {
-                
-                throw;
-            }
-            finally
-            {
-                _insideBaseInitLevel = false;
-            }
+            await NativeBaseCalls.Call72(this, itemFactory, config, loadBundlesAndCreatePools, resources, progress, ct).AsManaged();
+            Fika.Core.Main.Components.RaidInteractionSync.LevelReady(this);
         }));
     }
 
@@ -194,12 +149,7 @@ public class FikaClientGameWorld : ClientLocalGameWorld
 
     public override void AfterPlayerTick(float dt)
     {
-        // (analysis/cutscene-rig-play) The engine half of the cutscene chain. This override used to swallow the
-        // native per-frame step on every Fika raid: the native world class is the only per-frame caller the
-        // cutscene client controller has besides the bridge, and the round-17 solo log shows the consequence -
-        // "gate:ticks ... client engine=0 bridge=820" while the scene of the map stood still at 0.0 s of 29.2 s
-        // and its rig stayed switched off. The switch forwards the call to the native base implementation and
-        // switches it back.
+        // Do nothing
     }
 
     public override void UpdateSynchronizableObjectLogic(float dt)
@@ -237,7 +187,7 @@ public class FikaClientGameWorld : ClientLocalGameWorld
             var syncObject = syncObjects[i];
             try
             {
-                syncObject.remove_OnUpdateRequired((System.Action<SynchronizableObject>)SynchronizableObjectLogicProcessor.UpdateRequiredHandler);
+                syncObject.remove_OnUpdateRequired((Il2CppSystem.Action<SynchronizableObject>)SynchronizableObjectLogicProcessor.UpdateRequiredHandler);
                 syncObject.Logic.ReturnToPool();
                 syncObject.ReturnToPool();
             }
@@ -263,4 +213,46 @@ public class FikaClientGameWorld : ClientLocalGameWorld
         // Do nothing
     }
 
+    public Item CreateReconnectQuestItem(JsonLootItem lootItem, bool initial, Player questPlayer = null, MovingPlatform platform = null)
+    {
+        var item = (questPlayer == null) ? lootItem.Item : lootItem.Item.CloneItem(null);
+        new ItemController(item, item.Id, item.ShortName, true, EOwnerType.Profile);
+        var gameObject = Singleton<ObjectsFactory>.Instance.CreateLootPrefab(item, ECameraType.Default, null);
+        gameObject.SetActive(true);
+        if (platform != null)
+        {
+            gameObject.transform.position = platform.transform.TransformPoint(lootItem.Position);
+        }
+        else
+        {
+            gameObject.transform.position = lootItem.Position;
+            gameObject.transform.rotation = Quaternion.Euler(lootItem.Rotation);
+        }
+        var lootItem2 = lootItem.useGravity
+            ? CreateLootWithRigidbody(gameObject, item, item.ShortName, lootItem.randomRotation, lootItem.ValidProfiles, out var _, false, true, 0f)
+            : CreateStaticLoot(gameObject, item, item.ShortName, lootItem.randomRotation, lootItem.ValidProfiles, null, lootItem.Shift);
+        if (platform != null)
+        {
+            lootItem2.Board(platform);
+            gameObject.transform.localRotation = Quaternion.Euler(lootItem.Rotation);
+            return item;
+        }
+        var component = gameObject.GetComponent<PreviewPivot>();
+        if (component != null && component.SpawnPosition != Vector3.zero)
+        {
+            var gameObject2 = new GameObject("Weapon spawn root");
+            gameObject2.transform.position = lootItem.Position;
+            gameObject2.transform.rotation = Quaternion.Euler(lootItem.Rotation);
+            var transform = lootItem2.transform;
+            transform.SetParent(gameObject2.transform);
+            transform.localPosition = (initial ? (-component.SpawnPosition) : Vector3.zero);
+            if (lootItem.randomRotation)
+            {
+                transform.rotation = Quaternion.Euler(new Vector3(0f, (float)UnityEngine.Random.Range(0, 360), 0f));
+            }
+            transform.localScale = Vector3.one;
+        }
+
+        return item;
+    }
 }

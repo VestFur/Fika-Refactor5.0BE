@@ -35,10 +35,12 @@ public sealed class HealthSyncPacket : IPoolSubPacket
 
     public void Execute(FikaPlayer player = null)
     {
-        if (player is { IsYourPlayer: true } && player.Downed &&
+        if (player is { IsYourPlayer: true } && (player.AwaitingReconnectRevival || player.Downed) &&
             Packet.SyncType == ESyncType.IsAlive && !Packet.Data.IsAlive.IsAlive)
         {
             player.RevivalClock.MarkDead();
+            if (!player.AwaitingReconnectRevival)
+                player.ActiveHealthController.Cast<Fika.Core.Main.ClientClasses.ClientHealthController>().KillAfterReconnect();
             return;
         }
         if (player.TryCast<ObservedPlayer>() is { } observedPlayer)

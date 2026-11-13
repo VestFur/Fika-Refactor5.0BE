@@ -6,7 +6,6 @@ using Comfort.Common;
 using EFT;
 using EFT.InventoryLogic;
 using Fika.Core.Main.Players;
-using Fika.Core.Main.Utils;
 using SPTushonka.Reflection.Patching;
 
 namespace Fika.Core.Main.Patches.AI;
@@ -21,22 +20,6 @@ internal static class BotFirstAidTimeouts
 
     // Accessed only by the game's medical lifecycle on the Unity thread.
     private static readonly Dictionary<IntPtr, Binding> Bindings = new();
-
-    /// <summary>
-    /// Drops every tracked timeout at a world teardown (analysis/transit-crash-unload). A binding holds the
-    /// native closure of a medical action and its AITaskManager; cancelling it after the world is gone would
-    /// enter a released object, so the references go instead of any native call. Returns the count.
-    /// </summary>
-    internal static int ClearForWorldTeardown()
-    {
-        var count = Bindings.Count;
-        if (count > 0)
-        {
-            Bindings.Clear();
-        }
-
-        return count;
-    }
 
     private static AITaskManager Manager(BotFirstAid aid) =>
         aid?._owner?.GetPlayer?.TryCast<FikaBot>() != null ? aid._owner.BotsController?.AiTaskManager : null;
@@ -115,27 +98,12 @@ public static class BotFirstAid_Timeout_Patches
     public sealed class Begin : ModulePatch
     {
         protected override MethodBase GetTargetMethod() => typeof(BotFirstAid).GetMethod(nameof(BotFirstAid.ApplyToSelf));
-
-        // The parameter types must mirror the interop signature
-        // BotFirstAid.ApplyToSelf(Nullable<int>, Il2CppSystem.Action) exactly. Declaring the
-        // callback as System.Action made Il2CppInterop warn "takes callback as System.Action (not an
-        // il2cpp type) ... the patch will read it as the wrong type" and hand an il2cpp delegate
-        // object to a CLR slot that cannot hold it, which throws inside the bot's medical flow.
-        // The delegate is stored and given back to the native TryApplyToCurrentPart unchanged.
         [PatchPrefix]
         public static bool Prefix(BotFirstAid __instance, Il2CppSystem.Nullable<int> varianAnim, Il2CppSystem.Action callback)
         {
-            try
-            {
-                if (!BotFirstAidPending.Begin(__instance, varianAnim, callback)) return false;
-                BotFirstAidTimeouts.CancelOwned(__instance);
-                return true;
-            }
-            catch (Exception exception)
-            {
-                
-                return true;
-            }
+            if (!BotFirstAidPending.Begin(__instance, varianAnim, callback)) return false;
+            BotFirstAidTimeouts.CancelOwned(__instance);
+            return true;
         }
     }
 

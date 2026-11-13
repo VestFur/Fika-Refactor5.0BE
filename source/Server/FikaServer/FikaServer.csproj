@@ -46,14 +46,6 @@
   <ItemGroup>
     <ProjectReference Include="..\FikaShared\FikaShared.csproj" />
   </ItemGroup>
-
-  <ItemGroup>
-    <!-- Parallel builds use per-agent tags (obj-<tag>/bin-<tag>). The SDK only excludes the
-         paths of the current build, so any other obj-*/bin-* tree in this folder would be
-         compiled into this one and fail with CS0579 "TargetFrameworkAttribute duplicated".
-         Keep every tagged intermediate and output tree out of the compile set. -->
-    <Compile Remove="obj*/**;bin*/**" />
-  </ItemGroup>
 	
 	
   <ItemGroup>

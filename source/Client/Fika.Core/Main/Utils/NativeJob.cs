@@ -22,7 +22,7 @@ internal static class NativeJob
         {
             var captured = context;
             Action resume = captured == null ? continuation : () => captured.Post(_ => continuation(), null);
-            awaiter.OnCompleted((System.Action)resume);
+            awaiter.OnCompleted((Il2CppSystem.Action)resume);
         }
     }
 }

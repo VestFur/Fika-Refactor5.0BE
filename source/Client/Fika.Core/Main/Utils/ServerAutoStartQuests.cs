@@ -11,21 +11,6 @@ internal static class ServerAutoStartQuests
 {
     private static readonly Dictionary<IntPtr, Dictionary<string, int>> Pending = new();
 
-    /// <summary>
-    /// Drops the per-controller pending tables at a world teardown (analysis/transit-crash-unload): the keys
-    /// are native quest controller addresses of the raid that ended. Returns the number of controllers dropped.
-    /// </summary>
-    internal static int ClearForWorldTeardown()
-    {
-        var count = Pending.Count;
-        if (count > 0)
-        {
-            Pending.Clear();
-        }
-
-        return count;
-    }
-
     internal static IDisposable Begin(QuestController controller, AutoStartQuestsDTO response)
     {
         var ids = new HashSet<string>(StringComparer.Ordinal);

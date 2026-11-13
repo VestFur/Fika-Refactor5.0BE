@@ -22,7 +22,7 @@ public class VRAMPatch2 : ModulePatch
         __instance.Reset();
         __instance.Camera = camera;
         __instance.InitCamera();
-        // 47888 exposes CameraManager.OnCameraChanged as an event, which cannot be raised here.
+        __instance.OnCameraChanged?.Invoke();
         return false;
     }
 }

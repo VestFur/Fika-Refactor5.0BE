@@ -32,10 +32,9 @@ public sealed class ObservedStatisticsManager : Il2CppSystem.Object, IStatistics
     }
 
 #pragma warning disable CS0067
+    public event Action OnUniqueLoot;
 #pragma warning restore CS0067
     private readonly NativeActionEvent _nativeOnUniqueLoot = new();
-    // The 47888 IStatisticsManager event accessors take the IL2CPP delegate;
-    // the System.Action overloads are only the interface's *_Managed helpers.
     public void add_OnUniqueLoot(Il2CppSystem.Action handler) => _nativeOnUniqueLoot.Add(handler);
     public void remove_OnUniqueLoot(Il2CppSystem.Action handler) => _nativeOnUniqueLoot.Remove(handler);
 

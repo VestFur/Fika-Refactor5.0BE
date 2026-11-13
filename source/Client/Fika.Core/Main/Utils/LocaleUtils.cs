@@ -1,6 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using System.Collections.Generic;
 using EFT;
 
 namespace Fika.Core.Main.Utils;
@@ -27,14 +25,7 @@ public static class LocaleUtils
         { WildSpawnType.bossKolontay, "Kollontay" },
         { WildSpawnType.bossPartisan, "Partisan" },
         { WildSpawnType.bossTagillaAgro, "Shadow of Tagilla" },
-        { WildSpawnType.bossKillaAgro, "Vengeful Killa" },
-        // 1.0 map roles (Icebreaker / Black Division, and the Laboratory variant of
-        // the same character). Upstream Fika predates them, so every boss test on
-        // those maps came out false even though the game's own quest data lists
-        // bossWedge among the bosses players have to eliminate.
-        { WildSpawnType.bossWedge, "Wedge" },
-        { WildSpawnType.bossWedgeLab, "Wedge" },
-        { WildSpawnType.bossBullyBlackDiv, "Bully Black Div" }
+        { WildSpawnType.bossKillaAgro, "Vengeful Killa" }
     };
 
     /// <summary>
@@ -45,45 +36,7 @@ public static class LocaleUtils
     /// <returns><see langword="true"/> if it's a boss, <see langword="false"/> if not</returns>
     public static bool IsBoss(WildSpawnType wildSpawnType, out string name)
     {
-        if (_bossNames.TryGetValue(wildSpawnType, out name))
-        {
-            return true;
-        }
-
-        // Self-maintaining fallback: the game names every boss role "boss<Name>",
-        // so a role that is missing from the table above (a map or a boss added
-        // after this port was written) still keeps its boss name, its kill
-        // notification and its spawn telemetry instead of silently losing them.
-        var role = wildSpawnType.ToString();
-        if (role.Length > 4 && role.StartsWith("boss", StringComparison.OrdinalIgnoreCase))
-        {
-            name = SplitCamelCase(role.Substring(4));
-            return true;
-        }
-
-        name = null;
-        return false;
-    }
-
-    /// <summary>
-    /// Turns an enum member name such as <c>BullyBlackDiv</c> into a readable
-    /// label ("Bully Black Div") for roles that have no entry in the table above.
-    /// </summary>
-    private static string SplitCamelCase(string value)
-    {
-        var builder = new StringBuilder(value.Length + 4);
-        for (var index = 0; index < value.Length; index++)
-        {
-            var character = value[index];
-            if (index > 0 && char.IsUpper(character) && !char.IsUpper(value[index - 1]))
-            {
-                builder.Append(' ');
-            }
-
-            builder.Append(character);
-        }
-
-        return builder.ToString();
+        return _bossNames.TryGetValue(wildSpawnType, out name);
     }
 
     public const string RECEIVED_SHARED_QUEST_PROGRESS = "F_Client_ReceivedSharedQuestProgress";
@@ -102,6 +55,7 @@ public static class LocaleUtils
     public const string CONNECTED_TO_SERVER = "F_Client_ConnectedToServer";
     public const string SERVER_STARTED = "F_Client_ServerStarted";
     public const string NO_VALID_IP = "F_Client_CouldNotFindValidIP";
+    public const string RECONNECT_REQUESTED = "F_Client_ReconnectRequested";
     public const string PEER_CONNECTED = "F_Client_PeerConnected";
     public const string PEER_DISCONNECTED = "F_Client_PeerDisconnected";
     public const string CONNECTING_TO_SESSION = "F_Client_ConnectingToSession";
@@ -138,6 +92,8 @@ public static class LocaleUtils
     public const string UI_CANNOT_JOIN_RAID_PMC_AS_SCAV = "F_UI_CannotJoinRaidPMCAsScav";
     public const string UI_HOST_STILL_LOADING = "F_UI_HostStillLoading";
     public const string UI_RAID_IN_PROGRESS = "F_UI_RaidInProgress";
+    public const string UI_REJOIN_RAID = "F_UI_ReJoinRaid";
+    public const string UI_CANNOT_REJOIN_RAID_DIED = "F_UI_CannotReJoinRaidDied";
     public const string UI_JOIN_RAID = "F_UI_JoinRaid";
     public const string UI_ERROR_CONNECTING = "F_UI_ErrorConnecting";
     public const string UI_UNABLE_TO_CONNECT = "F_UI_UnableToConnect";
@@ -156,6 +112,7 @@ public static class LocaleUtils
     public const string UI_RETRIEVE_SPAWN_INFO = "F_UI_RetrieveSpawnInfo";
     public const string UI_RETRIEVE_LOOT = "F_UI_RetrieveLoot";
     public const string UI_WAIT_FOR_HOST_INIT = "F_UI_WaitForHostInit";
+    public const string UI_RECONNECTING = "F_UI_Reconnecting";
     public const string UI_RETRIEVE_EXFIL_DATA = "F_UI_RetrieveExfilData";
     public const string UI_RETRIEVE_INTERACTABLES = "F_UI_RetrieveInteractables";
     public const string UI_INIT_COOP_GAME = "F_UI_InitCoopGame";
@@ -166,6 +123,12 @@ public static class LocaleUtils
     public const string UI_WAITING_FOR_CONNECT = "F_UI_WaitingForConnect";
     public const string UI_ERROR_CONNECTING_TO_RAID = "F_UI_ErrorConnectingToRaid";
     public const string UI_FINISHING_RAID_INIT = "F_UI_FinishingRaidInit";
+    public const string UI_SYNC_THROWABLES = "F_UI_SyncThrowables";
+    public const string UI_SYNC_INTERACTABLES = "F_UI_SyncInteractables";
+    public const string UI_SYNC_LAMP_STATES = "F_UI_SyncLampStates";
+    public const string UI_SYNC_WINDOWS = "F_UI_SyncWindows";
+    public const string UI_RECEIVE_OWN_PLAYERS = "F_UI_ReceiveOwnPlayer";
+    public const string UI_FINISH_RECONNECT = "F_UI_FinishReconnect";
     public const string FREECAM_ENABLED = "F_Client_FreeCamInputEnabled";
     public const string FREECAM_DISABLED = "F_Client_FreeCamInputDisabled";
     public const string UI_RAID_SETTINGS_DESCRIPTION = "F_UI_RaidSettingsDescription";

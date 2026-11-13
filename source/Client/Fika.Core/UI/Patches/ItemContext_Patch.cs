@@ -166,7 +166,7 @@ public sealed class ItemContext_Patch : ModulePatch
                 var uiGameObj = Object.Instantiate(matchMakerUiPrefab);
                 uiGameObj.transform.SetParent(GameObject.Find("Preloader UI/Preloader UI/UIContext/").transform);
                 var screenController = CommonUI.Instance.InventoryScreen.ScreenController;
-                screenController.OnClose += (System.Action)(() => Object.Destroy(uiGameObj));
+                screenController.OnClose += (Il2CppSystem.Action)(() => Object.Destroy(uiGameObj));
                 var sendItemUI = uiGameObj.GetComponent<SendItemUI>();
                 sendItemUI.PlayersDropdown.Value.ClearOptions();
                 sendItemUI.PlayersDropdown.Value.AddOptions(optionDatas.ToNativeList());
@@ -253,7 +253,7 @@ public sealed class ItemContext_Patch : ModulePatch
                     GameObject.Destroy(uiGameObj);
                 });
             };
-            dynamicInteractions["SEND"] = new DynamicContextInteraction("SEND", "SEND", (System.Action)sendAction,
+            dynamicInteractions["SEND"] = new DynamicContextInteraction("SEND", "SEND", (Il2CppSystem.Action)sendAction,
                 ResourcesCache.Pop<Sprite>("Characteristics/Icons/UnloadAmmo"), null, null);
         }
     }

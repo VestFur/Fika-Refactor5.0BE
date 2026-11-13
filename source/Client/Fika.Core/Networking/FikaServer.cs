@@ -63,6 +63,9 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
 
     public int ReadyClients;
     public DateTime TimeSinceLastPeerDisconnected;
+    // Invalidates delayed empty-peer shutdowns after a reconnect or a newer
+    // disconnect, so an old wait cannot stop a later raid.
+    private int _headlessWaitGeneration;
     public bool HasHadPeer;
     public bool RaidInitialized;
     public bool HostReady;
@@ -161,6 +164,11 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
 
     public async Task Init()
     {
+        // A new host network manager may be created for a subsequent Transit
+        // raid while an old empty-peer delay is still awaiting its timeout.
+        // Advance the generation before any asynchronous setup so that delay
+        // can never stop this new raid.
+        System.Threading.Interlocked.Increment(ref _headlessWaitGeneration);
         _netServer = new(this)
         {
             BroadcastReceiveEnabled = true,
@@ -349,117 +357,36 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
             EFT.Communications.ENotificationDurationType.Default, EFT.Communications.ENotificationIconType.EntryPoint);
 
         var useIPv6 = FikaPlugin.Instance.Settings.UseIPv6.Value;
-
-        // Only a non-blank address may enter the list. Upstream seeded this with [_externalIp] and then
-        // "repaired" the empty case with [_externalIp, ""], which is exactly what put a null/blank entry
-        // into the published record: the host reported "IPs: " (nothing usable) while the address that
-        // was actually reachable sat unread next to it. The external address stays first, and every
-        // valid local address is still appended (upstream behaviour, unchanged: the LAN list is always
-        // published and NAT punching is a separate flag on the same record).
-        List<string> ipAddresses = string.IsNullOrWhiteSpace(_externalIp) ? [] : [_externalIp];
+        List<string> ipAddresses = [_externalIp];
         for (var i = 0; i < FikaPlugin.Instance.LocalIPs.Length; i++)
         {
             var ip = FikaPlugin.Instance.LocalIPs[i];
-            if (string.IsNullOrWhiteSpace(ip) || ipAddresses.Contains(ip))
-            {
-                continue;
-            }
             if (!useIPv6 && IPAddress.TryParse(ip, out var parsedAddress)
                 && parsedAddress.AddressFamily == AddressFamily.InterNetworkV6)
             {
                 continue;
             }
-            if (ValidateIP(ip))
+            if (ValidateIP(ip) && !ipAddresses.Contains(ip))
             {
                 ipAddresses.Add(ip);
             }
         }
 
-        // Reachable now, and it means what it says: the external lookup failed and no local address
-        // passed ValidateIP (a pure IPv6 host with IPv6 disabled, or nothing but loopback / APIPA /
-        // link-local addresses). The old guard could never fire because the list was seeded with one
-        // element, so Count was always at least 1 - and its body re-introduced the blank entry it was
-        // supposed to repair. The record is published without blanks either way, and a raid with NAT
-        // punching enabled can still be joined through the NAT introduction.
-        if (ipAddresses.Count == 0)
+        if (ipAddresses.Count < 1)
         {
+            ipAddresses = [_externalIp, ""];
             FikaNotifications.DisplayMessageNotification(LocaleUtils.NO_VALID_IP.Localized(),
                 iconType: EFT.Communications.ENotificationIconType.Alert);
         }
 
         SetHostRequest body = new([.. ipAddresses], _port, useNATPunching,
             FikaPlugin.Instance.Settings.UseFikaNATPunchServer.Value, FikaBackendUtils.IsHeadless);
-        LogHostAddressPublication(body, ipAddresses);
-        try
-        {
-            FikaRequestHandler.UpdateSetHost(body);
-        }
-        catch (Exception exception)
-        {
-            // The room stays unpublished on the server when this request fails, so every joiner sees
-            // "the host has not published an address on that server" until the room ends. One line
-            // that names the cause, then the failure continues to the caller unchanged.
-            var reason = exception.GetBaseException().Message;
-            _logger.LogWarning($"[HostAddress] publishing failed for serverId={body.ServerId} on {FikaRequestHandler.ServerHost}: "
-                + $"{reason}; other players will not be able to join this raid");
-            
-            throw;
-        }
+        FikaRequestHandler.UpdateSetHost(body);
 
         if (!FikaBackendUtils.IsHeadless)
         {
             _raidAdminUIScript = RaidAdminUIScript.Create(this, _netServer);
         }
-    }
-
-    /// <summary>
-    /// Reports the address this host is about to publish for its raid (one line per raid start).
-    ///
-    /// Joiners can only connect when the published record carries a usable address and a port, and the
-    /// joining side has no way to tell why a record is empty: it can only say "the host has not
-    /// published an address on that server". This is the line that explains it, so it names the values
-    /// that produced the record and the settings that feed them.
-    /// </summary>
-    private void LogHostAddressPublication(SetHostRequest body, List<string> ipAddresses)
-    {
-        var usable = 0;
-        for (var i = 0; i < ipAddresses.Count; i++)
-        {
-            if (!string.IsNullOrWhiteSpace(ipAddresses[i]))
-            {
-                usable++;
-            }
-        }
-
-        var values = $"ips=[{DescribeAddressList(ipAddresses)}], port={body.Port}, natPunch={body.NatPunch}, "
-            + $"useFikaNatPunchServer={body.UseFikaNatPunchServer}, isHeadless={body.IsHeadless}";
-
-        if (usable == 0 || body.Port == 0)
-        {
-            _logger.LogWarning($"[HostAddress] publishing no usable address ({values}); externalIp={_externalIp ?? "null"}, "
-                + $"wanIp={FikaPlugin.Instance.WanIP}, forceIp='{FikaPlugin.Instance.Settings.ForceIP.Value}', "
-                + $"upnp={FikaPlugin.Instance.Settings.UseUPnP.Value}: other players will not be able to join this raid");
-            
-            return;
-        }
-
-        _logger.LogInfo($"[HostAddress] publishing {values}");
-    }
-
-    private static string DescribeAddressList(List<string> addresses)
-    {
-        var builder = new System.Text.StringBuilder();
-        for (var i = 0; i < addresses.Count; i++)
-        {
-            if (i > 0)
-            {
-                builder.Append(", ");
-            }
-
-            builder.Append(string.IsNullOrWhiteSpace(addresses[i]) ? "<blank>" : addresses[i]);
-        }
-
-        return builder.ToString();
     }
 
     private FikaVoiceSession _voiceSession;
@@ -495,11 +422,10 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
         RegisterPacket<QuestDropItemPacket, NetPeer>(OnQuestDropItemPacketReceived);
         RegisterPacket<InteractableInitPacket, NetPeer>(OnInteractableInitPacketReceived);
         RegisterPacket<WorldLootPacket, NetPeer>(OnWorldLootPacketReceived);
+        RegisterPacket<ReconnectPacket, NetPeer>(OnReconnectPacketReceived);
         RegisterPacket<BTRInteractionPacket, NetPeer>(OnBTRInteractionPacketReceived);
         RegisterPacket<ResyncInventoryIdPacket, NetPeer>(OnResyncInventoryIdPacketReceived);
         RegisterPacket<SyncTransitControllersPacket, NetPeer>(OnSyncTransitControllersPacketReceived);
-        TransitZonePresence.RegisterOnServer(this);
-        FlareExfilActivationPacket.RegisterOnServer(this);
         RegisterPacket<TransitInteractPacket, NetPeer>(OnTransitInteractPacketReceived);
         RegisterPacket<BotStatePacket, NetPeer>(OnBotStatePacketReceived);
         RegisterPacket<LoadingProfilePacket, NetPeer>(OnLoadingProfilePacketReceived);
@@ -521,7 +447,6 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
         RegisterPacket<CutsceneViewCompletePacket, NetPeer>(OnCutsceneViewCompletePacketReceived);
         RegisterPacket<FinalMissionPacket, NetPeer>(OnFinalMissionPacketReceived);
         RegisterPacket<FinalMissionQuestPacket, NetPeer>(OnFinalMissionQuestPacketReceived);
-        RegisterPacket<SentryAccessPacket, NetPeer>(OnSentryAccessPacketReceived);
 
         RegisterReusable<WorldPacket, NetPeer>(OnWorldPacketReceived);
 
@@ -577,20 +502,11 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
         RaidInteractionSync.Tick();
         _netServer?.PollEvents();
 
-        // (analysis/loading-screen-peer-state) The bounded re-announcement of this machine's loading row and
-        // progress. It is pumped from here because the engine only enters LoadingScreenUI's Awake/OnDestroy,
-        // and it does nothing unless a transit re-arm armed it.
-        LoadingScreenUI.TickPeerStateHeartbeat();
-
         var networkTime = NetworkTimeSync.NetworkTime;
         for (var i = 0; i < ObservedPlayers.Count; i++)
         {
             ObservedPlayers[i].ManualStateUpdate(networkTime);
         }
-
-        // (2026-10-17) The peer -> player binding is what every request handler trusts; it is restored
-        // here once per second for peers that lost it (see RelinkUnboundPeers).
-        RelinkUnboundPeers();
 
         _statisticsCounter += Time.unscaledDeltaTime;
         if (_statisticsCounter > _sendThreshold)
@@ -605,75 +521,6 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
             {
                 _fikaChat.ToggleChat();
             }
-        }
-    }
-
-
-    private float _peerRelinkCounter;
-    private readonly List<NetPeer> _relinkPeers = [];
-
-    /// <summary>
-    /// (2026-10-17) Re-establishes <see cref="NetPeer.Player"/> for every connected peer whose binding is
-    /// missing or points at an object this raid no longer carries. Every request handler (proceed, inventory,
-    /// player state) trusts that single field, and it is written in exactly one place - the information
-    /// exchange. A peer that stops sending information packets after a transit, or whose character
-    /// announcement was dropped, therefore stays unbound for the rest of the raid: its weapon switches are
-    /// rolled back to empty hands, its item moves are never executed, and its ObservedPlayer never moves on
-    /// this host. The binding is only ever written to a player that exists in CoopHandler.Players under the
-    /// peer's assigned net id, nothing is unbound here, and the call is idempotent.
-    /// </summary>
-    private void RelinkUnboundPeers()
-    {
-        try
-        {
-            _peerRelinkCounter += Time.unscaledDeltaTime;
-            if (_peerRelinkCounter < 1f)
-            {
-                return;
-            }
-
-            _peerRelinkCounter = 0f;
-            var coopHandler = _coopHandler;
-            if (_netServer == null || coopHandler?.Players == null || _assignedPeerNetIds == null)
-            {
-                return;
-            }
-
-            _relinkPeers.Clear();
-            _netServer.GetConnectedPeers(_relinkPeers);
-            for (var i = 0; i < _relinkPeers.Count; i++)
-            {
-                var peer = _relinkPeers[i];
-                if (!_assignedPeerNetIds.TryGetValue(peer, out var netId) || netId == 0)
-                {
-                    continue;
-                }
-
-                if (!coopHandler.Players.TryGetValue(netId, out var player) || player == null)
-                {
-                    continue;
-                }
-
-                if (_assignedPeerProfiles != null && _assignedPeerProfiles.TryGetValue(peer, out var profile)
-                    && player.ProfileId != profile)
-                {
-                    continue;
-                }
-
-                var bound = peer.Player;
-                if (bound != null && bound.Pointer == player.Pointer)
-                {
-                    continue;
-                }
-
-                peer.Player = player;
-                _logger.LogWarning($"[PeerRelink] bound peer {peer.Id} to player {netId} ({player.ProfileId}); " +
-                    $"previous={(bound == null ? "none" : bound.NetId + "/" + bound.ProfileId)}");
-            }
-        }
-        catch (Exception exception)
-        {
-            _logger.LogWarning("[PeerRelink] failed: " + exception.Message);
         }
     }
 
@@ -692,6 +539,7 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
 
     private void OnDestroy()
     {
+        System.Threading.Interlocked.Increment(ref _headlessWaitGeneration);
         ShutdownVOIP();
         _netServer?.Stop();
         _genericPacket.Clear();
@@ -917,6 +765,7 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
 
     public void OnPeerConnected(NetPeer peer)
     {
+        System.Threading.Interlocked.Increment(ref _headlessWaitGeneration);
         FikaNotifications.DisplayMessageNotification(string.Format(LocaleUtils.PEER_CONNECTED.Localized(), peer.Port),
             iconType: ENotificationIconType.Friend);
         _logger.LogInfo($"Connection established with {peer.Address}:{peer.Port}, id: {peer.Id}");
@@ -970,7 +819,8 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
             var guid = FikaBackendUtils.ServerGuid.ToString();
             if (data == guid)
             {
-                resp.Put(started ? "fika.inprogress" : "fika.hello");
+                var reconnect = reader.GetBool();
+                resp.Put(started && !reconnect ? "fika.inprogress" : "fika.hello");
                 _netServer.SendUnconnectedMessage(resp.AsReadOnlySpan(), remoteEndPoint);
             }
             else
@@ -1018,12 +868,9 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
     {
         // A disconnected client no longer satisfies the pre-raid ready barrier.
         if (_readyPeers.Remove(peer) && ReadyClients > 0) ReadyClients--;
-        _scavLateJoinPeers.Remove(peer);
-
-        // The peer is gone for good: its identity assignments go with it, so no later packet can be
-        // attributed to a connection that no longer exists.
-        _assignedPeerProfiles.Remove(peer);
         _assignedPeerNetIds.Remove(peer);
+        _assignedPeerProfiles.Remove(peer);
+        _scavLateJoinPeers.Remove(peer);
         RaidInteractionSync.OnDisconnected(peer.Player);
         _logger.LogInfo($"Peer disconnected {peer.Port}, info: {disconnectInfo.Reason}");
         if (disconnectInfo.Reason != DisconnectReason.RemoteConnectionClose)
@@ -1049,19 +896,50 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
             TimeSinceLastPeerDisconnected = DateTime.Now;
         }
 
-        if (FikaBackendUtils.IsHeadless && _netServer.ConnectedPeersCount == 0)
+        if (FikaBackendUtils.IsHeadless)
         {
-            // The last client is gone and there is nothing to come back to: the headless session stops
-            // with it. (The five minute "waiting for reconnect" stay belonged to the removed feature.)
-            AsyncWorker.RunInMainTread((System.Action)DisconnectHeadless);
+            if (_netServer.ConnectedPeersCount == 0)
+            {
+                var waitGeneration = System.Threading.Interlocked.Increment(ref _headlessWaitGeneration);
+                if (disconnectInfo.Reason != DisconnectReason.RemoteConnectionClose)
+                {
+                    _ = Task.Run(() => WaitBeforeStopping(waitGeneration));
+                }
+                else
+                {
+                    AsyncWorker.RunInMainTread((Il2CppSystem.Action)(() => DisconnectHeadless(waitGeneration)));
+                }
+            }
         }
 
         FikaEventDispatcher.DispatchEvent(new PeerDisconnectedEvent(peer, this));
     }
 
-    private void DisconnectHeadless()
+    private async Task WaitBeforeStopping(int waitGeneration)
     {
-        if (_netServer.ConnectedPeersCount != 0)
+        for (var minutes = 0; minutes < 5; minutes++)
+        {
+            await Task.Delay(TimeSpan.FromMinutes(1));
+            if (waitGeneration != System.Threading.Interlocked.CompareExchange(ref _headlessWaitGeneration, 0, 0) ||
+                _netServer.ConnectedPeersCount != 0)
+                return;
+            _logger.LogInfo($"Waited {minutes + 1} minutes for reconnect...");
+        }
+
+        if (waitGeneration == System.Threading.Interlocked.CompareExchange(ref _headlessWaitGeneration, 0, 0) &&
+            _netServer.ConnectedPeersCount == 0)
+        {
+            _logger.LogInfo("No reconnect was made, stopping session");
+            // Connection state can change between queueing and execution on
+            // the Unity thread, so validate the same wait generation there.
+            AsyncWorker.RunInMainTread((Il2CppSystem.Action)(() => DisconnectHeadless(waitGeneration)));
+        }
+    }
+
+    private void DisconnectHeadless(int waitGeneration)
+    {
+        if (waitGeneration != System.Threading.Interlocked.CompareExchange(ref _headlessWaitGeneration, 0, 0) ||
+            _netServer.ConnectedPeersCount != 0)
             return;
 
         if (!FikaSingleton<IFikaGame>.Instantiated)
@@ -1076,11 +954,6 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
 
     public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
     {
-        // One stamp per inbound packet, for the [LoadSync] barrier lines ("sinceLastInbound"): the host's
-        // barrier waits for a character announcement, and this tells apart "the peer is silent" from
-        // "the peer sends packets but has not announced a character yet".
-        LoadSync.NotePeerPacket("host receive");
-
         var broadcast = reader.GetByte() == 1;
         var payloadStart = reader.Position;
         var packetType = reader.GetEnum<EPacketType>();
@@ -1149,6 +1022,10 @@ public sealed partial class FikaServer : MonoBehaviour, INetEventListener, INatP
                         else if (subType == EGenericSubPacketType.DialogEntry)
                             // Dialog entry packets are applied and forwarded by
                             // the host callback after validating the sender.
+                            relay = false;
+                        else if (subType == EGenericSubPacketType.FlareShootReport)
+                            // Flare reports are validated and re-broadcast as the
+                            // host's canonical activation by the host callback.
                             relay = false;
                         reader.SetPosition(messageStart);
                     }

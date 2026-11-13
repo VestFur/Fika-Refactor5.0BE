@@ -4,7 +4,6 @@ using EFT;
 using EFT.Interactive;
 using EFT.Passcodes;
 using EFT.GlobalEvents;
-using EFT.UI;
 using Fika.Core.Main.Components;
 using Fika.Core.Main.Utils;
 using HarmonyLib;
@@ -28,26 +27,8 @@ internal sealed class PasscodeResultSyncPatch : ModulePatch
     }
 
     [PatchPostfix]
-    public static void Postfix(Player player, PasscodeTerminal terminal, bool __result, bool __state)
-    {
-        // AP (analysis/nonfika-raid-inertness): a passcode terminal is a world interaction every raid has.
-        // RaidInteractionSync is only bound inside a raid of ours, so this was already a no-op outside one;
-        // the guard makes that explicit and names it in the log when it happens.
-        if (FikaRaidGate.Skip("ClientLocalPasscodeController.HandleSubmitPasscode postfix"))
-        {
-            return;
-        }
-
-        var handled = __result && __state;
-        // BB (analysis/icebreaker-keypad-door): the one line a host log has to hold for a passcode door - which
-        // attempt it announced, and whether it announced a success.
-        // BU (analysis/icebreaker-keypad-3): every machine whose world holds the game's own local controller runs
-        // this check, so the same method is also the native verdict of a client - the line says which one it is,
-        // and only a host announces anything (BroadcastPasscodeResult refuses on every other role).
-        var server = FikaBackendUtils.IsServer;
-        
-        RaidInteractionSync.BroadcastPasscodeResult(player, terminal, handled);
-    }
+    public static void Postfix(Player player, PasscodeTerminal terminal, bool __result, bool __state) =>
+        RaidInteractionSync.BroadcastPasscodeResult(player, terminal, __result && __state);
 }
 
 internal sealed class RaidDialogClaimPatch : ModulePatch
@@ -71,42 +52,18 @@ internal sealed class CutsceneStartSyncPatch : ModulePatch
         nameof(CutscenesServerController.StartCutscene));
 
     [PatchPrefix]
-    public static bool Prefix(ref CutsceneProcess __result, string __0,
-        Il2CppSystem.Collections.Generic.List<int> __1)
+    public static bool Prefix(ref CutsceneProcess __result)
     {
-        if (RaidInteractionSync.World == null) return true;
-        // (2026-10-18) The host narrows the native seat table to the players the session really has, otherwise
-        // the "waiting for players" counter waits for seats nobody owns and the process never ends.
-        if (FikaBackendUtils.IsServer) RaidInteractionSync.FilterViewersToSession(__1);
-        if (!FikaBackendUtils.IsClient) return true;
-        // (analysis/cutscene-client-native-trigger) The one local start that is let through: this machine's own
-        // trigger asked for a cutscene the host never dispatched, so the bridge granted that very cutscene to the
-        // native call. Everything after this return is native - the process, its seat table and the local viewer's
-        // playback - which is the point: the client runs the same trigger chain the host runs.
-        if (FikaLocalCutsceneTrigger.GrantNativeStart(__0, __1)) return true;
+        if (RaidInteractionSync.World == null || !FikaBackendUtils.IsClient) return true;
         // Local quest/trigger handlers may still call the offline server controller.
-        // Only a host packet - or the granted local trigger above - starts the client's native playback. The
-        // dropped request is handed to the bridge, which re-runs it natively when the host stays silent
-        // (analysis/cutscene-client-native-trigger).
-        FikaLocalCutsceneTrigger.NoteNativeRequest(__0);
+        // Only a host packet is allowed to start the client's native playback.
         __result = null;
-        
         return false;
     }
 
     [PatchPostfix]
-    public static void Postfix(CutsceneProcess __result, bool forceMode, float initTime)
-    {
+    public static void Postfix(CutsceneProcess __result, bool forceMode, float initTime) =>
         RaidInteractionSync.StartCutscene(__result, forceMode, initTime);
-        
-        // (analysis/cutscene-client-native-trigger) The second half of a granted local start: a process this
-        // machine created itself has to be handed to this machine's own client controller. On a host that step is
-        // the broadcast above; on a client the offline mode used to own it and Fika switched that off
-        // (RaidInteractionSync.ConfigureControllers), so the bridge raises the same native event the host packet
-        // would have raised - with this machine's own process id.
-        if (FikaBackendUtils.IsClient && __result != null)
-            RaidInteractionSync.PlayLocalNativeProcess(__result);
-    }
 }
 
 internal sealed class CutsceneViewCompleteSyncPatch : ModulePatch
@@ -126,11 +83,7 @@ internal sealed class CutsceneViewCompleteSyncPatch : ModulePatch
             skip = true;
             return;
         }
-        if (!skip && !__instance._currentCutsceneViewerOnly)
-        {
-            __state = __instance._cutsceneProcessId;
-            
-        }
+        if (!skip && !__instance._currentCutsceneViewerOnly) __state = __instance._cutsceneProcessId;
         // The native network branch casts the local player to ClientPlayer, while
         // FikaPlayer derives from LocalPlayer. Keep its UI/effect cleanup and replace
         // only the completion notification (the same cleanup is used for skip=true).
@@ -145,124 +98,15 @@ internal sealed class CutsceneViewCompleteSyncPatch : ModulePatch
     }
 }
 
-/// <summary>
-/// (2026-10-21) THE ONE END OF A CUTSCENE, ON EVERY MACHINE: <c>EndCutscene(cutsceneId, cutsceneProcessId,
-/// process, playersId, skip)</c> (interop, 5 args) is the call both roles end a process through - the host through
-/// its own <c>OnUpdate</c>, a client through <see cref="FikaLocalCutsceneTrigger"/>. Its postfix therefore carries
-/// the two things every machine has to do when a process ends, and it does them <b>before</b> any role-specific
-/// bookkeeping can return early:
-/// <list type="bullet">
-/// <item>the sniper-zone immunity the start granted is released for the viewers of the process and for this
-/// machine's own player - the host kept its entry for the rest of the raid because the old release was mapped
-/// from the session packet's NetIds, and the host's own raid id is not one of them;</item>
-/// <item>the host announces the end to the peers (see <see cref="RaidInteractionSync.EndCutscene"/>).</item>
-/// </list>
-/// The parameter names are the interop ones (<c>cutsceneProcessId</c>, <c>playersId</c>, <c>skip</c>), taken from
-/// the native stack trace of this build.
-/// </summary>
 internal sealed class CutsceneEndSyncPatch : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(CutscenesServerController),
         nameof(CutscenesServerController.EndCutscene));
 
     [PatchPostfix]
-    public static void Postfix(int cutsceneProcessId, Il2CppSystem.Collections.Generic.List<int> playersId, bool skip) =>
-        RaidInteractionSync.EndCutscene(cutsceneProcessId, playersId, skip);
+    public static void Postfix(int cutsceneProcessId, bool skip) => RaidInteractionSync.EndCutscene(cutsceneProcessId, skip);
 }
 
-/// <summary>
-/// (2026-10-21) THE MAP-TRIGGER CUTSCENE: <c>CutscenesServerController.StartCutsceneWithTime</c> (interop
-/// :94633, <c>cutsceneId, playersId, fixedTime, forceMode</c>) is the entry the location triggers use, and it
-/// does not pass the <c>StartCutscene</c> call the session broadcast hangs on - so a cutscene a trigger starts
-/// on the host never reached a client. The process it just created is taken from the controller's own table
-/// (<c>_cutsceneProcesses</c>, :94638) by cutscene id among the ones this session has not broadcast yet, and
-/// handed to the one broadcast of <see cref="RaidInteractionSync.StartCutscene"/> - same packet, same seat
-/// mapping, no second protocol.
-/// </summary>
-internal sealed class CutsceneStartWithTimeSyncPatch : ModulePatch
-{
-    protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(CutscenesServerController),
-        nameof(CutscenesServerController.StartCutsceneWithTime));
-
-    [PatchPrefix]
-    public static void Prefix(Il2CppSystem.Collections.Generic.List<int> __1)
-    {
-        // (2026-10-27 W49 / TARGETS N2 根治) 地图触发器起的过场（落地/世界类）在主机上会等到"每个观众
-        // 都确认"为止；合作局里对端没有被登记成本地进程，就永远不回确认，主机因此黑屏卡在过场里
-        // （用户实测：客机退出游戏后主机立刻正常）。这类过场每个机器都能自己播，所以主机只保留自己
-        // 一个座位，不再等对端；对端由它自己的触发器/兜底起本地进程。rally 那类走的是 StartCutscene，
-        // 不经过这里，仍然保留全队座位。
-        if (!FikaBackendUtils.IsServer || __1 == null) return;
-        try
-        {
-            var local = RaidInteractionSync.LocalPlayerId;
-            if (local <= 0 || __1.Count <= 1) return;
-            var before = __1.Count;
-            var kept = false;
-            for (var i = __1.Count - 1; i >= 0; i--)
-            {
-                if (__1[i] == local) { kept = true; continue; }
-                __1.RemoveAt(i);
-            }
-            if (!kept) __1.Add(local);
-            FikaGlobals.LogInfo($"[CgDiag] host-seats-narrowed from={before} to={__1.Count} " +
-                "reason=map-trigger cutscenes are played locally by every machine", "RaidInteractionSync");
-        }
-        catch (System.Exception exception)
-        {
-            FikaGlobals.LogWarning($"[CgDiag] host-seats-narrowed threw: {exception.GetType().Name}", "RaidInteractionSync");
-        }
-    }
-
-    [PatchPostfix]
-    public static void Postfix(CutscenesServerController __instance, string cutsceneId, bool forceMode)
-    {
-        RaidInteractionSync.StartCutsceneFromWithTime(__instance, cutsceneId, forceMode);
-    }
-}
-
-/// <summary>
-/// (2026-10-21) THE LOCAL VIEWER'S END: <c>CutscenesClientController.TimelineShowed</c> (interop :94368) is the
-/// moment this machine's timeline finished showing, i.e. the "viewed" half of the lifecycle of a process this
-/// machine created itself (<see cref="FikaLocalCutsceneTrigger"/>). The process id is captured before the native
-/// body runs (the postfixes of this file already rewrite what it announces), so the notification names the
-/// process that is actually running.
-/// </summary>
-internal sealed class CutsceneViewedLocalProcessPatch : ModulePatch
-{
-    protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(CutscenesClientController),
-        nameof(CutscenesClientController.TimelineShowed));
-
-    [PatchPrefix]
-    public static void Prefix(CutscenesClientController __instance, out int __state)
-    {
-        __state = 0;
-        try { __state = __instance == null ? 0 : __instance._cutsceneProcessId; }
-        catch (System.Exception) { __state = 0; }
-    }
-
-    [PatchPostfix]
-    public static void Postfix(CutscenesClientController __instance, string timelineId, int __state)
-    {
-        var cutscene = timelineId;
-        try { if (string.IsNullOrEmpty(cutscene) && __instance != null) cutscene = __instance._cutsceneId; }
-        catch (System.Exception) { }
-        FikaLocalCutsceneTrigger.NoteViewed(__state, cutscene);
-        // (2026-10-21) The end-of-cutscene safety net of the immunity release: this machine's own viewer just
-        // finished the timeline, which is the one end event both roles are guaranteed to run. It is only armed
-        // here - the release itself happens in RaidInteractionSync.Tick, a moment later, and the primary release
-        // (the postfix of the native EndCutscene) keeps precedence.
-        RaidInteractionSync.NoteLocalTimelineShown(__state);
-    }
-}
-
-// (analysis/cutscene-view-and-end) The two per-frame methods the whole cutscene clock depends on. The round-16
-// host log proves nobody calls the server one (its elapsed time stands still while the process is alive), and the
-// same question for the client controller - whose per-frame step is what starts and finishes this machine's own
-// scene - could only be answered from the outside: it is never entered (no phase=view line exists anywhere) and
-// nothing is ever rendered. These patches count only: no return value, no parameter and no instance is touched,
-// so the game behaves exactly as it did. Their line is "phase=gate:ticks ... server engine=N bridge=M ..." and it
-// splits every call into "a native caller" and "this bridge".
 // Fika replaces the single-player driver on both host and peers. Preserve SPT's
 // implementation outside a bound Fika world.
 internal sealed class FinalMissionClientStartGuardPatch : ModulePatch
@@ -281,266 +125,4 @@ internal sealed class FinalMissionClientTickGuardPatch : ModulePatch
 
     [PatchPrefix]
     public static bool Prefix() => !FikaFinalMissionDirector.Bound;
-}
-// ICEBREAKER-CUTSCENE-BRIDGE (analysis/icebreaker-cutscene): the client controller's timeline bank is
-// repaired at the head of FikaClient.ApplyPendingRaidInteractions itself, before the queued host cutscene
-// packets are drained - the same call this file used to place with a Harmony prefix. The prefix never
-// installed: the patch manager detours through IL2CPP, and a method of the Fika assembly itself has no IL2CPP
-// detour ("CutsceneClientBankTickPatch: NotSupportedException ... requires an IL2CPP detour", round-15 host
-// log, analysis/cutscene-play-and-end/REPORT.md). The call site is in FikaClient.RaidInteractions.cs.
-
-// =============================================================================================================
-// BB (analysis/icebreaker-keypad-door): the keypad chain of one raid, named and repaired.
-//
-// The report of this round is "the icebreaker keypad cannot be used on a client". The game's own submit guard
-// refuses such a code with "Tried to enter code on location without passcodes" before any Fika packet exists,
-// so the host never learns about the attempt and the door never opens although the host knows the code. None of
-// the three patches below filters, moves or replaces a native interaction:
-//   * PasscodeMenuDiagPatch   postfix, reads only  - the interaction menu of a PasscodeTerminal (offered/empty);
-//   * PasscodePanelShowDiagPatch prefix, void      - the native passcode panel of this machine opened;
-//   * PasscodeSubmitRelayPatch postfix, ref __result - a code the game refused is handed to the host through the
-//     very packet the native event path uses. Only on a client, only inside a bound Fika raid, and only after
-//     that host has answered this client at least once; with KeypadDiag.RepairEnabled=false it never acts.
-// =============================================================================================================
-
-/// <summary>The shared text of the keypad lines: door, controller kind and the two states the guard decides on.</summary>
-internal static class PasscodeText
-{
-    internal static string Door(PasscodeTerminal terminal)
-    {
-        try
-        {
-            return terminal == null ? "-" : (terminal.PasscodeId ?? "-") + "#" + terminal.NetId;
-        }
-        catch (System.Exception)
-        {
-            return "?";
-        }
-    }
-
-    internal static string Controller(ClientPasscodeController controller)
-    {
-        try
-        {
-            if (controller == null) return "none";
-            if (controller.TryCast<ClientNetworkPasscodeController>() != null) return "network";
-            if (controller.TryCast<ClientLocalPasscodeController>() != null) return "local";
-            return "client";
-        }
-        catch (System.Exception)
-        {
-            return "?";
-        }
-    }
-
-    /// <summary>How many passcode entries the location of this controller carries (null = none at all).</summary>
-    internal static string Settings(ClientPasscodeController controller)
-    {
-        try
-        {
-            var entries = controller?._passcodeLocationSettings?.Entries;
-            return entries == null ? "null" : entries.Length.ToString();
-        }
-        catch (System.Exception)
-        {
-            return "?";
-        }
-    }
-
-    internal static string Terminals(ClientPasscodeController controller)
-    {
-        try
-        {
-            return controller?._passcodeTerminals == null ? "-" : controller._passcodeTerminals.Count.ToString();
-        }
-        catch (System.Exception)
-        {
-            return "?";
-        }
-    }
-}
-
-/// <summary>
-/// The native interaction menu of one keypad: a postfix that only reads the state the native dispatcher
-/// returned. Nothing about the actions, their order or their delegates is touched - the menu of this machine
-/// cannot change because of this patch, it only names it. "result=empty" is the line that proves the report's
-/// "the keypad offers no interaction here" while "result=offered" rules the menu out as the cause.
-/// </summary>
-internal sealed class PasscodeMenuDiagPatch : ModulePatch
-{
-    protected override MethodBase GetTargetMethod()
-    {
-        var methods = typeof(InteractionContextHelper).GetMethods(
-            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
-        for (var i = 0; i < methods.Length; i++)
-        {
-            var method = methods[i];
-            if (method.Name != nameof(InteractionContextHelper.GetAvailableActions)) continue;
-            var parameters = method.GetParameters();
-            if (parameters.Length != 2) continue;
-            if (parameters[1].ParameterType != typeof(PasscodeTerminal)) continue;
-            return method;
-        }
-
-        throw new System.MissingMethodException(
-            "EFT.InteractionContextHelper.GetAvailableActions(GamePlayerOwner, PasscodeTerminal)");
-    }
-
-    [PatchPostfix]
-    public static void Postfix(AvailableInteractionState __result, PasscodeTerminal __1)
-    {
-        try
-        {
-            var actions = __result?.Actions;
-            var names = new System.Text.StringBuilder();
-            var count = 0;
-            names.Append('[');
-            if (actions != null)
-            {
-                for (var i = 0; i < actions.Count; i++)
-                {
-                    var action = actions[i];
-                    if (action == null) continue;
-                    if (count > 0) names.Append(',');
-                    names.Append(string.IsNullOrEmpty(action.Name) ? "<unnamed>" : action.Name);
-                    count++;
-                }
-            }
-
-            names.Append(']');
-            
-        }
-        catch (System.Exception)
-        {
-        }
-    }
-}
-
-/// <summary>
-/// The native keypad screen of this machine: its Show is what the interaction action of a PasscodeTerminal
-/// calls, so one line here answers "did the entry screen of this report ever open on this machine, and with
-/// which controller". A void prefix cannot skip or alter the call.
-/// </summary>
-internal sealed class PasscodePanelShowDiagPatch : ModulePatch
-{
-    protected override MethodBase GetTargetMethod()
-    {
-        var target = typeof(PasscodeInputPanel).GetMethod(nameof(PasscodeInputPanel.Show),
-            BindingFlags.Instance | BindingFlags.Public, null,
-            new[] { typeof(Player), typeof(PasscodeTerminal), typeof(ClientPasscodeController) }, null);
-        if (target == null)
-        {
-            throw new System.MissingMethodException(
-                "EFT.UI.PasscodeInputPanel.Show(Player, PasscodeTerminal, ClientPasscodeController)");
-        }
-
-        return target;
-    }
-
-    [PatchPrefix]
-    public static void Prefix(Player __0, PasscodeTerminal __1, ClientPasscodeController __2)
-    {
-        try
-        {
-            
-        }
-        catch (System.Exception)
-        {
-        }
-    }
-}
-
-/// <summary>
-/// The shared entry of both native controllers (the local one and the network one Fika installs on a client)
-/// and the one place that separates "the game handles this code" from "the game refused it". The prefix names
-/// the state the guard decides on; the postfix - only when the game refused a code, only on a client of a bound
-/// Fika raid whose host has answered this machine at least once - sends that very code to the host and reports
-/// the attempt as handled: the same contract the native network path has (the panel waits for the host's answer
-/// and plays its animation when it arrives). Outside that case nothing is changed.
-/// </summary>
-internal sealed class PasscodeSubmitRelayPatch : ModulePatch
-{
-    protected override MethodBase GetTargetMethod()
-    {
-        var target = typeof(ClientPasscodeController).GetMethod(nameof(ClientPasscodeController.SubmitPasscode),
-            BindingFlags.Instance | BindingFlags.Public, null,
-            new[] { typeof(Player), typeof(PasscodeTerminal), typeof(string) }, null);
-        if (target == null)
-        {
-            throw new System.MissingMethodException(
-                "EFT.Passcodes.ClientPasscodeController.SubmitPasscode(Player, PasscodeTerminal, string)");
-        }
-
-        return target;
-    }
-
-    [PatchPrefix]
-    public static void Prefix(ClientPasscodeController __instance, PasscodeTerminal terminal, string passcode)
-    {
-        try
-        {
-            
-        }
-        catch (System.Exception)
-        {
-        }
-    }
-
-    [PatchPostfix]
-    public static void Postfix(ClientPasscodeController __instance, Player player, PasscodeTerminal terminal,
-        string passcode, ref bool __result)
-    {
-        try
-        {
-            if (__result)
-            {
-                // BU (analysis/icebreaker-keypad-3): when this machine's world checks codes itself (the game's
-                // own local controller on the host's table), the answer is already made - and a code the native
-                // check ACCEPTED is reported to the host, which repeats the same native check for its own copy
-                // of the keypad and announces it to every peer. Fika transports that fact, it does not judge it.
-                if (KeypadCodeSync.MatchesLocal(__instance, terminal?.PasscodeId, passcode))
-                {
-                    var detail = "door=" + PasscodeText.Door(terminal) + " input=" + (passcode?.Length ?? 0)
-                        + " chars controller=" + PasscodeText.Controller(__instance)
-                        + " settings=" + PasscodeText.Settings(__instance) + " terminals=" + PasscodeText.Terminals(__instance);
-                    if (FikaBackendUtils.IsClient)
-                    {
-                        var synced = RaidInteractionSync.TrySyncLocalSuccess(player, terminal, passcode, out var syncReason);
-                        
-                    }
-                    else
-                    {
-                        
-                    }
-
-                    return;
-                }
-
-                
-                return;
-            }
-
-            // A code the local check of this machine refused is a finished decision: the relay below exists for
-            // the fallback shape only (a world that checks through the host because it holds no table of its own).
-            if (KeypadCodeSync.IsLocal(__instance))
-            {
-                
-                return;
-            }
-
-            if (!RaidInteractionSync.TryRelayPasscodeAttempt(player, terminal, passcode, out var reason))
-            {
-                
-                return;
-            }
-
-            // The host owns this attempt now: report it as handled so the native panel waits for the result event
-            // instead of repeating a submit the game keeps refusing (the loop this round's log shows 13 times).
-            __result = true;
-            
-        }
-        catch (System.Exception)
-        {
-        }
-    }
 }

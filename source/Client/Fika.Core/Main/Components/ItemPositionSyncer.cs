@@ -22,7 +22,7 @@ public class ItemPositionSyncer : MonoBehaviour
     private bool _isServer;
     private ObservedLootItem _lootItem;
     private EFT.LootSyncPacket _data;
-    private System.Action<RemoveItemEventArgs> _removeItemHandler;
+    private Il2CppSystem.Action<RemoveItemEventArgs> _removeItemHandler;
 
     private bool PhysicsDone
     {
@@ -34,15 +34,6 @@ public class ItemPositionSyncer : MonoBehaviour
 
     public static void Create(GameObject gameObject, bool isServer, ObservedLootItem lootItem)
     {
-        // AP (analysis/nonfika-raid-inertness): this component is injected into il2cpp and its transport
-        // (FikaServer/FikaClient) only exists inside a raid of ours. Outside one it used to be added to a
-        // native loot item and faulted afterwards on every frame; the guard is the belt to the caller's
-        // braces, so a future call site cannot reintroduce that state either.
-        if (FikaRaidGate.Skip("ItemPositionSyncer.Create"))
-        {
-            return;
-        }
-
         var posSync = gameObject.AddComponent<ItemPositionSyncer>();
         posSync._isServer = isServer;
         if (isServer)
@@ -60,30 +51,11 @@ public class ItemPositionSyncer : MonoBehaviour
         };
     }
 
-    /// <summary>
-    /// AP (analysis/nonfika-raid-inertness): the transport this component exists for. Inside a raid of
-    /// ours one of the two singletons is always there; outside one both are absent, and every method
-    /// below used to fault on that instead of ending its own life. The check is the one thing that turns
-    /// "our component on a native loot item" from a per-frame exception source into a clean self-destroy.
-    /// </summary>
-    private bool HasTransport()
-    {
-        return _isServer ? _server != null : _client != null;
-    }
-
     public void Start()
     {
         if (_lootItem == null)
         {
             FikaGlobals.LogError("ItemPositionSyncer::Start: LootItem was null!");
-            Destroy(this);
-            return;
-        }
-
-        if (!HasTransport())
-        {
-            FikaGlobals.LogError("ItemPositionSyncer::Start: no transport (" + (_isServer ? "server" : "client")
-                + "); the component ends here instead of faulting on every frame");
             Destroy(this);
             return;
         }
@@ -106,7 +78,7 @@ public class ItemPositionSyncer : MonoBehaviour
         }
 
         _client.FikaClientWorld.AddLootSyncStruct(_data);
-        _removeItemHandler = (System.Action<RemoveItemEventArgs>)ItemOwner_RemoveItemEvent;
+        _removeItemHandler = (Il2CppSystem.Action<RemoveItemEventArgs>)ItemOwner_RemoveItemEvent;
         _lootItem.ItemOwner.RemoveItemEvent += _removeItemHandler;
     }
 
@@ -117,14 +89,6 @@ public class ItemPositionSyncer : MonoBehaviour
 
     public void FixedUpdate()
     {
-        // AP: a component whose transport is gone (raid teardown, or a loot item that outlived the raid)
-        // ends itself here; the old shape kept faulting once per physics frame until the world was gone.
-        if (!HasTransport())
-        {
-            Destroy(this);
-            return;
-        }
-
         if (PhysicsDone)
         {
             NotifyDone();
@@ -147,12 +111,6 @@ public class ItemPositionSyncer : MonoBehaviour
 
     private void NotifyDone()
     {
-        if (!HasTransport())
-        {
-            Destroy(this);
-            return;
-        }
-
 #if DEBUG
         FikaGlobals.LogInfo($"{_lootItem.Item.LocalizedShortName()} rigid body done");
 #endif
