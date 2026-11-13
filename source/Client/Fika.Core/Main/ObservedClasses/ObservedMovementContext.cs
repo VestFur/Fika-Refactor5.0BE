@@ -172,7 +172,8 @@ public class ObservedMovementContext : MovementContext
     public override void SetCharacterMovementSpeed(float characterMovementSpeed, bool force = false)
     {
         CharacterMovementSpeed = characterMovementSpeed;
-        if (!global::Fika.Core.Main.Utils.PoseWriteGuards.Enabled || SmoothedCharacterMovementSpeed != characterMovementSpeed)
+        if (!global::Fika.Core.Main.Utils.PoseWriteGuards.Enabled
+            || SmoothedCharacterMovementSpeed != characterMovementSpeed)
         {
             SmoothedCharacterMovementSpeed = characterMovementSpeed;
         }

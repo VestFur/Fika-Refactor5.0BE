@@ -92,6 +92,8 @@ public class FikaHostWorld : World
         // GameWorld.Create<T> body. That body never created them (4.0 EFT/GameWorld.cs:1111-1123) - the native
         // position is the raid-start coroutine, which this port replaces with CoopGame.InitPlayer, and there
         // they are now created AND registered on their per-frame hook. This call is the rollback path only:
+        // CutsceneBoundary.CreateControllerIfMissing == false switches it off, one const switches it back on.
+        global::Fika.Core.Main.Components.CutsceneBoundary.EnsureControllers(gameWorld, "FikaHostWorld.Create");
         return hostWorld;
     }
 

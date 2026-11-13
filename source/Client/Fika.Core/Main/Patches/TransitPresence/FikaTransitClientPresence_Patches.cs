@@ -111,12 +111,6 @@ internal static class TransitPresenceReporter
     /// <summary>Five geometry sweeps per second: enough for a walking player, cheap for the raid thread.</summary>
     private const float PollInterval = 0.25f;
 
-    /// <summary>
-    /// (2026-10-19) Off: the per-poll position scan is replaced by the native trigger events and the host's
-    /// interaction answers. Turned on only for a build that has to verify a missing trigger.
-    /// </summary>
-    internal const bool GeometricFallback = false;
-
     /// <summary>Bounded: one line per player, point and reason per raid.</summary>
     private static readonly System.Collections.Generic.HashSet<string> LoggedSkips = [];
 
@@ -186,11 +180,6 @@ internal static class TransitPresenceReporter
         _pollDisabledReported = false;
         var player = world.MainPlayer;
         if (player == null || !player.IsYourPlayer) return;
-
-        // (2026-10-19) The geometric scan below walks every point volume four times per second. Presence and the
-        // prompt are event driven now (the native trigger enter/exit patches plus the host's Show/Confirm/
-        // InactivePoint answers), so the scan is off by default and only kept as an explicit fallback.
-        if (!GeometricFallback) return;
 
         var point = FindPointInside(world.TransitController, player.Position);
         var reported = controller.SentZonePoint(player.ProfileId);

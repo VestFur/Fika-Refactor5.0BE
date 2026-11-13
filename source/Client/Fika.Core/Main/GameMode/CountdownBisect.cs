@@ -207,6 +207,15 @@ internal static class CountdownBisect
         /// <summary>Statement 8/8: run the VOIP audio fix (config: 'Countdown: VOIP Audio Fix').</summary>
         internal bool VoipFix { get; }
 
+        internal string Describe()
+        {
+            return "screen=" + Screen + ", audioFades=" + AudioFades + ", menuMusic=" + MenuMusic
+                + ", skipBody=" + SkipBody + ", skipPostWait=" + SkipPostWait
+                + ", stmt=[1/8 gameUi=" + GameUi + ", 2/8 timerPanel=" + TimerPanel
+                + ", 3/8 deployWait=" + DeployWait + ", 4/8 restoreRaidView=" + RestoreRaidView
+                + ", 5/8 restoreRoutine=" + RestoreRoutine + ", 6/8 syncTransits=" + SyncTransits
+                + ", 7/8 raidStartedEvent=" + RaidStartedEvent + ", 8/8 voipFix=" + VoipFix + "]";
+        }
     }
 
     /// <summary>
@@ -256,4 +265,16 @@ internal static class CountdownBisect
         return new Switches(false, false, false, true, true, true, true, true, true, true, true, true, true);
     }
 
+    /// <summary>A statement switch: on unless the entry says otherwise (an unbound entry is not an "off").</summary>
+    private static bool Statement(ConfigEntry<bool> entry)
+    {
+        try
+        {
+            return entry is null || entry.Value;
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+    }
 }

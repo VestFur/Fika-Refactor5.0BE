@@ -7,7 +7,6 @@ using EFT.GlobalEvents;
 using EFT.Interactive;
 using EFT.Passcodes;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
-using Fika.Core.Main.GameMode;
 using Fika.Core.Main.Players;
 using Fika.Core.Main.Utils;
 using Fika.Core.Networking;
@@ -144,6 +143,11 @@ internal static class RaidInteractionSync
                     
                 }
             }
+            else if (AdoptOwnController(world, waited))
+            {
+                // Nothing below changes for this state: the controller is this machine's own network controller
+                // from here on, so the native menu has something to ask again.
+            }
             else
             {
                 // A failure is retried every frame (a scene that loads late must still be caught), but written
@@ -182,9 +186,60 @@ internal static class RaidInteractionSync
     /// </summary>
     private static bool AdoptOwnController(GameWorld world, float waited)
     {
-        // (2026-10-18 refactor W3-interaction) The controller-adoption heuristic is gone: the bridge only
-        // creates and links the controllers it needs (see CutsceneBoundary) and no longer adopts a foreign one.
-        return false;
+        var result = "failed";
+        var reason = "creating the client's passcode controller threw";
+        var terminals = 0;
+        var ids = "none";
+        var settings = "none";
+        try
+        {
+            var byId = new Dictionary<string, List<PasscodeTerminal>>();
+            var all = UnityEngine.Object.FindObjectsOfType<PasscodeTerminal>(true);
+            for (var i = 0; i < all.Length; i++)
+            {
+                var terminal = all[i];
+                if (terminal == null || string.IsNullOrEmpty(terminal.PasscodeId)) continue;
+                if (!byId.TryGetValue(terminal.PasscodeId, out var list))
+                {
+                    list = new List<PasscodeTerminal>();
+                    byId[terminal.PasscodeId] = list;
+                }
+
+                list.Add(terminal);
+            }
+
+            terminals = all.Length;
+            var entryIds = _hostPasscodeEntries != null && _hostPasscodeEntries.Count > 0
+                ? _hostPasscodeEntries.Keys.AsEnumerable()
+                : byId.Keys.AsEnumerable();
+            var entries = ByIdToEntries(entryIds);
+            if (entries.Length > 0) ids = string.Join(",", entries.Take(4));
+            var location = new PasscodeLocationSettings { Entries = entries };
+            settings = "entries=" + (location.Entries?.Length ?? 0);
+            var controller = new ClientNetworkPasscodeController(location);
+            var map = new Il2CppSystem.Collections.Generic.Dictionary<string, Il2CppSystem.Collections.Generic.List<PasscodeTerminal>>();
+            foreach (var pair in byId)
+            {
+                var list = new Il2CppSystem.Collections.Generic.List<PasscodeTerminal>();
+                foreach (var terminal in pair.Value) list.Add(terminal);
+                map.Add(pair.Key, list);
+            }
+
+            controller._passcodeTerminals = map;
+            world.PasscodeController = controller;
+            _configuredPasscodes = controller.Pointer;
+            _requested = false;
+            result = "client-created";
+            reason = "the native raid pipeline of a client never created a passcode controller, so this machine built"
+                + " the network controller itself - the keypad of this map is interactable on this client from here on";
+        }
+        catch (Exception exception)
+        {
+            reason = reason + " (" + exception.GetType().Name + ")";
+        }
+
+        
+        return result == "client-created";
     }
 
     /// <summary>
@@ -206,6 +261,17 @@ internal static class RaidInteractionSync
     }
 
     /// <summary>How many passcode terminals this machine's scene holds, for the lines of a machine without one.</summary>
+    private static int PasscodeTerminalCount()
+    {
+        try
+        {
+            return UnityEngine.Object.FindObjectsOfType<PasscodeTerminal>(true).Length;
+        }
+        catch (Exception)
+        {
+            return -1;
+        }
+    }
 
     internal static void Release(GameWorld world)
     {
@@ -219,9 +285,9 @@ internal static class RaidInteractionSync
     /// <summary>One implementation for both entry points (world rebind and world teardown).</summary>
     private static void DropRaidState()
     {
-        _immunityCleared = false;
-        TerminalArmory.Reset();
         FikaFinalMissionDirector.Reset();
+        CutsceneBoundary.Reset();
+        FikaRallyGate.Reset();
         FikaLocalCutsceneTrigger.Reset();
         foreach (var unsubscribe in Unsubscribe) unsubscribe.Invoke();
         Unsubscribe.Clear();
@@ -274,6 +340,7 @@ internal static class RaidInteractionSync
         if (World == null && dropped == 0)
         {
             // Nothing of this class is alive: the teardown happened before the raid was ever bound.
+            CutsceneBoundary.Reset();
             FikaLocalCutsceneTrigger.Reset();
             return 0;
         }
@@ -290,19 +357,6 @@ internal static class RaidInteractionSync
         return dropped;
     }
 
-    /// <summary>
-    /// (2026-10-21) THE SAFETY NET, armed: this machine's own viewer finished the timeline
-    /// (<c>CutscenesClientController.TimelineShowed</c> postfix). The release runs a moment later in
-    /// <see cref="Tick"/> - see <see cref="_pendingImmunityReleaseAt"/> - so the primary path (the postfix of the
-    /// native <c>EndCutscene</c>) keeps precedence and this one is a no-op when it already ran.
-    /// </summary>
-    internal static void NoteLocalTimelineShown(int processId)
-    {
-        _pendingImmunityReleaseAt = UnityEngine.Time.unscaledTime + ImmunityReleaseDelay;
-        FikaGlobals.LogInfo($"[SyncDiag] immunity-release armed pid={processId} in={ImmunityReleaseDelay}s",
-            "RaidInteractionSync");
-    }
-
     internal static void Tick()
     {
         if (World == null) return;
@@ -315,40 +369,10 @@ internal static class RaidInteractionSync
         // (analysis/rally-gate-deadlock) The rally gate of this raid and the two ways out of a cutscene the
         // viewers cannot finish: the vote of the viewers that are still inside it, and the completion counter
         // of a viewer that never entered it. Both are host-side and both only report when they act.
+        FikaRallyGate.Tick();
         // (analysis/cutscene-client-native-trigger) The client-side decision of the local native trigger: a
         // cutscene this machine's own chain asked for and the host never dispatched is run natively here.
         FikaLocalCutsceneTrigger.Tick(World);
-        // (2026-10-19) Native OnUpdate has no managed caller on this runtime; without the pump a process Fika
-        // starts only switches the UI (subtitles) and never plays the timeline (no picture).
-        CutsceneBoundary.TickPlayback(World);
-        // (2026-10-19) Terminal: empty the local player's equipment once the raid is live; the gear is already
-        // in the armory container, so this is what turns the injection into the vanilla confiscation.
-        // (2026-10-21) The one-shot release is only spent once this machine actually had a local player to
-        // release. It used to be burned by the first raid tick, which can arrive before the local player exists -
-        // the release then never ran again for the rest of the raid. The retry is throttled: the sweep walks the
-        // scene for every immunity registry, which is not something a per-frame tick may do.
-        if (!_immunityCleared && UnityEngine.Time.unscaledTime >= _nextImmunitySweep)
-        {
-            _nextImmunitySweep = UnityEngine.Time.unscaledTime + 1f;
-            if (ReleaseLocalSniperImmunity("raid start")) _immunityCleared = true;
-        }
-
-        // (2026-10-21) The safety net of the cutscene-end release: this machine watched its own timeline end, and a
-        // process that ended natively has released by now. Releasing again is one HashSet remove per registry.
-        if (_pendingImmunityReleaseAt > 0f && UnityEngine.Time.unscaledTime >= _pendingImmunityReleaseAt)
-        {
-            _pendingImmunityReleaseAt = 0f;
-            ReleaseLocalSniperImmunity("timeline shown");
-        }
-
-        // (2026-10-27 W48 / N2) 主机卡在过场里的兜底：等不到的观众确认不能无限期挂着。
-        CutsceneStallWatchdog();
-        // 主机的过场进程消失后没有客机本地触发器的 EndCutscene 收口，单独兜底恢复伤害状态。
-        HostCutsceneRestoreWatchdog();
-        if (Manager?.CoopHandler?.MyPlayer is { } armoryPlayer && TerminalArmory.Applies(World?.LocationId))
-        {
-            TerminalArmory.Tick(World, armoryPlayer);
-        }
         SkipWatchdog();
         if (!Ready || Manager?.CoopHandler?.MyPlayer == null || !Manager.CoopHandler.ShouldSync) return;
         if (FikaBackendUtils.IsClient && Manager.CoopHandler.MyPlayer != null)
@@ -375,8 +399,6 @@ internal static class RaidInteractionSync
         }
         if (FikaBackendUtils.IsServer)
         {
-            // (2026-10-26 W34) 空集合时 ToArray 也会产生一次分配，而这行每帧都在主机上跑。
-            if (PendingInit.Count == 0) return;
             foreach (var peer in PendingInit.ToArray())
             {
                 if (peer.ConnectionState != ConnectionState.Connected) PendingInit.Remove(peer);
@@ -779,134 +801,31 @@ internal static class RaidInteractionSync
         Manager.SendData(ref result, DeliveryMethod.ReliableOrdered);
     }
 
-
-    /// <summary>
-    /// (2026-10-18) The native viewer table of a cutscene also carries seats the session does not own (bots,
-    /// players of another group). The counter the game shows ("waiting for players 2/8") is built from it, and
-    /// the process cannot end until every seat acknowledges, so a seat nobody owns parks the raid. Rewrite the
-    /// table to the players the session really has, before the native process is created.
-    /// </summary>
-    internal static void FilterViewersToSession(Il2CppSystem.Collections.Generic.List<int> viewers)
-    {
-        try
-        {
-            if (viewers == null || viewers.Count == 0)
-            {
-                return;
-            }
-
-            for (var i = viewers.Count - 1; i >= 0; i--)
-            {
-                var raidId = viewers[i];
-                if (raidId <= 0 || PlayerIdToNetId(raidId) <= 0)
-                {
-                    viewers.RemoveAt(i);
-                }
-            }
-        }
-        catch (Exception)
-        {
-        }
-    }
-
     internal static void StartCutscene(CutsceneProcess process, bool forceMode, float initTime)
     {
         if (!FikaBackendUtils.IsServer || World == null || process == null || Cutscenes.ContainsKey(process.processId)) return;
-        // Mark the host cutscene before its process table can disappear. HostCutsceneRestoreWatchdog then
-        // restores the damage state even when the process ends before a Tick ever observed it.
-        _hostCutsceneSeen = true;
-        _hostCutsceneGoneAt = 0f;
-        _hostCutsceneRestored = false;
         // A process the rally trigger started belongs to every participant: a peer the world did not count
         // when the process was created would otherwise be left outside a cutscene the host is inside, and its
         // skip vote could never be completed (analysis/rally-gate-deadlock).
+        FikaRallyGate.EnsureRallyViewers(process);
         // (analysis/cutscene-client-dispatch) The window-free half of the same repair: the rally window above is
         // armed by TriggerRallyZone.EmitTrigger, and the Icebreaker trigger really emits through SPTushonka's own
         // watcher (TriggersEmitter.Emit), so the window is not armed at the moment this runs. The viewer table is
         // what the broadcast carries and what the native client controller of a peer filters against, so a peer
         // missing from it can never enter the scene - the one code-level gap of the "the client was not
         // addressed" branch (analysis/cutscene-client-dispatch, section 3).
+        FikaRallyGate.IncludeAllParticipants(process);
         var start = new CutsceneStartPacket { ProcessId = process.processId, CutsceneId = process.currentCutsceneId,
             InitTime = initTime, FixedTime = process.fixedTimeOn, ForceMode = forceMode,
-            // (2026-10-18) Only the viewers that exist in the session are addressed: the native viewer table also
-            // carries ids the host cannot map (bots, players of another group), and a packet with a zero in it
-            // makes a client filter itself out of a scene it should play.
-            NetIds = process.playersInCurrentView.ToArray()
-                .Select(PlayerIdToNetId)
-                .Where(netId => netId > 0)
-                .ToArray() };
+            NetIds = process.playersInCurrentView.ToArray().Select(PlayerIdToNetId).ToArray() };
         Cutscenes[start.ProcessId] = start;
-        // (2026-10-27 W48 / N2) 记下广播时刻与进程对象，供主机侧的"卡死看门狗"使用。
-        BroadcastAt[start.ProcessId] = UnityEngine.Time.unscaledTime;
-        if (process != null) BroadcastProcesses[start.ProcessId] = process;
+        FikaRallyGate.NoteProcessStart(start.ProcessId);
         Votes[start.ProcessId] = new();
         Manager?.SendData(ref start, DeliveryMethod.ReliableOrdered);
         
         // (analysis/cutscene-client-dispatch) The one line that names the seat table the broadcast carries - the
         // fact a client-side log cannot show and the reason a peer does or does not enter the scene. One line per
         // process; 
-    }
-
-    /// <summary>Whether this session already handed this process to the peers (the broadcast of the raid).</summary>
-    internal static bool IsCutsceneBroadcast(int processId) => Cutscenes.ContainsKey(processId);
-
-    /// <summary>
-    /// (2026-10-21) THE MAP-TRIGGER ENTRY: <c>CutscenesServerController.StartCutsceneWithTime</c> creates a
-    /// process of its own and does not pass the <c>StartCutscene</c> postfix the session broadcast hangs on, so a
-    /// cutscene a location trigger starts stayed on the host. The new process is the newest unbroadcast entry of
-    /// the controller's own table (<c>_cutsceneProcesses</c>, interop :94638) with this cutscene id, and it is
-    /// handed to the one broadcast of <see cref="StartCutscene"/> - same packet shape, same seat mapping.
-    /// </summary>
-    internal static void StartCutsceneFromWithTime(CutscenesServerController controller, string cutsceneId,
-        bool forceMode)
-    {
-        if (!FikaBackendUtils.IsServer || controller == null || string.IsNullOrEmpty(cutsceneId))
-        {
-            return;
-        }
-
-        try
-        {
-            var processes = controller._cutsceneProcesses;
-            if (processes == null)
-            {
-                return;
-            }
-
-            CutsceneProcess newest = null;
-            foreach (var entry in processes)
-            {
-                var process = entry.Value;
-                if (process == null || process.processId <= 0)
-                {
-                    continue;
-                }
-                if (!string.Equals(process.currentCutsceneId, cutsceneId, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-                if (IsCutsceneBroadcast(process.processId))
-                {
-                    continue;
-                }
-                if (newest == null || process.processId > newest.processId)
-                {
-                    newest = process;
-                }
-            }
-
-            if (newest == null)
-            {
-                return;
-            }
-
-            // StartCutsceneWithTime carries no init time of its own; the offset a client needs is the fixed-time
-            // flag of the process, which the packet reads from the process itself.
-            StartCutscene(newest, forceMode, 0f);
-        }
-        catch (Exception)
-        {
-        }
     }
 
     /// <summary>
@@ -977,33 +896,12 @@ internal static class RaidInteractionSync
         catch (Exception) { return "?"; }
     }
 
-    /// <summary>
-    /// (2026-10-21) The end of one cutscene process on THIS machine. The caller is the postfix of the native
-    /// <c>CutscenesServerController.EndCutscene</c>, so it runs on both roles and it is the earliest point the
-    /// release can happen: everything role-specific below returns early for a process this machine never
-    /// registered (a client's own process, a host process the session table lost), and those early exits used to
-    /// be exactly where the immunity release was lost. The release therefore sits above them.
-    /// </summary>
-    internal static void EndCutscene(int processId, Il2CppSystem.Collections.Generic.List<int> players, bool skip)
+    internal static void EndCutscene(int processId, bool skip)
     {
-        // Participants of the process as the native call names them (raid ids), plus this machine's own player.
-        // Both steps are idempotent: one line per machine and process, never a second visible effect.
-        var viewers = ReleaseSniperImmunity(players, "pid=" + processId);
-        var local = ReleaseLocalSniperImmunity("cutscene end pid=" + processId);
-        FikaGlobals.LogInfo($"[SyncDiag] cutscene-immunity-release pid={processId} viewers={CountOf(players)} " +
-            $"viewerHits={viewers} localSwept={(local ? "yes" : "no")} " +
-            $"role={(FikaBackendUtils.IsServer ? "host" : "client")}", "RaidInteractionSync");
-
-        // (2026-10-27 W48 / TARGETS N4) 过场开始时原生会把本机的伤害系数压到 0（用户实测：CG 触发前能受伤、
-        // 触发后无敌，且与任何第三方模组无关）。免疫集合那条路经实测是空转（registries=0 / wasImmune=0），
-        // 所以恢复必须挂在"过场结束"这个唯一收口上，并且对本机无条件执行。
-        RestoreLocalDamageAfterCutscene("cutscene end pid=" + processId);
-
-        if (!FikaBackendUtils.IsServer) return;
-
-        if (!Cutscenes.Remove(processId, out _)) return;
+        if (!FikaBackendUtils.IsServer || !Cutscenes.Remove(processId, out var start)) return;
         Votes.Remove(processId);
         Completed.RemoveWhere(x => x.Process == processId);
+        FikaRallyGate.ForgetProcess(processId);
         if (skip)
         {
             var skipped = new CutsceneSkipPacket { ProcessId = processId, Skip = true };
@@ -1011,295 +909,7 @@ internal static class RaidInteractionSync
         }
         var end = new CutsceneEndPacket { ProcessId = processId };
         Manager.SendData(ref end, DeliveryMethod.ReliableOrdered);
-    }
-
-    private static int CountOf(Il2CppSystem.Collections.Generic.List<int> list)
-    {
-        try { return list == null ? 0 : list.Count; } catch (Exception) { return 0; }
-    }
-
-    /// <summary>
-    /// (2026-10-27 W48 / N4) 把本机的伤害保护状态恢复成正常值。只在"过场已经结束、玩家还活着、还没撤离"
-    /// 时动手；DamageCoeff 和 DamageMultiplier 都要恢复，并解除原生过场暂停的 effects。每次动作一行日志。
-    /// 返回是否真的改过。
-    /// </summary>
-    internal static bool RestoreLocalDamageAfterCutscene(string source)
-    {
-        try
-        {
-            var player = LocalPlayer;
-            if (player?.ActiveHealthController == null) return false;
-            if (player.Downed || player.HasDied) return false;
-            if (player.HealthController != null && !player.HealthController.IsAlive) return false;
-            if (Manager?.CoopHandler?.ExtractedPlayers != null &&
-                Manager.CoopHandler.ExtractedPlayers.Contains(player.NetId)) return false;
-            // A transit replaces the level; restoring there would run on the world that is already going down.
-            if (FikaBackendUtils.IsTransit) return false;
-
-            var health = player.ActiveHealthController;
-            var coeff = health.DamageCoeff;
-            var multiplier = health.DamageMultiplier;
-            if (coeff > 0.999f && multiplier > 0.999f) return false;
-
-            try
-            {
-                player.UnpauseAllEffectsOnPlayer();
-            }
-            catch (Exception exception)
-            {
-                FikaGlobals.LogWarning($"[CgDiag] cutscene-restore unpause threw ({source}): " +
-                    $"{exception.GetType().Name}: {exception.Message}", "RaidInteractionSync");
-            }
-
-            if (coeff <= 0.999f)
-            {
-                health.SetDamageCoeff(1f);
-            }
-
-            if (multiplier <= 0.999f)
-            {
-                health.DamageMultiplier = 1f;
-            }
-
-            FikaGlobals.LogInfo($"[CgDiag] cutscene-restore ({source}) role=" +
-                $"{(FikaBackendUtils.IsServer ? "host" : "client")} " +
-                $"coeff={coeff:F2}->{health.DamageCoeff:F2} " +
-                $"mult={multiplier:F2}->{health.DamageMultiplier:F2}", "RaidInteractionSync");
-            return true;
-        }
-        catch (Exception exception)
-        {
-            FikaGlobals.LogWarning($"[CgDiag] cutscene-restore threw ({source}): " +
-                $"{exception.GetType().Name}: {exception.Message}", "RaidInteractionSync");
-            return false;
-        }
-    }
-
-    /// <summary>(2026-10-27 W48 / N2) 广播出去的过场进程开始时间，用于"主机被卡在过场里"的看门狗。</summary>
-    private static readonly Dictionary<int, float> BroadcastAt = new();
-
-    // ---- Host-side restore watchdog ------------------------------------------------------------
-    // The client gets a native EndCutscene from FikaLocalCutsceneTrigger and therefore a reliable
-    // restore hook. The host uses the native process lifecycle: when that process disappears without
-    // reaching EndCutscene (or its object is already gone in CutsceneStallWatchdog), the host alone
-    // kept DamageCoeff/DamageMultiplier at their cutscene values. Watch the host's process table and
-    // restore once after the last process is gone.
-    private const float HostCutsceneRestoreDelaySeconds = 2f;
-    private static bool _hostCutsceneSeen;
-    private static float _hostCutsceneGoneAt;
-    private static bool _hostCutsceneRestored;
-
-    private static bool AnyCutsceneProcessActive()
-    {
-        try
-        {
-            var world = World;
-            if (world == null) return false;
-            if (world.CutscenesClientController != null && world.CutscenesClientController._cutsceneProcessId > 0)
-            {
-                return true;
-            }
-            var processes = world.CutscenesServerController?._cutsceneProcesses;
-            return processes != null && processes.Count > 0;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
-    private static void HostCutsceneRestoreWatchdog()
-    {
-        if (!FikaBackendUtils.IsServer || FikaBackendUtils.IsHeadless) return;
-
-        var now = UnityEngine.Time.unscaledTime;
-        if (AnyCutsceneProcessActive())
-        {
-            _hostCutsceneSeen = true;
-            _hostCutsceneGoneAt = 0f;
-            _hostCutsceneRestored = false;
-            return;
-        }
-
-        if (!_hostCutsceneSeen || _hostCutsceneRestored) return;
-
-        if (_hostCutsceneGoneAt <= 0f)
-        {
-            _hostCutsceneGoneAt = now;
-            return;
-        }
-
-        if (now - _hostCutsceneGoneAt < HostCutsceneRestoreDelaySeconds) return;
-
-        _hostCutsceneRestored = true;
-        RestoreLocalDamageAfterCutscene("host-process-gone");
-    }
-
-    /// <summary>(2026-10-27 W48 / N2) 进程序对象，看门狗强制收尾时要用它调原生 EndCutscene。</summary>
-    private static readonly Dictionary<int, CutsceneProcess> BroadcastProcesses = new();
-
-    /// <summary>
-    /// 主机最多等这么久（秒）就让一个"没有人能推进"的过场进程收尾。用户复现：客机在场时主机黑屏、CG 不触发，
-    /// 客机退出后主机立刻正常 —— 说明主机在等一个永远不回来的观众确认。超时后按 skip 收尾，至少把黑屏与
-    /// "过场中免伤"解开，玩家还能继续玩。
-    /// </summary>
-    internal static float CutsceneStallSeconds = 25f;
-
-    private static float _nextCutsceneStallSweep;
-
-    /// <summary>(2026-10-27 W48 / N2) 主机侧的过场卡死看门狗，1 Hz。</summary>
-    private static void CutsceneStallWatchdog()
-    {
-        if (!FikaBackendUtils.IsServer) return;
-        if (BroadcastAt.Count == 0) return;
-        var now = UnityEngine.Time.unscaledTime;
-        if (now < _nextCutsceneStallSweep) return;
-        _nextCutsceneStallSweep = now + 1f;
-
-        List<int> stale = null;
-        foreach (var entry in BroadcastAt)
-        {
-            if (now - entry.Value >= CutsceneStallSeconds)
-            {
-                (stale ??= new List<int>()).Add(entry.Key);
-            }
-        }
-
-        if (stale == null) return;
-        var world = World;
-        var server = world == null ? null : world.CutscenesServerController;
-        for (var i = 0; i < stale.Count; i++)
-        {
-            var processId = stale[i];
-            BroadcastAt.Remove(processId);
-            var process = BroadcastProcesses.TryGetValue(processId, out var p) ? p : null;
-            BroadcastProcesses.Remove(processId);
-            var waited = now - (process == null ? now : 0f);
-            var ended = "skipped";
-            try
-            {
-                if (server != null && process != null)
-                {
-                    var viewers = new Il2CppSystem.Collections.Generic.List<int>();
-                    if (LocalPlayerId > 0) viewers.Add(LocalPlayerId);
-                    if (Cutscenes.TryGetValue(processId, out var packet) && !string.IsNullOrEmpty(packet.CutsceneId))
-                    {
-                        server.EndCutscene(packet.CutsceneId, processId, process, viewers, true);
-                        ended = "native";
-                    }
-                }
-            }
-            catch (Exception exception)
-            {
-                ended = "threw:" + exception.GetType().Name;
-            }
-
-            FikaGlobals.LogInfo($"[CgDiag] cutscene-stall-watchdog pid={processId} waited>={CutsceneStallSeconds:F0}s " +
-                $"end={ended} - a viewer never acknowledged; shut the process down so the black screen and the " +
-                "cutscene immunity cannot hold the raid", "RaidInteractionSync");
-            // EndCutscene normally runs the restore through its postfix, but when the process object is
-            // already gone (ended == "skipped") that call never happens. Restore unconditionally here;
-            // RestoreLocalDamageAfterCutscene is idempotent.
-            RestoreLocalDamageAfterCutscene("stall-watchdog:" + processId);
-        }
-    }
-
-    /// <summary>True once the raid-start release of this raid really ran (see <see cref="Tick"/>).</summary>
-    private static bool _immunityCleared;
-
-    /// <summary>Throttle of the one-shot raid-start release (see <see cref="Tick"/>).</summary>
-    private static float _nextImmunitySweep;
-
-    /// <summary>
-    /// (2026-10-21) WHEN THE SAFETY NET FIRES: set by <see cref="NoteLocalTimelineShown"/>, i.e. by the postfix of
-    /// <c>CutscenesClientController.TimelineShowed</c> - the one end-of-cutscene event this machine is certain to
-    /// run on both roles, because it is the local viewer's own timeline that just finished. The release itself runs
-    /// in <see cref="Tick"/>, a couple of seconds later, so it never lands inside the native callback that reports
-    /// the end. 0 means "nothing pending".
-    /// </summary>
-    private static float _pendingImmunityReleaseAt;
-
-    /// <summary>Seconds between the local timeline end and the safety-net release (see <see cref="_pendingImmunityReleaseAt"/>).</summary>
-    private const float ImmunityReleaseDelay = 2f;
-
-    /// <summary>
-    /// (2026-10-19) The Terminal transit area sits inside a sniper/border zone whose FX and sound play on this
-    /// machine while the damage is refused by an entry the local player still holds in a native immunity
-    /// container - the "attack effects with no damage" report. A cutscene entry that was never released (or a
-    /// zone entry carried over from another machine) is cleared once per raid, a few seconds after the raid is
-    /// live, so the zone either damages or stays quiet instead of firing without consequence.
-    /// </summary>
-    /// <returns>True when the sweep ran, i.e. this machine had a local player to release. The number of
-    /// registries that really held the entry is part of the line, so "nothing to release" stays visible.</returns>
-    internal static bool ReleaseLocalSniperImmunity(string source)
-    {
-        try
-        {
-            var raidId = LocalPlayer?.RaidId ?? 0;
-            if (raidId <= 0) return false;
-            var registries = UnityEngine.Object.FindObjectsOfType<PlayersWithImmuneToSniperFire>(true);
-            if (registries == null) return false;
-            var removed = 0;
-            for (var i = 0; i < registries.Length; i++)
-            {
-                try
-                {
-                    if (registries[i].IsPlayerImmuneForFire(raidId)) removed++;
-                    registries[i].RemoveImmunePlayer(raidId);
-                }
-                catch (Exception) { }
-            }
-            FikaGlobals.LogInfo($"[TransitDiag] cleared local sniper immunity ({source}) registries={registries.Length} " +
-                $"wasImmune={removed}");
-            return true;
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// (2026-10-21) Releases the raid ids the native end names as the process' viewers. These are native raid ids
-    /// (the same value <c>Player.RaidId</c> carries), not session NetIds - the NetId mapping this method used to
-    /// depend on never matched the host's own player, which is why the host stayed immune after a cutscene.
-    /// </summary>
-    private static int ReleaseSniperImmunity(Il2CppSystem.Collections.Generic.List<int> playersId, string source)
-    {
-        try
-        {
-            if (playersId == null || playersId.Count == 0) return 0;
-            var registries = UnityEngine.Object.FindObjectsOfType<PlayersWithImmuneToSniperFire>(true);
-            if (registries == null) return 0;
-
-            var released = 0;
-            for (var i = 0; i < playersId.Count; i++)
-            {
-                var raidId = playersId[i];
-                if (raidId <= 0) continue;
-                for (var r = 0; r < registries.Length; r++)
-                {
-                    try
-                    {
-                        if (registries[r].IsPlayerImmuneForFire(raidId)) released++;
-                        registries[r].RemoveImmunePlayer(raidId);
-                    }
-                    catch (Exception) { }
-                }
-            }
-
-            if (released > 0)
-            {
-                FikaGlobals.LogInfo($"[TransitDiag] cleared cutscene viewer immunity ({source}) viewers=" +
-                    $"{playersId.Count} released={released}", "RaidInteractionSync");
-            }
-
-            return released;
-        }
-        catch (Exception)
-        {
-            return 0;
-        }
+        
     }
 
     private static void OnSkipIntention(CutsceneSkipIntentionEventFromClient intention)
@@ -1337,12 +947,14 @@ internal static class RaidInteractionSync
         // dropping the vote - which is what left the host unable to move in analysis/rally-gate-deadlock.
         if (!start.NetIds.Contains(player.NetId))
         {
+            if (!CutsceneBoundary.AcceptUnlistedViewerCompletion || !IsActiveViewer(player.NetId)) return;
             start.NetIds = AppendViewer(start.NetIds, player.NetId);
             Cutscenes[packet.ProcessId] = start;
             
         }
         // A vote is the proof that a viewer is really inside the cutscene; WantsToSkip=false is the same
         // message and is also what a peer sends when it just entered the scene (see AnnounceLocalCutsceneStart).
+        FikaRallyGate.NoteSignal(packet.ProcessId, player.NetId, packet.WantsToSkip ? "vote-skip" : "vote-keep");
         if (packet.WantsToSkip) votes.Add(player.NetId);
         else votes.Remove(player.NetId);
         BroadcastVotes(start, votes);
@@ -1355,6 +967,10 @@ internal static class RaidInteractionSync
         var update = new CutsceneSkipPacket { ProcessId = start.ProcessId,
             PlayersCount = eligible.Length, SkippingNetIds = skipping };
         Manager.SendData(ref update, DeliveryMethod.ReliableOrdered);
+        FikaRallyGate.SkipLine("vote:" + start.ProcessId, start.ProcessId, skipping.Length,
+            Math.Max(0, eligible.Length - skipping.Length), eligible.Length,
+            eligible.Length > 0 && skipping.Length == eligible.Length ? "all" : "waiting",
+            "the host counted the viewers of the process");
         GlobalEventsController.CreateEvent<CutsceneSkipIntentionEventFromServer>().Invoke(
             start.ProcessId, update.PlayersCount, update.SkippingNetIds.Select(ToPlayerId).ToArray());
         EndIfEveryViewerVoted(start, eligible, votes, "vote");
@@ -1371,9 +987,9 @@ internal static class RaidInteractionSync
     private static int[] DecidingViewers(CutsceneStartPacket start, HashSet<int> votes, string source)
     {
         var all = start.NetIds.Where(id => !Completed.Contains((start.ProcessId, id)) && IsActiveViewer(id)).ToArray();
-        if (all.Length == 0) return all;
+        if (all.Length == 0 || !FikaRallyGate.SilentViewerTimeoutReached(start.ProcessId)) return all;
         var local = LocalPlayer?.NetId ?? -1;
-        var deciding = all.Where(id => votes.Contains(id) || id == local).ToArray();
+        var deciding = all.Where(id => votes.Contains(id) || FikaRallyGate.HasSignal(start.ProcessId, id) || id == local).ToArray();
         if (deciding.Length == 0) return all;
         
         return deciding;
@@ -1423,9 +1039,11 @@ internal static class RaidInteractionSync
     /// </summary>
     private static void CloseSilentViewers(CutsceneStartPacket start)
     {
+        if (!FikaRallyGate.AllowSkipWithoutAllViewers) return;
         var server = World?.CutscenesServerController;
         if (server?._cutsceneProcesses == null ||
             !server._cutsceneProcesses.TryGetValue(start.ProcessId, out var process) || process == null) return;
+        if (!FikaRallyGate.SilentViewerTimeoutReached(start.ProcessId)) return;
         var viewers = process.playersInCurrentView;
         if (viewers == null || viewers.Count == 0) return;
         var local = LocalPlayer?.NetId ?? -1;
@@ -1436,6 +1054,7 @@ internal static class RaidInteractionSync
             catch (Exception) { continue; }
             var netId = PlayerIdToNetId(playerId);
             if (netId == local || Completed.Contains((start.ProcessId, netId))) continue;
+            if (FikaRallyGate.HasSignal(start.ProcessId, netId)) continue;
             if (!Completed.Add((start.ProcessId, netId))) continue;
             
             server.PlayerViewCutsceneComplete(start.CutsceneId, start.ProcessId, playerId);
@@ -1452,6 +1071,7 @@ internal static class RaidInteractionSync
     {
         if (processId == 0 || string.IsNullOrEmpty(cutsceneId)) return;
         var local = LocalPlayer?.NetId ?? -1;
+        FikaRallyGate.NoteSignal(processId, local, "enter");
         if (FikaBackendUtils.IsServer || local < 0) return;
         GlobalEventsController.CreateEvent<CutsceneSkipIntentionEventFromClient>().Invoke(processId, cutsceneId, false);
     }
@@ -1466,11 +1086,13 @@ internal static class RaidInteractionSync
         // participant of this raid is accepted, and only while the seat repair is on.
         if (!start.NetIds.Contains(player.NetId))
         {
+            if (!CutsceneBoundary.AcceptUnlistedViewerCompletion || !IsActiveViewer(player.NetId)) return;
             start.NetIds = AppendViewer(start.NetIds, player.NetId);
             Cutscenes[packet.ProcessId] = start;
             
         }
         if (!Completed.Add((packet.ProcessId, player.NetId))) return;
+        FikaRallyGate.NoteSignal(packet.ProcessId, player.NetId, "watched");
         World?.CutscenesServerController?.PlayerViewCutsceneComplete(start.CutsceneId, packet.ProcessId, player.PlayerId);
         
         if (Votes.TryGetValue(packet.ProcessId, out var votes))
@@ -1487,6 +1109,33 @@ internal static class RaidInteractionSync
     /// end actions ran, so the line carries the action ids of the timeline, how many of them are registered in
     /// the controllers and how many of those open doors, plus the door states read right after the native end.
     /// </summary>
+    private static string EndActionEvidence(string cutsceneId)
+    {
+        var server = World?.CutscenesServerController;
+        var bank = server?._timelinesMapBank;
+        if (bank?.timelines == null) return "endActions=unknown";
+        for (var i = 0; i < bank.timelines.Count; i++)
+        {
+            var timeline = bank.timelines[i];
+            if (!string.Equals(timeline.cutsceneId, cutsceneId, StringComparison.Ordinal)) continue;
+            var ids = timeline.endActionsId;
+            var total = ids?.Length ?? 0;
+            var registered = 0;
+            var doors = new List<string>();
+            for (var n = 0; n < total; n++)
+            {
+                var id = ids[n];
+                var action = FindAction(server, id) ?? FindAction(World.CutscenesClientController, id);
+                if (action == null) continue;
+                registered++;
+                if (action.TryCast<CutsceneActionOpenDoors>() is { } open && open.doorsId != null)
+                    foreach (var door in open.doorsId) doors.Add(door);
+            }
+            return "endActions=" + total + " registered=" + registered + " doors=" + doors.Count
+                + DoorStates(doors) + " duration=" + timeline.timelineDuration.ToString("0.0") + "s";
+        }
+        return "endActions=no timeline is registered as '" + cutsceneId + "'";
+    }
 
     private static CutsceneBaseAction FindAction(CutscenesServerController controller, string actionId)
     {

@@ -4,7 +4,6 @@ using System.Linq;
 using System.Reflection;
 using Comfort.Common;
 using EFT;
-using EFT.Interactive;
 using Fika.Core.Main.Components;
 using Fika.Core.Main.Utils;
 using SPTushonka.Reflection.Patching;
@@ -13,13 +12,9 @@ namespace Fika.Core.Main.Patches.World;
 
 // BJ (analysis/terminal-rauf-card): TERMINAL-RAUF-CARD.
 //
-// The four patches of this file are the whole native surface of the rule 「the Russian soldiers at the
+// The three patches of this file are the whole native surface of the rule 「the Russian soldiers at the
 // terminal transfer point stop attacking a player who passed the card check」:
 //
-//   Player_ExecuteInteraction_TerminalCard_Patch - the swipe itself, on the machine that completes the
-//       interaction. (native <c>EFT.Player.ExecuteInteraction(WorldInteractiveObject, InteractionResult)</c>,
-//       reached by the client's own <c>FikaPlayer.ExecuteInteraction</c>; a machine that owns no sentry takes
-//       the accepted card from here and reports it - the hop a client was missing)
 //   SentryBossLogic_OnTerminalAccessGained_Patch   - the write of the state, on the machine it happens on.
 //       (native <c>SentryBossLogic.OnTerminalAccessGained(Player)</c>, subscribed to
 //       <c>GlobalEventDispatcher.OnTerminalTransitAccessGained</c> in the sentry's constructor)
@@ -30,149 +25,12 @@ namespace Fika.Core.Main.Patches.World;
 //       own player and owns no bot at all, analysis/terminal-rauf-hostility-2), so it is where the fact is
 //       routed to the authority - the machine that simulates the bots and therefore owns the answer.
 //
-// Nothing is written to a native value from the patches themselves: the swipe reads the native result of the
-// interaction and hands the fact to the report entry (the actor is the player object of the call, see that
-// patch); the grant reports the native write and (on the authority) hands the same fact to the other machines
-// so their sentries can apply it through the same native entry point; the read only writes lines; the emission
-// writes lines and, when this machine owns no sentry to apply the fact to, hands it to the authority / applies
-// it to the group hostility data (both under the one switch family of FikaSentryAccess). All four pass
-// something through untouched, so turning FikaSentryAccess.RepairEnabled off restores the previous behaviour
-// without a rebuild.
-
-/// <summary>
-/// THE SWIPE - the interaction the machine that owns the player completes:
-/// <c>EFT.Player.ExecuteInteraction(WorldInteractiveObject, InteractionResult)</c> (interop :275004, public
-/// virtual, parameters <c>door</c> and <c>interactionResult</c>). A Fika client runs the interaction of its own
-/// player locally - <c>FikaPlayer.ExecuteInteraction</c> (Main/Players/FikaPlayer.cs:1517) calls the native
-/// base of this very method through <c>NativeBaseCalls.Call103</c> and only sends the packet as the host's
-/// copy - so this is where the swipe of this machine's player ends, and where the fact 「the card was
-/// accepted」 exists on the machine that owns no bot.
-///
-/// <para>WHO SWIPED is not inferred: <c>__instance</c> is the player object that performed the interaction, and
-/// the patch accepts it only when it is this machine's own player (<c>Player.IsYourPlayer</c>, :275673) on a
-/// Fika client. The native base is patched instead of the <c>FikaPlayer</c> override because that override is a
-/// managed method of an injected class, which this port's PatchManager refuses (it demands the IL2CPP detour
-/// backend for every Il2CppObjectBase declaring type, PatchManager.cs:163-176); the pattern is the one of
-/// Main/Patches/ArmorSystem/FikaPlayer_OnItemAddedOrRemoved_Transpiler.cs:11 - a native method, the Fika type
-/// only as the runtime instance.</para>
-///
-/// <para>WHICH INTERACTION: only an unlock of a <c>CardReader</c>. A card swipe is an unlock -
-/// <c>CardReader.UnlockOperation(KeyComponent, Player, WorldInteractiveObject)</c> (:205017) builds the
-/// <c>UnlockResult</c> whose <c>Succeed</c> (:212752) is the reader's answer for that card - and the reader's
-/// own reaction function <c>ResolveReaction(KeyComponent)</c> (:205015) decides the beep and the trigger the
-/// same interaction plays. Every other interactive object, and every result without a key, is not the fact of
-/// 「the card check was passed」 and is skipped.</para>
-///
-/// <para>The fact is not applied and not broadcast from here: it goes to
-/// <see cref="FikaSentryAccess.NoteNativeEmission"/>, the entry that reports a machine without bots to the
-/// authority (and the one place the switch family decides what happens next).</para>
-/// </summary>
-internal sealed class Player_ExecuteInteraction_TerminalCard_Patch : ModulePatch
-{
-    protected override MethodBase GetTargetMethod()
-    {
-        var target = typeof(Player)
-            .GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
-            .FirstOrDefault(method => method.Name == nameof(Player.ExecuteInteraction)
-                && method.GetParameters() is { Length: 2 } parameters
-                && parameters[0].ParameterType == typeof(WorldInteractiveObject)
-                && parameters[1].ParameterType == typeof(InteractionResult));
-        if (target == null)
-        {
-            throw new MissingMethodException(
-                "Player.ExecuteInteraction(WorldInteractiveObject, InteractionResult)");
-        }
-
-        return target;
-    }
-
-    [PatchPostfix]
-    public static void Postfix(Player __instance, WorldInteractiveObject __0, InteractionResult __1)
-    {
-        try
-        {
-            Observe(__instance, __0, __1);
-        }
-        catch (System.Exception)
-        {
-            // A diagnostic must never break the native chain that carries it.
-        }
-    }
-
-    private static void Observe(Player player, WorldInteractiveObject target, InteractionResult interactionResult)
-    {
-        // The actor is the player object the native call runs on: on a client that is this machine's own player,
-        // and the native base is reached by that player's own interaction only (a remote character is an
-        // ObservedPlayer, whose override never calls it). A fact of the call, not an inference of ours.
-        if (player == null || player.IsYourPlayer != true)
-        {
-            return;
-        }
-
-        // A machine that owns a sentry applies the fact through its own native chain; only a machine without one
-        // (every Fika client) has to report it.
-        if (!FikaBackendUtils.IsClient || FikaSentryAccess.CountLocalSentries() != 0)
-        {
-            return;
-        }
-
-        var reader = target != null ? target.TryCast<CardReader>() : null;
-        if (reader == null)
-        {
-            return;
-        }
-
-        var unlock = interactionResult != null ? interactionResult.TryCast<UnlockResult>() : null;
-        if (unlock == null || unlock.Key == null)
-        {
-            // A reader interaction without an unlock result is not a card swipe. The line stays because a log
-            // that distinguishes "the hook never fired" from "the hook fired without a key" is what decides the
-            // next round; it is written once per reader.
-            FikaSentryAccess.Line("swipe-nokey:" + reader.Id,
-                "card=swiped role=" + FikaSentryAccess.RoleOf(player) + " state=card-reader applied=no side="
-                + FikaSentryAccess.Side + " source=native-execute reader=" + reader.Id
-                + " -> result=the interaction of this machine's player carries no unlock result (nothing is reported)");
-            return;
-        }
-
-        var key = KeyOf(unlock);
-
-        if (!unlock.Succeed)
-        {
-            FikaSentryAccess.Line("swipe-denied:" + reader.Id + ":" + key,
-                "card=swiped role=" + FikaSentryAccess.RoleOf(player) + " state=card-reader applied=no side="
-                + FikaSentryAccess.Side + " source=native-execute reader=" + reader.Id + " key=" + key
-                + " -> result=the reader refused this card on this machine (nothing is reported)");
-            return;
-        }
-
-        FikaSentryAccess.Line("swipe:" + reader.Id + ":" + key,
-            "card=swiped role=" + FikaSentryAccess.RoleOf(player) + " state=card-reader applied=- side="
-            + FikaSentryAccess.Side + " source=native-execute reader=" + reader.Id + " key=" + key
-            + " profile=" + player.ProfileId
-            + " -> result=the swipe of this machine's player was accepted by the reader; the fact goes to NoteNativeEmission");
-
-        // (2026-10-21) Temporary [SyncDiag] line of this round: the one line that says the upward report exists.
-        FikaGlobals.LogInfo("[SyncDiag] swipe-report profile=" + player.ProfileId,
-            "Player_ExecuteInteraction_TerminalCard_Patch");
-
-        FikaSentryAccess.NoteNativeEmission(player);
-    }
-
-    /// <summary>The card that was used - named in the lines only, never part of the report itself.</summary>
-    private static string KeyOf(UnlockResult unlock)
-    {
-        try
-        {
-            var item = unlock?.Key?.Item;
-            return item == null || string.IsNullOrEmpty(item.Id) ? "-" : item.Id;
-        }
-        catch (System.Exception)
-        {
-            return "-";
-        }
-    }
-}
+// Nothing is written to a native value from the patches themselves: the first reports the native write and
+// (on the authority) hands the same fact to the other machines so their sentries can apply it through the
+// same native entry point; the second only writes lines; the third writes lines and, when this machine
+// owns no sentry to apply the fact to, hands it to the authority / applies it to the group hostility data
+// (both under the one switch family of FikaSentryAccess). All three pass something through untouched, so
+// turning FikaSentryAccess.RepairEnabled off restores the previous behaviour without a rebuild.
 
 /// <summary>
 /// The native write of the grant (also the machine that owns the card reader emits it here). Reports the

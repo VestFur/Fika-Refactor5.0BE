@@ -196,6 +196,30 @@ internal static class PlantDiag
     /// The template id of an item id, for the case where the plant packet carries an id the native
     /// lookup cannot resolve (the packet carries the item id, not the template).
     /// </summary>
+    internal static string TemplateIdOf(string itemId)
+    {
+        if (string.IsNullOrEmpty(itemId))
+        {
+            return null;
+        }
+
+        foreach (var item in LocalInventoryItems())
+        {
+            try
+            {
+                if (string.Equals(item.Id, itemId, StringComparison.Ordinal))
+                {
+                    return SafeTemplate(item);
+                }
+            }
+            catch
+            {
+                // A detached item can refuse its id; keep scanning.
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>Which side of the raid this machine runs, for the diagnostic lines.</summary>
     internal static string Role
@@ -317,6 +341,11 @@ internal static class PlantDiag
         }
     }
 
+    internal static bool IsInBackpack(string address)
+    {
+        return !string.IsNullOrEmpty(address)
+            && address.IndexOf(BackpackMarker, StringComparison.OrdinalIgnoreCase) >= 0;
+    }
 
     internal static string SafeTemplate(Item item)
     {
@@ -370,6 +399,25 @@ internal static class PlantDiag
         return result;
     }
 
+    private static string InventoryApiReport(InventoryController controller, string filter)
+    {
+        var inventory = LocalPlayer?.Profile?.Inventory;
+        if (inventory == null)
+        {
+            return "none";
+        }
+
+        var all = "n/a";
+        try
+        {
+            all = inventory.GetAllItemByTemplate(filter ?? string.Empty)?.Count().ToString() ?? "null";
+        }
+        catch (Exception exception)
+        {
+            all = "failed:" + exception.Message;
+        }
+        return $"GetAllItemByTemplate({filter ?? "none"})={all} profilePtr=0x{(LocalPlayer?.Profile?.Inventory?.Pointer.ToInt64() ?? 0):X}";
+    }
 
     private static Item FindByTemplate(List<Item> items, string filter)
     {
@@ -387,11 +435,96 @@ internal static class PlantDiag
         return null;
     }
 
+    private static Item FindById(List<Item> items, string id)
+    {
+        if (string.IsNullOrEmpty(id))
+        {
+            return null;
+        }
+        foreach (var item in items)
+        {
+            try
+            {
+                if (string.Equals(item.Id, id, StringComparison.Ordinal))
+                {
+                    return item;
+                }
+            }
+            catch
+            {
+                // A detached item can refuse its id; keep scanning.
+            }
+        }
+        return null;
+    }
 
+    private static List<Item> ChargeItems(List<Item> items)
+    {
+        var result = new List<Item>();
+        foreach (var item in items)
+        {
+            var template = SafeTemplate(item);
+            if (string.Equals(template, IcebreakerChargeTemplate, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(template, TerminalChargeTemplate, StringComparison.OrdinalIgnoreCase))
+            {
+                result.Add(item);
+            }
+        }
+        return result;
+    }
 
+    private static Item HandsItem(List<Item> items)
+    {
+        foreach (var item in items)
+        {
+            var address = DescribeAddress(item);
+            if (!string.IsNullOrEmpty(address)
+                && (address.IndexOf("PrimaryWeapon", StringComparison.OrdinalIgnoreCase) >= 0
+                    || address.IndexOf("Holster", StringComparison.OrdinalIgnoreCase) >= 0
+                    || address.IndexOf("Scabbard", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                return item;
+            }
+        }
+        return null;
+    }
 
+    private static string DescribeCharges(List<Item> charges)
+    {
+        if (charges.Count == 0)
+        {
+            return "none";
+        }
+        return string.Join(", ", charges.Select(item => $"{ItemRef(item)}"));
+    }
 
+    private static string ControllerRef(InventoryController controller)
+    {
+        if (controller == null)
+        {
+            return "none";
+        }
+        try
+        {
+            return $"{controller.GetType().Name}#0x{controller.Pointer.ToInt64():X}";
+        }
+        catch
+        {
+            return controller.GetType().Name;
+        }
+    }
 
+    private static string SafeField(Func<string> read)
+    {
+        try
+        {
+            return read() ?? "none";
+        }
+        catch
+        {
+            return "none";
+        }
+    }
 }
 
 /// <summary>

@@ -199,7 +199,13 @@ public class FikaClientGameWorld : ClientLocalGameWorld
         // cutscene client controller has besides the bridge, and the round-17 solo log shows the consequence -
         // "gate:ticks ... client engine=0 bridge=820" while the scene of the map stood still at 0.0 s of 29.2 s
         // and its rig stayed switched off. The switch forwards the call to the native base implementation and
+        // observes what it ticks (see CutsceneBoundary.NativeEngineTick); the native body is only entered when
+        // CutsceneBoundary.ForwardAfterPlayerTick is on, so the ported behaviour is the default and one constant
         // switches it back.
+        if (!Fika.Core.Main.Components.CutsceneBoundary.ForwardAfterPlayerTick) return;
+        Fika.Core.Main.Components.CutsceneBoundary.NativeEngineTick("client", () =>
+            Fika.Core.Main.Utils.NativeBaseInvoker
+                .Get<System.Action<float>>(typeof(ClientLocalGameWorld), "AfterPlayerTick", new[] { typeof(float) })(dt));
     }
 
     public override void UpdateSynchronizableObjectLogic(float dt)

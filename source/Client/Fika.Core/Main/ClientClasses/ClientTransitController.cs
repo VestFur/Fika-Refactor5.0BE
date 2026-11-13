@@ -115,6 +115,8 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
     private int _countdownRepeatsLogged;
     /// <summary>The order-independent comparison is proven once per session, on the first group timer.</summary>
     private bool _timerComparisonChecked;
+    /// <summary>Points whose host-granted Enabled flag was mirrored locally, so the line is written once per point.</summary>
+    private readonly System.Collections.Generic.HashSet<int> _enabledMirrored = [];
     /// <summary>Visible-point refreshes of the current interaction attempt; a hidden point can become visible later.</summary>
     private int _interactionVisibilityRefreshes;
     /// <summary>Start of a press whose native step did not finish yet, or -1.</summary>
@@ -126,7 +128,7 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
     private int _pressStalls;
     /// <summary>
     /// (analysis/client-transit-terminal) Fallback interact requests this raid sent because the native press
-    /// step produced none; bounded by <see cref="true"/>.
+    /// step produced none; bounded by <see cref="TransitRecovery.PressFallbackLimit"/>.
     /// </summary>
     private int _pressFallbacks;
     /// <summary>True once the running press was answered by a fallback request, so it is sent once per press.</summary>
@@ -177,13 +179,6 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
     internal void ReceiveSnapshot(TransitEventPacket packet)
     {
         if (packet.TransitEvent?.TryCast<TransitInitEvent>() is not { } data) return;
-        // (analysis/transit-point-sync) The Enabled list of an initialization is the host's point state
-        // (TransitPoint_SetEnabled_Patch re-sends it on every change of TransitPoint.Enabled). It is applied
-        // before the per player filter below because the state broadcast is addressed at no player
-        // (TransitEventPacket.AnyPlayerRaidId): without this the points of this machine stay on the raid
-        // start snapshot, which is the reported "point cannot be used" state.
-        ApplyPointState(packet.EnabledPointIds);
-        if (data.PlayerRaidId == TransitEventPacket.AnyPlayerRaidId) return;
         var localPlayer = GamePlayerOwner.MyPlayer ?? FikaSingleton<Networking.FikaClient>.Instance?.MyPlayer;
         if (localPlayer != null && localPlayer.RaidId != data.PlayerRaidId) return;
         // TransitEventPacket is reused by LiteNetLib: retain independent fields.
@@ -195,33 +190,6 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
         if (_ready) ApplySnapshot();
     }
 
-    /// <summary>
-    /// Applies the enabled list of a host initialization to every point of this machine, in both
-    /// directions: a point in the list is opened, a point outside it is closed. The list is the host's
-    /// complete state (<c>TransitPointStateBroadcast</c> sends every entry of <c>pointsById</c>), so the
-    /// local flags can follow it exactly; <see cref="SetPointEnabled"/> performs each single write and is
-    /// the only place the flag changes here.
-    /// </summary>
-    private void ApplyPointState(int[] enabledPointIds)
-    {
-        if (enabledPointIds == null) return;
-        try
-        {
-            var points = Native.pointsById;
-            if (points == null) return;
-            var enabled = new System.Collections.Generic.HashSet<int>(enabledPointIds);
-            foreach (var entry in points)
-            {
-                SetPointEnabled(entry.Key, enabled.Contains(entry.Key));
-            }
-        }
-        catch (System.Exception exception)
-        {
-            FikaGlobals.LogWarning($"[SyncDiag] point-sync-failed where=client-apply " +
-                $"error={exception.GetType().Name}: {exception.Message}");
-        }
-    }
-
     private void ApplySnapshot()
     {
         var player = GamePlayerOwner.MyPlayer;
@@ -230,7 +198,8 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
         if (!NetworkTransitController.IsTargetPlayer(data.PlayerRaidId, out _)) return;
         _pendingSnapshots.Remove(player.RaidId);
         OnInitEvent(data);
-        ApplyPointState(snapshot.EnabledPointIds);
+        var enabled = new System.Collections.Generic.HashSet<int>(snapshot.EnabledPointIds ?? []);
+        foreach (var entry in Native.pointsById) entry.Value.Enabled = enabled.Contains(entry.Key);
         if (snapshot.RegisteredPointId >= 0 && Native.pointsById.ContainsKey(snapshot.RegisteredPointId))
         {
             Native.transitPlayers[player.ProfileId] = player.RaidId;
@@ -453,7 +422,7 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
             _countdownPointId = pointId;
             _countdownRemaining = -1;
             _countdownPausedPointId = pointId;
-            if (wasShowing)
+            if (TransitRecovery.HideCountdownWithoutOwnEntry && wasShowing)
             {
                 HideLocalCountdown(pointId,
                     "the host's countdown does not carry this machine (it was paused, or this machine is registered nowhere)",
@@ -508,6 +477,12 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
     /// </summary>
     private void ReportCountdownSurface(int pointId, int own, string panelResult)
     {
+        if (!TransitRecovery.ActivateTransitTimerPanel && !TransitRecovery.HideCountdownWithoutOwnEntry)
+        {
+            // Both countdown behaviours are off: there is no surface to judge.
+            return;
+        }
+
         try
         {
             var signature = pointId + "|" + own + "|" + _countdownSurface + "|" + _countdownSurfacePointId + "|" +
@@ -523,12 +498,17 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
 
     /// <summary>
     /// Brings this machine's transit countdown panel online before it is driven, when the behaviour is on.
-    /// The switch is <see cref="true"/>; the call itself,
+    /// The switch is <see cref="TransitRecovery.ActivateTransitTimerPanel"/>; the call itself,
     /// <see cref="FikaUiPanels.TryActivateForDrive"/>, refuses to force anything when the inactivity sits above
     /// the panel and reports that chain instead.
     /// </summary>
     private static bool TryBringCountdownPanelOnline(EFT.UI.LocationTransitTimerPanel panel, string site)
     {
+        if (!TransitRecovery.ActivateTransitTimerPanel)
+        {
+            return panel.gameObject != null && panel.gameObject.activeInHierarchy;
+        }
+
         return FikaUiPanels.TryActivateForDrive(panel, "ClientTransitController.TransitTimer." + site);
     }
 
@@ -814,37 +794,24 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
     }
 
     /// <summary>
-    /// The one place this machine writes a point's <c>Enabled</c> flag, in both directions
-    /// (<c>EFT.Interactive.TransitPoint.Enabled</c>, interop dump 212407 - the same member the host
-    /// broadcasts and the native press path reads). It replaces the enable-only MirrorPointEnabled: the
-    /// host's state is bidirectional now, so a point the host closed again has to close here as well.
-    /// <para>
-    /// The host's Show/Confirm/CheckAccess answers and an accepted Extract still call it with
-    /// <c>true</c>: such an answer is the proof that this point is open for this player, so the local flag
-    /// is mirrored even before the next state broadcast arrives.
-    /// </para>
+    /// Mirrors the host's decision that a point is open. A Show or a Confirm reaches this machine only
+    /// for a point the host validates as enabled, so the packet is the proof; the Enabled flag of this
+    /// machine came from the raid-start snapshot and stayed False in round 7
+    /// (<c>LogOutput.log:2417 enabled=False</c>), where it blocked this port's own prompt path.
     /// </summary>
-    /// <returns>True when the flag actually changed.</returns>
-    internal bool SetPointEnabled(int pointId, bool enabled)
+    private void MirrorPointEnabled(int pointId, string reason)
     {
         try
         {
-            if (Native.pointsById == null || !Native.pointsById.TryGetValue(pointId, out var point) || point == null)
-            {
-                return false;
-            }
-
-            if (point.Enabled == enabled) return false;
-            point.Enabled = enabled;
-            FikaGlobals.LogWarning($"[SyncDiag] point-apply id={pointId} enabled={(enabled ? "true" : "false")}");
-            return true;
+            if (!Native.pointsById.TryGetValue(pointId, out var point) || point == null) return;
+            if (point.Enabled) return;
+            point.Enabled = true;
+            if (!_enabledMirrored.Add(pointId)) return;
+            
         }
         catch (System.Exception exception)
         {
-            FikaGlobals.LogWarning($"[SyncDiag] point-sync-failed where=set-point id={pointId} " +
-                $"enabled={(enabled ? "true" : "false")} error={exception.GetType().Name}: {exception.Message}");
-            return false;
-        }
+                    }
     }
 
     internal bool IsReady => _ready;
@@ -878,7 +845,7 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
     /// </summary>
     private void EnsureLocalTransferStash(TransitPoint point, Player player, string source)
     {
-        if (point?.parameters == null) return;
+        if (!TransitRecovery.ClientEnsureTransferStash || point?.parameters == null) return;
         if (player == null || !player.IsYourPlayer) return;
         var profileId = player.ProfileId;
         if (string.IsNullOrEmpty(profileId)) return;
@@ -1340,13 +1307,16 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
                 var type = entry.Value;
                 
 
-                // The latch waits for the native confirmation step of a press; a refused press is over, so
-                // it must not keep the next press waiting behind it.
-                _pressStartedAt = -1f;
-                _pressStallReported = false;
-                _pressPointId = _interactionPoint;
+                if (TransitRecovery.RearmAfterRefusal)
+                {
+                    // The latch waits for the native confirmation step of a press; a refused press is over, so
+                    // it must not keep the next press waiting behind it.
+                    _pressStartedAt = -1f;
+                    _pressStallReported = false;
+                    _pressPointId = _interactionPoint;
+                }
 
-                if (_interactionPoint >= 0)
+                if (TransitRecovery.ReassertPresenceOnRefusal && _interactionPoint >= 0)
                 {
                     SendZonePresence(_interactionPoint, true, "the host refused " + type, null, true);
                 }
@@ -1574,7 +1544,7 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
     /// </summary>
     private void TrySendFallbackRequest(TransitPoint point, Player player, bool inPoint, bool registered)
     {
-        if (_pressFallbackSent || !inPoint || registered) return;
+        if (!TransitRecovery.PressFallback || _pressFallbackSent || !inPoint || registered) return;
         if (point?.parameters == null || player == null || !player.IsYourPlayer) return;
 
         var pointId = point.parameters.id;
@@ -1600,7 +1570,7 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
             return;
         }
 
-        if (_pressFallbacks >= 8)
+        if (_pressFallbacks >= TransitRecovery.PressFallbackLimit)
         {
             _pressFallbackSent = true;
             
@@ -1660,7 +1630,7 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
             // announces this machine's zone presence on the same reliable-ordered stream and then sends the packet
             // the native builder produced, so nothing about the request is this class's invention. The hand-built
             // packet below stays as the fallback of the fallback (switch PressFallbackNativeExit).
-            if (player.TryCast<FikaPlayer>() is { } fikaPlayerExit &&
+            if (TransitRecovery.PressFallbackNativeExit && player.TryCast<FikaPlayer>() is { } fikaPlayerExit &&
                 point.Controller != null)
             {
                 fikaPlayerExit.TransitInteraction(point.Controller, pointId, keyId, time);
@@ -1716,12 +1686,12 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
             case TransitInteractionEvent.EType.Show:
                 // The host asked this machine to raise the prompt; the native handler right below does
                 // exactly that (and every local observation of the same point reports the result).
-                SetPointEnabled(interaction.PointId, true);
+                MirrorPointEnabled(interaction.PointId, "a Show");
                 break;
             case TransitInteractionEvent.EType.Confirm:
                 // The host accepted this player's request, so the point is registered there: mirror the
                 // host's view of the point as well as the registration below.
-                SetPointEnabled(interaction.PointId, true);
+                MirrorPointEnabled(interaction.PointId, "a Confirm");
                 // The confirmation packet carries the key and the selected time of the request when the
                 // host has them; the registration fills the gaps from the local registry.
                 RegisterLocalTransit(interaction.PointId, packet == null ? null : packet.KeyId,
@@ -1736,7 +1706,7 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
                 // same handler shows 'Transit/AccessNotGranted' instead. Nothing is cleared here and nothing is
                 // released: the prompt of a press that is still being tried must stay up, exactly as it does in the
                 // native network path (this case must never reach the default branch below).
-                SetPointEnabled(interaction.PointId, true);
+                MirrorPointEnabled(interaction.PointId, "a CheckAccess");
                 
 
                 break;
@@ -1922,6 +1892,7 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
         _countdownSurfaceSeconds = -1f;
         _countdownSurfaceStalled = false;
         _countdownSurfaceLabel = null;
+        _enabledMirrored.Clear();
         // The raid is over; the next one gets a fresh set of diagnostic characters.
         TransitZonePresence.ResetLog();
         TransitPresenceReporter.ResetSkips();
@@ -2001,27 +1972,8 @@ public class ClientTransitController : FikaWorldController<NetworkTransitControl
             }
 
             Native.alreadyTransits[player.ProfileId] = destination;
-            SetPointEnabled(transitId, true);
-
-            // (2026-10-27 T1) The local cutscene of this machine must not be alive when its raid ends: an open
-            // process keeps this machine "in a cutscene" (and the player in it) while the level is replaced, and
-            // its native end then runs on a world that is already going down (the NullReferenceException of the
-            // 2026-10-21 20:57 playthrough). The CG is not shortened - it is closed at the one moment it can no
-            // longer be watched on this machine: its own transfer landing.
-            try
-            {
-                var closed = Fika.Core.Main.Components.FikaLocalCutsceneTrigger.EndOpenLocalProcesses("transit landing of point " + transitId);
-                if (closed > 0)
-                {
-                    FikaGlobals.LogInfo($"[CgDiag] local process closed before the transit landing point={transitId} " +
-                        $"processes={closed}", "ClientTransitController");
-                }
-            }
-            catch (System.Exception cutsceneException)
-            {
-                FikaGlobals.LogWarning($"[CgDiag] closing the local process before the transit landing threw point={transitId} error={cutsceneException.GetType().Name}", "ClientTransitController");
-            }
-
+            MirrorPointEnabled(transitId, "an Extract");
+            
             game.Extract(fikaPlayer, null, point);
 
             // This machine is in a transit reload now: its raid ends here, and it must not create the next

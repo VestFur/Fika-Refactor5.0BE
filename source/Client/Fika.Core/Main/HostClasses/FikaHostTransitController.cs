@@ -980,11 +980,6 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
     private readonly Dictionary<string, int> _interactedPlayers = [];
     /// <summary>One accepted-interaction line per player and point, so a retry does not repeat it.</summary>
     private readonly HashSet<string> _interactionLogged = [];
-    /// <summary>
-    /// (2026-10-21) One refusal line per (player, point, answer, reason). An InactivePoint the client keeps
-    /// retrying is the state this set keeps from flooding the log, while a *different* gate still gets a line.
-    /// </summary>
-    private readonly HashSet<string> _answerLogged = [];
     /// <summary>Players this host already pushed a transfer for; keeps the two drivers from double-sending.</summary>
     private readonly HashSet<int> _transferIssued = [];
     /// <summary>
@@ -1335,12 +1330,9 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
         var registeredForThisPoint = false;
         try
         {
-            // (2026-10-27 T2-B) Both shapes of the registry value are accepted (see IssueTransferForClients):
-            // read against the point id only, this was false for every registration this class writes, so the
-            // "the host left the point while its countdown runs" rule below could never fire.
             registeredForThisPoint = Native.transitPlayers != null &&
                 Native.transitPlayers.TryGetValue(player.ProfileId, out var registeredPoint) &&
-                (registeredPoint == point.parameters.id || registeredPoint == player.RaidId);
+                registeredPoint == point.parameters.id;
         }
         catch (System.Exception)
         {
@@ -1611,21 +1603,6 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
     {
         if (!TransitStartGate.RequireAllTeammatesInteracted) return true;
 
-        // (2026-10-27 W37) 尊重点位自己的 waitForAllParty。证据：
-        //  · 海岸线 transits[25]（终点站/码头那条）是 waitForAllParty=false，即原生语义"一个人按就能走"；
-        //    同图的 24/43/51 都是 true。本类此前一律要求"每个队友都按过"，等于把 25 号点也按全队门处理，
-        //    于是客机先按、主机没按时客机被一直拒绝（用户报的"客机先按就转移不了"）。
-        //  · 官方 Fika 2.4.3（mods/fika-47242/.../FikaHostClasses/FikaHostTransitController.cs:228）里没有
-        //    "都要按过"这道门，只有 CheckForPlayers（所有活着的队友都在点内）；"都要按过"是后来加的。
-        // 所以：点位自己说不用等全队时，就按原生语义放行；说 true 的点位保持现有的严格门。
-        var pointForGate = FindPoint(pointId);
-        if (pointForGate?.parameters != null && !pointForGate.parameters.waitForAllParty)
-        {
-            FikaGlobals.LogInfo($"[TransitDiag] start-gate-skip point={pointId} pressedBy={player.ProfileId} " +
-                "reason=waitForAllParty-false (the point itself allows a single press)", "FikaHostTransitController");
-            return true;
-        }
-
         var members = EligibleMembers();
         var missing = TransitStartGate.DescribeNotReady(members, _playersInTransitZone, _interactedPlayers, pointId, out var ready);
         if (missing == null)
@@ -1634,13 +1611,10 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
         }
 
         NotifyTeammatesNotReady(player);
-        // (2026-10-26 W29) The ready/missing detail was computed and then discarded, so a refusal said nothing
-        // about who was still missing - the one thing the "client pressed first" report needs. One line per refusal.
-        FikaGlobals.LogInfo($"[TransitDiag] start-gate point={pointId} pressedBy={player.ProfileId} ready={ready} missing={missing}",
-            "FikaHostTransitController");
         // (analysis/transit-terminal-and-countdown) The waiting half of the round's repair: a teammate who stands
         // in the point but whose press never reached this host gets the native answer that makes his own machine
         // produce it (TransitInteractionEvent.CheckAccess), bounded and reported.
+        NudgeStalledPresses(pointId, player);
         return false;
     }
 
@@ -1673,7 +1647,7 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
     /// </summary>
     internal void EnsureTransferStashFor(Player member, TransitPoint point, string source)
     {
-        if (member == null) return;
+        if (!TransitRecovery.EnsureTransferStash || member == null) return;
         var profileId = member.ProfileId;
         if (string.IsNullOrEmpty(profileId)) return;
 
@@ -1989,12 +1963,14 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
             {
                 // The continuous half of the rule: the participant list is re-checked on every tick, not only
                 // when the countdown started. A cancel returns here and the rest of this tick is skipped.
+                if (RecheckCountdownParticipants()) return;
 
                 // (analysis/transit-terminal-and-countdown) The paused half of the rule: while the countdown is
                 // frozen its clock does not move, so this tick only looks for the moment every registered
                 // participant stands inside the point again (nothing is broadcast while it is paused).
                 if (_countdownPaused)
                 {
+                    TryResumeCountdown();
                     return;
                 }
 
@@ -2061,18 +2037,84 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
     /// closed and every client is told to close its own surface (a group-timer announcement without an entry for
     /// that machine). <see cref="TryResumeCountdown"/> continues the same countdown from the frozen second.
     /// </summary>
+    private void PauseCountdown(int pointId, string detail, int remaining)
+    {
+        if (_countdownPaused) return;
+        _countdownPaused = true;
+        _countdownPausedRemaining = System.Math.Max(0, remaining);
+        _countdownPausedAt = Time.unscaledTime;
+        _countdownPauses++;
+        _lastBroadcastSecond = -1;
+        var panel = CloseLocalTimerPanel("the countdown of point " + pointId + " is paused");
+        BroadcastCountdownPaused(pointId, _countdownPausedRemaining);
+        
+    }
 
     /// <summary>
     /// The resume half of <see cref="PauseCountdown"/>: every registered participant stands inside the point
     /// again, so the frozen seconds are put back on the clock and the same countdown continues for the whole
     /// group. Runs on every tick of the paused state, writes one line per resume and never throws.
     /// </summary>
+    private bool TryResumeCountdown()
+    {
+        var pointId = _countdownPointId;
+        if (pointId < 0 || !_countdownPaused) return false;
+
+        var outside = new List<string>();
+        var members = 0;
+        try
+        {
+            foreach (var member in CountdownParticipants(pointId))
+            {
+                members++;
+                if (member.HealthController?.IsAlive != true) continue;
+                if (TransitDropouts.IsDropped(member)) continue;
+                if (_transittedPlayers.Contains(member.RaidId) || IsExtractedFromThisRaid(member)) continue;
+                if (!IsInsidePointBounds(pointId, member))
+                {
+                    outside.Add(member.ProfileId + "(" + DescribePlayerPlacement(pointId, member) + ")");
+                }
+            }
+        }
+        catch (System.Exception exception)
+        {
+            _recheckFailures++;
+            if (_recheckFailures <= 3)
+            {
+                            }
+
+            return false;
+        }
+
+        if (outside.Count > 0)
+        {
+            // Remembered for the resume line: it is the bucket that has to be empty for the countdown to continue,
+            // so "who was missing" and "who came back" are the same list read at two moments.
+            _countdownPausedOutside = TransitRecovery.Join(outside);
+            return false;
+        }
+
+        var cameBack = _countdownPausedOutside;
+        _countdownPausedOutside = null;
+        var pausedFor = Time.unscaledTime - _countdownPausedAt;
+        var remaining = _countdownPausedRemaining;
+        _countdownPaused = false;
+        _countdownPausedRemaining = 0;
+        _countdownEndsAt = Time.unscaledTime + remaining;
+        _lastBroadcastSecond = -1;
+        // The panel of this host was closed by the pause, so the surface of the new value starts from the front.
+        _panelSurfacePointId = -1;
+        _panelSurfaceSeconds = -1f;
+        BroadcastCountdown(true);
+        
+        return true;
+    }
 
     /// <summary>
     /// (analysis/transit-terminal-and-countdown) The paused announcement of a countdown: a group-timer event whose
     /// dictionary carries <b>no</b> entry at all. Both machine halves read that as "this countdown does not carry
     /// me" - the native applier shows nothing (it only ever looks up the local player) and the Fika surface of the
-    /// client closes the panel it still has on screen (see true). It is the
+    /// client closes the panel it still has on screen (see TransitRecovery.HideCountdownWithoutOwnEntry). It is the
     /// inverse of the announcement that starts a countdown, so no protocol field is added for the pause.
     /// </summary>
     private void BroadcastCountdownPaused(int pointId, int remaining)
@@ -2105,7 +2147,7 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
     /// </summary>
     private void SendAnswerEvent(Player player, int pointId, TransitInteractionEvent.EType type, string reason)
     {
-        if (player == null || player.IsYourPlayer) return;
+        if (!TransitRecovery.NativeAnswerOnRefusal || player == null || player.IsYourPlayer) return;
 
         // (analysis/transit-terminal-and-countdown) CheckAccess makes the client send its request in the same
         // moment, so a state where this host refuses what the client considers valid would otherwise answer for
@@ -2114,7 +2156,7 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
         {
             var bucket = "answer:" + player.ProfileId + "@" + pointId;
             var answered = _pressNudges.TryGetValue(bucket, out var count) ? count : 0;
-            if (answered >= 4)
+            if (answered >= TransitRecovery.PressNudgeLimit)
             {
                 
 
@@ -2122,7 +2164,7 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
             }
 
             var lastAnswer = _pressNudgedAt.TryGetValue(bucket, out var at) ? at : float.MinValue;
-            if (Time.unscaledTime - lastAnswer < 5f) return;
+            if (Time.unscaledTime - lastAnswer < TransitRecovery.PressNudgeIntervalSeconds) return;
             _pressNudgedAt[bucket] = Time.unscaledTime;
             _pressNudges[bucket] = answered + 1;
         }
@@ -2138,154 +2180,7 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
             
         }
 
-        // (2026-10-21) THE REFUSAL NAMED: the client only ever logs "the host answered InactivePoint", so the
-        // machine that took the decision was the one piece of evidence every round of this investigation was
-        // missing. One line per (player, point, answer, reason): a repeated press of the same refused state does
-        // not repeat the line, a different gate does.
-        try
-        {
-            var key = player.ProfileId + "@" + pointId + "#" + type + ":" + reason;
-            if (_answerLogged.Add(key))
-            {
-                FikaGlobals.LogInfo($"[TransitDiag] host answer={type} point={pointId} profile={player.ProfileId} " +
-                    $"raidId={player.RaidId} reason={reason} sent={sent} " +
-                    $"pointState={SafePointEnabled(pointId)} zone={SafeZoneOf(player.ProfileId)} " +
-                    $"registered={SafeRegistered(player.ProfileId)}", "FikaHostTransitController");
-            }
-        }
-        catch (System.Exception)
-        {
-        }
-    }
-
-    /// <summary>
-    /// (2026-10-26 W25) Read-only: the entry requirements of a transit point, judged one by one for this player.
-    /// RE evidence (analysis/_re-transit-req.txt): TransitPoint.Requirements is a List&lt;TransitRequirement&gt;;
-    /// each member exposes Met(Player), GetLocalizedTip() and get_IsEntryStage(); TransitParameters carries time,
-    /// hideIfNoKey, waitForAllParty, maxGroupSize, completedQuestId, referenceConditions.
-    /// Calling the same predicate the native gate calls turns "a requirement was not met" into "this one failed".
-    /// </summary>
-    private static string DescribeEntryRequirements(TransitPoint point, Player player)
-    {
-        try
-        {
-            if (point == null) return "reqs=no-point";
-            var text = new System.Text.StringBuilder("reqs=");
-            var requirements = point.Requirements;
-            var count = requirements == null ? 0 : requirements.Count;
-            text.Append(count);
-            for (var i = 0; i < count && i < 8; i++)
-            {
-                var requirement = requirements[i];
-                if (requirement == null)
-                {
-                    text.Append(",[null]");
-                    continue;
-                }
-
-                var type = "?";
-                try
-                {
-                    var il2CppType = requirement.GetIl2CppType();
-                    if (il2CppType != null && !string.IsNullOrEmpty(il2CppType.Name)) type = il2CppType.Name;
-                }
-                catch (System.Exception) { }
-
-                var met = "?";
-                try { met = requirement.Met(player) ? "y" : "n"; }
-                catch (System.Exception) { }
-
-                var tip = string.Empty;
-                try
-                {
-                    var localized = requirement.GetLocalizedTip();
-                    if (!string.IsNullOrEmpty(localized))
-                    {
-                        tip = localized.Length > 40 ? localized.Substring(0, 40) : localized;
-                    }
-                }
-                catch (System.Exception) { }
-
-                text.Append(",[").Append(type).Append(" met=").Append(met);
-                if (tip.Length > 0) text.Append(" tip=").Append(tip);
-                text.Append(']');
-            }
-
-            if (count > 8) text.Append(",+").Append(count - 8);
-
-            try
-            {
-                var parameters = point.parameters;
-                if (parameters != null)
-                {
-                    text.Append(" time=").Append(parameters.time);
-                    text.Append(" hideIfNoKey=").Append(parameters.hideIfNoKey ? "y" : "n");
-                    text.Append(" waitAll=").Append(parameters.waitForAllParty ? "y" : "n");
-                    text.Append(" maxGroup=").Append(parameters.maxGroupSize);
-                }
-            }
-            catch (System.Exception) { }
-
-            return text.ToString();
-        }
-        catch (System.Exception exception)
-        {
-            return "reqs=describe-failed:" + exception.GetType().Name;
-        }
-    }
-
-    /// <summary>
-    /// Read-only: the three native state bits of this host's copy of the point, for the refusal line.
-    /// RE evidence (analysis/_re-transit-sig.txt, interop Assembly-CSharp.dll by ildump): <c>TransitPoint</c> carries
-    /// BOTH <c>_Enabled_k__BackingField</c> (the map-trigger state, written by
-    /// <c>EFT.GameTriggers.HandlerTransitPointState.OnTrigger</c> from its <c>_targetState</c>) and
-    /// <c>_IsActive_k__BackingField</c> (recomputed by the private <c>UpdateActivation</c>/<c>Update</c>), next to the
-    /// static <c>parameters.active</c> of the location settings. A refusal that only names <c>Enabled</c> cannot tell
-    /// "the map trigger closed the point" from "the point's own activation recomputed to false", so all three are
-    /// printed: enabled=yes active=no would be the activation half, enabled=no active=yes the trigger half.
-    /// </summary>
-    private string SafePointEnabled(int pointId)
-    {
-        try
-        {
-            if (!Native.pointsById.TryGetValue(pointId, out var nativePoint) || nativePoint == null) return "missing";
-            var enabled = nativePoint.Enabled ? "yes" : "no";
-            var active = nativePoint.IsActive ? "yes" : "no";
-            string configured;
-            try { configured = nativePoint.parameters.active ? "yes" : "no"; }
-            catch (System.Exception) { configured = "?"; }
-            return $"enabled={enabled},isActive={active},configured={configured}";
-        }
-        catch (System.Exception)
-        {
-            return "?";
-        }
-    }
-
-    /// <summary>Read-only: the point id this host has this player registered in, for the refusal line.</summary>
-    private string SafeZoneOf(string profileId)
-    {
-        try
-        {
-            return _playersInTransitZone.TryGetValue(profileId, out var zone) ? zone.ToString() : "-";
-        }
-        catch (System.Exception)
-        {
-            return "?";
-        }
-    }
-
-    /// <summary>Read-only: whether the native transit table of this host already holds the player.</summary>
-    private string SafeRegistered(string profileId)
-    {
-        try
-        {
-            return Native.transitPlayers.ContainsKey(profileId) ? "yes" : "no";
-        }
-        catch (System.Exception)
-        {
-            return "?";
-        }
+        
     }
 
     /// <summary>
@@ -2300,9 +2195,37 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
     /// point is not open for that player the client shows 'Transit/AccessNotGranted' instead of waiting in silence.
     /// Nothing is granted here: the request still passes every gate of this host.
     /// </para>
-    /// <para>Bounded: one nudge per player, point and interval, at most <see cref="4"/>
+    /// <para>Bounded: one nudge per player, point and interval, at most <see cref="TransitRecovery.PressNudgeLimit"/>
     /// per player and point in a raid, one line per nudge.</para>
     /// </summary>
+    private void NudgeStalledPresses(int pointId, Player interacting)
+    {
+        if (!TransitRecovery.PressNudge) return;
+        try
+        {
+            foreach (var member in EligibleMembers())
+            {
+                if (member == null || member.IsYourPlayer) continue;
+                if (!_playersInTransitZone.TryGetValue(member.ProfileId, out var zone) || zone != pointId) continue;
+                if (_interactedPlayers.TryGetValue(member.ProfileId, out var recordedPoint) && recordedPoint == pointId) continue;
+
+                var key = "nudge:" + member.ProfileId + "@" + pointId;
+                var attempts = _pressNudges.TryGetValue(key, out var count) ? count : 0;
+                if (attempts >= TransitRecovery.PressNudgeLimit) continue;
+                var last = _pressNudgedAt.TryGetValue(key, out var at) ? at : float.MinValue;
+                if (Time.unscaledTime - last < TransitRecovery.PressNudgeIntervalSeconds) continue;
+
+                _pressNudgedAt[key] = Time.unscaledTime;
+                _pressNudges[key] = attempts + 1;
+                SendAnswerEvent(member, pointId, TransitInteractionEvent.EType.CheckAccess,
+                    "no press of this teammate is held here");
+                
+            }
+        }
+        catch (System.Exception exception)
+        {
+                    }
+    }
 
     /// <summary>
     /// Announces the running countdown: one group-timer packet for every client, the value of every
@@ -2472,17 +2395,7 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
             if (Native.transitPlayers == null) return result;
             foreach (var entry in Native.transitPlayers)
             {
-                // (2026-10-27 T2-B) Same two shapes as CountdownParticipants. Reading the point id back
-                // compares a point id against a raid id, so this list was empty for every registration this
-                // class writes: a cancelled countdown then released nobody - no GroupExit, no Hide to the
-                // client, no transit ban lifted, no registry entry dropped. The raid id of the tuple is read
-                // from the player (the value itself is a point id in the native shape).
-                var member = FindHumanPlayer(entry.Key);
-                // A player who left the raid cannot be told apart by the value alone (both shapes are plain
-                // ints); he is kept in the list on purpose, because this list is also what drops his
-                // registration and lifts his ban when the countdown of the point is cancelled.
-                if (entry.Value != pointId && member != null && entry.Value != member.RaidId) continue;
-                result.Add((entry.Key, member == null ? -1 : member.RaidId));
+                if (entry.Value == pointId) result.Add((entry.Key, entry.Value));
             }
         }
         catch (System.Exception exception)
@@ -2518,6 +2431,146 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
     /// must not break the transfer it observes.
     /// </para>
     /// </summary>
+    private bool RecheckCountdownParticipants()
+    {
+        var pointId = _countdownPointId;
+        if (pointId < 0) return false;
+
+        var members = 0;
+        var inside = new List<string>();
+        var missing = new List<string>();
+        var left = new List<string>();
+        var dead = new List<string>();
+        var dropped = new List<string>();
+        var gone = new List<string>();
+        var toDrop = new List<string>();
+        string cancelReason = null;
+        string cancelDetail = null;
+        string pauseDetail = null;
+        var verdict = "continue";
+
+        try
+        {
+            var participants = RegisteredParticipants(pointId);
+            members = participants.Count;
+            foreach (var entry in participants)
+            {
+                var profileId = entry.ProfileId;
+                var player = FindHumanPlayer(profileId);
+                var inRaid = player != null && !TransitDropouts.IsDropped(player);
+                var alive = player != null && player.HealthController?.IsAlive == true;
+                var goneFromRaid = player != null &&
+                    (_transittedPlayers.Contains(player.RaidId) || IsExtractedFromThisRaid(player));
+                var insidePoint = player != null && alive && !goneFromRaid && IsInsidePointBounds(pointId, player);
+                var zoneEntryMatches = _playersInTransitZone.TryGetValue(profileId, out var zone) && zone == pointId;
+                var state = TransitCountdownGuard.Classify(inRaid, alive, goneFromRaid, insidePoint, zoneEntryMatches);
+
+                switch (state)
+                {
+                    case ETransitMemberState.Inside:
+                        inside.Add(profileId);
+                        break;
+                    case ETransitMemberState.Missing:
+                        // Still inside the point, only the zone report of this host is missing: the entry is
+                        // restored from the point's own colliders instead of dropping a player who is there.
+                        inside.Add(profileId);
+                        missing.Add(profileId);
+                        TransitZonePresence.RecordInZone(_playersInTransitZone, profileId, pointId,
+                            "gate recheck: inside the point although this host had no zone report for him");
+                        break;
+                    case ETransitMemberState.Left:
+                        left.Add(profileId + "(" + DescribePlayerPlacement(pointId, player) + ")");
+                        if (TransitCountdownGuard.PauseWhenSomeoneLeaves)
+                        {
+                            // (analysis/transit-terminal-and-countdown) The user's rule of this round: the player
+                            // who walked out hides the countdown of the whole group and pauses the transfer of
+                            // everybody. The remaining seconds and every registration are kept, so the resume
+                            // continues the same countdown instead of starting a new one.
+                            pauseDetail ??= " trigger=" + profileId + " " + DescribePlayerPlacement(pointId, player);
+                        }
+                        else if (TransitCountdownGuard.AbortWhenSomeoneLeaves)
+                        {
+                            cancelReason ??= "a registered teammate left the point";
+                            cancelDetail = " player=" + profileId + " " + DescribePlayerPlacement(pointId, player);
+                        }
+
+                        break;
+                    case ETransitMemberState.Dead:
+                        dead.Add(profileId);
+                        if (TransitCountdownGuard.AbortWhenSomeoneDies)
+                        {
+                            cancelReason ??= "a registered teammate died";
+                            cancelDetail = " player=" + profileId + " " + DescribePlayerPlacement(pointId, player);
+                        }
+                        else
+                        {
+                            toDrop.Add(profileId);
+                        }
+
+                        break;
+                    default:
+                        if (inRaid) gone.Add(profileId);
+                        else dropped.Add(profileId);
+                        toDrop.Add(profileId);
+                        break;
+                }
+            }
+
+            verdict = cancelReason != null
+                ? "cancel(" + cancelReason + ")"
+                : pauseDetail != null ? "pause(a registered teammate left the point)" : "continue";
+        }
+        catch (System.Exception exception)
+        {
+            _recheckFailures++;
+            if (_recheckFailures <= 3)
+            {
+                            }
+
+            return false;
+        }
+
+        _recheckCount++;
+        // (analysis/perf-diagnostics-cleanup) This block runs on every countdown tick of the host - once per
+        // frame while a countdown runs - and it used to build the whole verdict line (a Join over up to five
+        // profile-id buckets) before comparing it to the last one: "build the string, then throw it away", the
+        // exact shape this task is about. The master switch now wraps the build together with the dedupe, so
+        // with the switch off nothing is built and nothing is logged, and with the switch on the criterion
+        // line and its change-only cadence are unchanged. _recheckCount stays unconditional (read elsewhere).
+        
+
+        // (analysis/transit-terminal-and-countdown) The pause comes before the cancel: a countdown nobody can
+        // lose by walking out for a moment is the rule the user asked for, and the frozen seconds are still the
+        // ones the group started with.
+        if (pauseDetail != null)
+        {
+            PauseCountdown(pointId, pauseDetail,
+                System.Math.Max(0, (int)System.Math.Ceiling(_countdownEndsAt - Time.unscaledTime)));
+            return true;
+        }
+
+        if (cancelReason != null)
+        {
+            CancelCountdown(cancelReason, (cancelDetail ?? string.Empty) +
+                $" (checked {_recheckCount}x, switches: {TransitCountdownGuard.DescribeSwitches()})");
+            return true;
+        }
+
+        foreach (var profileId in toDrop)
+        {
+            DropCountdownParticipant(pointId, profileId, true, "no longer a participant in this raid");
+        }
+
+        if (members > 0 && toDrop.Count >= members)
+        {
+            // Every registered teammate is gone: there is nobody left for this transfer to carry.
+            CancelCountdown("no registered teammate is left in this raid",
+                $" (checked {_recheckCount}x, switches: {TransitCountdownGuard.DescribeSwitches()})");
+            return true;
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Removes one participant from a running countdown without cancelling it: the registration, the native
@@ -2582,11 +2635,9 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
         var registered = false;
         try
         {
-            // (2026-10-27 T2-B) Same two shapes: this check answered false for every Fika registration, so a
-            // registered teammate who died was never dropped and the death rule above never applied.
             registered = Native.transitPlayers != null &&
                 Native.transitPlayers.TryGetValue(player.ProfileId, out var registeredPoint) &&
-                (registeredPoint == pointId || registeredPoint == player.RaidId);
+                registeredPoint == pointId;
         }
         catch (System.Exception)
         {
@@ -2828,43 +2879,15 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
         {
             if (member == null || member.IsYourPlayer) continue;
             eligible++;
-            // (2026-10-27 T2-B) The registry value has two shapes. RegisterTransitParticipant writes the
-            // player RAID id (Native.transitPlayers[profileId] = member.RaidId - the shape every native
-            // consumer reads back), a native path writes the POINT id. This check compared it against the
-            // point id only, so a client that stands registered for this very point was read as "not
-            // registered"; the re-register branch below cannot help (it refuses a profile the table already
-            // holds), so the transfer skipped him and he stayed in the old raid while the host left. Both
-            // shapes are accepted here, exactly like CountdownParticipants already does for the same reason.
-            if (!Native.transitPlayers.TryGetValue(member.ProfileId, out var registeredPoint) ||
-                (registeredPoint != pointId && registeredPoint != member.RaidId))
+            if (!Native.transitPlayers.TryGetValue(member.ProfileId, out var registeredPoint) || registeredPoint != pointId)
             {
-                // (2026-10-26 W29) A player whose press is on record but whose native registration is gone (the
-                // "client pressed before the host" case: its own native controller clears the entry while it waits)
-                // used to be skipped here, so it was never carried and stayed in the old raid while everyone left.
-                // The press is the consent, so re-register it the same way the normal path does and carry it.
-                var pressedHere = _interactedPlayers.TryGetValue(member.ProfileId, out var pressedPoint) && pressedPoint == pointId;
-                if (pressedHere && RegisterTransitParticipant(member, point, null, default))
-                {
-                    FikaGlobals.LogInfo($"[TransitDiag] grace re-registered profile={member.ProfileId} point={pointId} (press on record, native entry was gone)",
-                        "FikaHostTransitController");
-                }
-                else
-                {
-                    _transferFailures.Add($"{member.ProfileId}=not registered for point {pointId} (registry={DescribeNativeRegistry()})");
-                    continue;
-                }
+                _transferFailures.Add($"{member.ProfileId}=not registered for point {pointId} (registry={DescribeNativeRegistry()})");
+                
+                continue;
             }
 
             if (IssueClientTransfer(member, point, source)) issued++;
             else _transferFailures.Add($"{member.ProfileId}=not sent, see the line above");
-        }
-
-        // (2026-10-27 T2-B) The failure list of this loop was only ever printed by the grace path, so a
-        // teammate this host did not carry left no line at all in the normal (native `Transit`) path.
-        if (issued < eligible)
-        {
-            var reasons = _transferFailures.Count == 0 ? "none" : string.Join(";", _transferFailures);
-            FikaGlobals.LogWarning($"[TransitDiag] transfer-skip point={pointId} issued={issued} eligible={eligible} reasons={reasons}", "FikaHostTransitController");
         }
 
         
@@ -2927,11 +2950,7 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
         {
             foreach (var entry in Native.transitPlayers)
             {
-                // (2026-10-27 T2-B) Both shapes: the value this class writes is the player raid id, so the
-                // point id never matched and this count fell back to 1 - the player count of a transferred
-                // group was announced as one.
-                var member = FindHumanPlayer(entry.Key);
-                if (entry.Value == pointId || (member != null && entry.Value == member.RaidId)) count++;
+                if (entry.Value == pointId) count++;
             }
         }
         catch (System.Exception)
@@ -3018,24 +3037,12 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
             
             return;
         }
-        // (2026-10-27 W48 / TARGETS N1) 用户复现：客机在转移点按下交互后立刻弹「无法使用转移功能」，
-        // 但转移随后其实成功了。原因是这里只看原生的 point.Enabled —— 它由地图触发器驱动，
-        // 合作局里按下那一刻常常还是 false，于是主机答 InactivePoint，客户端就把这句话显示出来，
-        // 而倒计时/迁移随后照样走通。只要点位在配置里是 active（不是被配置关掉），就按"会话驱动"放行，
-        // 真正的不可用仍由 access / entry-requirements / 组队门拒绝。
         if (!point.Enabled)
         {
-            var configuredActive = point.parameters != null && point.parameters.active;
-            if (!configuredActive)
-            {
-                SendAnswerEvent(player, packet.pointId, TransitInteractionEvent.EType.InactivePoint,
-                    "point-disabled-by-config");
-                return;
-            }
+            
 
-            FikaGlobals.LogInfo($"[TransitDiag] point-disabled-but-session-driven point={packet.pointId} " +
-                $"profile={player.ProfileId} nativeEnabled=false configured=true action=accept",
-                "FikaHostTransitController");
+            SendAnswerEvent(player, packet.pointId, TransitInteractionEvent.EType.InactivePoint, "point-disabled");
+            return;
         }
         // Self-healing: an accepted interaction is proof that the player is standing at the
         // point, so it also registers him. This covers a lost zone packet and every path that
@@ -3049,15 +3056,12 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
         }
         if (Native.transitPlayers.ContainsKey(player.ProfileId))
         {
-            // (2026-10-19) Entering the point already registers a player on this host (the zone report runs the
-            // native PlayerEnter), so the FIRST press of a client lands here. Treating it as "already registered
-            // and therefore unusable" is what refused every press; the press is a ready signal either way, so it
-            // walks the same gate as the normal path and only the host may start the countdown.
-            RecordInteraction(player, packet.pointId);
-            if (!CheckForPlayers(player, packet.pointId)) return;
-            if (!EveryoneInteracted(player, packet.pointId)) return;
-            if (!player.IsYourPlayer && !FikaBackendUtils.IsHeadless) return;
-            BeginCountdown(point);
+            
+
+            // (analysis/transit-terminal-and-countdown) A press of an already registered player is a no-op, and
+            // the client cannot see that from its own side. The native answer for "this point carries you already"
+            // is the inactive notification, which only informs (it does not release the interaction).
+            SendAnswerEvent(player, packet.pointId, TransitInteractionEvent.EType.InactivePoint, "already-registered");
             return;
         }
         if (!Native.TryGetAccessToLocation(player, packet.pointId, out var keyId))
@@ -3084,19 +3088,6 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
             // that refuses, the two machines ping-pong until the answer bound is spent and then go silent.
             // The native answer for "this point is not available for you" is InactivePoint: the client
             // clears its interaction and the game shows the reason. Nothing is relaxed - the gate refuses.
-            // (2026-10-26 W25) "entry-requirements-not-met" 只说"有要求没过"，说不出是哪一条。把点位的
-            // ExfiltrationRequirement 清单（类型 + Requirement 枚举值）和 TransitParameters 的时间/组队参数
-            // 打出来，一次实机就能把这条闸门落到具体条件上。
-            try
-            {
-                FikaGlobals.LogInfo($"[TransitDiag] entry-requirements point={packet.pointId} " +
-                    $"profile={player.ProfileId} raidId={player.RaidId} {DescribeEntryRequirements(point, player)}",
-                    "FikaHostTransitController");
-            }
-            catch (System.Exception)
-            {
-            }
-
             SendAnswerEvent(player, packet.pointId, TransitInteractionEvent.EType.InactivePoint, "entry-requirements-not-met");
             return;
         }
@@ -3139,14 +3130,6 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
             return;
         }
 
-        // (2026-10-19) A client's press only readies that client. The countdown is started by the host's own
-        // press once every teammate is ready, so the client never sees a refusal and the start stays in the
-        // host's hands. A headless host has no local player, so its first completed gate starts it.
-        if (!player.IsYourPlayer && !FikaBackendUtils.IsHeadless)
-        {
-            return;
-        }
-
         BeginCountdown(point);
     }
 
@@ -3156,7 +3139,6 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
         {
             _zoneCheckFirstCall = true;
             _zoneCheckLogged.Clear();
-            _answerLogged.Clear();
             TransitZonePresence.ResetLog();
         }
 
@@ -3293,6 +3275,17 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
     }
 
     /// <summary>Compact view of a raid-id to count dictionary for the diagnostics.</summary>
+    private static string DescribeSizes(Il2CppSystem.Collections.Generic.Dictionary<int, byte> sizes)
+    {
+        if (sizes == null) return "null";
+        var builder = new System.Text.StringBuilder();
+        foreach (var entry in sizes)
+        {
+            if (builder.Length > 0) builder.Append(' ');
+            builder.Append(entry.Key).Append('=').Append(entry.Value);
+        }
+        return builder.Length == 0 ? "empty" : builder.ToString();
+    }
 
     /// <summary>
     /// The native point bookkeeping the native panel number used to be built from: which profile
@@ -3619,7 +3612,6 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
         _zoneExitLogged.Clear();
         _interactedPlayers.Clear();
         _interactionLogged.Clear();
-        _answerLogged.Clear();
         _transferIssued.Clear();
         _countdownPointId = -1;
         _countdownEndsAt = 0f;
@@ -3646,7 +3638,7 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
         TransitCoLocatedExits.Release("the raid ended");
         TransitCoLocatedExits.Forget();
         _transferFailures.Clear();
-        // A point this raid closed explicitly must not stay closed for the next raid.
+        TransitRecovery.Reset("the raid ended");
     }
 
     public void Init()
@@ -3657,7 +3649,7 @@ public class FikaHostTransitController : FikaWorldController<LocalTransitControl
         // teardown which never reached this class, and they touch no native object at all.
         TransitCoLocatedExits.ForceResetForWorldTeardown("a new raid starts");
         TransitDropouts.ForceResetForWorldTeardown("a new raid starts");
-        // The explicit close marks of the previous raid die with it; a new raid starts with an empty set.
+        TransitRecovery.Reset("a new raid starts");
         // The one subscription that feeds the dropout registry is armed once per process (idempotent).
         TransitDropouts.Arm();
 

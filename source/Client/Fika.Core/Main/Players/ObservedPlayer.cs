@@ -1960,27 +1960,7 @@ public sealed class ObservedPlayer : FikaPlayer
                 return;
             }
             Physical.LateUpdate();
-            // (2026-10-29 IK) EFT 1.2 把手部 LimbIK 改成了每帧批处理，原生 Player.LateUpdate 串的是三步：
-            //   Player.BeginLocalSceneIkLateUpdate(this)            —— 开本帧批次、参与人数 +1
-            //   Player.VisualPass → IkProcess → EnqueueLocalSceneIkPlayer(this, distance) —— 只是入队
-            //   Player.EndLocalSceneIkLateUpdate(this)              —— 完成人数 +1，追上参与人数后整批执行
-            // 原生 IkApply 里已经没有 LimbIK.solver.Update()，所以"入队"本身不产生任何效果。这里的重写
-            // 没调父类 LateUpdate，只走了中间的入队：远端玩家从未登记进本帧批次，而本地玩家 End 时整批
-            // 已经执行完，远端晚入队的请求在下一帧 Begin 时被清掉 —— 远端手的 IK 目标永远没被设，
-            // 表现为检视/查弹匣/医疗包/喝饮料时手保持端枪姿势、物品自己在半空动（扔手雷走另一条路径所以正常）。
-            // 实测：LimbIK.solver.IKPosition 与 weapon_L/R_IK_marker 相距 18~19 m，权重却是 1。
-            // Begin/End 必须成对：只 Begin 不 End，这一帧整批都不执行，本地玩家的手也会坏。
-            BeginLocalSceneIkLateUpdate(this);
-            try
-            {
-                ObservedVisualPass(Time.deltaTime, 3);
-            }
-            finally
-            {
-                // 原版 Player.LateUpdate 的 End 不在 finally 里；这里用 finally 是因为 ObservedVisualPass
-                // 内部会多次跨进原生代码，一旦抛出就会把整帧批次留在"已开始未结束"的状态，连带拖坏本地玩家的手。
-                EndLocalSceneIkLateUpdate(this);
-            }
+            ObservedVisualPass(Time.deltaTime, 3);
             PropUpdate();
             _armsupdated = false;
             _bodyupdated = false;

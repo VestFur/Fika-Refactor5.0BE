@@ -96,6 +96,10 @@ public class FikaHostGameWorld : ClientLocalGameWorld
         // step of ClientLocalGameWorld is what drives the cutscene controllers (and everything else the port
         // made Fika own) on a normal raid. Off by default - one constant switches it on - and it never throws
         // into the raid tick.
+        if (!Fika.Core.Main.Components.CutsceneBoundary.ForwardAfterPlayerTick) return;
+        Fika.Core.Main.Components.CutsceneBoundary.NativeEngineTick("host", () =>
+            Fika.Core.Main.Utils.NativeBaseInvoker
+                .Get<System.Action<float>>(typeof(ClientLocalGameWorld), "AfterPlayerTick", new[] { typeof(float) })(dt));
     }
 
     public override GrenadeFactory CreateGrenadeFactory()

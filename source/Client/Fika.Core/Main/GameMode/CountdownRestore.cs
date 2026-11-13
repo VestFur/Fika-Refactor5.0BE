@@ -169,24 +169,34 @@ internal static class CountdownRestore
     {
         if (FikaBackendUtils.IsHeadless)
         {
+            FikaBoundaries.Enter(BoundaryPlay);
+            FikaBoundaries.Skipped(BoundaryPlay, "this is a headless client: it has no countdown screen to show (the vanilla path skips its UI statements there as well)");
             return false;
         }
 
         if (!switches.Play)
         {
+            FikaBoundaries.Enter(BoundaryPlay);
+            FikaBoundaries.Skipped(BoundaryPlay, "the master switch 'Countdown: Play Opening Countdown' is OFF");
             return false;
         }
 
+        FikaBoundaries.Enter(BoundaryPlay);
+        FikaBoundaries.Mark(BoundaryPlay);
 
+        FikaBoundaries.Enter(BoundaryOverlay);
+        FikaBoundaries.Mark(BoundaryOverlay);
 
         if (!switches.Overlay)
         {
+            FikaBoundaries.Skipped(BoundaryOverlay, "its switch ('Countdown: Opening Countdown Overlay') is OFF");
             return false;
         }
 
         if (profile is null)
         {
             
+            FikaBoundaries.Skipped(BoundaryOverlay, "the profile handed to the countdown is null");
             return false;
         }
 
@@ -198,6 +208,8 @@ internal static class CountdownRestore
             return false;
         }
 
+        FikaBoundaries.Returned(BoundaryOverlay);
+        FikaBoundaries.Mark(BoundaryOverlayUp);
         
         return true;
     }
@@ -205,14 +217,18 @@ internal static class CountdownRestore
     /// <summary>Step 2/4: takes the overlay down again. Runs only when step 1/4 really showed it.</summary>
     internal static void CloseIfEnabled(Switches switches)
     {
+        FikaBoundaries.Enter(BoundaryClose);
+        FikaBoundaries.Mark(BoundaryClose);
 
         if (!switches.Close)
         {
+            FikaBoundaries.Skipped(BoundaryClose, "its switch ('Countdown: Opening Countdown Close') is OFF - this statement is what takes the overlay down, so the countdown screen stays on screen after the wait");
             return;
         }
 
         if (FikaBoundaries.Run(BoundaryClose, CloseOverlay))
         {
+            FikaBoundaries.Returned(BoundaryClose);
         }
     }
 

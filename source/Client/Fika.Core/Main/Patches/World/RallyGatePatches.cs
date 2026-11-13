@@ -99,22 +99,12 @@ internal sealed class RallyZoneEmitPatch : ModulePatch
 /// </summary>
 internal sealed class RallyZoneEventCountPatch : ModulePatch
 {
-    // (2026-10-27 W46) 原来直接 patch typeof(RallyZoneUpdateEvent).Invoke —— 而在 47965 的 interop 里
-    // `Invoke` 只是**声明**（BaseEvent 实现），Harmony 会抛
-    // "You can only patch implemented methods/constructors. Patch the declared method virtual void
-    //  EFT.GlobalEvents.BaseEvent::Invoke() instead."，整条补丁装不上（日志里是一条 PatchException，
-    // 而且它就在无头崩溃那份日志里被看到）。现在改 patch 声明处 BaseEvent.Invoke，并用实例类型过滤，
-    // 只对 RallyZoneUpdateEvent 生效。
     protected override MethodBase GetTargetMethod() =>
-        AccessTools.Method(typeof(EFT.GlobalEvents.BaseEvent), nameof(EFT.GlobalEvents.BaseEvent.Invoke));
+        AccessTools.Method(typeof(RallyZoneUpdateEvent), nameof(RallyZoneUpdateEvent.Invoke));
 
     [PatchPrefix]
-    public static void Prefix(EFT.GlobalEvents.BaseEvent __instance, int __0, int __1, ref byte __2)
+    public static void Prefix(int __0, int __1, ref byte __2)
     {
-        if (__instance is not RallyZoneUpdateEvent)
-        {
-            return;
-        }
         // This is the one behavioural patch of the file: it replaces the TotalAlive a client reads its
         // "waiting for players" panel from. Outside a Fika raid the broadcast is left exactly as it was.
         if (FikaRaidGate.Skip("RallyZoneUpdateEvent.Invoke prefix"))

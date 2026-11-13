@@ -91,6 +91,11 @@ public class LoadingScreenUI : MonoBehaviour
         // Judgement line (analysis/loading-screen-sync): after a transit the screen is re-armed with the
         // local player only, and the peers are expected to re-announce themselves. Without this line a
         // reader cannot tell whether the peer's row survived the world swap or was never re-created.
+        LoadSync.Report("LoadingScreenUI.ReInitAfterTransit",
+            "the screen was re-armed after a transit: local netId=" + netId + " nickname='" + pmcName
+            + "', the players packet was broadcast (" + LoadSync.DescribeScreen()
+            + "), rows of the replaced raid dropped=" + replacedRows
+            + " => a peer row only exists once that peer announces itself again after the swap");
 
         // (analysis/loading-screen-peer-state) The re-arm of the other machine happens at its own time and
         // takes every row with it, so this machine has to keep announcing until the loading phase is over.
@@ -391,6 +396,7 @@ public class LoadingScreenUI : MonoBehaviour
         _reportedProgress[netId] = progress;
         var line = "progress netId=" + netId + " " + Fmt(progress)
             + "% (" + DescribeRows() + ") source=" + source;
+        LoadSync.Trace(line);
 
         // (analysis/loading-screen-peer-state) The same line in the game log, one per 10 percent step and
         // per row, so both machines can be compared without opening the diagnostics file.
@@ -544,6 +550,8 @@ public class LoadingScreenUI : MonoBehaviour
 
         // One line per row: this is the only evidence that the prefab's LoadingScreenPlayer row was
         // really created for that player (a missing row is a peer whose progress can never be shown).
+        LoadSync.Report("LoadingScreenUI.AddPlayer",
+            "row added for netId=" + netId + " nickname='" + nickname + "' (" + DescribeRows() + ")");
     }
 
     public void DeletePlayer(int netId)

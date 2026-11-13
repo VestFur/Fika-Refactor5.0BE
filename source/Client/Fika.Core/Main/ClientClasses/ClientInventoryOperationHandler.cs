@@ -110,20 +110,7 @@ public sealed class ClientInventoryOperationHandler : IDisposable
                     FikaGlobals.LogInfo($"[QuestOp] host applied {Operation.GetIl2CppType().Name} ({appliedQuestDetail})");
                 }
                 InventoryController?.SyncInventoryToProfile();
-                // (2026-10-21) THE PATH THE PLAYER ACTUALLY SEES: a *successful* operation never reaches the
-                // resync below (that half only runs when the host rejects), so the bookkeeping the native Execute
-                // wrapper would have done was never replayed for it - which is why the item diagnostics of W10 were
-                // all at zero. The registration and its before/after counts are done here, after the profile sync,
-                // on the tree the player will open next.
-                if (InventoryController != null)
-                {
-                    ReportRelayedOperationBookkeeping(InventoryController.ApplyRelayedOperationBookkeeping(Operation));
-                }
-                // (2026-10-20) The profile sync re-reads the inventory; the "known" bookkeeping the local
-                // execution registered is not part of that profile, so items created by this operation came back
-                // as unexamined the next time the inventory screen opened. The registration above is that
-                // bookkeeping (W8/W10 wired it nowhere - it had no caller until 2026-10-21).
-                HandleResultDelegate.Invoke(SuccessfulResult.New);
+                    HandleResultDelegate.Invoke(SuccessfulResult.New);
                 return;
             case EOperationStatus.Failed:
                 FikaGlobals.LogError($"{InventoryController.ID} - Client operation rejected by server: {Operation.Id} - {LogSafe.Ref(Operation)}\r\nReason: {serverStatus.Error}");
@@ -244,8 +231,6 @@ public sealed class ClientInventoryOperationHandler : IDisposable
         }
         catch (Exception terminateException)
         {
-            FikaGlobals.LogWarning($"[InvDiag] terminate-on-failure threw {terminateException.GetType().Name}: {terminateException.Message} " +
-                "- continuing with the local failure so the interaction state is still released", "ClientInventoryOperationHandler");
                     }
 
                 ServerStatus = new ServerOperationStatus(EOperationStatus.Failed, error);
@@ -255,36 +240,6 @@ public sealed class ClientInventoryOperationHandler : IDisposable
         // the player stays locked: no rotation, no movement, no interaction
         // prompts, for the rest of the raid.
         Fika.Core.Main.Utils.NativeInteractionRelease.Release(InventoryController?.Player, "inventory-operation-failed");
-
-        // (2026-10-26 W26) A watchdog failure means the host never answered - but the LOCAL execution of this
-        // operation already ran (the Started branch executes it and only then waits for a terminal status). The
-        // Succeeded branch replays the native known/searched bookkeeping after that execution; this path used to
-        // skip it, so every item the operation produced stayed "unexamined / unsearched" for the rest of the raid
-        // (the reported "the item disappears, then comes back unsearched"). Only done when no status arrived at
-        // all: a host that really rejected the operation replaces the tree, and that path owns its own bookkeeping.
-        // (2026-10-26 W27) The reject path waits for the host's authoritative snapshot (_awaitingInventoryResync);
-        // if that snapshot never arrives the completion watchdog ends up here, with the local execution of the
-        // rejected operation still in the tree and nothing logged about the missing snapshot. Say so: a silent
-        // give-up is exactly the kind of blind spot that kept this chain un-diagnosable for many rounds.
-        if (_receivedServerStatus && _awaitingInventoryResync)
-        {
-            FikaGlobals.LogError($"{InventoryController?.ID} - [SyncDiag] op={CallbackId} resync-timeout: the host " +
-                "rejected this operation but its authoritative snapshot never arrived; local changes are NOT rolled " +
-                "back and the next full resync has to fix them (" + error + ')');
-        }
-        if (!_receivedServerStatus && InventoryController != null)
-        {
-            try
-            {
-                InventoryController.SyncInventoryToProfile();
-                ReportRelayedOperationBookkeeping(InventoryController.ApplyRelayedOperationBookkeeping(Operation));
-            }
-            catch (Exception bookkeepingException)
-            {
-                FikaGlobals.LogError($"{InventoryController.ID} - bookkeeping after a local failure threw: {bookkeepingException}");
-            }
-        }
-
         try
         {
             Operation?.Dispose();
@@ -319,6 +274,7 @@ public sealed class ClientInventoryOperationHandler : IDisposable
         {
             // The native Execute wrapper registers the items of a move as known; the relayed local
             // execution bypasses it (see MarkOperationItemsKnown).
+            InventoryController.MarkOperationItemsKnown(Operation);
         }
 
         HandleResultDelegate.Invoke(executeResult);
@@ -453,14 +409,6 @@ public sealed class ClientInventoryOperationHandler : IDisposable
                 return;
             }
 
-            // [SyncDiag] The snapshot rebuilds every Item, which invalidates the search controller entries (they are
-            // keyed per instance and per address). Capture the rejected operation's items while they still exist.
-            var capturedItems = InventoryController.CaptureResyncItems(Operation);
-            var keptLocalInstances = InventoryController.TryKeepLocalInstances(inventory, Operation, out var keepReason);
-            FikaGlobals.LogInfo($"[SyncDiag] op={CallbackId} resync-begin items={capturedItems.Count} " +
-                $"snapshotItems={ClientInventoryController.CountSnapshotItems(inventory)} " +
-                $"keepLocal={keptLocalInstances} reason={keepReason}");
-
             Operation?.Dispose();
             // The replacement installs a brand new item graph, so an open loot or
             // inventory screen can keep holding the old items and render empty (the
@@ -470,20 +418,7 @@ public sealed class ClientInventoryOperationHandler : IDisposable
             // and blocked all input. Report the resync instead of touching the screens.
             FikaGlobals.LogWarning($"{InventoryController.ID} - Applying the authoritative inventory " +
                 "(an open screen may need a refresh)");
-            if (keptLocalInstances)
-            {
-                // [SyncDiag] Structure and ids are identical: rebuilding would only swap the instances, drop the
-                // search bookkeeping and empty whatever screen is open. Keep the local graph.
-                FikaGlobals.LogInfo($"[SyncDiag] op={CallbackId} resync-kept-local reason={keepReason}");
-                InventoryController.SyncInventoryToProfile();
-            }
-            else
-            {
-                InventoryController.ReplaceInventoryFromNetwork(inventory);
-            }
-
-            // Re-register the operation's items in whatever graph is active now, then report the outcome per item.
-            InventoryController.RestoreOperationItemsAfterResync(capturedItems, keptLocalInstances, CallbackId);
+            InventoryController.ReplaceInventoryFromNetwork(inventory);
             OperationResult = new FailedResult(ServerStatus.Error ?? "The server rejected the inventory operation.");
             Callback?.Invoke(OperationResult);
         }
@@ -496,52 +431,6 @@ public sealed class ClientInventoryOperationHandler : IDisposable
         {
             InventoryController.ReturnHandler(this);
         }
-    }
-
-    /// <summary>
-    /// (2026-10-21) Bounded report of the item bookkeeping of one applied operation. The first
-    /// <see cref="MaxBookkeepingLines"/> operations of a session get a line each (that is what "the item I just
-    /// moved is unexamined" is read from), the rest are counted into one summary line per raid, so a full box of
-    /// looting cannot bury the log.
-    /// </summary>
-    private void ReportRelayedOperationBookkeeping(string detail)
-    {
-        try
-        {
-            if (string.IsNullOrEmpty(detail)) return;
-            if (_bookkeepingLines < MaxBookkeepingLines)
-            {
-                _bookkeepingLines++;
-                FikaGlobals.LogInfo($"[SyncDiag] op={CallbackId} bookkeeping {detail}", "ClientInventoryOperationHandler");
-                return;
-            }
-
-            _bookkeepingSuppressed++;
-            if (_bookkeepingSuppressed % 32 == 0)
-            {
-                FikaGlobals.LogInfo($"[SyncDiag] bookkeeping lines suppressed after {MaxBookkeepingLines}: " +
-                    $"{_bookkeepingSuppressed} more operation(s) applied", "ClientInventoryOperationHandler");
-            }
-        }
-        catch (Exception)
-        {
-            // A diagnostic must never break the operation callback.
-        }
-    }
-
-    private const int MaxBookkeepingLines = 40;
-    private static int _bookkeepingLines;
-    private static int _bookkeepingSuppressed;
-
-    /// <summary>
-    /// [InvDiag] (2026-10-27, T4) Reopens the bounded bookkeeping report for the next raid. The counters are static,
-    /// so without this the report goes silent for the rest of the process after <see cref="MaxBookkeepingLines"/>
-    /// operations and a later raid cannot be judged at all. Called from <c>ClientInventoryController.ClearPool</c>.
-    /// </summary>
-    internal static void ResetBookkeepingReport()
-    {
-        _bookkeepingLines = 0;
-        _bookkeepingSuppressed = 0;
     }
 
     private string FindOperationItemId()

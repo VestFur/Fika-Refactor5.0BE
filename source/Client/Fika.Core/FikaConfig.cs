@@ -4,6 +4,7 @@ using BepInEx.Configuration;
 using Comfort.Common;
 using EFT;
 using EFT.UI;
+using Fika.Core.Main.Patches.Revival;
 using Fika.Core.Main.Utils;
 using Fika.Core.Networking.Http;
 using Fika.Core.Networking.Models;
@@ -274,6 +275,7 @@ public sealed class FikaConfig(ConfigFile config)
     // count is native, AllowSkipWithoutAllViewers = true). The one knob that is left is the timeout that
     // decides when a silent viewer counts as "not in this cutscene" (0 = wait for every viewer, the old
     // deadlock).
+    public ConfigEntry<int> RallySkipVoteTimeoutSeconds { get; set; }
 
     // AP (analysis/nonfika-raid-inertness): the master switch of the raid-kind gate. On (default) every
     // in-raid hook that asks FikaRaidGate.Skip stays out of a raid that is not a Fika raid (a raid started
@@ -292,6 +294,7 @@ public sealed class FikaConfig(ConfigFile config)
     // analysis/cutscene-native-registration: the registration the port never had - the two cutscene controllers
     // are handed their per-frame caller where the native raid-start coroutine hands it to them, instead of being
     // ticked by the bridge. One key switches it back to the bridge-only state.
+    public ConfigEntry<bool> CutsceneNativeTickHook { get; set; }
 
     // Coop | Boss & Spawns - the three switches of the host's raid preparation
     // (Main.GameMode.HostGameController). All three are host-side and read out of static fields, so
@@ -339,7 +342,6 @@ public sealed class FikaConfig(ConfigFile config)
     /// rebuild, which is both the rollback and the other half of the in-raid A/B.
     /// </summary>
     public ConfigEntry<bool> PoseWriteGuards { get; set; }
-
 
     /// <summary>
     /// (analysis/stutter-frame-skip) 'Coop / Stutter Probe': the frame-skip journal of the 「被抽帧」 shape -
@@ -496,15 +498,9 @@ public sealed class FikaConfig(ConfigFile config)
         // no per-frame cost.
         // The retired keys go first, so every line below - and the entry count of the 'begin' step - describes
         // the file this build really owns.
-        // (2026-10-20) Fika failed to initialise with a NullReferenceException raised inside this method
-        // ("Fika initialization failed; cooperative play is unavailable"). The two steps that run before any
-        // binding are best-effort now: neither is allowed to take cooperative play down with it, and each one
-        // names itself if it throws so the journal points at the step instead of the method.
-        try { RetireRemovedEntries(); }
-        catch (Exception exception) { FikaGlobals.LogError($"RetireRemovedEntries failed: {exception}"); }
+        RetireRemovedEntries();
         
-        try { ColorConfigConverter.Register(); }
-        catch (Exception exception) { FikaGlobals.LogError($"ColorConfigConverter.Register failed: {exception}"); }
+        ColorConfigConverter.Register();
         var failed = false;
         List<string> headers = [];
         
@@ -531,7 +527,7 @@ public sealed class FikaConfig(ConfigFile config)
 
         const string advancedDefaultHeader = "Advanced";
 
-        OfficialVersion = SetupSetting(advancedDefaultHeader, "显示正式版本", false,
+        OfficialVersion = SetupSetting(advancedDefaultHeader, "Show Official Version", false,
                 new ConfigDescription(LocaleUtils.BEPINEX_OFFICIAL_VERSION_D.Localized(), tags: new ConfigurationManagerAttributes
                 {
                     IsAdvanced = true,
@@ -541,7 +537,7 @@ public sealed class FikaConfig(ConfigFile config)
                 }),
                 "Official Version", ref failed, headers);
 
-        DevMode = SetupSetting(advancedDefaultHeader, "开发者模式", false,
+        DevMode = SetupSetting(advancedDefaultHeader, "Developer Mode", false,
             new ConfigDescription(
                 "开：启用开发者功能。关（默认）：保持关闭。仅影响本机界面与调试入口。", tags: new ConfigurationManagerAttributes
             {
@@ -549,7 +545,7 @@ public sealed class FikaConfig(ConfigFile config)
                 Category = DisplayAdvanced,
                 DispName = "Developer Mode | 开发者模式",
                 Order = 50
-            }), "开发者模式", ref failed, headers);
+            }), "Developer Mode", ref failed, headers);
 
         NoAI = SetupSetting(advancedDefaultHeader, "No AI", false,
             new ConfigDescription(
@@ -561,7 +557,7 @@ public sealed class FikaConfig(ConfigFile config)
                 Order = 40
             }), "No AI", ref failed, headers);
 
-        NoLoot = SetupSetting(advancedDefaultHeader, "不生成战利品", false,
+        NoLoot = SetupSetting(advancedDefaultHeader, "No Loot", false,
             new ConfigDescription(
                 "开：不生成地面物资。关（默认）：正常生成。用于加快加载速度、排查物资相关问题时使用。", tags: new ConfigurationManagerAttributes
             {
@@ -569,9 +565,9 @@ public sealed class FikaConfig(ConfigFile config)
                 Category = DisplayAdvanced,
                 DispName = "No Loot | 不刷物资",
                 Order = 30
-            }), "不生成战利品", ref failed, headers);
+            }), "No Loot", ref failed, headers);
 
-        LoadPriority = SetupSetting(advancedDefaultHeader, "玩家加载优先级", ELoadPriority.Low,
+        LoadPriority = SetupSetting(advancedDefaultHeader, "Player Load Priority", ELoadPriority.Low,
             new ConfigDescription(
                 "加载其他玩家（作客机时含 AI）时使用的线程优先级。默认 Low。效果可能不明显，卡加载时可试 Medium/High。", tags: new ConfigurationManagerAttributes
             {
@@ -579,9 +575,9 @@ public sealed class FikaConfig(ConfigFile config)
                 Category = DisplayAdvanced,
                 DispName = "Player Load Priority | 玩家加载优先级",
                 Order = 20
-            }), "玩家加载优先级", ref failed, headers);
+            }), "Player Load Priority", ref failed, headers);
 
-        MaxBundleLock = SetupSetting(advancedDefaultHeader, "最大打包锁定", 5,
+        MaxBundleLock = SetupSetting(advancedDefaultHeader, "Max Bundle Lock", 5,
             new ConfigDescription(
                 "同时并行加载的资源包数量上限（1-10，默认 5）。作客机加载 bot 很慢时可调高；游戏默认值是 1，这里调高是为了缓解原版资源包加载过慢的问题。",
             new AcceptableValueRange<int>(1, 10), new ConfigurationManagerAttributes
@@ -590,82 +586,82 @@ public sealed class FikaConfig(ConfigFile config)
                 Category = DisplayAdvanced,
                 DispName = "Max Bundle Lock | 并行加载包数量",
                 Order = 10
-            }), "最大打包锁定", ref failed, headers);
+            }), "Max Bundle Lock", ref failed, headers);
 
         // Coop
 
         const string coopDefaultHeader = "Coop";
 
-        UseHeadlessIfAvailable = SetupSetting(coopDefaultHeader, "自动使用无头主机", false,
+        UseHeadlessIfAvailable = SetupSetting(coopDefaultHeader, "Auto Use Headless", false,
             new ConfigDescription(LocaleUtils.BEPINEX_USE_HEADLESS_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopCore,
                 DispName = LocaleUtils.BEPINEX_USE_HEADLESS_T.Localized(),
                 Order = 9
-            }), "自动使用无头主机", ref failed, headers);
+            }), "Auto Use Headless", ref failed, headers);
 
-        ShowNotifications = SetupSetting(coopDefaultHeader, "显示击杀信息", true,
+        ShowNotifications = SetupSetting(coopDefaultHeader, "Show Feed", true,
             new ConfigDescription(LocaleUtils.BEPINEX_SHOW_FEED_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopCore,
                 DispName = LocaleUtils.BEPINEX_SHOW_FEED_T.Localized(),
                 Order = 8
             }),
-            "显示击杀信息", ref failed, headers);
+            "Show Feed", ref failed, headers);
 
-        AutoExtract = SetupSetting(coopDefaultHeader, "自动撤离", false,
+        AutoExtract = SetupSetting(coopDefaultHeader, "Auto Extract", false,
             new ConfigDescription(LocaleUtils.BEPINEX_AUTO_EXTRACT_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopCore,
                 DispName = LocaleUtils.BEPINEX_AUTO_EXTRACT_T.Localized(),
                 Order = 7
             }),
-            "自动撤离", ref failed, headers);
+            "Auto Extract", ref failed, headers);
 
-        ShowExtractMessage = SetupSetting(coopDefaultHeader, "显示撤离提示", true,
+        ShowExtractMessage = SetupSetting(coopDefaultHeader, "Show Extract Message", true,
             new ConfigDescription(LocaleUtils.BEPINEX_SHOW_EXTRACT_MESSAGE_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopCore,
                 DispName = LocaleUtils.BEPINEX_SHOW_EXTRACT_MESSAGE_T.Localized(),
                 Order = 6
             }),
-            "显示撤离提示", ref failed, headers);
+            "Show Extract Message", ref failed, headers);
 
-        ExtractKey = SetupSetting(coopDefaultHeader, "撤离按键", new KeyboardShortcut(KeyCode.F8),
+        ExtractKey = SetupSetting(coopDefaultHeader, "Extract Key", new KeyboardShortcut(KeyCode.F8),
             new ConfigDescription(LocaleUtils.BEPINEX_EXTRACT_KEY_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopCore,
                 DispName = LocaleUtils.BEPINEX_EXTRACT_KEY_T.Localized(),
                 Order = 5
             }),
-            "撤离按键", ref failed, headers);
+            "Extract Key", ref failed, headers);
 
-        ShowPlayerList = SetupSetting(coopDefaultHeader, "显示局内玩家列表", true,
+        ShowPlayerList = SetupSetting(coopDefaultHeader, "Show In-Game Player List", true,
             new ConfigDescription(LocaleUtils.BEPINEX_SHOW_PLAYER_LIST_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopCore,
                 DispName = LocaleUtils.BEPINEX_SHOW_PLAYER_LIST_T.Localized(),
                 Order = 4
             }),
-            "显示局内玩家列表", ref failed, headers);
+            "Show In-Game Player List", ref failed, headers);
 
-        EnableChat = SetupSetting(coopDefaultHeader, "启用聊天", false,
+        EnableChat = SetupSetting(coopDefaultHeader, "Enable Chat", false,
             new ConfigDescription(LocaleUtils.BEPINEX_ENABLE_CHAT_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopCore,
                 DispName = LocaleUtils.BEPINEX_ENABLE_CHAT_T.Localized(),
                 Order = 3
             }),
-            "启用聊天", ref failed, headers);
+            "Enable Chat", ref failed, headers);
 
-        ChatKey = SetupSetting(coopDefaultHeader, "聊天按键", new KeyboardShortcut(KeyCode.RightControl),
+        ChatKey = SetupSetting(coopDefaultHeader, "Chat Key", new KeyboardShortcut(KeyCode.RightControl),
             new ConfigDescription(LocaleUtils.BEPINEX_CHAT_KEY_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopCore,
                 DispName = LocaleUtils.BEPINEX_CHAT_KEY_T.Localized(),
                 Order = 2
             }),
-            "聊天按键", ref failed, headers);
+            "Chat Key", ref failed, headers);
 
         // Shipped default is ON (2026-10-10). The main menu access violation this setting used
         // to trigger is fixed: the fault was the engine processing the coroutine wrapper Fika
@@ -675,7 +671,7 @@ public sealed class FikaConfig(ConfigFile config)
         // marks run from the injected behaviour's Update. Verified with the panel enabled: main
         // menu, a full raid (LocalGameMatching completed without a fault) and the return to the
         // rebuilt main menu, with no crash and no new crash dump.
-        FlareExtractSquadSharesActivation = SetupSetting(coopDefaultHeader, "信号弹撤离：小队共享激活", true,
+        FlareExtractSquadSharesActivation = SetupSetting(coopDefaultHeader, "Flare Extract: Squad Shares Activation", true,
             new ConfigDescription(
                 "开（默认，原版队伍通道）：一发绿烟开启射手所属小队的撒离点，队友不用自己开枪。关：只有开枪者本人能用，每人必须自己打一发。",
                 tags: new ConfigurationManagerAttributes
@@ -684,9 +680,9 @@ public sealed class FikaConfig(ConfigFile config)
                     DispName = "Flare Extract: Squad Shares Activation | 绿烟对友共享",
                     Order = 100
                 }),
-            "信号弹撤离：小队共享激活", ref failed, headers);
+            "Flare Extract: Squad Shares Activation", ref failed, headers);
 
-        FlareReplicateExitVisual = SetupSetting(coopDefaultHeader, "信号弹撤离：复制撤离视觉", true,
+        FlareReplicateExitVisual = SetupSetting(coopDefaultHeader, "Flare Extract: Replicate Exit Visual", true,
             new ConfigDescription(
                 "开（默认）：开枪者那台机器跑过的本地链（直升机落地、旋翼气流、撒离点活过来）在全队各机同步重放，队友能看到同一动画并离场。关：只有开枪机器播放动画（修复前行为）；它不会为未被激活的玩家打开撒离点。",
                 tags: new ConfigurationManagerAttributes
@@ -695,9 +691,9 @@ public sealed class FikaConfig(ConfigFile config)
                     DispName = "Flare Extract: Replicate Exit Visual | 同步撒离点动画",
                     Order = 95
                 }),
-            "信号弹撤离：复制撤离视觉", ref failed, headers);
+            "Flare Extract: Replicate Exit Visual", ref failed, headers);
 
-        FlareExfilFeedbackSeconds = SetupSetting(coopDefaultHeader, "信号弹撤离：反馈秒数", 5f,
+        FlareExfilFeedbackSeconds = SetupSetting(coopDefaultHeader, "Flare Extract: Feedback Seconds", 5f,
             new ConfigDescription(
                 "绿烟把本玩家加入狙击手免疫名单后，“道路已开放”横幅在屏幕上停留的秒数（默认 5）。≤ 0 表示一直留到战局结束。每次弹出时读取，不需重启。",
                 new AcceptableValueRange<float>(0f, 60f), new ConfigurationManagerAttributes
@@ -708,7 +704,7 @@ public sealed class FikaConfig(ConfigFile config)
                 }),
             "Flare Extract: Feedback Seconds", ref failed, headers);
 
-        HonorMapFixedTime = SetupSetting(coopDefaultHeader, "遵从地图固定时间", true,
+        HonorMapFixedTime = SetupSetting(coopDefaultHeader, "Honor Map Fixed Time", true,
             new ConfigDescription(
                 "开（默认）：主机开局时用地图自带的固定时间（如破冰船），忽略玩家自己设的小时；日志行 'Raid time: ... fixed=HH:mm' 会记下来源。关：回到玩家自己的设置（旧行为）。重连与转移都保持当前时钟。主机开局时读取。",
                 tags: new ConfigurationManagerAttributes
@@ -719,7 +715,7 @@ public sealed class FikaConfig(ConfigFile config)
                 }),
             "Honor Map Fixed Time", ref failed, headers);
 
-        TransitRequireAllTeammates = SetupSetting(coopDefaultHeader, "转移：需要所有队友就绪", true,
+        TransitRequireAllTeammates = SetupSetting(coopDefaultHeader, "Transit: Require All Teammates Ready", true,
             new ConfigDescription(
                 "Strict transit start gate (default on). The countdown only starts once every teammate of this raid " +
                 "has interacted with the transit point and is standing inside it. Off: it starts as soon as the host " +
@@ -732,7 +728,7 @@ public sealed class FikaConfig(ConfigFile config)
                 }),
             "Transit: Require All Teammates Ready", ref failed, headers);
 
-        TransitCountdownFallbackSeconds = SetupSetting(coopDefaultHeader, "转移：倒计时兜底", 30,
+        TransitCountdownFallbackSeconds = SetupSetting(coopDefaultHeader, "Transit: Countdown Fallback", 30,
             new ConfigDescription(
                 "Countdown length in seconds used when the transit point itself does not define one (TransitParameters.time == 0).",
                 tags: new ConfigurationManagerAttributes
@@ -752,7 +748,7 @@ public sealed class FikaConfig(ConfigFile config)
         TransitCountdownFallbackSeconds.SettingChanged += (_, _) =>
             Fika.Core.Main.HostClasses.TransitStartGate.CountdownFallbackSeconds = TransitCountdownFallbackSeconds.Value;
 
-        LoadSyncHostPeerTimeout = SetupSetting(coopDefaultHeader, "加载同步：主机等待同伴上限（秒）", 300,
+        LoadSyncHostPeerTimeout = SetupSetting(coopDefaultHeader, "Load Sync: Host Peer Timeout", 300,
             new ConfigDescription(
                 "主机等已连接但始终未声明角色的同伴的上限（秒，默认 300）；超时后仍会放行赛前闸门并丢弃该同伴。连接已断的同伴不消耗这个预算。只影响主机。",
                 new AcceptableValueRange<int>(30, 1800),
@@ -764,7 +760,7 @@ public sealed class FikaConfig(ConfigFile config)
                 }),
             "Load Sync: Host Peer Timeout", ref failed, headers);
 
-        LoadSyncClientHostWaitCeiling = SetupSetting(coopDefaultHeader, "加载同步：客机等待主机上限（秒）", 600,
+        LoadSyncClientHostWaitCeiling = SetupSetting(coopDefaultHeader, "Load Sync: Client Host-Wait Ceiling", 600,
             new ConfigDescription(
                 "客机入局后等待主机握手的上限（秒，默认 600）。连接已断会立即失败；这个上限只用于“连接还在但主机永远不推进”。只影响客机。",
                 new AcceptableValueRange<int>(60, 3600),
@@ -776,7 +772,7 @@ public sealed class FikaConfig(ConfigFile config)
                 }),
             "Load Sync: Client Host-Wait Ceiling", ref failed, headers);
 
-        LoadSyncClientTransitCeiling = SetupSetting(coopDefaultHeader, "加载同步：客机转移重载上限（秒）", 900,
+        LoadSyncClientTransitCeiling = SetupSetting(coopDefaultHeader, "Load Sync: Client Transit Reload Ceiling", 900,
             new ConfigDescription(
                 "同上，但用于转移重载：双方同时加载新地图，较慢的一方曾被旧的固定 40 秒上限切断（秒，默认 900）。只影响客机。",
                 new AcceptableValueRange<int>(60, 3600),
@@ -788,7 +784,7 @@ public sealed class FikaConfig(ConfigFile config)
                 }),
             "Load Sync: Client Transit Reload Ceiling", ref failed, headers);
 
-        LoadSyncSilentWarnSeconds = SetupSetting(coopDefaultHeader, "加载同步：无包警告间隔（秒）", 30,
+        LoadSyncSilentWarnSeconds = SetupSetting(coopDefaultHeader, "Load Sync: Silent Warning Seconds", 30,
             new ConfigDescription(
                 "多久没收到对方数据包就把 [LoadSync] 行升为 warning（秒，默认 30）。仅影响日志可读性，不会自己结束等待。",
                 new AcceptableValueRange<int>(5, 300),
@@ -814,7 +810,7 @@ public sealed class FikaConfig(ConfigFile config)
         LoadSyncSilentWarnSeconds.SettingChanged += (_, _) =>
             LoadSyncGate.ClientSilentWarnSeconds = LoadSyncSilentWarnSeconds.Value;
 
-        TransitReloadHoldSeconds = SetupSetting(coopDefaultHeader, "转移：客机重载等待上限（秒）", 240,
+        TransitReloadHoldSeconds = SetupSetting(coopDefaultHeader, "Transit: Client Reload Hold", 240,
             new ConfigDescription(
                 "客机已结束本局后，等待主机重载信号时持住地图加载的上限（秒，默认 240）。正常情况信号一个往返就到，该上限只保护“主机永远不发信号”（旧版本、连接已断、无通知的 headless 主机）。只影响客机。",
                 new AcceptableValueRange<int>(5, 600),
@@ -847,7 +843,7 @@ public sealed class FikaConfig(ConfigFile config)
         // every single binding after this line never ran. The wiring now lives after the last of the three
         // bindings, right below the 'Crash Forensics' entry. Nothing else about the switches changed.
 
-        EnableOnlinePlayers = SetupSetting(coopDefaultHeader, "启用在线玩家", true,
+        EnableOnlinePlayers = SetupSetting(coopDefaultHeader, "Enable Online Players", true,
             new ConfigDescription(LocaleUtils.BEPINEX_ENABLE_ONLINE_PLAYER_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopCore,
@@ -856,7 +852,7 @@ public sealed class FikaConfig(ConfigFile config)
             }),
             "Enable Online Players", ref failed, headers);
 
-        OnlinePlayersScale = SetupSetting(coopDefaultHeader, "在线玩家缩放", 1f,
+        OnlinePlayersScale = SetupSetting(coopDefaultHeader, "Online Players Scale", 1f,
             new ConfigDescription(LocaleUtils.BEPINEX_ONLINE_PLAYERS_SCALE_D.Localized(),
             new AcceptableValueRange<float>(0.5f, 1.5f), new ConfigurationManagerAttributes
             {
@@ -873,7 +869,7 @@ public sealed class FikaConfig(ConfigFile config)
         // within a few seconds, and an unchanged cycle costs one HTTP GET (~12 ms measured) because the rows are
         // only rebuilt when the roster really changed. Setting this back to 10 restores the old cadence; the
         // switch below restores the old code path as well.
-        OnlinePlayersFastRefresh = SetupSetting(coopDefaultHeader, "在线玩家快速刷新", true,
+        OnlinePlayersFastRefresh = SetupSetting(coopDefaultHeader, "Online Players Fast Refresh", true,
             new ConfigDescription(
                 "开（默认）：面板可见时按下方的短周期拉取名单，面板重开时立即刷新，名单没变则不重建行。关：回到早前行为——固定 10 秒一轮，每轮重建全部行。仅影响本机。", tags: new ConfigurationManagerAttributes
             {
@@ -883,7 +879,7 @@ public sealed class FikaConfig(ConfigFile config)
             }),
             "Online Players Fast Refresh", ref failed, headers);
 
-        OnlinePlayersRefreshSeconds = SetupSetting(coopDefaultHeader, "可见刷新间隔（秒）", 3,
+        OnlinePlayersRefreshSeconds = SetupSetting(coopDefaultHeader, "Online Players Refresh Seconds", 3,
             new ConfigDescription(
                 "面板可见时两次刷新的间隔（秒），默认 3。改回 10 就恢复原来的节奏；只影响本机面板。", new AcceptableValueRange<int>(1, 60), new ConfigurationManagerAttributes
             {
@@ -893,7 +889,7 @@ public sealed class FikaConfig(ConfigFile config)
             }),
             "Online Players Refresh Seconds", ref failed, headers);
 
-        OnlinePlayersIdleRefreshSeconds = SetupSetting(coopDefaultHeader, "不可见刷新间隔（秒）", 10,
+        OnlinePlayersIdleRefreshSeconds = SetupSetting(coopDefaultHeader, "Online Players Idle Refresh Seconds", 10,
             new ConfigDescription(
                 "面板不可见时的刷新间隔（秒），默认 10，即面板一直在用的旧周期。战局或加载界面期间引擎不会调用面板，此时不发任何请求。", new AcceptableValueRange<int>(1, 300), new ConfigurationManagerAttributes
             {
@@ -906,7 +902,7 @@ public sealed class FikaConfig(ConfigFile config)
         // Coop | main menu decorations. The panel itself is 'Enable Online Players'; the two
         // switches below isolate the two writes of that panel that happen after the prefab
         // was instantiated, and the taskbar button that is registered with the live game UI.
-        WriteOnlinePlayerCounter = SetupSetting(coopDefaultHeader, "写入在线玩家计数", true,
+        WriteOnlinePlayerCounter = SetupSetting(coopDefaultHeader, "Write Online Player Counter", true,
             new ConfigDescription(
                 "开（默认）：把在线玩家数写进主菜单面板的文本。关：面板照常运行，但不碰动 prefab 里的 TextMeshProUGUI——主菜单崩溃时用来排除这一步。仅影响本机显示。", tags: new ConfigurationManagerAttributes
             {
@@ -916,7 +912,7 @@ public sealed class FikaConfig(ConfigFile config)
             }),
             "Write Online Player Counter", ref failed, headers);
 
-        DownloadProfileButton = SetupSetting(coopDefaultHeader, "下载档案按钮", true,
+        DownloadProfileButton = SetupSetting(coopDefaultHeader, "Download Profile Button", true,
             new ConfigDescription(
                 "开（默认）：在主菜单任务栏创建“下载档案”按钮，并向游戏 MenuTaskBar 注册其切换与提示。关：主菜单不再碰任务栏。仅影响本机。", tags: new ConfigurationManagerAttributes
             {
@@ -924,7 +920,7 @@ public sealed class FikaConfig(ConfigFile config)
                 DispName = "Download Profile Button | 下载档案按钮",
                 Order = 35
             }),
-            "下载档案按钮", ref failed, headers);
+            "Download Profile Button", ref failed, headers);
 
         // Off by default since 3.0.3: the trace does a VirtualQuery per native reference and lines up with
         // the menu panel's 10 s refresh, which produced a ~2 s freeze every 10 s while the menu was open.
@@ -1002,7 +998,7 @@ public sealed class FikaConfig(ConfigFile config)
         // extraction list and the extraction countdown never appear, and every coroutine the game starts on
         // those panels is refused by Unity. This entry restores the HUD after the deploy wait, on the Update
         // pump, each step in its own try/catch - it does not re-enable the skipped statements.
-        CountdownRestoreHud = SetupSetting(coopDefaultHeader, "倒计时：恢复战局内 HUD", true,
+        CountdownRestoreHud = SetupSetting(coopDefaultHeader, "Countdown: Restore In-Raid HUD", true,
             new ConfigDescription(
                 "开（默认）：部署等待后，把战局 HUD（撤离点列表 + 剩余时间、撤离倒计时）重新激活并绑定到本档案。它只重复函数体里的两条 HUD 语句（1/8、2/8），不会重新打开任何被跳过的语句。关：整个战局 HUD 不可见。", tags: new ConfigurationManagerAttributes
             {
@@ -1017,7 +1013,7 @@ public sealed class FikaConfig(ConfigFile config)
         // trail before it runs, and the umbrella switch is the single line that returns the raid to exactly the
         // behaviour it had before this entry existed. Nothing here turns a master switch off - the body stays
         // as skipped as it is, this path is simply the countdown that used to be inside it.
-        CountdownPlayOpening = SetupSetting(coopDefaultHeader, "倒计时：播放开局倒计时", true,
+        CountdownPlayOpening = SetupSetting(coopDefaultHeader, "Countdown: Play Opening Countdown", true,
             new ConfigDescription(
                 "开（默认）：在跳过倒计时函数体的同时，用一条自己的流程把玩家要看的倒计时放回来，部署等待结束再收回（倒计时时长正好等于本局部署时间）。关：完全没有倒计时遮罩。遮罩/关闭/视图恢复/再确认四步已并入本条（config-audit-2），不再各自占一个开关。", tags: new ConfigurationManagerAttributes
             {
@@ -1031,7 +1027,7 @@ public sealed class FikaConfig(ConfigFile config)
 
         const string coopDefaultNamePlatesHeader = "Coop | Name Plates";
 
-        UseNamePlates = SetupSetting(coopDefaultNamePlatesHeader, "显示玩家名牌", true,
+        UseNamePlates = SetupSetting(coopDefaultNamePlatesHeader, "Show Player Name Plates", true,
             new ConfigDescription(AllowNamePlates ? LocaleUtils.BEPINEX_USE_NAME_PLATES_D.Localized() : disabledMessage, tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopNamePlates,
@@ -1039,54 +1035,54 @@ public sealed class FikaConfig(ConfigFile config)
                 Order = 16,
                 ReadOnly = !AllowNamePlates
             }),
-            "显示玩家名牌", ref failed, headers);
+            "Show Player Name Plates", ref failed, headers);
 
-        HideHealthBar = SetupSetting(coopDefaultNamePlatesHeader, "隐藏血条", false,
+        HideHealthBar = SetupSetting(coopDefaultNamePlatesHeader, "Hide Health Bar", false,
             new ConfigDescription(LocaleUtils.BEPINEX_HIDE_HEALTH_BAR_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopNamePlates,
                 DispName = LocaleUtils.BEPINEX_HIDE_HEALTH_BAR_T.Localized(),
                 Order = 15
             }),
-            "隐藏血条", ref failed, headers);
+            "Hide Health Bar", ref failed, headers);
 
-        UseHealthNumber = SetupSetting(coopDefaultNamePlatesHeader, "显示血量百分比而非血条", false,
+        UseHealthNumber = SetupSetting(coopDefaultNamePlatesHeader, "Show HP% instead of bar", false,
             new ConfigDescription(LocaleUtils.BEPINEX_USE_PERCENT_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopNamePlates,
                 DispName = LocaleUtils.BEPINEX_USE_PERCENT_T.Localized(),
                 Order = 14
             }),
-            "显示血量百分比而非血条", ref failed, headers);
+            "Show HP% instead of bar", ref failed, headers);
 
-        ShowEffects = SetupSetting(coopDefaultNamePlatesHeader, "显示特效", true,
+        ShowEffects = SetupSetting(coopDefaultNamePlatesHeader, "Show Effects", true,
             new ConfigDescription(LocaleUtils.BEPINEX_SHOW_EFFECTS_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopNamePlates,
                 DispName = LocaleUtils.BEPINEX_SHOW_EFFECTS_T.Localized(),
                 Order = 13
             }),
-            "显示特效", ref failed, headers);
+            "Show Effects", ref failed, headers);
 
-        UsePlateFactionSide = SetupSetting(coopDefaultNamePlatesHeader, "显示玩家阵营图标", true,
+        UsePlateFactionSide = SetupSetting(coopDefaultNamePlatesHeader, "Show Player Faction Icon", true,
             new ConfigDescription(LocaleUtils.BEPINEX_SHOW_FACTION_ICON_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopNamePlates,
                 DispName = LocaleUtils.BEPINEX_SHOW_FACTION_ICON_T.Localized(),
                 Order = 12
             }),
-            "显示玩家阵营图标", ref failed, headers);
+            "Show Player Faction Icon", ref failed, headers);
 
-        HideNamePlateInOptic = SetupSetting(coopDefaultNamePlatesHeader, "开镜时隐藏名牌", true,
+        HideNamePlateInOptic = SetupSetting(coopDefaultNamePlatesHeader, "Hide Name Plate in Optic", true,
             new ConfigDescription(LocaleUtils.BEPINEX_HIDE_IN_OPTIC_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopNamePlates,
                 DispName = LocaleUtils.BEPINEX_HIDE_IN_OPTIC_T.Localized(),
                 Order = 11
             }),
-            "开镜时隐藏名牌", ref failed, headers);
+            "Hide Name Plate in Optic", ref failed, headers);
 
-        NamePlateUseOpticZoom = SetupSetting(coopDefaultNamePlatesHeader, "名牌使用开镜缩放", true,
+        NamePlateUseOpticZoom = SetupSetting(coopDefaultNamePlatesHeader, "Name Plates Use Optic Zoom", true,
             new ConfigDescription(LocaleUtils.BEPINEX_OPTIC_USE_ZOOM_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopNamePlates,
@@ -1094,18 +1090,18 @@ public sealed class FikaConfig(ConfigFile config)
                 Order = 10,
                 IsAdvanced = true
             }),
-            "名牌使用开镜缩放", ref failed, headers);
+            "Name Plates Use Optic Zoom", ref failed, headers);
 
-        DecreaseOpacityNotLookingAt = SetupSetting(coopDefaultNamePlatesHeader, "周边视野降低不透明度", true,
+        DecreaseOpacityNotLookingAt = SetupSetting(coopDefaultNamePlatesHeader, "Decrease Opacity In Peripheral", true,
             new ConfigDescription(LocaleUtils.BEPINEX_DEC_OPAC_PERI_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopNamePlates,
                 DispName = LocaleUtils.BEPINEX_DEC_OPAC_PERI_T.Localized(),
                 Order = 9
             }),
-            "周边视野降低不透明度", ref failed, headers);
+            "Decrease Opacity In Peripheral", ref failed, headers);
 
-        NamePlateScale = SetupSetting(coopDefaultNamePlatesHeader, "名牌缩放", 1f,
+        NamePlateScale = SetupSetting(coopDefaultNamePlatesHeader, "Name Plate Scale", 1f,
             new ConfigDescription(LocaleUtils.BEPINEX_NAME_PLATE_SCALE_D.Localized(),
             new AcceptableValueRange<float>(0.5f, 1.5f), new ConfigurationManagerAttributes
             {
@@ -1113,9 +1109,9 @@ public sealed class FikaConfig(ConfigFile config)
                 DispName = LocaleUtils.BEPINEX_NAME_PLATE_SCALE_T.Localized(),
                 Order = 8
             }),
-            "名牌缩放", ref failed, headers);
+            "Name Plate Scale", ref failed, headers);
 
-        OpacityInADS = SetupSetting(coopDefaultNamePlatesHeader, "开镜时不透明度", 0.75f,
+        OpacityInADS = SetupSetting(coopDefaultNamePlatesHeader, "Opacity in ADS", 0.75f,
             new ConfigDescription(LocaleUtils.BEPINEX_ADS_OPAC_D.Localized(),
             new AcceptableValueRange<float>(0.1f, 1f), new ConfigurationManagerAttributes
             {
@@ -1123,9 +1119,9 @@ public sealed class FikaConfig(ConfigFile config)
                 DispName = LocaleUtils.BEPINEX_ADS_OPAC_T.Localized(),
                 Order = 7
             }),
-            "开镜时不透明度", ref failed, headers);
+            "Opacity in ADS", ref failed, headers);
 
-        MaxDistanceToShow = SetupSetting(coopDefaultNamePlatesHeader, "显示的最大距离", 500f,
+        MaxDistanceToShow = SetupSetting(coopDefaultNamePlatesHeader, "Max Distance to Show", 500f,
             new ConfigDescription(LocaleUtils.BEPINEX_MAX_DISTANCE_D.Localized(),
             new AcceptableValueRange<float>(10f, 1000f), new ConfigurationManagerAttributes
             {
@@ -1133,9 +1129,9 @@ public sealed class FikaConfig(ConfigFile config)
                 DispName = LocaleUtils.BEPINEX_MAX_DISTANCE_T.Localized(),
                 Order = 6
             }),
-            "显示的最大距离", ref failed, headers);
+            "Max Distance to Show", ref failed, headers);
 
-        MinimumOpacity = SetupSetting(coopDefaultNamePlatesHeader, "最小不透明度", 0.1f,
+        MinimumOpacity = SetupSetting(coopDefaultNamePlatesHeader, "Minimum Opacity", 0.1f,
             new ConfigDescription(LocaleUtils.BEPINEX_MIN_OPAC_D.Localized(),
             new AcceptableValueRange<float>(0.0f, 1f), new ConfigurationManagerAttributes
             {
@@ -1143,59 +1139,59 @@ public sealed class FikaConfig(ConfigFile config)
                 DispName = LocaleUtils.BEPINEX_MIN_OPAC_T.Localized(),
                 Order = 5
             }),
-            "最小不透明度", ref failed, headers);
+            "Minimum Opacity", ref failed, headers);
 
-        UseOcclusion = SetupSetting(coopDefaultNamePlatesHeader, "使用遮挡剔除", false,
+        UseOcclusion = SetupSetting(coopDefaultNamePlatesHeader, "Use Occlusion", false,
             new ConfigDescription(LocaleUtils.BEPINEX_USE_OCCLUSION_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopNamePlates,
                 DispName = LocaleUtils.BEPINEX_USE_OCCLUSION_T.Localized(),
                 Order = 4
             }),
-            "使用遮挡剔除", ref failed, headers);
+            "Use Occlusion", ref failed, headers);
 
-        FullHealthColor = SetupSetting(coopDefaultNamePlatesHeader, "满血颜色", Color.green,
+        FullHealthColor = SetupSetting(coopDefaultNamePlatesHeader, "Full Health Color", Color.green,
             new ConfigDescription(LocaleUtils.BEPINEX_HEALTHCOLOR_FULL_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopNamePlates,
                 DispName = LocaleUtils.BEPINEX_HEALTHCOLOR_FULL_T.Localized(),
                 Order = 3
             }),
-            "满血颜色", ref failed, headers);
+            "Full Health Color", ref failed, headers);
 
-        LowHealthColor = SetupSetting(coopDefaultNamePlatesHeader, "低血颜色", Color.red,
+        LowHealthColor = SetupSetting(coopDefaultNamePlatesHeader, "Low Health Color", Color.red,
             new ConfigDescription(LocaleUtils.BEPINEX_HEALTHCOLOR_LOW_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopNamePlates,
                 DispName = LocaleUtils.BEPINEX_HEALTHCOLOR_LOW_T.Localized(),
                 Order = 2
             }),
-            "低血颜色", ref failed, headers);
+            "Low Health Color", ref failed, headers);
 
-        NamePlateTextColor = SetupSetting(coopDefaultNamePlatesHeader, "名牌文字颜色", Color.white,
+        NamePlateTextColor = SetupSetting(coopDefaultNamePlatesHeader, "Name Plate Text Color", Color.white,
             new ConfigDescription(LocaleUtils.BEPINEX_NAMEPLATECOLOR_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopNamePlates,
                 DispName = LocaleUtils.BEPINEX_NAMEPLATECOLOR_T.Localized(),
                 Order = 1
             }),
-            "名牌文字颜色", ref failed, headers);
+            "Name Plate Text Color", ref failed, headers);
 
-        ShowBrokenLimbs = SetupSetting(coopDefaultNamePlatesHeader, "显示骨折", failed,
+        ShowBrokenLimbs = SetupSetting(coopDefaultNamePlatesHeader, "Show Broken Limbs", failed,
             new ConfigDescription(LocaleUtils.BEPINEX_SHOWBROKENLIMBS_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopCore,
                 DispName = LocaleUtils.BEPINEX_SHOWBROKENLIMBS_T.Localized(),
                 Order = 15
             }),
-            "显示骨折", ref failed, headers);
+            "Show Broken Limbs", ref failed, headers);
 
         // Coop | Quest Sharing
 
         const string coopDefaultQuestSharingHeader = "Coop | Quest Sharing";
         var questSharingEnabled = SharedQuestProgression;
 
-        QuestTypesToShareAndReceive = SetupSetting(coopDefaultQuestSharingHeader, "任务类型", EQuestSharingTypes.All,
+        QuestTypesToShareAndReceive = SetupSetting(coopDefaultQuestSharingHeader, "Quest Types", EQuestSharingTypes.All,
             new ConfigDescription(questSharingEnabled ? LocaleUtils.BEPINEX_QUEST_TYPES_D.Localized() : disabledMessage, tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopQuestSharing,
@@ -1203,9 +1199,9 @@ public sealed class FikaConfig(ConfigFile config)
                 Order = 4,
                 ReadOnly = !questSharingEnabled
             }),
-            "任务类型", ref failed, headers);
+            "Quest Types", ref failed, headers);
 
-        QuestSharingNotifications = SetupSetting(coopDefaultQuestSharingHeader, "显示通知", true,
+        QuestSharingNotifications = SetupSetting(coopDefaultQuestSharingHeader, "Show Notifications", true,
             new ConfigDescription(questSharingEnabled ? LocaleUtils.BEPINEX_QS_NOTIFICATIONS_D.Localized() : disabledMessage, tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopQuestSharing,
@@ -1213,9 +1209,9 @@ public sealed class FikaConfig(ConfigFile config)
                 Order = 3,
                 ReadOnly = !questSharingEnabled
             }),
-            "显示通知", ref failed, headers);
+            "Show Notifications", ref failed, headers);
 
-        EasyKillConditions = SetupSetting(coopDefaultQuestSharingHeader, "简化击杀条件", false,
+        EasyKillConditions = SetupSetting(coopDefaultQuestSharingHeader, "Easy Kill Conditions", false,
             new ConfigDescription(questSharingEnabled ? LocaleUtils.BEPINEX_EASY_KILL_CONDITIONS_D.Localized() : disabledMessage, tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopQuestSharing,
@@ -1223,9 +1219,9 @@ public sealed class FikaConfig(ConfigFile config)
                 Order = 2,
                 ReadOnly = !questSharingEnabled
             }),
-            "简化击杀条件", ref failed, headers);
+            "Easy Kill Conditions", ref failed, headers);
 
-        SharedKillExperience = SetupSetting(coopDefaultQuestSharingHeader, "共享击杀经验", false,
+        SharedKillExperience = SetupSetting(coopDefaultQuestSharingHeader, "Shared Kill Experience", false,
             new ConfigDescription(questSharingEnabled ? LocaleUtils.BEPINEX_SHARED_KILL_XP_D.Localized() : disabledMessage, tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopQuestSharing,
@@ -1233,9 +1229,9 @@ public sealed class FikaConfig(ConfigFile config)
                 Order = 1,
                 ReadOnly = !questSharingEnabled
             }),
-            "共享击杀经验", ref failed, headers);
+            "Shared Kill Experience", ref failed, headers);
 
-        SharedBossExperience = SetupSetting(coopDefaultQuestSharingHeader, "共享首领经验", false,
+        SharedBossExperience = SetupSetting(coopDefaultQuestSharingHeader, "Shared Boss Experience", false,
             new ConfigDescription(questSharingEnabled ? LocaleUtils.BEPINEX_SHARED_BOSS_XP_D.Localized() : disabledMessage, tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopQuestSharing,
@@ -1243,40 +1239,40 @@ public sealed class FikaConfig(ConfigFile config)
                 Order = 0,
                 ReadOnly = !questSharingEnabled
             }),
-            "共享首领经验", ref failed, headers);
+            "Shared Boss Experience", ref failed, headers);
 
         // Coop | Pinging
 
         const string coopDefaultPingingHeader = "Coop | Pinging";
 
-        UsePingSystem = SetupSetting(coopDefaultPingingHeader, "标记系统", true,
+        UsePingSystem = SetupSetting(coopDefaultPingingHeader, "Ping System", true,
             new ConfigDescription(LocaleUtils.BEPINEX_PING_SYSTEM_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopPinging,
                 DispName = LocaleUtils.BEPINEX_PING_SYSTEM_T.Localized(),
                 Order = 11
             }),
-            "标记系统", ref failed, headers);
+            "Ping System", ref failed, headers);
 
-        PingButton = SetupSetting(coopDefaultPingingHeader, "标记按键", new KeyboardShortcut(KeyCode.Semicolon),
+        PingButton = SetupSetting(coopDefaultPingingHeader, "Ping Button", new KeyboardShortcut(KeyCode.Semicolon),
             new ConfigDescription(LocaleUtils.BEPINEX_PING_BUTTON_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopPinging,
                 DispName = LocaleUtils.BEPINEX_PING_BUTTON_T.Localized(),
                 Order = 10
             }),
-            "标记按键", ref failed, headers);
+            "Ping Button", ref failed, headers);
 
-        PingColor = SetupSetting(coopDefaultPingingHeader, "标记颜色", Color.white,
+        PingColor = SetupSetting(coopDefaultPingingHeader, "Ping Color", Color.white,
             new ConfigDescription(LocaleUtils.BEPINEX_PING_COLOR_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopPinging,
                 DispName = LocaleUtils.BEPINEX_PING_COLOR_T.Localized(),
                 Order = 9
             }),
-            "标记颜色", ref failed, headers);
+            "Ping Color", ref failed, headers);
 
-        PingSize = SetupSetting(coopDefaultPingingHeader, "标记大小", 1f,
+        PingSize = SetupSetting(coopDefaultPingingHeader, "Ping Size", 1f,
             new ConfigDescription(LocaleUtils.BEPINEX_PING_SIZE_D.Localized(),
             new AcceptableValueRange<float>(0.1f, 2f), new ConfigurationManagerAttributes
             {
@@ -1284,9 +1280,9 @@ public sealed class FikaConfig(ConfigFile config)
                 DispName = LocaleUtils.BEPINEX_PING_SIZE_T.Localized(),
                 Order = 8
             }),
-            "标记大小", ref failed, headers);
+            "Ping Size", ref failed, headers);
 
-        PingTime = SetupSetting(coopDefaultPingingHeader, "标记持续时间", 3,
+        PingTime = SetupSetting(coopDefaultPingingHeader, "Ping Time", 3,
             new ConfigDescription(LocaleUtils.BEPINEX_PING_TIME_D.Localized(),
             new AcceptableValueRange<int>(2, 10), new ConfigurationManagerAttributes
             {
@@ -1294,27 +1290,27 @@ public sealed class FikaConfig(ConfigFile config)
                 DispName = LocaleUtils.BEPINEX_PING_TIME_T.Localized(),
                 Order = 7
             }),
-            "标记持续时间", ref failed, headers);
+            "Ping Time", ref failed, headers);
 
-        PlayPingAnimation = SetupSetting(coopDefaultPingingHeader, "播放标记动画", false,
+        PlayPingAnimation = SetupSetting(coopDefaultPingingHeader, "Play Ping Animation", false,
             new ConfigDescription(LocaleUtils.BEPINEX_PING_ANIMATION_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopPinging,
                 DispName = LocaleUtils.BEPINEX_PING_ANIMATION_T.Localized(),
                 Order = 6
             }),
-            "播放标记动画", ref failed, headers);
+            "Play Ping Animation", ref failed, headers);
 
-        ShowPingDuringOptics = SetupSetting(coopDefaultPingingHeader, "开镜时显示标记", false,
+        ShowPingDuringOptics = SetupSetting(coopDefaultPingingHeader, "Show Ping During Optics", false,
             new ConfigDescription(LocaleUtils.BEPINEX_PING_OPTICS_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopPinging,
                 DispName = LocaleUtils.BEPINEX_PING_OPTICS_T.Localized(),
                 Order = 5
             }),
-            "开镜时显示标记", ref failed, headers);
+            "Show Ping During Optics", ref failed, headers);
 
-        PingUseOpticZoom = SetupSetting(coopDefaultPingingHeader, "标记使用开镜缩放", true,
+        PingUseOpticZoom = SetupSetting(coopDefaultPingingHeader, "Ping Use Optic Zoom", true,
             new ConfigDescription(LocaleUtils.BEPINEX_PING_OPTIC_ZOOM_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopPinging,
@@ -1322,9 +1318,9 @@ public sealed class FikaConfig(ConfigFile config)
                 Order = 4,
                 IsAdvanced = true
             }),
-            "标记使用开镜缩放", ref failed, headers);
+            "Ping Use Optic Zoom", ref failed, headers);
 
-        PingScaleWithDistance = SetupSetting(coopDefaultPingingHeader, "标记随距离缩放", true,
+        PingScaleWithDistance = SetupSetting(coopDefaultPingingHeader, "Ping Scale With Distance", true,
             new ConfigDescription(LocaleUtils.BEPINEX_PING_SCALE_DISTANCE_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopPinging,
@@ -1332,9 +1328,9 @@ public sealed class FikaConfig(ConfigFile config)
                 Order = 3,
                 IsAdvanced = true
             }),
-            "标记随距离缩放", ref failed, headers);
+            "Ping Scale With Distance", ref failed, headers);
 
-        PingMinimumOpacity = SetupSetting(coopDefaultPingingHeader, "标记最小不透明度", 0.05f,
+        PingMinimumOpacity = SetupSetting(coopDefaultPingingHeader, "Ping Minimum Opacity", 0.05f,
             new ConfigDescription(LocaleUtils.BEPINEX_PING_MIN_OPAC_D.Localized(),
             new AcceptableValueRange<float>(0f, 0.5f), new ConfigurationManagerAttributes
             {
@@ -1343,93 +1339,93 @@ public sealed class FikaConfig(ConfigFile config)
                 Order = 2,
                 IsAdvanced = true
             }),
-            "标记最小不透明度", ref failed, headers);
+            "Ping Minimum Opacity", ref failed, headers);
 
-        ShowPingRange = SetupSetting(coopDefaultPingingHeader, "显示标记距离", false,
+        ShowPingRange = SetupSetting(coopDefaultPingingHeader, "Show Ping Range", false,
             new ConfigDescription(LocaleUtils.BEPINEX_PING_RANGE_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopPinging,
                 DispName = LocaleUtils.BEPINEX_PING_RANGE_T.Localized(),
                 Order = 1
             }),
-            "显示标记距离", ref failed, headers);
+            "Show Ping Range", ref failed, headers);
 
-        PingSound = SetupSetting(coopDefaultPingingHeader, "标记音效", EPingSound.SubQuestComplete,
+        PingSound = SetupSetting(coopDefaultPingingHeader, "Ping Sound", EPingSound.SubQuestComplete,
             new ConfigDescription(LocaleUtils.BEPINEX_PING_SOUND_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopPinging,
                 DispName = LocaleUtils.BEPINEX_PING_SOUND_T.Localized(),
                 Order = 0
             }),
-            "标记音效", ref failed, headers);
+            "Ping Sound", ref failed, headers);
 
         // Coop | Revival
 
         const string coopDefaultRevivalHeader = "Coop | Revival";
 
-        GiveUpKey = SetupSetting(coopDefaultRevivalHeader, "放弃按键", new KeyboardShortcut(KeyCode.End),
+        GiveUpKey = SetupSetting(coopDefaultRevivalHeader, "Give Up Key", new KeyboardShortcut(KeyCode.End),
             new ConfigDescription(CleanConfigString(LocaleUtils.BEPINEX_REVIVE_GIVE_UP_KEY_D.Localized()), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopRevival,
                 DispName = LocaleUtils.BEPINEX_REVIVE_GIVE_UP_KEY_T.Localized(),
                 Order = 0
             }),
-            "放弃按键", ref failed, headers);
+            "Give Up Key", ref failed, headers);
 
         // Coop | Debug
 
         const string coopDefaultDebugHeader = "Coop | Debug";
 
-        FreeCamButton = SetupSetting(coopDefaultDebugHeader, "自由视角按键", new KeyboardShortcut(KeyCode.F9),
+        FreeCamButton = SetupSetting(coopDefaultDebugHeader, "Free Camera Button", new KeyboardShortcut(KeyCode.F9),
             new ConfigDescription(CleanConfigString(LocaleUtils.BEPINEX_FREE_CAM_BUTTON_D.Localized()), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopDebug,
                 DispName = LocaleUtils.BEPINEX_FREE_CAM_BUTTON_T.Localized(),
                 Order = 4
             }),
-            "自由视角按键", ref failed, headers);
+            "Free Camera Button", ref failed, headers);
 
-        AZERTYMode = SetupSetting(coopDefaultDebugHeader, "AZERTY 键位", false,
+        AZERTYMode = SetupSetting(coopDefaultDebugHeader, "AZERTY Mode", false,
             new ConfigDescription(CleanConfigString(LocaleUtils.BEPINEX_AZERTY_MODE_D.Localized()), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopDebug,
                 DispName = LocaleUtils.BEPINEX_AZERTY_MODE_T.Localized(),
                 Order = 2
             }),
-            "AZERTY 键位", ref failed, headers);
+            "AZERTY Mode", ref failed, headers);
 
-        DroneMode = SetupSetting(coopDefaultDebugHeader, "无人机模式", false,
+        DroneMode = SetupSetting(coopDefaultDebugHeader, "Drone Mode", false,
             new ConfigDescription(LocaleUtils.BEPINEX_DRONE_MODE_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopDebug,
                 DispName = LocaleUtils.BEPINEX_DRONE_MODE_T.Localized(),
                 Order = 1
             }),
-            "无人机模式", ref failed, headers);
+            "Drone Mode", ref failed, headers);
 
-        KeybindOverlay = SetupSetting(coopDefaultDebugHeader, "按键提示层", true,
+        KeybindOverlay = SetupSetting(coopDefaultDebugHeader, "Keybind Overlay", true,
             new ConfigDescription(LocaleUtils.BEPINEX_KEYBIND_OVERLAY_T.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayCoopDebug,
                 DispName = LocaleUtils.BEPINEX_KEYBIND_OVERLAY_T.Localized(),
                 Order = 0
             }),
-            "按键提示层", ref failed, headers);
+            "Keybind Overlay", ref failed, headers);
 
         // Network
 
         const string networkDefaultHeader = "Network";
 
-        ForceIP = SetupSetting(networkDefaultHeader, "强制 IP", "",
+        ForceIP = SetupSetting(networkDefaultHeader, "Force IP", "",
             new ConfigDescription(LocaleUtils.BEPINEX_FORCE_IP_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayNetwork,
                 DispName = LocaleUtils.BEPINEX_FORCE_IP_T.Localized(),
                 Order = 8
             }),
-            "强制 IP", ref failed, headers);
+            "Force IP", ref failed, headers);
 
-        ForceBindIP = SetupSetting(networkDefaultHeader, "强制绑定 IP", "Disabled",
+        ForceBindIP = SetupSetting(networkDefaultHeader, "Force Bind IP", "Disabled",
             new ConfigDescription(LocaleUtils.BEPINEX_FORCE_BIND_IP_D.Localized(),
             new AcceptableValueList<string>(FikaPlugin.Instance.GetLocalAddresses()), new ConfigurationManagerAttributes
             {
@@ -1437,9 +1433,9 @@ public sealed class FikaConfig(ConfigFile config)
                 DispName = LocaleUtils.BEPINEX_FORCE_BIND_IP_T.Localized(),
                 Order = 7
             }),
-            "强制绑定 IP", ref failed, headers);
+            "Force Bind IP", ref failed, headers);
 
-        UseIPv6 = SetupSetting(networkDefaultHeader, "启用 IPv6", true,
+        UseIPv6 = SetupSetting(networkDefaultHeader, "Enable IPv6", true,
             new ConfigDescription(
                 "开（默认）：主机同时提供 IPv4+IPv6 双栈并接受 IPv6 加入地址。关：回到仅 IPv4 的旧行为。影响联机连通方式，主机侧决定。", tags: new ConfigurationManagerAttributes
             {
@@ -1447,9 +1443,9 @@ public sealed class FikaConfig(ConfigFile config)
                 DispName = "Enable IPv6 | 启用 IPv6",
                 Order = 50
             }),
-            "启用 IPv6", ref failed, headers);
+            "Enable IPv6", ref failed, headers);
 
-        PreferIPv6 = SetupSetting(networkDefaultHeader, "优先 IPv6", true,
+        PreferIPv6 = SetupSetting(networkDefaultHeader, "Prefer IPv6", true,
             new ConfigDescription(
                 "开（默认）：主机同时通告两族地址时优先选 IPv6。IPv6 没有 NAT，直连通常延迟更低。仅影响本机选路。", tags: new ConfigurationManagerAttributes
             {
@@ -1457,9 +1453,9 @@ public sealed class FikaConfig(ConfigFile config)
                 DispName = "Prefer IPv6 | 优先 IPv6",
                 Order = 45
             }),
-            "优先 IPv6", ref failed, headers);
+            "Prefer IPv6", ref failed, headers);
 
-        SimulatedLatencyMs = SetupSetting(networkDefaultHeader, "模拟延迟（毫秒）", 0,
+        SimulatedLatencyMs = SetupSetting(networkDefaultHeader, "Simulated Latency (ms)", 0,
             new ConfigDescription(
                 "给每个数据包人为加上的延迟（毫秒），0 表示关闭模拟（默认 0）。用于在本机复现依赖延迟的问题，平时保持 0。", tags: new ConfigurationManagerAttributes
             {
@@ -1467,9 +1463,9 @@ public sealed class FikaConfig(ConfigFile config)
                 DispName = "Simulated Latency (ms) | 模拟延迟（毫秒）",
                 Order = 20
             }),
-            "模拟延迟（毫秒）", ref failed, headers);
+            "Simulated Latency (ms)", ref failed, headers);
 
-        SimulatedPacketLossPercent = SetupSetting(networkDefaultHeader, "模拟丢包（%）", 0,
+        SimulatedPacketLossPercent = SetupSetting(networkDefaultHeader, "Simulated Packet Loss (%)", 0,
             new ConfigDescription(
                 "人为丢包百分比，0 表示关闭模拟（默认 0）。用于本机复现丢包相关问题，平时保持 0。", tags: new ConfigurationManagerAttributes
             {
@@ -1477,9 +1473,9 @@ public sealed class FikaConfig(ConfigFile config)
                 DispName = "Simulated Packet Loss (%) | 模拟丢包（%）",
                 Order = 15
             }),
-            "模拟丢包（%）", ref failed, headers);
+            "Simulated Packet Loss (%)", ref failed, headers);
 
-        UDPPort = SetupSetting(networkDefaultHeader, "UDP 端口", (ushort)25565,
+        UDPPort = SetupSetting(networkDefaultHeader, "UDP Port", (ushort)25565,
             new ConfigDescription(LocaleUtils.BEPINEX_UDP_PORT_D.Localized(), new AcceptableValueRange<ushort>(ushort.MinValue, ushort.MaxValue),
             tags: new ConfigurationManagerAttributes
             {
@@ -1487,9 +1483,9 @@ public sealed class FikaConfig(ConfigFile config)
                 DispName = LocaleUtils.BEPINEX_UDP_PORT_T.Localized(),
                 Order = 6
             }),
-            "UDP 端口", ref failed, headers);
+            "UDP Port", ref failed, headers);
 
-        UseUPnP = SetupSetting(networkDefaultHeader, "使用端口映射", false,
+        UseUPnP = SetupSetting(networkDefaultHeader, "Use Port Mapping", false,
             new ConfigDescription(LocaleUtils.BEPINEX_USE_UPNP_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayNetwork,
@@ -1499,7 +1495,7 @@ public sealed class FikaConfig(ConfigFile config)
             }),
             "Use UPnP", ref failed, headers);
 
-        UseNATPunching = SetupSetting(networkDefaultHeader, "使用 NAT 穿透", false,
+        UseNATPunching = SetupSetting(networkDefaultHeader, "Use NAT Punching", false,
             new ConfigDescription(LocaleUtils.BEPINEX_USE_NAT_PUNCH_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayNetwork,
@@ -1507,9 +1503,9 @@ public sealed class FikaConfig(ConfigFile config)
                 Order = 4,
                 IsAdvanced = true
             }),
-            "使用 NAT 穿透", ref failed, headers);
+            "Use NAT Punching", ref failed, headers);
 
-        UseFikaNATPunchServer = SetupSetting(networkDefaultHeader, "使用 Fika NAT 穿透服务器", false,
+        UseFikaNATPunchServer = SetupSetting(networkDefaultHeader, "Use Fika NAT Punch Server", false,
             new ConfigDescription(LocaleUtils.BEPINEX_USE_FIKA_NAT_PUNCH_SERVER_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayNetwork,
@@ -1517,9 +1513,9 @@ public sealed class FikaConfig(ConfigFile config)
                 Order = 3,
                 IsAdvanced = true
             }),
-            "使用 Fika NAT 穿透服务器", ref failed, headers);
+            "Use Fika NAT Punch Server", ref failed, headers);
 
-        ConnectionTimeout = SetupSetting(networkDefaultHeader, "连接超时", 30,
+        ConnectionTimeout = SetupSetting(networkDefaultHeader, "Connection Timeout", 30,
             new ConfigDescription(LocaleUtils.BEPINEX_CONNECTION_TIMEOUT_D.Localized(),
             new AcceptableValueRange<int>(5, 60), new ConfigurationManagerAttributes
             {
@@ -1529,23 +1525,23 @@ public sealed class FikaConfig(ConfigFile config)
             }),
             "Connection Timeout", ref failed, headers);
 
-        SendRate = SetupSetting(networkDefaultHeader, "发送频率", ESendRate.Medium,
+        SendRate = SetupSetting(networkDefaultHeader, "Send Rate", ESendRate.Medium,
             new ConfigDescription(LocaleUtils.BEPINEX_SEND_RATE_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayNetwork,
                 DispName = LocaleUtils.BEPINEX_SEND_RATE_T.Localized(),
                 Order = 1
             }),
-            "发送频率", ref failed, headers);
+            "Send Rate", ref failed, headers);
 
-        AllowVOIP = SetupSetting(networkDefaultHeader, "允许语音", false,
+        AllowVOIP = SetupSetting(networkDefaultHeader, "Allow VOIP", false,
             new ConfigDescription(LocaleUtils.BEPINEX_NET_VOIP_D.Localized(), tags: new ConfigurationManagerAttributes
             {
                 Category = DisplayNetwork,
                 DispName = LocaleUtils.BEPINEX_NET_VOIP_T.Localized(),
                 Order = 0
             }),
-            "允许语音", ref failed, headers);
+            "Allow VOIP", ref failed, headers);
 
         // Gameplay
 
@@ -1690,7 +1686,7 @@ public sealed class FikaConfig(ConfigFile config)
         KeypadRelayClientSubmit.SettingChanged += (_, _) =>
             Fika.Core.Main.Utils.KeypadDiag.RepairEnabled = KeypadRelayClientSubmit.Value;
 
-        TransitSuppressCoLocatedExits = SetupSetting(coopDefaultHeader, "转移：抑制同位撤离点", true,
+        TransitSuppressCoLocatedExits = SetupSetting(coopDefaultHeader, "Transit: Suppress Co-Located Exfiltration", true,
             new ConfigDescription(
                 "开（默认）：当转移点与撒离点重叠在同一触发器上时，从转移交互被接受到它完成或取消期间屏蔽该撒离点，避免倒计时跑完却什么都没发生（Factory 案例）。关：只写日志，不做任何处理。主客机都生效，改完立即生效。",
                 tags: new ConfigurationManagerAttributes
@@ -1706,7 +1702,7 @@ public sealed class FikaConfig(ConfigFile config)
         TransitSuppressCoLocatedExits.SettingChanged += (_, _) =>
             Fika.Core.Main.HostClasses.TransitCoLocatedExits.SuppressCoLocatedExits = TransitSuppressCoLocatedExits.Value;
 
-        TransitAbortWhenSomeoneLeaves = SetupSetting(coopDefaultHeader, "转移：有人离开则取消", true,
+        TransitAbortWhenSomeoneLeaves = SetupSetting(coopDefaultHeader, "Transit: Abort When Someone Leaves", true,
             new ConfigDescription(
                 "开（默认）：倒计时期间已登记的队友走出转移点，则取消倒计时并终止转移（原生行为）。关：倒计时继续跑，与修复前一致。作用于战局内转移逻辑，主机侧生效。",
                 tags: new ConfigurationManagerAttributes
@@ -1727,23 +1723,60 @@ public sealed class FikaConfig(ConfigFile config)
         // (analysis/config-audit-2) 'Rally: Use Fika Player Count' is retired: the real player count is the
         // shipped behaviour (FikaRallyGate.UseFikaPlayerCount = true), because a story trigger that waits for
         // the native bookkeeping number deadlocks the party (analysis/rally-gate-deadlock).
+        Fika.Core.Main.Components.FikaRallyGate.UseFikaPlayerCount = true;
 
         // (analysis/config-audit-2) The cutscene family converged: the entries below are retired, the
         // behaviour stays with the components (see the note on the property declarations).
+        CutsceneNativeTickHook = SetupSetting(coopDefaultHeader, "Cutscene: Native Tick Hook", true,
+            new ConfigDescription(
+                "开（默认）：两个过场控制器在原生位置创建并注册到原版用的每帧钩子上（服务端半边走 BaseLocalGame.UpdateByUnity，客机半边走 GameWorld.OnLateUpdate）。关：创建方式与修复前一致，桥接层是它们唯一的调用方。需重启后生效。",
+                tags: new ConfigurationManagerAttributes
+                {
+                    Category = DisplayCoopCutscene,
+                    DispName = "Cutscene: Native Tick Hook | 原生每帧钩子",
+                    Order = 95
+                }),
+            "Cutscene: Native Tick Hook", ref failed, headers);
 
         // (analysis/config-audit-2) The converged cutscene path as one static block. Every value below is the
         // shipped default of the entry this round retired, so the components behave exactly as before while the
         // F12 list carries a single cutscene switch. Rollback of any single line = re-bind that key.
+        Fika.Core.Main.Components.CutsceneBoundary.RescueLocalScene = true;
+        Fika.Core.Main.Components.CutsceneBoundary.RepairHostPlayback = true;
+        Fika.Core.Main.Components.CutsceneBoundary.RepairLocalPlayback = true;
+        Fika.Core.Main.Components.CutsceneBoundary.DismissSkipOverlay = true;
+        Fika.Core.Main.Components.CutsceneBoundary.JoinSharedCutscene = true;
+        Fika.Core.Main.Components.CutsceneBoundary.AcceptUnlistedViewerCompletion = true;
+        Fika.Core.Main.Components.FikaRallyGate.IncludeEveryParticipant = true;
         // The retired experiment 'Cutscene: Forward AfterPlayerTick' stays off: its own note says the native body
         // it forwards to re-runs work this port already took over (airdrop points, synchronizable objects).
+        Fika.Core.Main.Components.CutsceneBoundary.ForwardAfterPlayerTick = false;
+        Fika.Core.Main.Components.CutsceneBoundary.NativeTickHook = CutsceneNativeTickHook.Value;
+        CutsceneNativeTickHook.SettingChanged += (_, _) =>
+            Fika.Core.Main.Components.CutsceneBoundary.NativeTickHook = CutsceneNativeTickHook.Value;
 
         // (analysis/config-audit-2) 'Rally: Allow Skip Without All Viewers' is retired too: a viewer that never
         // signalled must not hold the skip vote forever (that is the host deadlock of the same analysis), so the
         // shipped behaviour is on and the timeout below is the single knob that decides when it applies.
+        Fika.Core.Main.Components.FikaRallyGate.AllowSkipWithoutAllViewers = true;
 
+        RallySkipVoteTimeoutSeconds = SetupSetting(coopDefaultHeader, "Rally: Skip Vote Timeout", 30,
+            new ConfigDescription(
+                "过场跑多少秒后，从未发信号的观看者就被视为不在这个过场里（秒，默认 30）。0 或上一项关闭时，投票永远等每个观看者。",
+                new AcceptableValueRange<int>(0, 300),
+                tags: new ConfigurationManagerAttributes
+                {
+                    Category = DisplayCoopRally,
+                    DispName = "Rally: Skip Vote Timeout | 跳过投票超时（秒）",
+                    Order = 90
+                }),
+            "Rally: Skip Vote Timeout", ref failed, headers);
 
+        Fika.Core.Main.Components.FikaRallyGate.SkipVoteTimeoutSeconds = RallySkipVoteTimeoutSeconds.Value;
+        RallySkipVoteTimeoutSeconds.SettingChanged += (_, _) =>
+            Fika.Core.Main.Components.FikaRallyGate.SkipVoteTimeoutSeconds = RallySkipVoteTimeoutSeconds.Value;
 
-        InertOutsideFikaRaids = SetupSetting(coopDefaultHeader, "非 Fika 战局中不生效", true,
+        InertOutsideFikaRaids = SetupSetting(coopDefaultHeader, "Inert Outside Fika Raids", true,
             new ConfigDescription(
                 "开（默认）：本端口所有战局内钩子（物资掉落、弹匣卸载、世界与集合点交互、过场诊断、逐帧采样）在非 Fika 战局（从地图选择界面直接开的单人战局）里完全不介入，每个被挡回的钩子写一行 [Inert] skip=... reason=not-a-fika-raid side=single。关：回到修复前的行为——补丁在原生单人战局里也会动作（2026-10-12 23:52 那次崩溃就是在这种状态下打的）。",
                 tags: new ConfigurationManagerAttributes
@@ -1752,7 +1785,7 @@ public sealed class FikaConfig(ConfigFile config)
                     DispName = "Inert Outside Fika Raids | 非 Fika 战局内静默",
                     Order = 50
                 }),
-            "非 Fika 战局中不生效", ref failed, headers);
+            "Inert Outside Fika Raids", ref failed, headers);
 
         Fika.Core.Main.Utils.FikaRaidGate.InertOutsideFikaRaids = InertOutsideFikaRaids.Value;
         InertOutsideFikaRaids.SettingChanged += (_, _) =>
@@ -1766,7 +1799,7 @@ public sealed class FikaConfig(ConfigFile config)
         // for the vanilla mechanic again after the boss failed to spawn in co-op. The host now reports the
         // shipped wave list unchanged (HostGameController.CollapseBossWavesPerTrigger = false).
 
-        MirrorOfflineSpawnFlags = SetupSetting(coopDefaultHeader, "出生：镜像离线标志", true,
+        MirrorOfflineSpawnFlags = SetupSetting(coopDefaultHeader, "Spawn: Mirror Offline Flags", true,
             new ConfigDescription(
                 "开：按原生离线准备镜像 OfflineOldSpawn/OfflineNewSpawn 与 WAVE_COEF_* 缩放，让“是否放行刷新”的判断与无头主机及原版游戏一致（它本身不决定刷不刷）。关：使用未镜像的原始标志。排障用，平时保持开启。主机侧开关，准备战局时读取。",
                 tags: new ConfigurationManagerAttributes
@@ -1777,7 +1810,7 @@ public sealed class FikaConfig(ConfigFile config)
                 }),
             "Spawn: Mirror Offline Flags", ref failed, headers);
 
-        EnableAmbientBotCapFallback = SetupSetting(coopDefaultHeader, "出生：环境杂兵兜底上限", false,
+        EnableAmbientBotCapFallback = SetupSetting(coopDefaultHeader, "Spawn: Ambient Bot Cap Fallback", false,
             new ConfigDescription(
                 "关（默认）：地图数据的 BotMax 保持原值，破冰船 BotMax=0 因此不刷常规杂兵（符合“不动原版刷新”）。开：仅当 BotMax<=0 且 BotStop>0 时兜底 SPT 风格的上限（18，仍受本局机器人预算限制），该图会开始刷环境杂兵；一般不要开。排障用，主机侧开关。",
                 tags: new ConfigurationManagerAttributes
@@ -1812,7 +1845,7 @@ public sealed class FikaConfig(ConfigFile config)
         // drain (default, unchanged behaviour), a positive value bounds how many arrived events one frame
         // delivers and defers the rest to the next frame, in order. It is read when a client starts, so it
         // takes effect with the next raid.
-        NetPollBudget = SetupSetting(coopDefaultHeader, "每帧最大网络事件数", 96,
+        NetPollBudget = SetupSetting(coopDefaultHeader, "Net Maximum Events Per Frame", 96,
             new ConfigDescription(
                 "默认 96（实测一帧曾一次投递 185 条事件）。一帧最多投递这么多条已到达的网络事件（含每包的解析与回调），这一帧没处理完的留在队列里，下一帧按原顺序继续投递——不丢包、不乱序，只是把「一次网络突发全压在一帧」摊到多帧，去掉那个 100ms 级的大帧。判据：开「Stutter Probe」看 clientUpdate 的 max（应从 ~164ms 降到 <60ms）与 [Stutter] 串时长、[NetPoll] 行的 bursts/max/deferredTotal。**设为 0 = 完全回到改动前行为**（一键回退）；觉得还卡可以再降到 48 试。下一个战局生效。",
                 tags: new ConfigurationManagerAttributes
@@ -1821,7 +1854,7 @@ public sealed class FikaConfig(ConfigFile config)
                     DispName = "Net Maximum Events Per Frame | 单帧网络事件上限",
                     Order = 12
                 }),
-            "每帧最大网络事件数", ref failed, headers);
+            "Net Maximum Events Per Frame", ref failed, headers);
 
         // (analysis/stutter-frame-skip) The journal of the 「被抽帧」 shape: runs of consecutive long frames,
         // their rhythm, the collections inside them and the measured price of our own main-thread file IO.
@@ -1832,12 +1865,24 @@ public sealed class FikaConfig(ConfigFile config)
         // the user asked for: switching it off restores the pre-guard behaviour exactly (every site writes on
         // every frame again) without a rebuild, and it makes the A/B measurable in a single raid - guards off,
         // guards on, same map, same bot count, same [PoseWrite] line.
+        PoseWriteGuards = SetupSetting(coopDefaultHeader, "Pose Write Guards", true,
+            new ConfigDescription(
+                "默认开。开：观测玩家的姿态/移动/动画写入加「值未变就不写」守卫——已在原生对象里的值不再每帧重推（原生 setter 会无条件写进动画器与武器摆动，见 analysis/stutter-pose-reset/REPORT.md）。与改前在数值上等价（写入的值序列一致，只去掉重复写入），并在玩家状态切换时自动失效缓存。关：完全恢复改前行为（每个写入点每帧都写），配合「Pose Write Probe」可在同一局里做前后对照（关时 hit 即为改前调用量、skip=0）。关掉只多一次静态布尔读取。本机生效，改动即时生效。",
+                tags: new ConfigurationManagerAttributes
+                {
+                    Category = DisplayDebugDiagnostics,
+                    DispName = "Pose Write Guards | 姿态写入守卫",
+                    Order = 14
+                }),
+            "Pose Write Guards", ref failed, headers);
+
+        Fika.Core.Main.Utils.PoseWriteGuards.Enabled = PoseWriteGuards.Value;
+        PoseWriteGuards.SettingChanged += (_, _) => Fika.Core.Main.Utils.PoseWriteGuards.Enabled = PoseWriteGuards.Value;
 
 
 
 
-
-        FinalMissionEndingRepair = SetupSetting(coopDefaultHeader, "终局任务：结局修复", true,
+        FinalMissionEndingRepair = SetupSetting(coopDefaultHeader, "Final Mission: Ending Repair", true,
             new ConfigDescription(
                 "默认开。终点站结局（救世主结局等）的修复：完成信号两种 id 都接受（原生送的是场景名，不是 cutsceneId）、结局场景的采样/救援/收尾看门狗、完成确认重发，以及把 CoopGame.Stop 的 DeferStop 在 90 秒后强制放行——否则结局界面会永久卡住、不结算。关：回到改动前行为（仍会写 [FinalDiag] 判据）。",
                 tags: new ConfigurationManagerAttributes
@@ -1846,7 +1891,7 @@ public sealed class FikaConfig(ConfigFile config)
                     DispName = "Final Mission: Ending Repair | 结局结算修复",
                     Order = 21
                 }),
-            "终局任务：结局修复", ref failed, headers);
+            "Final Mission: Ending Repair", ref failed, headers);
 
         // (analysis/stutter-frame-skip) The session log copy is the only periodic file IO this port performs
         // on the game's own thread; on (default) it runs on the archive's own thread and the frame only
@@ -1856,26 +1901,11 @@ public sealed class FikaConfig(ConfigFile config)
         // [NetTimeout] line: 'Diagnostics' off means every probe family is silent (the contract the perf cleanup
         // wrote down), instead of one family writing a line per second regardless.
         // The retired 'Cutscene: Real Time Ticks' keeps the behaviour of its default (the BF slow-motion fix).
+        Fika.Core.Main.Components.CutsceneBoundary.RealTimeTicks = true;
         Fika.Core.Main.Components.FikaFinalMissionDirector.EndingRepair = FinalMissionEndingRepair.Value;
         FinalMissionEndingRepair.SettingChanged += (_, _) => Fika.Core.Main.Components.FikaFinalMissionDirector.EndingRepair = FinalMissionEndingRepair.Value;
 
-        // (2026-10-26 W15) Coop / Pose Write Guards 接回（上游 3.0.4 同款开关）：关掉即完全恢复"每帧都写"的改前行为，
-        // 方便同一局里做 A/B；默认开。开关只写本机静态字段，不参与任何联机协议。
-        PoseWriteGuards = SetupSetting(coopDefaultHeader, "Pose Write Guards", true,
-            new ConfigDescription(
-                "默认开。开：观察者玩家的姿态/移动/动画写入加「值未变就不写」守卫，避免每帧重复推 animator。关：完全恢复改前行为（每个写入点每帧都写），只多一次静态 bool 读取。本机生效。",
-                tags: new ConfigurationManagerAttributes
-                {
-                    Category = DisplayDebugDiagnostics,
-                    DispName = "Pose Write Guards | 姿态写入守卫",
-                    Order = 15
-                }),
-            "Pose Write Guards", ref failed, headers);
-
-        Fika.Core.Main.Utils.PoseWriteGuards.Enabled = PoseWriteGuards.Value;
-        PoseWriteGuards.SettingChanged += (_, _) => Fika.Core.Main.Utils.PoseWriteGuards.Enabled = PoseWriteGuards.Value;
-
-        SentrySyncCardAccess = SetupSetting(coopDefaultHeader, "哨兵：同步刷卡放行", true,
+        SentrySyncCardAccess = SetupSetting(coopDefaultHeader, "Sentry: Sync Card Access", true,
             new ConfigDescription(
                 "默认开。终点站哨兵（RAUF）的「刷卡放行」原本只存在于主机那台机器的哨兵集合里，客机永远被当成敌人——本条把这条事实按原生形状同步给每台机器（对每台机器的哨兵调用原生 OnTerminalAccessGained，并用原生 HaveAccess 复核）。关：只写 [SentryDiag] 判据，不做同步（改动前行为）。",
                 tags: new ConfigurationManagerAttributes
@@ -1892,7 +1922,7 @@ public sealed class FikaConfig(ConfigFile config)
 
         // (analysis/client-transit-terminal) The co-op transit stall: the client's press produced no request on its
         // own machine, so the host never received it and its "everyone interacted" gate rejected the whole squad.
-        TransitClientPressFallback = SetupSetting(coopDefaultHeader, "转移：客机按下兜底", true,
+        TransitClientPressFallback = SetupSetting(coopDefaultHeader, "Transit: Client Press Fallback", true,
             new ConfigDescription(
                 "默认开。客机在转移点按下后 2.5 秒内本机没有产出、主机也没有受理时，由客机用同一个原生构造器重发一次等价请求（前提与原生一致：在点内、有访问权、满足入场条件、处于 idle 状态），每次按下最多一次、每局最多 8 次；主机的全部门照旧，不做任何绕过。关：只写判据行（改动前行为）。",
                 tags: new ConfigurationManagerAttributes
@@ -1901,29 +1931,29 @@ public sealed class FikaConfig(ConfigFile config)
                     DispName = "Transit: Client Press Fallback | 客机转移请求补发",
                     Order = 56
                 }),
-            "转移：客机按下兜底", ref failed, headers);
+            "Transit: Client Press Fallback", ref failed, headers);
 
+        Fika.Core.Main.Utils.TransitRecovery.PressFallback = TransitClientPressFallback.Value;
         // (analysis/config-audit-2) The retired 'Transit: Press Fallback Limit' keeps its shipped bound
         // (TransitRecovery.PressFallbackLimit = 8). The merged client stash switch is wired where
         // 'Transit: Per-Player Transfer Stash' is bound below - never here, the entry is still null at this
         // point of SetupConfig (the binding-order regression of analysis/config-binding-order-regression).
         TransitClientPressFallback.SettingChanged += (_, _) =>
+            Fika.Core.Main.Utils.TransitRecovery.PressFallback = TransitClientPressFallback.Value;
 
         // Coop | Cutscene. The client's in-place trigger (Main.Components.FikaLocalCutsceneTrigger) is the
-        // client half of "the client plays the cutscene too": it plays the dropped native start locally, and it
-        // stands down for any cutscene the host dispatched (that packet is recorded on arrival, before the local
-        // request is looked at). The hold-back delay is 0 on purpose (2026-10-27 T5): a client that waits does
-        // not avoid a double start, it only delays the cutscenes that exist on this machine alone.
-        // Retired entries (analysis/config-audit-2), shipped behaviour as one static block.
+        // client half of "the client plays the cutscene too": it holds the request for two seconds so the host
+        // can dispatch the same cutscene first, and plays it locally when nothing arrives. Retired entries
+        // (analysis/config-audit-2), shipped behaviour as one static block.
         Fika.Core.Main.Components.FikaLocalCutsceneTrigger.UseNativeClientTrigger = true;
         Fika.Core.Main.Components.FikaLocalCutsceneTrigger.SingleLocalViewer = true;
-        Fika.Core.Main.Components.FikaLocalCutsceneTrigger.LocalTriggerDelaySeconds = 0f;
+        Fika.Core.Main.Components.FikaLocalCutsceneTrigger.LocalTriggerDelaySeconds = 2f;
 
         // Coop | Transit, transit recovery round. The three client-side switches are read where a refusal is
         // handled and the stash switch where a player enters the destination, so applying them here and on
         // every change keeps a running session in step.
 
-        TransitRearmAfterRefusal = SetupSetting(coopDefaultHeader, "转移：被拒后重新就绪", true,
+        TransitRearmAfterRefusal = SetupSetting(coopDefaultHeader, "Transit: Rearm After Refusal", true,
             new ConfigDescription(
                 "开（默认）：客机被主机拒绝后，把这一轮被拒的后果一次收拾干净——复位本机按键闩锁（可以立刻再按一次；修复前提示不清也无法再按，观感就是「卡在互动」），并重报一次「我在点内」，避免主机把客机当成已经离开转移点。两件事都由这一个开关控制（config-audit-2 把重复的「Reassert Presence After Refusal」并了进来）。关：两件事都不做（修复前行为）。客机侧开关。",
                 tags: new ConfigurationManagerAttributes
@@ -1934,7 +1964,7 @@ public sealed class FikaConfig(ConfigFile config)
                 }),
             "Transit: Rearm After Refusal", ref failed, headers);
 
-        TransitPerPlayerTransferStash = SetupSetting(coopDefaultHeader, "转移：按玩家转移容器", true,
+        TransitPerPlayerTransferStash = SetupSetting(coopDefaultHeader, "Transit: Per-Player Transfer Stash", true,
             new ConfigDescription(
                 "开（默认）：进入终点站时给每个玩家（含客机）补建“装备转移容器”——仅在缺失或尺寸为 0×0 时补建，绝不清空已有内容，也就是原生 OnPlayerEnter 该做的事；关：回到旧行为（客机拿不到转移容器）。主机侧开关。",
                 tags: new ConfigurationManagerAttributes
@@ -1945,7 +1975,7 @@ public sealed class FikaConfig(ConfigFile config)
                 }),
             "Transit: Per-Player Transfer Stash", ref failed, headers);
 
-        TransitActivateCountdownPanel = SetupSetting(coopDefaultHeader, "转移：唤醒倒计时面板", true,
+        TransitActivateCountdownPanel = SetupSetting(coopDefaultHeader, "Transit: Activate Countdown Panel", true,
             new ConfigDescription(
                 "默认开。转移倒计时开始时，主动把转移计时面板（LocationTransitTimerPanel）自己打开一次（只开面板本身；祖先没开就只写判据、不强行打开），让客机也能看到倒计时。关：只写判据行（改动前行为）。离开点仍然隐藏并暂停，回来继续。",
                 tags: new ConfigurationManagerAttributes
@@ -1956,11 +1986,26 @@ public sealed class FikaConfig(ConfigFile config)
                 }),
             "Transit: Activate Countdown Panel", ref failed, headers);
 
+        Fika.Core.Main.Utils.TransitRecovery.ActivateTransitTimerPanel = TransitActivateCountdownPanel.Value;
+        TransitActivateCountdownPanel.SettingChanged += (_, _) =>
+            Fika.Core.Main.Utils.TransitRecovery.ActivateTransitTimerPanel = TransitActivateCountdownPanel.Value;
 
+        Fika.Core.Main.Utils.TransitRecovery.RearmAfterRefusal = TransitRearmAfterRefusal.Value;
         // (analysis/config-audit-2) The retired 'Transit: Reassert Presence After Refusal' was the second half
         // of the same "clean up after a refusal" repair, so it follows this one switch.
+        Fika.Core.Main.Utils.TransitRecovery.ReassertPresenceOnRefusal = TransitRearmAfterRefusal.Value;
+        Fika.Core.Main.Utils.TransitRecovery.EnsureTransferStash = TransitPerPlayerTransferStash.Value;
         // (analysis/config-audit-2) The retired 'Transit: Client Transfer Stash' was the same container repair
         // on the client machine, so both halves follow this one switch now (hot, like the rest of this block).
+        Fika.Core.Main.Utils.TransitRecovery.ClientEnsureTransferStash = TransitPerPlayerTransferStash.Value;
+        TransitPerPlayerTransferStash.SettingChanged += (_, _) =>
+            Fika.Core.Main.Utils.TransitRecovery.ClientEnsureTransferStash = TransitPerPlayerTransferStash.Value;
+        TransitRearmAfterRefusal.SettingChanged += (_, _) =>
+            Fika.Core.Main.Utils.TransitRecovery.RearmAfterRefusal = TransitRearmAfterRefusal.Value;
+        TransitRearmAfterRefusal.SettingChanged += (_, _) =>
+            Fika.Core.Main.Utils.TransitRecovery.ReassertPresenceOnRefusal = TransitRearmAfterRefusal.Value;
+        TransitPerPlayerTransferStash.SettingChanged += (_, _) =>
+            Fika.Core.Main.Utils.TransitRecovery.EnsureTransferStash = TransitPerPlayerTransferStash.Value;
 
         if (failed)
         {
@@ -2135,7 +2180,11 @@ public sealed class FikaConfig(ConfigFile config)
         FastLoad = clientConfig.FastLoad && !InstantLoad; // can only use one, prioritize InstantLoad
         ReviveConfig = clientConfig.ReviveConfig;
 
-        // (2026-10-20) The revive patches do not exist in this tree; the config block is gone with them.
+        if (clientConfig.ReviveConfig.Enabled)
+        {
+            new ClientHealthController_Kill_Patch().Enable();
+            new InteractionContextHelper_GetAvailableActions_Patch().Enable();
+        }
 
         clientConfig.LogValues();
     }

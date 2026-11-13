@@ -30,7 +30,6 @@ public sealed class HeadlessExfilManager : MonoBehaviour
     private System.Action<ExfiltrationPoint, EExfiltrationStatus> _statusChanged;
     private readonly Dictionary<IntPtr, ExfiltrationPoint> _boundPoints = [];
     private readonly Dictionary<IntPtr, ExfiltrationPoint> _countdownPoints = [];
-    private readonly List<ExfiltrationPoint> _countdownSnapshot = [];
 
     private void Awake()
     {
@@ -79,20 +78,7 @@ public sealed class HeadlessExfilManager : MonoBehaviour
         // current flare grants to the peers (late joiners, lost packets).
         Fika.Core.Main.Components.FikaFlareExfil.HostTick();
 
-        // (2026-10-27 W44) 这个 Update 每帧跑，`.Values.ToArray()` 每帧都会分配一个新数组
-        // （哪怕倒计时字典是空的）。改成复用同一个缓冲：先拷进缓冲、再遍历，语义不变。
-        if (_countdownPoints.Count == 0)
-        {
-            return;
-        }
-
-        _countdownSnapshot.Clear();
-        foreach (var pair in _countdownPoints)
-        {
-            _countdownSnapshot.Add(pair.Value);
-        }
-
-        foreach (var point in _countdownSnapshot)
+        foreach (var point in _countdownPoints.Values.ToArray())
         {
             if (_game.PastTime - point.ExfiltrationStartTime > point.Settings.ExfiltrationTime &&
                 _countdownPoints.Remove(point.Pointer))

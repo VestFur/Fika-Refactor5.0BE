@@ -93,6 +93,26 @@ public sealed partial class FikaServer
     }
 
     /// <summary>The passcode ids this host knows, so a rejection names what it could have accepted.</summary>
+    private static string KnownPasscodeIds(ClientLocalPasscodeController controller)
+    {
+        try
+        {
+            var ids = new System.Text.StringBuilder();
+            var count = 0;
+            foreach (var entry in controller._passcodeTerminals)
+            {
+                if (count > 0) ids.Append(',');
+                ids.Append(entry.Key);
+                if (++count >= 8) break;
+            }
+
+            return count == 0 ? "none" : ids.ToString();
+        }
+        catch (Exception)
+        {
+            return "?";
+        }
+    }
 
     private void OnCutsceneSkipIntentionPacketReceived(CutsceneSkipIntentionPacket packet, NetPeer peer)
     {

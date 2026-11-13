@@ -290,39 +290,7 @@ public class HostGameController : BaseGameController
     /// <param name="profile"><see cref="Profile"/> to spawn</param>
     /// <param name="position">The <see cref="Vector3"/> position to spawn on</param>
     /// <returns></returns>
-    /// <summary>Tail of the one-at-a-time bot creation chain (from upstream 3.0.4).</summary>
-    private Task _botCreateTail = Task.CompletedTask;
-
-    /// <summary>
-    /// Tail of the one-at-a-time bot creation chain (from upstream 3.0.4).
-    /// <para>
-    /// A boss wave burst hands several profiles to <see cref="CreateBot"/> inside one frame (Interchange
-    /// activates 10 of 12 waves with EBotsSpawnMode.Anyway). Running those concurrently races on Bots, the coop
-    /// handler, the net id counter and the per-bot ack queue, and an Interchange raid was observed to die inside
-    /// the native Player.Create around the tenth bot of such a burst. Every creation now waits for the previous
-    /// one to finish.
-    /// </para>
-    /// </summary>
     private async Task<LocalPlayer> CreateBot(GameWorld gameWorld, Profile profile, Vector3 position)
-    {
-        var previous = _botCreateTail;
-        var gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _botCreateTail = gate.Task;
-
-        // Completed tasks resume synchronously, so the first bot pays nothing and every later one starts on the
-        // main thread right after the previous one.
-        await previous;
-        try
-        {
-            return await CreateBotCore(gameWorld, profile, position);
-        }
-        finally
-        {
-            gate.SetResult(true);
-        }
-    }
-
-    private async Task<LocalPlayer> CreateBotCore(GameWorld gameWorld, Profile profile, Vector3 position)
     {
 #if DEBUG
         Logger.LogWarning($"Creating bot {profile.Info.Settings.Role} at {position}");
@@ -654,9 +622,16 @@ public class HostGameController : BaseGameController
         if (initialPlayerCount <= 1)
         {
             _server.ReadyClients++;
+            LoadSync.Report("HostGameController.WaitForOtherPlayersToLoad",
+                "stage=enter role=host playerAmount=1 => no peer to wait for, the barrier releases immediately");
             return;
         }
 
+        LoadSync.Report("HostGameController.WaitForOtherPlayersToLoad",
+            "stage=enter role=host playerAmount=" + _server.PlayerAmount
+            + " connectedPeers=" + _server.NetServer.ConnectedPeersCount
+            + " => the barrier waits for the character announcement of every expected peer (timeout "
+            + LoadSync.PeerLoadTimeoutSeconds.ToString("0") + "s)");
 
         // A peer can disconnect while the remaining players are loading. Keep
         // the original upper bound so late joins do not extend this barrier,
@@ -687,6 +662,8 @@ public class HostGameController : BaseGameController
             if (elapsed >= nextBarrierReport)
             {
                 nextBarrierReport = elapsed + 5f;
+                LoadSync.Report("HostGameController.WaitForOtherPlayersToLoad",
+                    DescribeBarrier(expectedHumans, expectedPlayers: ExpectedPlayers(), elapsed) + " => waiting for the missing character(s)");
             }
 
             if (elapsed >= LoadSync.PeerLoadTimeoutSeconds)
@@ -713,6 +690,9 @@ public class HostGameController : BaseGameController
         }
         else
         {
+            LoadSync.Report("HostGameController.WaitForOtherPlayersToLoad",
+                DescribeBarrier(ExpectedHumans(), ExpectedPlayers(), UnityEngine.Time.realtimeSinceStartup - barrierStartedAt)
+                + " => all expected human characters are in this world; releasing the barrier");
         }
 
         InformationPacket packet = new()
@@ -740,6 +720,11 @@ public class HostGameController : BaseGameController
             if (elapsed >= nextReadyReport)
             {
                 nextReadyReport = elapsed + 5f;
+                LoadSync.Report("HostGameController.WaitForOtherPlayersToLoad",
+                    "stage=ready role=host readyClients=" + _server.ReadyClients + "/" + expectedPlayers
+                    + " playerAmount=" + _server.PlayerAmount + " connectedPeers=" + _server.NetServer.ConnectedPeersCount
+                    + " elapsed=" + elapsed.ToString("0") + "s => waiting for the ready message of a peer"
+                    + " (the client sends it after its own character is spawned)");
             }
 
             if (elapsed >= LoadSync.PeerLoadTimeoutSeconds)
@@ -1114,39 +1099,17 @@ public class HostGameController : BaseGameController
     {
         Logger.LogInfo($"[BossSpawn] Activating wave: {DescribeBossWave(wave)}");
         LogBossWaveRequest(wave);
-
-        // (2026-10-26 W17, restored from upstream 3.0.4) One activation per 50 ms keeps a wave burst
-        // (Interchange activates 10 of 12 waves in one frame) from stacking that many bot creations in the
-        // same frame. CreateBot serialises them anyway; this keeps the frame itself from stalling, and the
-        // dispatcher keeps the continuation on Unity main thread, which the native activation requires.
-        _ = MainThreadDispatcher.RunAsync(async () =>
+        try
         {
-            try
-            {
-                await Task.Delay(BossWaveActivationSpacingMilliseconds);
-            }
-            catch (Exception)
-            {
-                // A cancelled wait must still activate the wave below.
-            }
-
-            try
-            {
-                _botsController.ActivateBotsByWave(wave);
-            }
-            catch (Exception exception)
-            {
-                // Never let a managed exception cross back into native timer or
-                // event code; report it instead so the wave can be investigated.
-                Logger.LogError($"[BossSpawn] Wave activation failed for '{wave?.BossName}': {exception}");
-            }
-        });
+            _botsController.ActivateBotsByWave(wave);
+        }
+        catch (Exception exception)
+        {
+            // Never let a managed exception cross back into native timer or
+            // event code; report it instead so the wave can be investigated.
+            Logger.LogError($"[BossSpawn] Wave activation failed for '{wave?.BossName}': {exception}");
+        }
     }
-
-    /// <summary>
-    /// Spacing between two boss wave activations, see <see cref="OnBossWaveActivated"/>.
-    /// </summary>
-    private const int BossWaveActivationSpacingMilliseconds = 50;
 
     /// <summary>
     /// Logs the boss wave list exactly as received from the server (after
@@ -1949,25 +1912,6 @@ public class HostGameController : BaseGameController
             if (!FikaBackendUtils.IsHeadless)
                 NotificationManager.DisplayWarningNotification("NoLoot enabled, no loot will spawn and any stationary weapon WILL NOT WORK!");
             location.Loot = new JsonType.LootData();
-        }
-
-        // (2026-10-19, plan A) Terminal: put every player's equipment into the armory containers before the
-        // descriptor is built, so the containers arrive on every machine already holding the gear.
-        try
-        {
-            // (2026-10-19) Gate on the raid's own location id, not on the menu selection: the menu still holds the
-            // previous map during a transit, and an armory injection into a raid that is not the Terminal would
-            // touch a loot table it does not belong to.
-            if (TerminalArmory.Applies(location?.Id))
-            {
-                TerminalArmory.Inject(location, FikaSingleton<IFikaNetworkManager>.Instance?.CoopHandler);
-            }
-        }
-        catch (Exception exception)
-        {
-            // (2026-10-19) Loot initialisation must never fail because of the terminal armory: an exception here
-            // leaves the raid stuck on "loading loot pool" for every machine.
-            FikaGlobals.LogError($"[TerminalArmory] skipped, the raid keeps its normal loot: {exception}");
         }
 
         var lootDescriptor = ItemBinarySerializer.SerializeLootData(FilterLootForHostProfile(location.Loot),

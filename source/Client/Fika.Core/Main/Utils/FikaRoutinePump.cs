@@ -191,6 +191,7 @@ internal sealed class FikaRoutinePump
     internal void Tick()
     {
         
+        FikaBoundaries.Enter(BoundaryTick);
         ReportStallIfAny();
         try
         {
@@ -395,6 +396,7 @@ internal sealed class FikaRoutinePump
 
             // Breadcrumb: if the process dies inside this step (a runtime fail fast cannot be caught),
             // this is the line that names what was running.
+            FikaBoundaries.Enter(_journalLabel);
             if (_waitForInstruction != null)
             {
                 // WaitForSecondsRealtime, WaitUntil, WaitWhile and friends answer "keepWaiting" themselves.
@@ -629,6 +631,8 @@ internal sealed class FikaRoutinePump
             _waitTraceActive = true;
             _waitTraceSeconds = seconds;
             _waitTraceStartedAt = Time.time;
+            FikaBoundaries.Mark("pump wait: routine '" + Label + "' parked in WaitForSeconds(" + Millis(seconds)
+                + ") at frame=" + Time.frameCount + " - nothing of this routine runs until the pump resumes it");
         }
 
         /// <summary>The other end: the routine is running again (this is the first step after the wait).</summary>
@@ -640,6 +644,8 @@ internal sealed class FikaRoutinePump
             }
 
             _waitTraceActive = false;
+            FikaBoundaries.Mark("pump wait: routine '" + Label + "' left WaitForSeconds(" + Millis(_waitTraceSeconds)
+                + ") after " + Millis(Time.time - _waitTraceStartedAt) + " (frame=" + Time.frameCount + ")");
         }
 
         /// <summary>Whole milliseconds, culture free, so a label reads the same in every locale.</summary>

@@ -161,6 +161,9 @@ public class ClientGameController : BaseGameController
             if (elapsed >= nextCharacterReport)
             {
                 nextCharacterReport = elapsed + 5f;
+                LoadSync.Report("ClientGameController.WaitForOtherPlayersToLoad",
+                    DescribeCharacterWait(expectedHumans, silentSeconds, elapsed)
+                    + " => waiting for the peer character(s) to be spawned in this world");
             }
 
             if (silentSeconds >= LoadSyncGate.ClientSilentWarnSeconds && silentSeconds % 15 == 0)
@@ -227,6 +230,9 @@ public class ClientGameController : BaseGameController
             if (elapsed >= nextReadyReport)
             {
                 nextReadyReport = elapsed + 5f;
+                LoadSync.Report("ClientGameController.WaitForOtherPlayersToLoad",
+                    DescribeReadyWait(expectedPlayers, readySilentSeconds, elapsed)
+                    + " => waiting for the host to report every client as ready");
             }
 
             if (readySilentSeconds >= LoadSyncGate.ClientSilentWarnSeconds && readySilentSeconds % 15 == 0)
@@ -347,15 +353,10 @@ public class ClientGameController : BaseGameController
 
     private bool CheckSpawnTogether()
     {
-        // (2026-10-19) Labyrinth: the five密室 are the map's whole point, so the group never spawns together
-        // there - by default, on a direct join and on a transit alike. The raid setting stays the explicit
-        // override: turning 'Random Labyrinth Spawns' off restores the plain 'spawn together' behaviour, and a
-        // raid setting that already asks for separate places is honoured as well. Every other map keeps the
-        // old default (together unless the setting says otherwise).
-        if (string.Equals(RaidSettings.SelectedLocation.Id, "labyrinth", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(RaidSettings.SelectedLocation.Id, "labyrinth", StringComparison.OrdinalIgnoreCase)
+            && FikaPlugin.Instance.Settings.RandomLabyrinthSpawns)
         {
-            return !FikaPlugin.Instance.Settings.RandomLabyrinthSpawns
-                && RaidSettings.PlayersSpawnPlace == EPlayersSpawnPlace.SamePlace;
+            return false;
         }
 
         return RaidSettings.PlayersSpawnPlace == EPlayersSpawnPlace.SamePlace;
@@ -433,6 +434,9 @@ public class ClientGameController : BaseGameController
             if (elapsed >= nextReport)
             {
                 nextReport = elapsed + 5f;
+                LoadSync.Report("ClientGameController.WaitForHostToLoad",
+                    DescribeHostInitWait(silentSeconds, elapsed)
+                    + " => waiting for the host to finish its own raid initialisation");
             }
 
             if (silentSeconds >= LoadSyncGate.ClientSilentWarnSeconds && silentSeconds % 15 == 0)
@@ -453,6 +457,10 @@ public class ClientGameController : BaseGameController
             await Task.Delay(1000);
         } while (!client.HostLoaded);
 
+        LoadSync.Report("ClientGameController.WaitForHostToLoad",
+            "role=client the host finished its raid initialisation after "
+            + (UnityEngine.Time.realtimeSinceStartup - startedAt).ToString("0") + "s (responses=" + client.HostResponseCount
+            + ") => this client creates its local player and announces its character now");
     }
 
     public override async Task InitializeLoot(LocationSettings.Location location)

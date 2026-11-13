@@ -160,6 +160,7 @@ public static class TransitReloadGate
         _holdEndedAt = 0f;
         _holdEndedReason = "none";
         _holdEndedSinceArm = 0f;
+        LoadSync.Trace("transit reload gate armed by " + _armedSource + " (" + Describe() + ")");
     }
 
     /// <summary>
@@ -177,6 +178,7 @@ public static class TransitReloadGate
         _armed = false;
         _armedSource = "none";
         _goReceived = false;
+        LoadSync.Trace("transit reload gate disarmed: " + reason);
     }
 
     /// <summary>
@@ -204,6 +206,10 @@ public static class TransitReloadGate
             {
                 // The normal path: the signal covers a hold that is still running.
                 _worstSinceArm = Math.Max(_worstSinceArm, sinceArm);
+                LoadSync.Report("TransitReloadGate.HostReloadStart",
+                    "the host started its own reload: the signal arrived at " + WallClock() + " (uptime=" + Uptime()
+                    + ", armed=True, sinceArm=" + sinceArm.ToString("0.0") + "s of a " + ClientHoldSeconds + "s hold, hostWorstLead="
+                    + HostLeadWorstSeconds + "s) => this machine releases its hold and starts loading the same map now");
             }
             else if (_holdEnded)
             {
@@ -223,6 +229,8 @@ public static class TransitReloadGate
             {
                 // No transit reload on this machine at all: the signal is not this machine's to act on.
                 _signalsWithoutContext++;
+                LoadSync.Trace("transit reload signal without a transit reload on this machine (no arm, no hold; sinceArm="
+                    + (sinceArm > 0f ? sinceArm.ToString("0.0") + "s" : "n/a") + ")");
             }
         }
 
@@ -255,6 +263,11 @@ public static class TransitReloadGate
         {
                     }
 
+        LoadSync.Report("TransitReloadGate.HostReloadStart",
+            "transit reload starting on this machine at " + WallClock() + " (uptime=" + Uptime() + ") role=host"
+            + " reason=own-level-load location=" + location + " peerNotified=" + (sent ? "True" : "False")
+            + " playerAmount=" + playerAmount
+            + " => this host is creating the next map now and told every client to start its own load");
     }
 
     /// <summary>
@@ -286,6 +299,12 @@ public static class TransitReloadGate
         var stateAge = startedAt - _armedAt;
         _parks++;
 
+        LoadSync.Report("TransitReloadGate.ClientHold",
+            "transit reload hold on this machine at " + WallClock() + " (uptime=" + Uptime() + ") role=client site="
+            + site + " peerNotified=" + _goReceived + " sinceArm=" + stateAge.ToString("0.0") + "s source=" + _armedSource
+            + " ceiling=" + ceiling + "s hostWorstLead=" + HostLeadWorstSeconds + "s, " + LoadSync.DescribePeerTraffic()
+            + " => this machine waits with its level creation until the host starts its own load; nothing is loaded while it waits"
+            + " (only the liveness poll), and both maps then load in the same second");
 
         var reason = "hold-ceiling";
         var reportedAt = 0;
@@ -328,6 +347,11 @@ public static class TransitReloadGate
             {
                 reportedAt = (int)elapsed + 5;
                 var sinceArmNow = stateAge + elapsed;
+                LoadSync.Report("TransitReloadGate.ClientHold",
+                    "transit reload hold continues: role=client site=" + site + " elapsed=" + ((int)elapsed).ToString()
+                    + "s of " + ceiling + "s, peerNotified=" + _goReceived + " sinceArm=" + sinceArmNow.ToString("0.0")
+                    + "s hostWorstLead=" + HostLeadWorstSeconds + "s, " + LoadSync.DescribePeerTraffic()
+                    + " => the host has not started its own load yet; this machine keeps the next map unloaded and loads nothing while it waits");
             }
 
             try
@@ -339,6 +363,7 @@ public static class TransitReloadGate
             {
                 // The poll is a convenience (liveness and the host's own flags); a failed one must never
                 // end the hold, the ceiling and the transport check still decide.
+                LoadSync.Trace("transit reload hold poll failed (" + exception.GetType().Name + "): " + exception.Message);
             }
 
             await Task.Delay(pollMilliseconds);
@@ -364,6 +389,7 @@ public static class TransitReloadGate
 
         if (reason == "host-reload-start")
         {
+            LoadSync.Report("TransitReloadGate.ClientHold", line);
             return;
         }
 

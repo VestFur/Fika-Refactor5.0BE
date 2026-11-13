@@ -229,6 +229,10 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
     {
         _pendingWorldPackets.Clear();
         _worldPacketQueueArmed = true;
+        LoadSync.Report("FikaClient.ArmWorldPacketQueue",
+            "world packet queue armed (" + reason + "); at most " + MaxPendingWorldPackets
+            + " packet(s), each expires after " + WorldPacketQueueMaxAgeSeconds + "s => "
+            + "world packets of the swap window are replayed once the new world exists instead of being dropped");
     }
 
     /// <summary>
@@ -297,6 +301,9 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
             if (_worldPacketQueueArmed)
             {
                 _worldPacketQueueArmed = false;
+                LoadSync.Report("FikaClient.FlushPendingWorldPackets",
+                    "the world packet queue is closed (the world is up, nothing had to be replayed) => "
+                    + "the world swap did not lose any world packet");
             }
 
             return;
@@ -333,6 +340,10 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
         }
 
         _worldPacketQueueArmed = false;
+        LoadSync.Report("FikaClient.FlushPendingWorldPackets",
+            "world packet queue drained: replayed " + replayed + ", dropped " + expired
+            + " (world=" + (worldReady ? "up" : "still missing") + ", maxAge=" + WorldPacketQueueMaxAgeSeconds
+            + "s) => the replayed packets are applied to this world only, the dropped ones belonged to an older one");
     }
 
     /// <summary>

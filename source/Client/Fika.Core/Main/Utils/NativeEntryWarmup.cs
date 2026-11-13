@@ -211,6 +211,21 @@ internal static class NativeEntryWarmup
     /// stays below it: this is the line a human reads first, and it is what the single game-log line points
     /// at.
     /// </summary>
+    private static string Aggregate(List<string> rejected)
+    {
+        var perType = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var entry in rejected)
+        {
+            var separator = entry.IndexOf(':');
+            var owner = separator <= 0 ? entry : entry.Substring(0, separator);
+            var lastDot = owner.LastIndexOf('.');
+            var type = lastDot <= 0 ? owner : owner.Substring(0, lastDot);
+            perType[type] = perType.TryGetValue(type, out var seen) ? seen + 1 : 1;
+        }
+
+        return string.Join("; ", perType.OrderByDescending(pair => pair.Value)
+            .Select(pair => pair.Value + "x " + pair.Key));
+    }
 
     private static string Names(List<string> shapes)
     {

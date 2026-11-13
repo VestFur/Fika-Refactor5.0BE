@@ -10,24 +10,11 @@ namespace FikaServer.Services.Headless;
 /// <remarks>
 /// The generated file stores no absolute path: it finds the game folder by walking up from its
 /// own location. Only the values that belong to the profile are embedded: the profile id
-/// (the launcher's <c>-token</c>), the backend url (the launcher's <c>BackendUrl</c>), the
-/// window state from <c>HeadlessConfig.StartMinimized</c> and the display mode from
-/// <c>HeadlessConfig.Display</c>.
-/// <para>
-/// Two command lines exist, both of which keep the SPT launcher's arguments:
-/// </para>
-/// <list type="bullet">
-/// <item><description>
-/// <c>Console</c>: <c>EscapeFromTarkov.exe -force-gfx-jobs native -batchmode -nographics
-/// -token=... -config=...</c> inside its own console window. Unity creates a Null graphics
-/// device, so no shader is compiled, no swapchain exists and no draw call is submitted; the
-/// game's own stdout and the log are the only output.
-/// </description></item>
-/// <item><description>
-/// <c>Hidden</c>: <c>EscapeFromTarkov.exe -force-gfx-jobs native -token=... -config=...</c>
-/// started with <c>start /min</c>; the Fika.Headless graphics patches tear the scene down.
-/// </description></item>
-/// </list>
+/// (the launcher's <c>-token</c>), the backend url (the launcher's <c>BackendUrl</c>) and the
+/// window state from <c>HeadlessConfig.StartMinimized</c>. The
+/// command line it runs is the one the SPT launcher uses for a normal profile, started with
+/// <c>start /min</c> when the host must come up minimised:
+/// <c>EscapeFromTarkov.exe -force-gfx-jobs native -token=PROFILE_ID -config={'BackendUrl':'URL','Version':'live','MatchingVersion':'live'}</c>.
 /// </remarks>
 internal static class HeadlessLaunchHelper
 {
@@ -46,17 +33,6 @@ internal static class HeadlessLaunchHelper
     public static string BuildLaunchConfig(string backendUrl)
     {
         return $"{{'BackendUrl':'{backendUrl}','Version':'live','MatchingVersion':'live'}}";
-    }
-
-    /// <summary>
-    /// The graphics flags for a display mode. <c>Console</c> is the only mode that removes the
-    /// graphics device; everything else keeps the historical windowed host.
-    /// </summary>
-    public static string BuildDisplayArguments(string displayMode)
-    {
-        return string.Equals(displayMode, "Console", StringComparison.OrdinalIgnoreCase)
-            ? " -batchmode -nographics"
-            : string.Empty;
     }
 
     /// <summary>
@@ -102,26 +78,19 @@ internal static class HeadlessLaunchHelper
     /// The value of <c>HeadlessConfig.StartMinimized</c> for this profile. When it is true the
     /// game is started with <c>start /min</c>, so the host never steals the desktop; the Fika
     /// client plugin reads the same file and minimises its own window as well, which covers hosts
-    /// that were not started through this helper. Unused in <c>Console</c> mode: that host has no
-    /// window at all.
+    /// that were not started through this helper.
     /// </param>
-    /// <param name="displayMode">
-    /// <c>Console</c> (no client picture, no shaders, no GPU) or <c>Hidden</c> (windowed host).
-    /// </param>
-    public static string Build(string profileId, string backendUrl, bool startMinimized, string displayMode = "Hidden")
+    public static string Build(string profileId, string backendUrl, bool startMinimized)
     {
-        var console = string.Equals(displayMode, "Console", StringComparison.OrdinalIgnoreCase);
         var escapedProfileId = EscapeForCmd(profileId);
         var escapedBackendUrl = EscapeForCmd(backendUrl);
         var launchConfig = EscapeForCmd(BuildLaunchConfig(backendUrl));
-        var gameArguments = $"-force-gfx-jobs native{BuildDisplayArguments(displayMode)} -token={escapedProfileId} -config={launchConfig}";
+        var gameArguments = $"-force-gfx-jobs native -token={escapedProfileId} -config={launchConfig}";
         var searchRange = string.Join(" ", Enumerable.Range(1, SearchDepth));
-        var startFlags = startMinimized && !console ? "/min" : string.Empty;
-        var windowDocumentation = console
-            ? "rem  This profile runs Console display mode: no game window, no graphics device."
-            : startMinimized
-                ? "rem  This profile starts its host minimised (StartMinimized=true)."
-                : "rem  This profile starts its host with a normal window (StartMinimized=false).";
+        var startFlags = startMinimized ? "/min" : string.Empty;
+        var windowDocumentation = startMinimized
+            ? "rem  This profile starts its host minimised (StartMinimized=true)."
+            : "rem  This profile starts its host with a normal window (StartMinimized=false).";
 
         List<string> lines =
         [
@@ -130,7 +99,6 @@ internal static class HeadlessLaunchHelper
             "rem ============================================================================",
             "rem  Fika dedicated host launcher - generated by fika-server",
             $"rem  Profile: {escapedProfileId}",
-            $"rem  Display: {displayMode} (headless.display.mode, or HeadlessConfig.json)",
             "rem",
             "rem  Double-click this file to start the dedicated host for this profile. The SPT",
             "rem  launcher never lists headless profiles, so this helper runs the same command",
@@ -150,13 +118,11 @@ internal static class HeadlessLaunchHelper
             "rem      StartHeadless.cmd -logFile host.log -screen-fullscreen 0",
             "rem          start the host and forward the extra arguments to the game",
             "rem      set FIKA_NO_MINIMIZE=1",
-            "rem          hidden host only: start this run with a normal, restored window",
+            "rem          start this run with a normal, restored window (overrides StartMinimized)",
             "rem      set FIKA_WAIT=1",
             "rem          run the game inside this console instead of a new process, so its",
             "rem          output stays visible - useful when the host fails on startup",
             "rem",
-            "rem  Console mode keeps the game in its own console window and gives it no graphics",
-            "rem  device: no shader is compiled, no draw call is submitted, no window is created.",
             "rem  The window state is the StartMinimized value of HeadlessConfig.json, which the",
             "rem  Fika.Headless client plugin reads as well. This file is regenerated by",
             "rem  fika-server; change the server, not this file.",
@@ -167,8 +133,7 @@ internal static class HeadlessLaunchHelper
             $"set \"PROFILE_ID={escapedProfileId}\"",
             $"set \"BACKEND_URL={escapedBackendUrl}\"",
             $"set \"LAUNCH_CONFIG={launchConfig}\"",
-            $"set \"DISPLAY_MODE={displayMode}\"",
-            $"set \"GAME_ARGS=-force-gfx-jobs native{BuildDisplayArguments(displayMode)} -token=%PROFILE_ID% -config=%LAUNCH_CONFIG%\"",
+            "set \"GAME_ARGS=-force-gfx-jobs native -token=%PROFILE_ID% -config=%LAUNCH_CONFIG%\"",
             $"set \"START_MINIMIZED={(startMinimized ? "1" : "0")}\"",
             $"set \"START_FLAGS={startFlags}\"",
             "set \"GAME_DIR=\"",
@@ -201,28 +166,15 @@ internal static class HeadlessLaunchHelper
             "set \"GAME_EXE=%GAME_DIR%\\EscapeFromTarkov.exe\"",
             "echo [Headless] profile : %PROFILE_ID%",
             "echo [Headless] backend : %BACKEND_URL%",
-            "echo [Headless] display : %DISPLAY_MODE%",
             "echo [Headless] game    : %GAME_EXE%",
             "echo [Headless] window  : %START_FLAGS%",
             "echo [Headless] command : \"%GAME_EXE%\" %GAME_ARGS%%EXTRA_ARGS%",
             "echo [Headless] starting the dedicated host...",
             "echo.",
             "if defined FIKA_WAIT goto :fika_wait",
-            "if /I \"%DISPLAY_MODE%\"==\"Console\" goto :fika_console",
             "start \"\" %START_FLAGS% /D \"%GAME_DIR%\" \"%GAME_EXE%\" %GAME_ARGS%%EXTRA_ARGS%",
             "if not errorlevel 1 goto :fika_started",
             "echo [Headless] ERROR: the game process could not be started, errorlevel %ERRORLEVEL%",
-            "pause",
-            "exit /b 1",
-            "",
-            ":fika_console",
-            "rem Console mode: no game window and no graphics device. The command window is not",
-            "rem this process's console (the game is a GUI executable), so the Fika.Headless",
-            "rem plugin allocates the single console window the host keeps and mirrors its log",
-            "rem into it.",
-            "start \"Fika Headless %PROFILE_ID%\" /D \"%GAME_DIR%\" \"%GAME_EXE%\" %GAME_ARGS%%EXTRA_ARGS%",
-            "if not errorlevel 1 goto :fika_started",
-            "echo [Headless] ERROR: the console host could not be started, errorlevel %ERRORLEVEL%",
             "pause",
             "exit /b 1",
             "",

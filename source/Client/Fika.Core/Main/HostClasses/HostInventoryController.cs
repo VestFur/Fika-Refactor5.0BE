@@ -1,4 +1,3 @@
-using System;
 using EFT.Settings;
 using System.Threading.Tasks;
 using Comfort.Common;
@@ -86,26 +85,11 @@ public sealed class HostInventoryController : BaseInventoryController
 
     private async Task HandleOperation(EFT.InventoryLogic.Operations.AbstractOperation operation, Callback callback)
     {
-        try
+        if (_player.HealthController.IsAlive)
         {
-            if (_player.HealthController.IsAlive)
-            {
-                await Task.Yield();
-            }
-            RunHostOperation(operation, callback);
+            await Task.Yield();
         }
-        catch (Exception exception)
-        {
-            // Execute is dispatched fire-and-forget; an exception that reaches this method used to be
-            // swallowed by Forget(). The native EFT.PickUpState only leaves when this callback is
-            // completed, so every failure path has to fail it and release the interaction state.
-            FikaGlobals.LogError($"[LootFix] host-operation threw class={operation?.GetIl2CppType().Name} " +
-                $"id={operation?.Id}: {exception}", "HandleOperation");
-            // Use the callback captured by this method, not handler.Callback: RunHostOperation may
-            // already have returned the pooled handler, and CancelDispatch/Dispose can clear its field.
-            try { callback?.Fail($"host operation failed: {exception.Message}", 1); } catch { }
-            try { NativeInteractionRelease.Release(_player, "host-operation-exception"); } catch { }
-        }
+        RunHostOperation(operation, callback);
     }
 
     /// <summary>
@@ -186,7 +170,6 @@ public sealed class HostInventoryController : BaseInventoryController
 
         var handler = _hostInventoryOperationHandlerPool.Get();
         handler.Set(this, operation, callback);
-        HostOperationWatchdog.Track(handler, operation.GetIl2CppType().Name + "#" + operation.Id);
         bool canExecute;
         try { canExecute = CanExecute(handler.Operation); }
         catch
@@ -219,12 +202,10 @@ public sealed class HostInventoryController : BaseInventoryController
             // completion has already disposed. Capture it before Execute.
             handler.SetPendingPacket(InventoryPacket.FromValue(FikaPlayer.NetId, operation));
         }
-        catch (Exception exception)
+        catch
         {
-            // Relaying the operation to peers is optional; executing it (and completing the native
-            // pickup callback) is mandatory. A descriptor failure must not cancel the operation.
-            FikaGlobals.LogWarning($"[LootFix] relay-descriptor-failed class={operation.GetIl2CppType().Name} " +
-                $"id={operation.Id}: {exception.GetType().Name}: {exception.Message}", "RunHostOperation");
+            handler.CancelDispatch();
+            throw;
         }
 
         var executeFailed = false;

@@ -1,4 +1,4 @@
-using FikaServer.Helpers;
+﻿using FikaServer.Helpers;
 using FikaServer.ChatBot;
 using FikaServer.Models.Fika.Dialog;
 using FikaServer.Models.Fika.WebSocket;
@@ -79,10 +79,6 @@ public class FikaDialogueController(ISptLogger<FikaDialogueController> logger,
                 {
                     Nickname = profile.Info.Nickname,
                     Level = profile.Info.Level,
-                    // Same prestige payload SPT's GetChatRoomMemberFromPmcProfile now returns,
-                    // so Fika's friend list keeps matching SPT's DialogueController.GetFriendList.
-                    PrestigeLevel = profile.Info.PrestigeLevel,
-                    PrestigeGameMode = profile.Info.PrestigeGameMode,
                     Side = profile.Info.Side,
                     MemberCategory = profile.Info.MemberCategory,
                     SelectedMemberCategory = profile.Info.SelectedMemberCategory
@@ -181,10 +177,6 @@ public class FikaDialogueController(ISptLogger<FikaDialogueController> logger,
                     Nickname = receiverProfile.CharacterData.PmcData.Info.Nickname,
                     Side = receiverProfile.CharacterData.PmcData.Info.Side,
                     Level = receiverProfile.CharacterData.PmcData.Info.Level,
-                    // SPT's GetProfilesForMail/GetDialogueUsers fill these from the same Info
-                    // object; keep the replicated dialogue user list identical.
-                    PrestigeLevel = receiverProfile.CharacterData.PmcData.Info.PrestigeLevel,
-                    PrestigeGameMode = receiverProfile.CharacterData.PmcData.Info.PrestigeGameMode,
                     MemberCategory = receiverProfile.CharacterData.PmcData.Info.MemberCategory,
                     SelectedMemberCategory = receiverProfile.CharacterData.PmcData.Info.SelectedMemberCategory
                 }
@@ -198,8 +190,6 @@ public class FikaDialogueController(ISptLogger<FikaDialogueController> logger,
                     Nickname = senderProfile.CharacterData.PmcData.Info.Nickname,
                     Side = senderProfile.CharacterData.PmcData.Info.Side,
                     Level = senderProfile.CharacterData.PmcData.Info.Level,
-                    PrestigeLevel = senderProfile.CharacterData.PmcData.Info.PrestigeLevel,
-                    PrestigeGameMode = senderProfile.CharacterData.PmcData.Info.PrestigeGameMode,
                     MemberCategory = senderProfile.CharacterData.PmcData.Info.MemberCategory,
                     SelectedMemberCategory = senderProfile.CharacterData.PmcData.Info.SelectedMemberCategory
                 }
@@ -232,8 +222,6 @@ public class FikaDialogueController(ISptLogger<FikaDialogueController> logger,
                     Nickname = senderProfile.CharacterData.PmcData.Info.Nickname,
                     Side = senderProfile.CharacterData.PmcData.Info.Side,
                     Level = senderProfile.CharacterData.PmcData.Info.Level,
-                    PrestigeLevel = senderProfile.CharacterData.PmcData.Info.PrestigeLevel,
-                    PrestigeGameMode = senderProfile.CharacterData.PmcData.Info.PrestigeGameMode,
                     MemberCategory = senderProfile.CharacterData.PmcData.Info.MemberCategory,
                     SelectedMemberCategory = senderProfile.CharacterData.PmcData.Info.SelectedMemberCategory
                 }
@@ -247,10 +235,6 @@ public class FikaDialogueController(ISptLogger<FikaDialogueController> logger,
                     Nickname = receiverProfile.CharacterData.PmcData.Info.Nickname,
                     Side = receiverProfile.CharacterData.PmcData.Info.Side,
                     Level = receiverProfile.CharacterData.PmcData.Info.Level,
-                    // SPT's GetProfilesForMail/GetDialogueUsers fill these from the same Info
-                    // object; keep the replicated dialogue user list identical.
-                    PrestigeLevel = receiverProfile.CharacterData.PmcData.Info.PrestigeLevel,
-                    PrestigeGameMode = receiverProfile.CharacterData.PmcData.Info.PrestigeGameMode,
                     MemberCategory = receiverProfile.CharacterData.PmcData.Info.MemberCategory,
                     SelectedMemberCategory = receiverProfile.CharacterData.PmcData.Info.SelectedMemberCategory
                 }

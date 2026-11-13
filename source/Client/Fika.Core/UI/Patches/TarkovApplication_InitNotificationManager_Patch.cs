@@ -18,22 +18,23 @@ namespace Fika.Core.UI.Patches;
 /// presence providers.
 ///
 /// 47888 renamed the hooked method: <c>TarkovApplication.InitNotificationManager</c> (the name
-/// this patch used up to 47242) became <c>TarkovApplication.EnsureNotificationManagerAsync</c>,
-/// private and returning <c>Task</c>. The rename is confirmed on 1.2.0.47965: the interop exposes
-/// <c>EnsureNotificationManagerAsync()</c> and no member of either build is called
-/// <c>InitNotificationManager</c>, so the old name is not kept as a lookup - a branch that can
-/// never match would only hide a future rename behind a second silent null.
+/// this patch used up to 47242) is now <c>TarkovApplication.EnsureNotificationManagerAsync</c>,
+/// private and returning <c>Task</c>. The old name stays as a fallback so this file works on
+/// both builds.
 /// </summary>
 public class TarkovApplication_InitNotificationManager_Patch : ModulePatch
 {
     protected override MethodBase GetTargetMethod()
     {
-        // The member is private in the game build, so the lookup has to include non-public
+        // Both members are private in the game build, so the lookup has to include non-public
         // instance methods; without that the 47888 rename makes the patch silently dead (the
         // loader then reports "target method does not exist in this game build").
         return typeof(TarkovApplication)
-            .GetMethod("EnsureNotificationManagerAsync",
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                   .GetMethod("EnsureNotificationManagerAsync",
+                       BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+               ?? typeof(TarkovApplication)
+                   .GetMethod("InitNotificationManager",
+                       BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
     }
 
     /// <summary>

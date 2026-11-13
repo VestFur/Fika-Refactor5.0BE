@@ -334,6 +334,10 @@ public sealed class FikaPlugin : BasePlugin
     }
 
     /// <summary>Reads an integer entry that may not be bound yet (see <see cref="ReportStartupSettings"/>).</summary>
+    private static string ReadNumber(BepInEx.Configuration.ConfigEntry<int> entry)
+    {
+        return entry is null ? "unbound" : entry.Value.ToString();
+    }
 
     /// <summary>True once the config report was written with the entries that were really bound.</summary>
     private bool _boundSettingsReported;

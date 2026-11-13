@@ -554,6 +554,8 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
             if (attempts >= reportedAt)
             {
                 reportedAt = attempts + 5;
+                LoadSync.Report("WaitForServerToReceiveLocation", DescribeLocationWait()
+                    + " => waiting; the host acknowledges this once its own copy of the raid is created");
             }
 
             if (silentSeconds >= LoadSyncGate.ClientSilentWarnSeconds && silentSeconds % 15 == 0)
@@ -575,6 +577,9 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
             await Task.Delay(span);
         }
 
+        LoadSync.Report("WaitForServerToReceiveLocation",
+            "the host acknowledged the location after " + attempts + "s (responses=" + client.HostResponseCount
+            + ") => this client continues with its own game creation");
     }
 
     /// <summary>

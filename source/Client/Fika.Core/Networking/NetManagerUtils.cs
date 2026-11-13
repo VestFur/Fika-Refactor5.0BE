@@ -167,6 +167,10 @@ public static class NetManagerUtils
             // singletons and ClientType on purpose - the next raid of the same transit uses them. It
             // must only ever be taken for a transit that is really continuing (see AbortFailedJoin,
             // which clears the flag before it tears a failed join down).
+            LoadSync.Report("NetManagerUtils.DestroyNetManager",
+                "teardown role=" + (isServer ? "host" : "client") + ": transit=" + FikaBackendUtils.IsTransit
+                + " => the net manager, the connection and clientType=" + FikaBackendUtils.ClientType
+                + " survive into the next raid, only the per-raid state is reset");
 
             CreateLoadingScreenUI();
             LoadingScreenUI.Instance.ReInitAfterTransit();
@@ -209,6 +213,9 @@ public static class NetManagerUtils
             return;
         }
 
+        LoadSync.Report("NetManagerUtils.DestroyNetManager",
+            "teardown role=" + (isServer ? "host" : "client") + ": transit=" + FikaBackendUtils.IsTransit
+            + " => full teardown, clientType=" + FikaBackendUtils.ClientType + " is cleared and the connection is closed");
 
         DestroyLoadingScreenUI();
 

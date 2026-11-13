@@ -184,6 +184,11 @@ public class CoopHandler : MonoBehaviour
             }
         }
 
+        LoadSync.Report("CoopHandler.CleanUpForTransit",
+            "the raid state of the replaced world was dropped: observedPlayers=" + droppedPlayers
+            + " (network manager list cleared), queuedBeforeWorld=" + queuedBeforeWorld
+            + " => nothing of this raid is reachable through the surviving network manager, and the next"
+            + " world spawns its own players into an empty list");
     }
 
     /// <summary>
@@ -256,6 +261,11 @@ public class CoopHandler : MonoBehaviour
                 {
                     // The profile waited for the world: name how long, so a future run shows whether the
                     // world-not-ready window is still long enough to matter.
+                    LoadSync.Report("CoopHandler.Update",
+                        "a profile that was queued before the world existed is spawned now: netId=" + spawn.NetId
+                        + ", profile=" + spawn.Profile?.ProfileId + ", waited="
+                        + (UnityEngine.Time.realtimeSinceStartup - spawn.QueuedAt).ToString("0.0")
+                        + "s, spawnQueue=" + _spawnQueue.Count + " => the peer's character exists from here on");
                     spawn.QueuedBeforeWorld = false;
                 }
                 MainThreadDispatcher.RunAsync(() => SpawnPlayer(spawn).AsTask()).Forget();
@@ -628,6 +638,10 @@ public class CoopHandler : MonoBehaviour
         else
         {
             _profilesQueuedBeforeWorld++;
+            LoadSync.Report("CoopHandler.QueueProfile",
+                "the world does not exist yet, the profile stays queued instead of being dropped: netId=" + netId
+                + ", profile=" + profile.ProfileId + ", isAI=" + isAI + ", queuedBeforeWorld=" + _profilesQueuedBeforeWorld
+                + ", spawnQueue=" + _spawnQueue.Count + " => the spawn pump applies it once the world and ShouldSync exist");
         }
 
         if (_queuedPlayers.Contains(netId) && !Players.ContainsKey(netId))

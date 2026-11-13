@@ -3,7 +3,6 @@ using Comfort.Common;
 using Fika.Core.Main.Utils;
 using Fika.Core.Main.Components;
 using Fika.Core.Main.GameMode;
-using Fika.Core.Main.HostClasses;
 
 namespace Fika.Core;
 
@@ -23,14 +22,11 @@ public sealed class FikaPluginBehaviour : MonoBehaviour
         // the runtime turns into a crash instead of a log line (analysis/crash-clr). Every segment is
         // therefore guarded on its own, so one broken segment cannot starve the others - above all the
         // routine pump, which is the last statement and drives the whole raid start sequence.
+        FikaBoundaries.Enter(BoundaryUpdate);
 
         FikaPlugin.Instance.UpdateInitialization();
 
         RepairLocalStateInUpdate();
-
-        // A host inventory operation whose native completion never arrives keeps EFT.PickUpState
-        // entered; fail it here after its timeout so the pickup callback is completed.
-        FikaBoundaries.Run(BoundaryUpdate + "/HostOperationWatchdog.Tick", static () => HostOperationWatchdog.Tick());
 
         // AP (analysis/nonfika-raid-inertness): the raid kind is re-verified here - at most one singleton
         // read per 500 ms - so a gate that was armed for a raid of ours cannot survive into a native one

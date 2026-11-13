@@ -314,6 +314,9 @@ public sealed partial class FikaClient
             // packet cannot be applied at all and is counted instead of logged once per packet.
             if (TryQueueWorldPacket(ref packet, "OnWorldPacketReceived"))
             {
+                LoadSync.Trace("world packet queued while the world was missing (ragdolls=" + (packet?.RagdollPackets?.Count ?? 0)
+                    + ", grenades=" + (packet?.GrenadePackets?.Count ?? 0) + ", artillery=" + (packet?.ArtilleryPackets?.Count ?? 0)
+                    + ", syncObjects=" + (packet?.SyncObjectPackets?.Count ?? 0) + ", loot=" + (packet?.LootSyncStructs?.Count ?? 0) + ")");
                 // The receive path keeps one WorldPacket instance for every receive
                 // (NetPacketProcessor.SubscribeReusable), and the payload was copied to bytes above, so
                 // the shared instance is flushed exactly like the applied path does. Without this the
@@ -879,6 +882,14 @@ public sealed partial class FikaClient
         _lastHostLoaded = packet.HostLoaded;
         _lastHostReady = packet.HostReady;
 
+        LoadSync.Report("FikaClient.OnInformationPacketReceived",
+            "host state changed: hostReceivedLocation=" + packet.HostReceivedLocation + ", hostLoaded=" + packet.HostLoaded
+            + ", hostReady=" + packet.HostReady + ", readyClients=" + packet.ReadyPlayers + ", responses=" + HostResponseCount
+            + ", connected=" + (ServerConnection != null)
+            + " (" + LoadSync.DescribeScreen() + ") => "
+            + (packet.HostReceivedLocation
+                ? "this client may create its game object"
+                : "the host has not reached this raid's game creation yet; the client keeps waiting"));
     }
 
     private void OnCommonPlayerPacketReceived(CommonPlayerPacket packet)

@@ -28,13 +28,4 @@ public class HeadlessLaunchSettings
     /// explicit <c>false</c> restores the window.
     /// </summary>
     public bool StartMinimized { get; set; } = true;
-
-    /// <summary>
-    /// How the host presents itself: <c>Console</c> (<c>-batchmode -nographics</c>, no window,
-    /// no graphics device, no shaders) or <c>Hidden</c> (the historical windowed host). The
-    /// value is written into <c>StartHeadless.cmd</c> as well, and the Fika.Headless plugin
-    /// reads it back to log and enforce the same decision. An absent property falls back to
-    /// the server's <c>headless.display.mode</c>; a value an operator edits here wins.
-    /// </summary>
-    public string? Display { get; set; }
 }

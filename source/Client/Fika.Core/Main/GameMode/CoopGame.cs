@@ -309,6 +309,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     /// </remarks>
     public override Il2CppSystem.Collections.IEnumerator InitSessionUI()
     {
+        FikaBoundaries.Enter(BoundaryInitSessionUI);
         
         return NativeRoutines.Completed();
     }
@@ -834,13 +835,6 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             return;
         }
 
-        // [InvDiag] (2026-10-27, T3) The two interaction-lock signals the state switch below cannot see:
-        // MovementContext.CanInteract held, and the animator's interaction schedule denied. NativeInteractionRelease
-        // already treats both as "stuck", but nothing ever polled them - only the Pickup/Plant state name was watched,
-        // so a lost ground loot take that left the schedule denied kept every later take refused for the whole raid.
-        NativeInteractionRelease.WatchLostInteractionSchedule(_localPlayer,
-            _localPlayer.InventoryController?.TryCast<BaseInventoryController>()?.PendingOperationCount ?? 0, Time.time);
-
         // Only EPlayerState.Pickup: a ground item take animates for well under two
         // seconds, while container searching (Loot), planting, door breaching and
         // normal interactions legitimately last for seconds and must not be
@@ -879,9 +873,6 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         // GroundLootPickup.NoteStuckPickup). The release stays exactly as it was.
         GroundLootPickup.DiagnoseStuckState(movementContext, stuckState, heldFor);
         GroundLootPickup.NoteStuckPickup(_localPlayer, stuckState, heldFor);
-        // The native pickup continuation (MovementContext.PickupAction) is lost when the take-item
-        // animation event never fires. Run it once before releasing the state.
-        global::Fika.Core.Main.Utils.PickupContinuationRepair.TryRepair(_localPlayer, movementContext, stuckState, heldFor);
         _logger.LogWarning($"Local player stayed in {stuckState} for more than {timeout} seconds; releasing the native interaction state");
         NativeInteractionRelease.Release(_localPlayer, "stuck-pickup-state");
     }
@@ -1550,6 +1541,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         // il2cpp -> managed: an exception here would unwind into the native coroutine with no managed frame
         // above it, i.e. it would be the runtime's problem instead of a log line. It is caught, reported once
         // and swallowed, so the native coroutine still reaches the run callback that releases PrepareSession.
+        FikaBoundaries.Enter(BoundarySessionRun);
         FikaBoundaries.Run("CoopGame.SessionRun -> GameController.SetupEventsAndExfils",
             () => GameController.SetupEventsAndExfils(_playerOwner.Player));
         SessionStartTime = DateTimeExtensions.Now;
@@ -2199,8 +2191,6 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         Fika.Core.Main.Utils.FikaRaidGate.Disarm("CoopGame.CleanUp");
         FikaBackendUtils.CleanUpVariables();
         BTRSide_Patches.Passengers.Clear();
-        // A pooled host operation must not survive into the next raid and time out there.
-        global::Fika.Core.Main.HostClasses.HostOperationWatchdog.Reset();
         // (analysis/transit-crash-unload) Last stop of a raid: nothing of this world may stay reachable.
         Fika.Core.Main.Utils.WorldLifecycle.MarkWorldTornDown("CoopGame.CleanUp");
     }

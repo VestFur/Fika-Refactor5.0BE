@@ -77,14 +77,6 @@ internal static class FikaTerminalHostility
     /// <remarks>(hotfix 2026-10-14) OFF by default: this is the write that makes a player untouchable.</remarks>
     internal static bool ImmunityEnabled = false;
 
-    /// <summary>
-    /// (2026-10-26 W35) 只允许**权威机**写免疫容器的那一档。2026-10-14 那次热修的两个症状里，
-    /// "客机完全不吃伤害"就来自客机也写了自己的免疫；把写入收窄到权威机，这条症状在结构上就不成立。
-    /// 默认 true，但真正生效还要把 <see cref="ImmunityEnabled"/> 打开（两档是 AND 的是"谁写"，不是"写不写"）——
-    /// 也就是说：本档只负责"谁能写"，写入与否仍由 ImmunityEnabled 决定，默认仍为关闭，行为与热修后一致。
-    /// </summary>
-    internal static bool ImmunityAuthoritativeOnly = true;
-
     /// <summary>The read-only verdicts of the systems of this machine (the evidence half).</summary>
     internal static bool CensusEnabled = true;
 
@@ -141,12 +133,6 @@ internal static class FikaTerminalHostility
             }
 
             var profileId = player.ProfileId;
-
-            // (2026-10-26 W35) The authority-only immunity half is decided before the fan-out switch: a host that
-            // keeps the fan-out off can still tell its own code-driven zones that this player passed the card,
-            // while a client never writes its own immunity (that write is what made the client untouchable in the
-            // 2026-10-14 hotfix).
-            var immunityWanted = granted && ImmunityEnabled && (!ImmunityAuthoritativeOnly || Fika.Core.Main.Utils.FikaBackendUtils.IsServer);
             if (!Enabled)
             {
                 Line("fanout-off:" + Short(profileId) + ":" + source,
@@ -156,7 +142,7 @@ internal static class FikaTerminalHostility
                 return;
             }
 
-            if (immunityWanted)
+            if (granted && ImmunityEnabled)
             {
                 ApplyImmunity(player, source);
             }
@@ -165,7 +151,7 @@ internal static class FikaTerminalHostility
                 Line("immunity-off:" + Short(profileId) + ":" + source,
                     "card=swiped sys=immunity state=applied applied=no side=" + Side + " source=" + source
                     + " via=" + ViaNone + " profile=" + Short(profileId)
-                    + " -> result=immunity-off (ImmunityEnabled=false, or ImmunityAuthoritativeOnly=true on a client): the code-driven zones of this machine were not told");
+                    + " -> result=immunity-off (FikaTerminalHostility.ImmunityEnabled=false): the code-driven zones of this machine were not told");
             }
 
             Census(player, source);

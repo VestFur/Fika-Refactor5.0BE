@@ -344,27 +344,38 @@ public abstract class BaseGameController
         // all until the frame after - and no label named the statement. Every statement of this routine
         // that can take real time therefore writes its own label before it runs and a RETURNED label after
         // it. Diagnostics only: no switch, no behaviour change, two writes per raid per statement.
+        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishSetup);
 
+        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishLoading90);
         if (!FikaBackendUtils.IsHeadless)
             LoadingScreenUI.Instance.UpdateAndBroadcast(90f);
 
+        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishLoading90);
 
         _abstractGame.SetMatchmakerStatus(LocaleUtils.UI_FINISHING_RAID_INIT.Localized());
 
         WaitForEndOfFrame endOfFrame = new();
         if (!FikaBackendUtils.IsHeadless)
         {
+            FikaBoundaries.Mark(CountdownBisect.BoundaryFinishMusicWait);
             var musicTask = Singleton<GUISounds>.Instance.FadeBackgroundMusicAsync(false, Il2CppSystem.Threading.CancellationToken.None);
             while (!musicTask.IsCompleted)
                 yield return endOfFrame;
 
+            FikaBoundaries.Returned(CountdownBisect.BoundaryFinishMusicWait);
         }
 
+        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishAudioBuffer);
         AudioUtils.ResetAudioBuffer();
+        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishAudioBuffer);
 
+        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishTriggers);
         _gameWorld.TriggersModule = _abstractGame.gameObject.AddComponent<LocalFikaTriggersModule>();
+        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishTriggers);
 
+        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishLamps);
         _gameWorld.FillLampControllers();
+        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishLamps);
         if (Location.Id == "laboratory")
         {
             Season = ESeason.Summer;
@@ -383,18 +394,23 @@ public abstract class BaseGameController
 #endif
         // The season statement includes its own per-frame wait, so the RETURNED label follows the loop: a
         // trail that ends on the label above is a routine that was inside the season work.
+        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishSeasonRun);
         var runSeason = seasonController.Run(Season, SeasonsSettings, FikaBackendUtils.IsHeadless);
         while (!runSeason.IsCompleted)
         {
             yield return endOfFrame;
         }
 
+        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishSeasonRun);
 
+        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishBroadcast);
         if (MonoBehaviourSingleton<RadioBroadcastController>.Instantiated)
         {
             MonoBehaviourSingleton<RadioBroadcastController>.Instance.StartBroadcast();
         }
 
+        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishBroadcast);
+        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishSetup);
     }
 
     public abstract Task GenerateWeathers();
@@ -421,6 +437,8 @@ public abstract class BaseGameController
         // master switch 'Skip Countdown Body' (shipped ON) skips them all and jumps straight to the deploy
         // wait, which is the raid that starts no matter which statement is the aborter.
         // ---------------------------------------------------------------------------------------
+        FikaBoundaries.Enter(CountdownBisect.BoundaryBody);
+        FikaBoundaries.Mark(CountdownBisect.BoundaryBody);
 
         var dateTime = DateTimeExtensions.Now.AddSeconds(timeBeforeDeployLocal);
         var bisect = CountdownBisect.Read();
@@ -441,27 +459,39 @@ public abstract class BaseGameController
         // kept exactly as upstream wrote it - it is off by default only because it is the first managed
         // call site in the body and its call target is a doubly nested generic interop type, which is the
         // shape a JIT/call-site decision dies on.
+        FikaBoundaries.Enter(CountdownBisect.BoundaryScreen);
         if (!bisect.SkipBody && bisect.Screen)
         {
-            new MatchmakerFinalCountdown.FinalCountdownScreenController(profile, dateTime).ShowScreen(EScreenState.Root);
+            FikaBoundaries.Run(CountdownBisect.BoundaryScreen, () =>
+            {
+                new MatchmakerFinalCountdown.FinalCountdownScreenController(profile, dateTime).ShowScreen(EScreenState.Root);
+            });
         }
 
         // Lines 390-394: the raid start audio fade. NOT cosmetic, despite what the bisect round called it.
         // While the master switch skipped this body, BetterAudio never faded back in, so every sound except
         // the player's own stayed at the menu's faded-out volume (reported 2026-10-10: "everything is quiet
         // except the player"). It runs unconditionally now; neither bisect switch gates it any more.
-        if (MonoBehaviourSingleton<AmbientAudioSystem>.Instantiated)
+        FikaBoundaries.Enter(CountdownBisect.BoundaryAudioFades);
+        FikaBoundaries.Run(CountdownBisect.BoundaryAudioFades, () =>
         {
-            MonoBehaviourSingleton<AmbientAudioSystem>.Instance.Initialize();
-        }
+            if (MonoBehaviourSingleton<AmbientAudioSystem>.Instantiated)
+            {
+                MonoBehaviourSingleton<AmbientAudioSystem>.Instance.Initialize();
+            }
 
-        MonoBehaviourSingleton<BetterAudio>.Instance.FadeInVolumeBeforeRaid(timeBeforeDeployLocal);
+            MonoBehaviourSingleton<BetterAudio>.Instance.FadeInVolumeBeforeRaid(timeBeforeDeployLocal);
+        });
 
         // Lines 395-396 - cosmetic, switch 'Raid Start Menu Music' (default off).
+        FikaBoundaries.Enter(CountdownBisect.BoundaryMenuMusic);
         if (!bisect.SkipBody && bisect.MenuMusic)
         {
-            Singleton<GUISounds>.Instance.BackgroundMusicActive = false;
-            Singleton<GUISounds>.Instance.StopMenuBackgroundMusicWithDelay(timeBeforeDeployLocal);
+            FikaBoundaries.Run(CountdownBisect.BoundaryMenuMusic, () =>
+            {
+                Singleton<GUISounds>.Instance.BackgroundMusicActive = false;
+                Singleton<GUISounds>.Instance.StopMenuBackgroundMusicWithDelay(timeBeforeDeployLocal);
+            });
         }
 
         // The master switch: not one native object is touched in this body. If the trail's last label is
@@ -469,6 +499,8 @@ public abstract class BaseGameController
         // wait and whatever else runs while it is pending.
         if (bisect.SkipBody)
         {
+            FikaBoundaries.Enter(CountdownBisect.BoundarySkipBody);
+            FikaBoundaries.Mark(CountdownBisect.BoundarySkipBody);
             
 
             // ---------------------------------------------------------------------------------------
@@ -499,37 +531,57 @@ public abstract class BaseGameController
         else
         {
             // Kept statement 1/8: the raid needs the game UI (native hierarchy activation).
+            FikaBoundaries.Enter(CountdownBisect.BoundaryGameUi);
+            FikaBoundaries.Mark(CountdownBisect.BoundaryGameUi);
             if (bisect.GameUi)
             {
-                _abstractGame.GameUi.gameObject.SetActive(true);
+                FikaBoundaries.Run(CountdownBisect.BoundaryGameUi, () =>
+                {
+                    _abstractGame.GameUi.gameObject.SetActive(true);
+                });
+                FikaBoundaries.Returned(CountdownBisect.BoundaryGameUi);
             }
             else
             {
+                FikaBoundaries.Skipped(CountdownBisect.BoundaryGameUi);
             }
 
             // Kept statement 2/8: the extraction timer's profile binding - a managed call into a native
             // MonoBehaviour setter, the same panel the port had to guard in analysis/ui-log-noise.
+            FikaBoundaries.Enter(CountdownBisect.BoundaryTimerPanel);
+            FikaBoundaries.Mark(CountdownBisect.BoundaryTimerPanel);
             if (bisect.TimerPanel)
             {
-                _abstractGame.GameUi.TimerPanel.ProfileId = profileId;
+                FikaBoundaries.Run(CountdownBisect.BoundaryTimerPanel, () =>
+                {
+                    _abstractGame.GameUi.TimerPanel.ProfileId = profileId;
+                });
+                FikaBoundaries.Returned(CountdownBisect.BoundaryTimerPanel);
             }
             else
             {
+                FikaBoundaries.Skipped(CountdownBisect.BoundaryTimerPanel);
             }
         }
 
         // Kept statement 3/8: the deploy wait. Its completion is what writes 'step 2/3 done'.
         // It runs with the master switch on and off: the skip path keeps the deploy timing, so the session
         // sequence, the native session coroutine and everything downstream keep the same schedule.
+        FikaBoundaries.Enter(CountdownBisect.BoundaryDeployWait);
+        FikaBoundaries.Mark(CountdownBisect.BoundaryDeployWait);
         if (bisect.DeployWait)
         {
             // Round 3: the wait is bracketed at both ends. The 13:45 trail ended on the line above and
             // nothing in it said whether the process died while this routine was parked or in the first
             // statement after the wait - these two labels make that readable, and the pump writes its own
             // 'pump wait: ...' pair around the same wait (FikaRoutinePump.Routine.TraceWaitEntered/Returned).
+            FikaBoundaries.Mark(CountdownBisect.BoundaryDeployWaitYield);
             yield return new WaitSeconds(timeBeforeDeployLocal);
+            FikaBoundaries.Mark(CountdownBisect.BoundaryDeployWaitResumed);
         }
 
+        FikaBoundaries.Returned(CountdownBisect.BoundaryDeployWait);
+        FikaBoundaries.Mark(CountdownBisect.BoundaryBodyDone);
 
         // ---------------------------------------------------------------------------------------------
         // The countdown's teardown (analysis/countdown-restore), steps 2/4-4/4.
@@ -542,6 +594,8 @@ public abstract class BaseGameController
         // ---------------------------------------------------------------------------------------------
         if (countdownOverlayShown)
         {
+            FikaBoundaries.Enter(CountdownRestore.BoundaryTeardown);
+            FikaBoundaries.Mark(CountdownRestore.BoundaryTeardown);
 
             // Step 2/4 - take the overlay down again. On its own switch: "the overlay could not be closed" and
             // "the raid view was not restored" are different faults and must not share a label.
@@ -550,19 +604,25 @@ public abstract class BaseGameController
             // Step 3/4 - the raid view the countdown left behind: the same statement 4/8 the vanilla tail
             // runs, with its owner re-ready, reused rather than re-derived. It runs after the close on
             // purpose: closing the screen is what the restore then has to clean up after.
+            FikaBoundaries.Enter(CountdownRestore.BoundaryViewRestore);
+            FikaBoundaries.Mark(CountdownRestore.BoundaryViewRestore);
             if (restore.ViewRestore)
             {
                 if (FikaBoundaries.Run(CountdownRestore.BoundaryViewRestore, () => RestoreRaidViewAfterCountdown()))
                 {
+                    FikaBoundaries.Returned(CountdownRestore.BoundaryViewRestore);
                 }
             }
             else
             {
+                FikaBoundaries.Skipped(CountdownRestore.BoundaryViewRestore, "its switch ('Countdown: Opening Countdown View Restore') is OFF - the countdown's blur, effects and menu camera can stay on the raid view");
             }
 
             // Step 4/4 - the native screen can apply its post-processing one frame after it closed (the reason
             // statement 5/8 exists). Started on the Update pump: a managed enumerator handed to the engine
             // from inside this routine is the shape that faulted (analysis/host-raid-coroutine).
+            FikaBoundaries.Enter(CountdownRestore.BoundaryReassert);
+            FikaBoundaries.Mark(CountdownRestore.BoundaryReassert);
             if (restore.Reassert)
             {
                 if (FikaBoundaries.Run(CountdownRestore.BoundaryReassert, () =>
@@ -571,15 +631,23 @@ public abstract class BaseGameController
                         "RestoreRaidViewAfterCountdown (countdown restore)");
                 }))
                 {
+                    FikaBoundaries.Returned(CountdownRestore.BoundaryReassert);
                 }
             }
             else
             {
+                FikaBoundaries.Skipped(CountdownRestore.BoundaryReassert, "its switch ('Countdown: Opening Countdown Reassert') is OFF; a late blur application can survive the teardown");
             }
 
+            FikaBoundaries.Returned(CountdownRestore.BoundaryTeardown);
+            FikaBoundaries.Mark(CountdownRestore.BoundaryDone);
         }
         else
         {
+            FikaBoundaries.Enter(CountdownRestore.BoundaryTeardown);
+            FikaBoundaries.Skipped(CountdownRestore.BoundaryTeardown, bisect.SkipBody
+                ? "the countdown restore path did not put an overlay up in this raid (its 0/4 and 1/4 labels above say which switch decided that), so there is nothing to take down"
+                : "the countdown body ran (master switch OFF): its own statements 389/4/8/5/8 and their switches decided the countdown");
         }
 
         // Round 3 gate: the post-wait block (statements 4/8-8/8) has its own master switch now, so the
@@ -590,9 +658,15 @@ public abstract class BaseGameController
         var runPostWait = !bisect.SkipBody && !bisect.SkipPostWait;
         if (!runPostWait)
         {
+            FikaBoundaries.Enter(CountdownBisect.BoundaryPostWait);
+            FikaBoundaries.Skipped(CountdownBisect.BoundaryPostWait, bisect.SkipBody
+                ? "the master switch 'Skip Countdown Body' is ON, so the body never reached this block"
+                : "'Skip Post Wait Block' is ON");
         }
         else
         {
+            FikaBoundaries.Enter(CountdownBisect.BoundaryPostWait);
+            FikaBoundaries.Mark(CountdownBisect.BoundaryPostWait);
         }
 
         if (runPostWait)
@@ -601,12 +675,16 @@ public abstract class BaseGameController
             // when Fika bypasses the native LocalGame startup coroutine - a live raid with a permanently
             // blurred background. Restore the raid view after the countdown has elapsed, without touching
             // gameplay effects such as damage/death blur later in raid.
+            FikaBoundaries.Enter(CountdownBisect.BoundaryRestoreRaidView);
+            FikaBoundaries.Mark(CountdownBisect.BoundaryRestoreRaidView);
             if (bisect.RestoreRaidView)
             {
-                RestoreRaidViewAfterCountdown();
+                FikaBoundaries.Run(CountdownBisect.BoundaryRestoreRaidView, () => RestoreRaidViewAfterCountdown());
+                FikaBoundaries.Returned(CountdownBisect.BoundaryRestoreRaidView);
             }
             else
             {
+                FikaBoundaries.Skipped(CountdownBisect.BoundaryRestoreRaidView);
             }
 
             // Kept statement 5/8: the native countdown screen can apply its camera post-processing one
@@ -614,40 +692,54 @@ public abstract class BaseGameController
             // first-person view cannot remain permanently blurred. Driven by the Update pump instead of the
             // engine: a managed enumerator handed to the engine from inside this routine is the shape that
             // faulted during the host raid start (analysis/host-raid-coroutine).
+            FikaBoundaries.Enter(CountdownBisect.BoundaryRestoreRoutine);
+            FikaBoundaries.Mark(CountdownBisect.BoundaryRestoreRoutine);
             if (bisect.RestoreRoutine)
             {
                 FikaBoundaries.Run(CountdownBisect.BoundaryRestoreRoutine, () =>
                 {
                     FikaRoutinePump.Instance.Start(RestoreRaidViewAfterCountdownRoutine(), "RestoreRaidViewAfterCountdown");
                 });
+                FikaBoundaries.Returned(CountdownBisect.BoundaryRestoreRoutine);
             }
             else
             {
+                FikaBoundaries.Skipped(CountdownBisect.BoundaryRestoreRoutine);
             }
 
             // Kept statement 6/8: the transit controllers.
+            FikaBoundaries.Enter(CountdownBisect.BoundarySyncTransits);
+            FikaBoundaries.Mark(CountdownBisect.BoundarySyncTransits);
             if (bisect.SyncTransits)
             {
-                SyncTransitControllers(profileId);
+                FikaBoundaries.Run(CountdownBisect.BoundarySyncTransits, () => SyncTransitControllers(profileId));
+                FikaBoundaries.Returned(CountdownBisect.BoundarySyncTransits);
             }
             else
             {
+                FikaBoundaries.Skipped(CountdownBisect.BoundarySyncTransits);
             }
 
             // Kept statement 7/8: the raid-started event. Inside a boundary of its own: a subscriber that
             // throws must not unwind into the pump (it is reported as a [Boundary] failure instead).
+            FikaBoundaries.Enter(CountdownBisect.BoundaryRaidStartedEvent);
+            FikaBoundaries.Mark(CountdownBisect.BoundaryRaidStartedEvent);
             if (bisect.RaidStartedEvent)
             {
                 FikaBoundaries.Run(CountdownBisect.BoundaryRaidStartedEvent, () =>
                 {
                     FikaEventDispatcher.DispatchEvent(new FikaRaidStartedEvent(FikaBackendUtils.IsServer));
                 });
+                FikaBoundaries.Returned(CountdownBisect.BoundaryRaidStartedEvent);
             }
             else
             {
+                FikaBoundaries.Skipped(CountdownBisect.BoundaryRaidStartedEvent);
             }
 
             // Kept statement 8/8: the VOIP device fix (Dissonance natives), started on the pump.
+            FikaBoundaries.Enter(CountdownBisect.BoundaryVoipFix);
+            FikaBoundaries.Mark(CountdownBisect.BoundaryVoipFix);
             if (bisect.VoipFix)
             {
                 FikaBoundaries.Run(CountdownBisect.BoundaryVoipFix, () =>
@@ -657,11 +749,14 @@ public abstract class BaseGameController
                         _voipAudioFixRoutine = FikaRoutinePump.Instance.Start(FixVOIPAudioDevice(), "FixVOIPAudioDevice");
                     }
                 });
+                FikaBoundaries.Returned(CountdownBisect.BoundaryVoipFix);
             }
             else
             {
+                FikaBoundaries.Skipped(CountdownBisect.BoundaryVoipFix);
             }
 
+            FikaBoundaries.Returned(CountdownBisect.BoundaryPostWait);
         }
 
         // ---------------------------------------------------------------------------------------------
@@ -694,8 +789,11 @@ public abstract class BaseGameController
         {
             try
             {
+                FikaBoundaries.Enter(CountdownBisect.BoundaryHudRestore);
+                FikaBoundaries.Mark(CountdownBisect.BoundaryHudRestore);
                 _inRaidHudRestoreRoutine = FikaRoutinePump.Instance.Start(RestoreInRaidHudRoutine(),
                     "RestoreInRaidHud");
+                FikaBoundaries.Returned(CountdownBisect.BoundaryHudRestore);
                 
             }
             catch (Exception exception)
@@ -1265,6 +1363,7 @@ public abstract class BaseGameController
             {
             }
 
+            FikaBoundaries.Mark(CountdownBisect.BoundaryHudRestoreDone);
             
         }
         finally

@@ -74,11 +74,7 @@ internal sealed class CutsceneStartSyncPatch : ModulePatch
     public static bool Prefix(ref CutsceneProcess __result, string __0,
         Il2CppSystem.Collections.Generic.List<int> __1)
     {
-        if (RaidInteractionSync.World == null) return true;
-        // (2026-10-18) The host narrows the native seat table to the players the session really has, otherwise
-        // the "waiting for players" counter waits for seats nobody owns and the process never ends.
-        if (FikaBackendUtils.IsServer) RaidInteractionSync.FilterViewersToSession(__1);
-        if (!FikaBackendUtils.IsClient) return true;
+        if (RaidInteractionSync.World == null || !FikaBackendUtils.IsClient) return true;
         // (analysis/cutscene-client-native-trigger) The one local start that is let through: this machine's own
         // trigger asked for a cutscene the host never dispatched, so the bridge granted that very cutscene to the
         // native call. Everything after this return is native - the process, its seat table and the local viewer's
@@ -145,115 +141,13 @@ internal sealed class CutsceneViewCompleteSyncPatch : ModulePatch
     }
 }
 
-/// <summary>
-/// (2026-10-21) THE ONE END OF A CUTSCENE, ON EVERY MACHINE: <c>EndCutscene(cutsceneId, cutsceneProcessId,
-/// process, playersId, skip)</c> (interop, 5 args) is the call both roles end a process through - the host through
-/// its own <c>OnUpdate</c>, a client through <see cref="FikaLocalCutsceneTrigger"/>. Its postfix therefore carries
-/// the two things every machine has to do when a process ends, and it does them <b>before</b> any role-specific
-/// bookkeeping can return early:
-/// <list type="bullet">
-/// <item>the sniper-zone immunity the start granted is released for the viewers of the process and for this
-/// machine's own player - the host kept its entry for the rest of the raid because the old release was mapped
-/// from the session packet's NetIds, and the host's own raid id is not one of them;</item>
-/// <item>the host announces the end to the peers (see <see cref="RaidInteractionSync.EndCutscene"/>).</item>
-/// </list>
-/// The parameter names are the interop ones (<c>cutsceneProcessId</c>, <c>playersId</c>, <c>skip</c>), taken from
-/// the native stack trace of this build.
-/// </summary>
 internal sealed class CutsceneEndSyncPatch : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(CutscenesServerController),
         nameof(CutscenesServerController.EndCutscene));
 
     [PatchPostfix]
-    public static void Postfix(int cutsceneProcessId, Il2CppSystem.Collections.Generic.List<int> playersId, bool skip) =>
-        RaidInteractionSync.EndCutscene(cutsceneProcessId, playersId, skip);
-}
-
-/// <summary>
-/// (2026-10-21) THE MAP-TRIGGER CUTSCENE: <c>CutscenesServerController.StartCutsceneWithTime</c> (interop
-/// :94633, <c>cutsceneId, playersId, fixedTime, forceMode</c>) is the entry the location triggers use, and it
-/// does not pass the <c>StartCutscene</c> call the session broadcast hangs on - so a cutscene a trigger starts
-/// on the host never reached a client. The process it just created is taken from the controller's own table
-/// (<c>_cutsceneProcesses</c>, :94638) by cutscene id among the ones this session has not broadcast yet, and
-/// handed to the one broadcast of <see cref="RaidInteractionSync.StartCutscene"/> - same packet, same seat
-/// mapping, no second protocol.
-/// </summary>
-internal sealed class CutsceneStartWithTimeSyncPatch : ModulePatch
-{
-    protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(CutscenesServerController),
-        nameof(CutscenesServerController.StartCutsceneWithTime));
-
-    [PatchPrefix]
-    public static void Prefix(Il2CppSystem.Collections.Generic.List<int> __1)
-    {
-        // (2026-10-27 W49 / TARGETS N2 根治) 地图触发器起的过场（落地/世界类）在主机上会等到"每个观众
-        // 都确认"为止；合作局里对端没有被登记成本地进程，就永远不回确认，主机因此黑屏卡在过场里
-        // （用户实测：客机退出游戏后主机立刻正常）。这类过场每个机器都能自己播，所以主机只保留自己
-        // 一个座位，不再等对端；对端由它自己的触发器/兜底起本地进程。rally 那类走的是 StartCutscene，
-        // 不经过这里，仍然保留全队座位。
-        if (!FikaBackendUtils.IsServer || __1 == null) return;
-        try
-        {
-            var local = RaidInteractionSync.LocalPlayerId;
-            if (local <= 0 || __1.Count <= 1) return;
-            var before = __1.Count;
-            var kept = false;
-            for (var i = __1.Count - 1; i >= 0; i--)
-            {
-                if (__1[i] == local) { kept = true; continue; }
-                __1.RemoveAt(i);
-            }
-            if (!kept) __1.Add(local);
-            FikaGlobals.LogInfo($"[CgDiag] host-seats-narrowed from={before} to={__1.Count} " +
-                "reason=map-trigger cutscenes are played locally by every machine", "RaidInteractionSync");
-        }
-        catch (System.Exception exception)
-        {
-            FikaGlobals.LogWarning($"[CgDiag] host-seats-narrowed threw: {exception.GetType().Name}", "RaidInteractionSync");
-        }
-    }
-
-    [PatchPostfix]
-    public static void Postfix(CutscenesServerController __instance, string cutsceneId, bool forceMode)
-    {
-        RaidInteractionSync.StartCutsceneFromWithTime(__instance, cutsceneId, forceMode);
-    }
-}
-
-/// <summary>
-/// (2026-10-21) THE LOCAL VIEWER'S END: <c>CutscenesClientController.TimelineShowed</c> (interop :94368) is the
-/// moment this machine's timeline finished showing, i.e. the "viewed" half of the lifecycle of a process this
-/// machine created itself (<see cref="FikaLocalCutsceneTrigger"/>). The process id is captured before the native
-/// body runs (the postfixes of this file already rewrite what it announces), so the notification names the
-/// process that is actually running.
-/// </summary>
-internal sealed class CutsceneViewedLocalProcessPatch : ModulePatch
-{
-    protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(CutscenesClientController),
-        nameof(CutscenesClientController.TimelineShowed));
-
-    [PatchPrefix]
-    public static void Prefix(CutscenesClientController __instance, out int __state)
-    {
-        __state = 0;
-        try { __state = __instance == null ? 0 : __instance._cutsceneProcessId; }
-        catch (System.Exception) { __state = 0; }
-    }
-
-    [PatchPostfix]
-    public static void Postfix(CutscenesClientController __instance, string timelineId, int __state)
-    {
-        var cutscene = timelineId;
-        try { if (string.IsNullOrEmpty(cutscene) && __instance != null) cutscene = __instance._cutsceneId; }
-        catch (System.Exception) { }
-        FikaLocalCutsceneTrigger.NoteViewed(__state, cutscene);
-        // (2026-10-21) The end-of-cutscene safety net of the immunity release: this machine's own viewer just
-        // finished the timeline, which is the one end event both roles are guaranteed to run. It is only armed
-        // here - the release itself happens in RaidInteractionSync.Tick, a moment later, and the primary release
-        // (the postfix of the native EndCutscene) keeps precedence.
-        RaidInteractionSync.NoteLocalTimelineShown(__state);
-    }
+    public static void Postfix(int cutsceneProcessId, bool skip) => RaidInteractionSync.EndCutscene(cutsceneProcessId, skip);
 }
 
 // (analysis/cutscene-view-and-end) The two per-frame methods the whole cutscene clock depends on. The round-16

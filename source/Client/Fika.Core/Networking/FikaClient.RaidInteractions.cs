@@ -227,16 +227,7 @@ public sealed partial class FikaClient
                     break;
                 case CutsceneEndPacket end:
                     if (!_activeCutscenes.Remove(end.ProcessId, out var cutsceneId)) break;
-                    // (2026-10-20) Vanilla drops the sniper immunity a cutscene granted when its process ends.
-                    // This machine's process ends here, and the host only releases its own participants, so a
-                    // client kept the entry for the rest of the raid - the "client is still invincible after the
-                    // engine-room cutscene" report. The release touches this machine's own player only.
                     GlobalEventsController.CreateEvent<CutSceneEndEvent>().Invoke(cutsceneId);
-                    // The host may end a process this machine never got a native EndCutscene for (for example
-                    // an early host-side end or a force-closed process). Do not rely on the native end actions
-                    // to undo the cutscene protection: restore the local player explicitly as well.
-                    RaidInteractionSync.RestoreLocalDamageAfterCutscene("CutsceneEndPacket");
-                    RaidInteractionSync.ReleaseLocalSniperImmunity("CutsceneEndPacket");
                     // Ensure the matching active director is finished, even when the
                     // host ended early. The skip event owns its asynchronous fade cleanup.
                     if (!_skippedCutscenes.Remove(end.ProcessId) && controller._cutsceneProcessId == end.ProcessId &&

@@ -55,26 +55,6 @@ public sealed class ExfilCountdown : IPoolSubPacket
                     // Using the peer's current PastTime here discards the
                     // packet payload and causes countdowns to drift when the
                     // two Unity timers are not on the same frame.
-                    // (2026-10-26 W32) An activation this machine already has must never be pushed later: a client
-                    // that pressed the "black car" first starts its own countdown here, and this packet then arrived
-                    // with the host's later timestamp and reset it - the client waited a second time and stayed
-                    // behind while the host extracted.
-                    // (2026-10-27 T2-A) The value is a raw timestamp on the SENDER's clock (the sender writes its own
-                    // PastTime, the receiver compares it against its own in FikaExfilManager's tick), and the two
-                    // clocks differ by exactly the load offset of the two raids. Comparing the two values therefore
-                    // decides about two different clocks: with "the earlier one wins" the host replaced its own start
-                    // with the client's smaller stamp on every packet and its countdown jumped forward, while the
-                    // client kept a start the host did not share. The rule of this machine is simpler and needs no
-                    // agreement between the clocks: an activation THIS machine owns is never replaced (it is the one
-                    // that pays and extracts here), and only a machine without an activation adopts the peer's.
-                    var currentStart = exfiltrationPoint.ExfiltrationStartTime;
-                    if (currentStart > 0f)
-                    {
-                        FikaGlobals.LogInfo($"[CarExtract] kept the local activation: point '{ExfilName}' " +
-                            $"local={currentStart}, host={ExfilStartTime}, queued {exfiltrationPoint.QueuedPlayers?.Count ?? 0}");
-                        return;
-                    }
-
                     exfiltrationPoint.ExfiltrationStartTime = ExfilStartTime;
 
                     if (exfiltrationPoint.Status != EExfiltrationStatus.Countdown)
@@ -100,14 +80,7 @@ public sealed class ExfilCountdown : IPoolSubPacket
                 {
                     if (secretExfiltration.Settings.Name == ExfilName)
                     {
-                        // (2026-10-27 T2-A) Same rule as the public points: an activation of this machine is
-                        // never replaced by a peer's stamp, which is on the peer's clock. Only a machine without
-                        // an activation adopts it.
-                        var secretStart = secretExfiltration.ExfiltrationStartTime;
-                        if (!(secretStart > 0f))
-                        {
-                            secretExfiltration.ExfiltrationStartTime = ExfilStartTime;
-                        }
+                        secretExfiltration.ExfiltrationStartTime = ExfilStartTime;
 
                         if (secretExfiltration.Status != EExfiltrationStatus.Countdown)
                         {

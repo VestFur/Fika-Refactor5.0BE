@@ -623,7 +623,7 @@ public class FikaHeadlessPlugin : BasePlugin
                 new AcceptableValueList<string>(
                     nameof(HeadlessRunMode.Auto), nameof(HeadlessRunMode.Headless), nameof(HeadlessRunMode.Disabled))));
 
-        UpdateRate = Config.Bind("Headless", "Update Rate", 30,
+        UpdateRate = Config.Bind("Headless", "Update Rate", 60,
             new ConfigDescription("How often the server should update (frame cap / tick rate). Only works if your machine can actually reach the selected setting",
             new AcceptableValueRange<int>(30, 120)));
 

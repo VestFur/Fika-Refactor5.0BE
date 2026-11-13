@@ -49,8 +49,7 @@ internal static class KeypadDiag
     internal static bool RepairEnabled = true;
 
     /// <summary>The diagnostic family itself. The lines are rare, so it is on by default.</summary>
-    // (2026-10-18 refactor W1b / tracker A21) Diagnostic family switched off: the repair switch below is the only behaviour this class still carries.
-    internal static bool Enabled = false;
+    internal static bool Enabled = true;
 
     private const int MaxLines = 400;
 

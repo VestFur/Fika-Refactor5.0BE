@@ -78,9 +78,7 @@ internal static class FikaFinalMissionDirector
     /// it. It is a <c>static bool</c> and not a <c>const</c> on purpose - the same deal as the switches of the
     /// cutscene bridge - so the rollback is one assignment (or one config key the main agent wires).
     /// </summary>
-    // (2026-10-18 refactor W3-finalmission) Ending repair layer OFF: periodic watchdog, completion retry and
-    // scene rescue all keyed on this switch; the final mission now runs on the native signals only.
-    internal static bool EndingRepair = false;
+    internal static bool EndingRepair = true;
 
     private sealed class Ending
     {
@@ -296,28 +294,23 @@ internal static class FikaFinalMissionDirector
             _zone._evacuateTimerElapsed = Math.Min(_zone.evacuateTimer, _zone._evacuateTimerElapsed + Time.deltaTime);
 
         if (_localEnding.HasValue && !_localStarted) StartLocalEnding();
-        // (2026-10-26 W18, restored from upstream 3.0.4) The ending repair layer was wired out by
-        // W3-finalmission: the switch stayed, the behaviour it guards did not. Restored verbatim, still
-        // guarded by EndingRepair (config 'Final Mission: Ending Repair', default true):
-        //   * WatchLocalEnding - this machine's own ending is followed until it really completes, so one lost
-        //     native signal cannot leave the raid on the ending picture;
-        //   * PrepareLocal on completion - the local exit path is prepared as soon as the ending completed;
-        //   * RetryCompletion - a lost ExitAuthorized acknowledgement is repeated (the host handler is
-        //     idempotent for the same outcome id), instead of waiting forever for an answer.
-        if (EndingRepair && _localStarted && !_localComplete) WatchLocalEnding();
-        if (_localComplete) PrepareLocal(game);
-        if (EndingRepair && _localComplete && !_exitAuthorized)
-        {
-            var retryNow = Time.unscaledTime;
-            if (retryNow >= _nextCompleteRetry)
-            {
-                _nextCompleteRetry = retryNow + EndingCompleteRetrySeconds;
-                RetryCompletion();
-            }
-        }
         // (analysis/terminal-ending-settlement) The ending of this machine is followed from here: the native
         // signals that report its end are the only other way it can finish, and one lost signal must not leave
         // the raid on its ending picture (see WatchLocalEnding).
+        if (EndingRepair && _localStarted && !_localComplete) WatchLocalEnding();
+        if (_localComplete) PrepareLocal(game);
+        // The host acknowledges a completion with ExitAuthorized. A reliable packet can still be lost with the
+        // peer that has to deliver it, so an unacknowledged completion is repeated instead of waiting forever -
+        // the host's handler is idempotent for the same outcome id.
+        if (EndingRepair && _localComplete && !_exitAuthorized)
+        {
+            var now = Time.unscaledTime;
+            if (now >= _nextCompleteRetry)
+            {
+                _nextCompleteRetry = now + EndingCompleteRetrySeconds;
+                RetryCompletion();
+            }
+        }
         if (FikaBackendUtils.IsClient && _localComplete &&
             FikaSingleton<FikaClient>.Instance?.ServerConnection?.ConnectionState != ConnectionState.Connected)
             _exitAuthorized = true; // Save the already-issued host outcome after connection loss.
@@ -973,6 +966,11 @@ internal static class FikaFinalMissionDirector
         // by the suppressed native exit (analysis/terminal-ending-settlement).
         var verdict = CutsceneBoundary.StopSceneOf(ending.CutsceneId);
         
+        if (EndingRepair && verdict.StartsWith("no-director", StringComparison.Ordinal))
+        {
+            FikaGlobals.LogError($"Cannot finish timed-out final cutscene '{ending.CutsceneId}': its director is unavailable");
+            CompleteLocal("the cutscene timer expired and the ending's director was unavailable, so the outcome of the host is settled directly");
+        }
         // Never signal success without running the native end-actions/cleanup.
         return true;
     }

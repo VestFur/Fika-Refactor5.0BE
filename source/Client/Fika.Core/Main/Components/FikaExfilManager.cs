@@ -134,7 +134,9 @@ public class FikaExfilManager : MonoBehaviour
             if (_playerHandlers.Remove(playerHandler))
             {
                 _game.ExitLocation = playerHandler.ExfilPoint.Settings.Name;
+                FikaExtractDiag.ExtractCall(_game, playerHandler.ExfilPoint.Settings.Name, playerHandler.Player, "handler");
                 _game.Extract(playerHandler.Player, playerHandler.ExfilPoint);
+                FikaExtractDiag.ExtractReturned(_game, playerHandler.ExfilPoint.Settings.Name, playerHandler.Player);
             }
         }
 
@@ -170,7 +172,9 @@ public class FikaExfilManager : MonoBehaviour
                         _game.ExitLocation = exfiltrationPoint.Settings.Name;
                         if (player.TryCast<FikaPlayer>() is { } localPlayer)
                         {
+                            FikaExtractDiag.ExtractCall(_game, exfiltrationPoint.Settings.Name, localPlayer, "countdown");
                             _game.Extract(localPlayer, exfiltrationPoint);
+                            FikaExtractDiag.ExtractReturned(_game, exfiltrationPoint.Settings.Name, localPlayer);
                             // Only the local player is extracted by this manager;
                             // extraction can mutate Entered or stop the manager.
                             extracted = true;
@@ -461,45 +465,12 @@ public class FikaExfilManager : MonoBehaviour
         var isCounting = _countdownPoints.Contains(point);
         if (isCounting && point.Status != EExfiltrationStatus.Countdown)
         {
-            // (2026-10-27 W43 / TARGETS T2-A 第二半) 这条分支原来无条件把倒计时就地销毁：置
-            // ExfiltrationStartTime = -100 并从 _countdownPoints 删掉。而 ExfilCountdown 包只来一次，
-            // 于是"主机先撤/主机把点位状态改了"→ 客机的倒计时被永久销毁，本机再也结算不了
-            // （现象：停在 exits stay disabled）。现在改成"只在本机这条倒计时确实没用了才销毁"。
-            var elapsed = _game.PastTime - point.ExfiltrationStartTime;
-            var remaining = point.Settings.ExfiltrationTime - elapsed;
-            var localPlayerStillIn = false;
-            foreach (var entered in point.Entered)
+            point.ExfiltrationStartTime = -100;
+            _countdownPoints.Remove(point);
+            if (IsPaidExfiltrationPoint(point))
             {
-                if (entered != null && entered.IsYourPlayer && entered.HealthController != null && entered.HealthController.IsAlive)
-                {
-                    localPlayerStillIn = true;
-                    break;
-                }
-            }
-
-            // 保留条件：本机自己的倒计时还在跑（有有效起点、还没走完），本机玩家还活着且在点位里，
-            // 且点位不是被真正关闭（NotPresent / Hidden）。其余情况照旧销毁。
-            var keepLocalCountdown = point.ExfiltrationStartTime > 0f
-                && remaining > 0f
-                && localPlayerStillIn
-                && point.Status != EExfiltrationStatus.NotPresent
-                && point.Status != EExfiltrationStatus.Hidden;
-
-            if (keepLocalCountdown)
-            {
-                FikaGlobals.LogInfo($"[CarExtract] kept the local countdown of '{point.Settings.Name}' " +
-                    $"(host status {point.Status}, remaining {remaining:F1}s of {point.Settings.ExfiltrationTime:F0}s) " +
-                    "- this machine still finishes it itself", "FikaExfilManager");
-            }
-            else
-            {
-                point.ExfiltrationStartTime = -100;
-                _countdownPoints.Remove(point);
-                if (IsPaidExfiltrationPoint(point))
-                {
-                    FikaGlobals.LogInfo($"[CarExtract] point '{point.Settings.Name}' left the countdown " +
-                        $"(status {point.Status}, queued {point.QueuedPlayers?.Count ?? 0}, remaining {remaining:F1}s)");
-                }
+                FikaGlobals.LogInfo($"[CarExtract] point '{point.Settings.Name}' left the countdown " +
+                    $"(status {point.Status}, queued {point.QueuedPlayers?.Count ?? 0})");
             }
         }
 

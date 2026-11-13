@@ -402,9 +402,7 @@ public class FikaHeadlessTransitController : TransitController
         // read before the registration is removed here.
         var registeredForThisPoint = transitPlayers != null &&
             transitPlayers.TryGetValue(player.ProfileId, out var registeredPoint) &&
-            // (2026-10-27 W42 / T2-B) transitPlayers 有两种取值形状：原生与 RegisterTransitParticipant 写 raid id，
-            // 历史路径写 point id。此前只认 point id，"已注册的玩家"被读成"没注册"，取消倒计时时谁都不放。
-            (registeredPoint == point.parameters.id || registeredPoint == player.RaidId);
+            registeredPoint == point.parameters.id;
 
         if (_playersInTransitZone.TryGetValue(player.ProfileId, out var value))
         {
@@ -1017,13 +1015,7 @@ public class FikaHeadlessTransitController : TransitController
         {
             foreach (var entry in transitPlayers)
             {
-                // (2026-10-27 W42) 同上：raid id 形状也要算进来，否则取消倒计时时列表恒空。
-                if (entry.Value == pointId) { result.Add((entry.Key, entry.Value)); }
-                else
-                {
-                    var owner = FindHumanPlayer(entry.Key);
-                    if (owner != null && entry.Value == owner.RaidId) { result.Add((entry.Key, owner.RaidId)); }
-                }
+                if (entry.Value == pointId) result.Add((entry.Key, entry.Value));
             }
         }
         catch (System.Exception exception)
@@ -1369,9 +1361,7 @@ public class FikaHeadlessTransitController : TransitController
         {
             if (member == null) continue;
             eligible++;
-            // (2026-10-27 W42 / T2-B) 两种形状都接受，否则"客机先按"已注册的玩家会被跳过、且带着 ban 留在旧局。
-            if (!transitPlayers.TryGetValue(member.ProfileId, out var registeredPoint) ||
-                (registeredPoint != pointId && registeredPoint != member.RaidId))
+            if (!transitPlayers.TryGetValue(member.ProfileId, out var registeredPoint) || registeredPoint != pointId)
             {
                 _transferFailures.Add($"{member.ProfileId}=not registered for point {pointId}");
                                 continue;
@@ -1430,13 +1420,7 @@ public class FikaHeadlessTransitController : TransitController
         {
             foreach (var entry in transitPlayers)
             {
-                // (2026-10-27 W42) 同上：否则转移包的 player count 恒为 1。
-                if (entry.Value == pointId) { count++; }
-                else
-                {
-                    var owner = FindHumanPlayer(entry.Key);
-                    if (owner != null && entry.Value == owner.RaidId) { count++; }
-                }
+                if (entry.Value == pointId) count++;
             }
         }
         catch (System.Exception)

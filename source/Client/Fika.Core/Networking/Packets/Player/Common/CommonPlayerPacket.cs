@@ -1,4 +1,4 @@
-using Fika.Core.Main.Players;
+﻿using Fika.Core.Main.Players;
 using Fika.Core.Networking.Pooling;
 
 namespace Fika.Core.Networking.Packets.Player.Common;
@@ -11,7 +11,7 @@ public sealed class CommonPlayerPacket : INetReusable
 
     public void Execute(FikaPlayer player = null)
     {
-        SubPacket?.Execute(player);
+        SubPacket.Execute(player);
     }
 
     public void Deserialize(NetDataReader reader)
@@ -19,15 +19,6 @@ public sealed class CommonPlayerPacket : INetReusable
         NetId = reader.GetInt();
         Type = reader.GetEnum<ECommonSubPacketType>();
         SubPacket = CommonSubPacketPoolManager.Instance.GetPacket<IPoolSubPacket>(Type);
-        // (2026-10-26 W24) Unknown sub-packet type (peer on a different build): the pool reports it and returns
-        // null. Skipping the body leaves this packet inert instead of throwing inside the network poll loop.
-        if (SubPacket == null)
-        {
-            reader.SkipBytes(reader.AvailableBytes);
-            Type = default;
-            return;
-        }
-
         SubPacket.Deserialize(reader);
     }
 

@@ -106,16 +106,23 @@ internal static class SessionPump
     private static IEnumerator Sequence(CoopGame game, Il2CppSystem.Action runCallback)
     {
         
+        FikaBoundaries.Enter(CoopGame.BoundarySequenceStep1);
+        FikaBoundaries.Mark(CoopGame.BoundarySequenceStep1);
         yield return FikaBoundaries.Run("SessionSequence step 1/3 (FinishRaidSetup)",
             () => game.GameController.FinishRaidSetup(), null);
         
 
         
+        FikaBoundaries.Enter(CoopGame.BoundarySequenceStep2);
+        FikaBoundaries.Mark(CoopGame.BoundarySequenceStep2);
         yield return FikaBoundaries.Run("SessionSequence step 2/3 (CountdownScreen)",
             () => game.GameController.CountdownScreen(game.Profile, game.ProfileId), null);
+        FikaBoundaries.Mark(CoopGame.BoundarySequenceStep2Done);
         
 
         
+        FikaBoundaries.Enter(CoopGame.BoundarySequenceStep3);
+        FikaBoundaries.Mark(CoopGame.BoundarySequenceStep3);
         FikaBoundaries.Run("SessionSequence step 3/3 (start the native session coroutine on the pump)",
             () => _sessionCoroutine = NativeBaseCalls.Call69(game, runCallback));
 

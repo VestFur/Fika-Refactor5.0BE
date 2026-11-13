@@ -122,7 +122,38 @@ internal static class FikaExtractDiag
         }
     }
 
+    /// <summary>About to call into <c>CoopGame.Extract</c> for the local player.</summary>
+    internal static void ExtractCall(CoopGame game, string pointName, Player player, string source)
+    {
+        try
+        {
+            var netId = NetIdOf(player);
+            var already = IsMarkedExtracted(game, player);
+            FikaGlobals.LogWarning($"[ExtractDiag] extract call point='{pointName}' source={source} profile={player.ProfileId} raidId={player.RaidId} netId={netId} alreadyExtracted={already}{DescribeGuardState(player)} - {(already ? "the game's Extract returns immediately for an already extracted player" : "the raid stop routine is expected to start now")}");
+        }
+        catch (Exception exception)
+        {
+            FikaGlobals.LogError($"[ExtractDiag] extract call diagnostics failed: {exception}");
+        }
+    }
 
+    /// <summary>The <c>CoopGame.Extract</c> call returned: did it take the local player?</summary>
+    internal static void ExtractReturned(CoopGame game, string pointName, Player player)
+    {
+        try
+        {
+            var netId = NetIdOf(player);
+            var extracted = IsMarkedExtracted(game, player);
+            var tail = extracted
+                ? "the player is registered as extracted, the raid stop routine is running"
+                : "the player is still not registered as extracted: the call was refused or lost, so nothing will happen at this exit (compare HostGameController.Extract / ClientGameController.Extract)";
+            FikaGlobals.LogWarning($"[ExtractDiag] extract call returned point='{pointName}' netId={netId} registeredAsExtracted={extracted} - {tail}");
+        }
+        catch (Exception exception)
+        {
+            FikaGlobals.LogError($"[ExtractDiag] extract result diagnostics failed: {exception}");
+        }
+    }
 
     /// <summary>
     /// Releases the exfiltration guard entry of every player this machine can see whose transit is
@@ -384,6 +415,24 @@ internal static class FikaExtractDiag
         }
     }
 
+    private static bool IsMarkedExtracted(CoopGame game, Player player)
+    {
+        try
+        {
+            var netId = NetIdOf(player);
+            if (game != null && game.ExtractedPlayers != null && game.ExtractedPlayers.Contains(netId))
+            {
+                return true;
+            }
+
+            var extracted = FikaSingleton<IFikaGame>.Instance?.ExtractedPlayers;
+            return extracted != null && extracted.Contains(netId);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
 
     private static int NetIdOf(Player player)
     {
@@ -414,9 +463,78 @@ internal static class FikaExtractDiag
         }
     }
 
+    private static bool IsEntered(ExfiltrationPoint point, Player player)
+    {
+        try
+        {
+            var entered = point.Entered;
+            if (entered == null)
+            {
+                return false;
+            }
 
+            foreach (var other in entered)
+            {
+                if (other == null)
+                {
+                    continue;
+                }
 
+                if (ReferenceEquals(other, player) || Matches(other, player.ProfileId))
+                {
+                    return true;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // A destroyed point reports nothing.
+        }
 
+        return false;
+    }
+
+    private static float DistanceTo(ExfiltrationPoint point, Vector3 position)
+    {
+        try
+        {
+            return Vector3.Distance(point.transform.position, position);
+        }
+        catch (Exception)
+        {
+            return -1f;
+        }
+    }
+
+    private static string PointName(ExfiltrationPoint point)
+    {
+        try
+        {
+            if (point == null)
+            {
+                return null;
+            }
+
+            var name = point.Settings?.Name;
+            return string.IsNullOrEmpty(name) ? null : name;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static float ExfiltrationTime(ExfiltrationPoint point)
+    {
+        try
+        {
+            return point.Settings.ExfiltrationTime;
+        }
+        catch (Exception)
+        {
+            return -1f;
+        }
+    }
 
     /// <summary>
     /// The state of the signal-flare exit chain on this machine, for the raid start and attempt lines:
@@ -426,8 +544,49 @@ internal static class FikaExtractDiag
     /// for the shooter's flare object. A machine that shows <c>triggers=0 gated=[]</c> cannot react to a
     /// flare at all, which is what a map without detector zones and without the trigger chain looks like.
     /// </summary>
+    private static string DescribeHeliChain()
+    {
+        try
+        {
+            return "triggers=" + FikaFlareExfil.SceneFlareTriggerCount()
+                + " pending=" + FikaFlareExfil.PendingVisualCount()
+                + " gated=[" + string.Join(",", FikaFlareExfil.GatedPointNames()) + "]";
+        }
+        catch (Exception exception)
+        {
+            return "unavailable (" + exception.Message + ")";
+        }
+    }
 
+    private static string CountdownStart(ExfiltrationPoint point)
+    {
+        try
+        {
+            return point.ExfiltrationStartTime.ToString("F1");
+        }
+        catch (Exception)
+        {
+            return "unknown";
+        }
+    }
 
+    private static string DescribeInteraction(ExfiltrationPoint point)
+    {
+        try
+        {
+            var collider = point.ExtendedCollider;
+            if (collider == null)
+            {
+                return "unknown";
+            }
+
+            return collider.enabled ? "on" : "off";
+        }
+        catch (Exception)
+        {
+            return "unknown";
+        }
+    }
 
     private static bool Contains(List<string> names, string name)
     {
@@ -448,9 +607,125 @@ internal static class FikaExtractDiag
     }
 
     /// <summary>The requirement types the game still counts as unmet for this player.</summary>
+    private static string DescribeUnmet(ExfiltrationPoint point, Player player)
+    {
+        try
+        {
+            var unmet = point.UnmetRequirements(player);
+            if (unmet == null)
+            {
+                return string.Empty;
+            }
 
+            var builder = new StringBuilder();
+            foreach (var requirement in unmet.AsManaged())
+            {
+                if (requirement == null)
+                {
+                    continue;
+                }
+
+                if (builder.Length > 0)
+                {
+                    builder.Append(',');
+                }
+
+                builder.Append(RequirementName(requirement));
+            }
+
+            return builder.ToString();
+        }
+        catch (Exception exception)
+        {
+            return "unreadable:" + exception.GetType().Name;
+        }
+    }
+
+    private static string RequirementName(ExfiltrationRequirement requirement)
+    {
+        try
+        {
+            return requirement.GetIl2CppType().Name;
+        }
+        catch (Exception)
+        {
+            try
+            {
+                return requirement.GetType().Name;
+            }
+            catch (Exception)
+            {
+                return "requirement";
+            }
+        }
+    }
 
     /// <summary>Null while the attempt still has every chance; otherwise the gate that refused it.</summary>
+    private static string RefusalReason(bool entered, bool near, bool handled, string mayExtract, string unmet)
+    {
+        if (!entered && near)
+        {
+            return "the point never entered the local player (its trigger or its interaction is off, or its status is not usable for him)";
+        }
 
+        if (entered && !handled)
+        {
+            return "the native point entered the player but started no extraction for him (status or requirement gate inside ExfiltrationPoint)";
+        }
+
+        if (handled && string.Equals(mayExtract, "False", StringComparison.Ordinal))
+        {
+            return "the flare gate refused this profile: no activation covers it for this point (FikaFlareExfil.MayExtract)";
+        }
+
+        if (handled && !string.IsNullOrEmpty(unmet) && unmet.StartsWith("unreadable", StringComparison.Ordinal) == false && unmet.Length > 0)
+        {
+            return "unmet requirement(s) kept the countdown path from extracting: " + unmet;
+        }
+
+        return null;
+    }
+
+    private static string DescribeGuardState(Player player)
+    {
+        try
+        {
+            var controller = global::CommonAssets.Scripts.Game.ExfiltrationController.Instance;
+            var banned = controller?.BannedPlayers;
+            var raidId = 0;
+            var alt = 0;
+            try
+            {
+                raidId = player.RaidId;
+                alt = SafeId(player);
+            }
+            catch (Exception)
+            {
+                // Both stay 0.
+            }
+
+            var isBanned = banned != null && (banned.Contains(raidId) || (alt != 0 && alt != raidId && banned.Contains(alt)));
+            var registered = "no";
+            try
+            {
+                var transit = Singleton<GameWorld>.Instance?.TransitController;
+                var registrations = transit?.transitPlayers;
+                if (registrations != null && !string.IsNullOrEmpty(player.ProfileId) && registrations.TryGetValue(player.ProfileId, out var registeredRaidId))
+                {
+                    registered = registeredRaidId.ToString();
+                }
+            }
+            catch (Exception)
+            {
+                registered = "unreadable";
+            }
+
+            return $" ban={isBanned} bannedCount={banned?.Count ?? -1} transitRegistration={registered}";
+        }
+        catch (Exception)
+        {
+            return " ban=unreadable";
+        }
+    }
 
 }

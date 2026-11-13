@@ -153,6 +153,9 @@ public sealed partial class FikaClient
     private void DropStaleTransitEvent(TransitEventPacket packet, int generation, string site)
     {
         _transitQueueDroppedThisWindow++;
+        LoadSync.Trace("transit event dropped at " + site + ": type=" + (packet == null ? "null" : packet.EventType.ToString())
+            + " queuedInGeneration=" + generation + " currentGeneration=" + _mapStateGeneration
+            + " => it already survived a whole world without being consumed");
     }
 
     /// <summary>One line per world swap that saw transit traffic: what arrived, what was kept, what was dropped.</summary>
@@ -173,6 +176,13 @@ public sealed partial class FikaClient
             types.Append(entry.Key).Append('=').Append(entry.Value);
         }
 
+        LoadSync.Report("FikaClient.ClearMapState",
+            "transit event queue at the world swap: arrived=" + _transitQueueReceivedThisWindow + " kept=" + kept
+            + " dropped=" + droppedAtSwap + " reason=dropped entries were queued before the previous world; kept ones are the swap window of the raid being created"
+            + " types=[" + (types.Length == 0 ? "none" : types.ToString()) + "] history=" + history
+            + " generation=" + (generation - 1) + "->" + generation + " deltaDroppedTotal=" + _transitQueueDroppedThisWindow
+            + ", " + TransitReloadGate.Describe()
+            + " => the transit state that arrived while this machine had no world is handed to the new raid's controller instead of being dropped at the swap");
 
         _transitQueueReceivedThisWindow = 0;
         _transitQueueDroppedThisWindow = 0;
@@ -212,27 +222,6 @@ public sealed partial class FikaClient
         if (view == null) return;
         if (Singleton<GameWorld>.Instance != null) BindMapWorld();
         _readyBtrView = view;
-    }
-
-    /// <summary>
-    /// (2026-10-26 W28) Shows the BTR view on a client. The native path shows it from its own server-side code, so a
-    /// Fika client receives position, rotation and the sound controller but never the mesh: the vehicle is audible
-    /// and invisible. <c>BTRView._viewVisible</c> and <c>ShowView()</c> exist in the interop surface
-    /// (analysis/_re-btr.txt), so this asks exactly once, and only while the view is still hidden.
-    /// </summary>
-    private static void EnsureBtrViewVisible(BTRView view)
-    {
-        try
-        {
-            if (view == null) return;
-            if (view._viewVisible) return;
-            view.ShowView();
-            FikaGlobals.LogInfo("[BtrDiag] view shown by Fika (the native client path never calls ShowView)");
-        }
-        catch (System.Exception exception)
-        {
-            FikaGlobals.LogError($"BTR view could not be shown: {exception}");
-        }
     }
 
     private void QueueBtrState(ShapshotBTRMessage state)
@@ -348,15 +337,10 @@ public sealed partial class FikaClient
                     _pendingBtrSpawn = null;
                     GlobalEventsController.CreateEvent<BtrSpawnOnThePathEvent>().Invoke(spawn.Position, spawn.Rotation, spawn.PlayerRaidId);
                     _appliedBtrGeneration = spawn.Generation;
-                    // (2026-10-26 W28) 客机"只听见 BTR 声音、看不见车"：BTRView 的 ShowView() 是私有方法，
-                    // 只有原生主机路径会调它；客机走 InitClient + SyncViewFromServer，位置/音效都对，但
-                    // 网格一直停在隐藏态。车一出现在路上就把它显出来，且只在隐藏时动一次。
-                    EnsureBtrViewVisible(btr.BtrView);
                 }
                 if (_hasBtrState && _appliedBtrGeneration > 0)
                 {
                     _readyBtrView.SyncViewFromServer(ref _pendingBtrState);
-                    EnsureBtrViewVisible(_readyBtrView);
                     _hasBtrState = false;
                 }
             }

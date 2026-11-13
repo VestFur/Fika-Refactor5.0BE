@@ -82,9 +82,8 @@ internal static class LoadSync
     /// </summary>
     internal static void Report(string caller, string message)
     {
-        // (2026-10-18 refactor W1 / tracker A16) Diagnostics only: the loading wait no longer writes one
-        // line per poll. The entry point stays so no call site changes; the failure line that must survive
-        // (a timeout, a peer that never came) is Warn below.
+        FikaGlobals.LogInfo("[LoadSync] " + message, caller);
+        
     }
 
     /// <summary>A line that names a degraded outcome (a wait that timed out, a peer that never came).</summary>
