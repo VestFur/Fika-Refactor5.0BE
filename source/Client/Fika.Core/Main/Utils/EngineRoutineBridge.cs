@@ -8,14 +8,14 @@ using UnityEngine;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// The value boundary of every managed routine Fika hands to the engine.
+/// Fika 交给引擎的每一个托管协程的值边界。
 ///
-/// Analysis: analysis/red-errors-coroutines (E1). The port expresses its timed waits with the managed
-/// <see cref="WaitSeconds"/> because reading the engine's <c>WaitForSeconds.m_Seconds</c> from managed code is
-/// what ended the 2026-10-10 host raids. That rule belongs to the *pump*. A routine the engine drives
-/// (<c>MonoBehaviour.StartCoroutine</c> through <see cref="EngineCoroutines.Wrap"/>) hands every yielded value
-/// to <c>Il2CppManagedEnumerator.Current</c>, which can only forward an il2cpp object. On 2026-10-10 21:35
-/// (raid BHERKP, frame 15998) one of them arrived there:
+/// 分析:analysis/red-errors-coroutines (E1)。本次移植用托管的
+/// <see cref="WaitSeconds"/> 来表达定时等待,因为从托管代码读取引擎的 <c>WaitForSeconds.m_Seconds</c> 正是
+/// 2026-10-10 那些主机 raid 崩溃的原因。该规则属于 *pump*(泵)。凡是引擎驱动的协程,
+/// 经由 <c>MonoBehaviour.StartCoroutine</c> 与 <see cref="EngineCoroutines.Wrap"/>,都会把它产出的每一个值
+/// 交给 <c>Il2CppManagedEnumerator.Current</c>,而后者只能转发 il2cpp 对象。在 2026-10-10 21:35
+/// (raid BHERKP,第 15998 帧)其中之一就落到了那里:
 ///
 /// <code>
 /// System.NotSupportedException: Type Fika.Core.Main.Utils.WaitSeconds cannot be converted directly to an Il2Cpp object
@@ -25,33 +25,33 @@ namespace Fika.Core.Main.Utils;
 ///   at Fika.Core.Main.FreeCamera.FreeCameraController.MainPlayer_DiedEvent
 /// </code>
 ///
-/// The interop trampoline swallows that exception, so the routine does not die visibly - it loses the wait and
-/// runs on out of step (the 5 s death-camera wait became one frame).
+/// 互操作跳板会吞掉该异常,因此协程不会明显地死掉——它丢失了这次等待并
+/// 以错乱的步调继续运行(5 秒的死亡镜头等待变成了一帧)。
 ///
-/// This class holds the invariant "no managed wait object ever reaches the engine": the value the inner routine
-/// yields is translated before the engine can read it.
+/// 本类维持「任何托管等待对象都绝不进入引擎」这一不变量:内层协程
+/// 产出的值会在引擎读取它之前被翻译。
 /// <list type="bullet">
-/// <item><description><see cref="WaitSeconds"/> becomes a real engine <c>WaitForSeconds</c>. The engine reads
-/// that object's own field in native code, which is safe - only the *managed* read of <c>m_Seconds</c> was
-/// fatal. The port already constructs engine objects of exactly this kind elsewhere (<c>new WaitForEndOfFrame()</c>
-/// in the same routines).</description></item>
-/// <item><description>A nested managed <c>IEnumerator</c> becomes another <see cref="EngineRoutineBridge"/>,
-/// wrapped for il2cpp, so the invariant also holds one level down.</description></item>
-/// <item><description>An il2cpp object (engine waits, <c>AsyncOperation</c>, a native enumerator) is passed
-/// through unchanged.</description></item>
-/// <item><description><c>null</c> stays <c>null</c> (the engine's own one-frame yield).</description></item>
-/// <item><description>Anything else costs one frame and one diagnostics line; it is never handed over, because
-/// the engine's conversion of it can only raise the same exception.</description></item>
+/// <item><description><see cref="WaitSeconds"/> 会变成一个真正的引擎 <c>WaitForSeconds</c>。引擎
+/// 在原生代码中读取该对象自身的字段,这是安全的——只有对 <c>m_Seconds</c> 的*托管*读取才是
+/// 致命的。本次移植在别处就已经构造过正是这种类型的引擎对象(<c>new WaitForEndOfFrame()</c>
+/// 就出现在同一批协程里)。</description></item>
+/// <item><description>嵌套的托管 <c>IEnumerator</c> 会变成另一个 <see cref="EngineRoutineBridge"/>,
+/// 并为其做 il2cpp 包装,因此该不变量在往下一层同样成立。</description></item>
+/// <item><description>il2cpp 对象(引擎等待对象、<c>AsyncOperation</c>、原生枚举器)会
+/// 原样透传。</description></item>
+/// <item><description><c>null</c> 保持为 <c>null</c>(即引擎自身的一帧让出)。</description></item>
+/// <item><description>其他任何东西都要花掉一帧并输出一行诊断;它绝不会被交出去,因为
+/// 引擎对它的转换只会抛出同一个异常。</description></item>
 /// </list>
-/// If the engine <c>WaitForSeconds</c> cannot be built, the wait degrades to the same duration measured against
-/// <c>Time.time</c> and the diagnostics name the routine - the wait is never dropped silently.
+/// 如果引擎的 <c>WaitForSeconds</c> 无法构建,这次等待就降级为按
+/// <c>Time.time</c> 计量的相同时长,并且诊断会点名该协程——等待绝不会被静默丢弃。
 /// </summary>
 internal sealed class EngineRoutineBridge : IEnumerator
 {
     private readonly IEnumerator _routine;
     private readonly string _site;
 
-    /// <summary>End of a managed fallback wait, in <c>Time.time</c> seconds; negative infinity means "not parked".</summary>
+    /// <summary>托管回退等待的结束时刻,单位为 <c>Time.time</c> 秒;负无穷表示「未停放」。</summary>
     private float _parkUntilScaled = float.NegativeInfinity;
 
     internal EngineRoutineBridge(IEnumerator routine, string site)
@@ -60,14 +60,14 @@ internal sealed class EngineRoutineBridge : IEnumerator
         _site = string.IsNullOrEmpty(site) ? "unknown" : site;
     }
 
-    /// <summary>The value the engine reads. Always safe for it to convert (null or an il2cpp object).</summary>
+    /// <summary>引擎读取的值。它总能安全转换(null 或一个 il2cpp 对象)。</summary>
     public object Current { get; private set; }
 
     public bool MoveNext()
     {
         if (Time.time < _parkUntilScaled)
         {
-            // A managed fallback wait is still running: the engine sees an ordinary one-frame yield.
+            // 托管回退等待仍在进行:引擎看到的是一次普通的单帧让出。
             Current = null;
             return true;
         }
@@ -84,7 +84,7 @@ internal sealed class EngineRoutineBridge : IEnumerator
 
             var yielded = _routine.Current;
 
-            // Managed tasks: the pump's convention is "continue while finished, otherwise one frame".
+            // 托管任务:泵的约定是「只要已完成就继续,否则让出一帧」。
             if (yielded is Task task)
             {
                 if (task.IsCompleted)
@@ -118,13 +118,13 @@ internal sealed class EngineRoutineBridge : IEnumerator
 
     public void Reset()
     {
-        // Unity's coroutine scheduler never calls Reset on an enumerator it drives, and BepInEx's wrapper
-        // only carries the member because the interface requires it.
+        // Unity 的协程调度器从不调用它所驱动枚举器的 Reset,而 BepInEx 的包装
+        // 只是因为接口要求才实现该成员。
     }
 
     /// <summary>
-    /// The one conversion point. Its contract: the returned value is <c>null</c> or an <see cref="Il2CppObjectBase"/>,
-    /// so <c>Il2CppManagedEnumerator.Current</c> can never raise again.
+    /// 唯一的转换点。其契约是:返回值要么是 <c>null</c>,要么是一个 <see cref="Il2CppObjectBase"/>,
+    /// 因此 <c>Il2CppManagedEnumerator.Current</c> 再也不会抛出异常。
     /// </summary>
     private object Convert(object yielded)
     {
@@ -137,23 +137,23 @@ internal sealed class EngineRoutineBridge : IEnumerator
                 return EngineWait(wait);
 
             case Il2CppSystem.Collections.IEnumerator nativeNested:
-                // A native enumerator (the game's own coroutine shape) is already an engine value; the engine
-                // steps it itself, exactly as the pump's own native case does.
+                // 原生枚举器(游戏自身协程的形态)已经是引擎值;引擎
+                // 会自行步进它,正如泵自身的原生分支所做的那样。
                 return nativeNested;
 
             case IEnumerator nested:
-                // A nested managed routine runs under the same rule: the engine receives an il2cpp enumerator
-                // whose Current this class answers, so a WaitSeconds deeper in the nesting is translated too.
+                // 嵌套的托管协程遵循同一条规则:引擎收到的是一个 il2cpp 枚举器,
+                // 其 Current 由本类应答,因此嵌套更深处出现的 WaitSeconds 也会被翻译。
                 return EngineCoroutines.Bridge(nested, _site).WrapToIl2Cpp();
 
             case Il2CppObjectBase engineObject:
-                // WaitForSeconds, WaitForEndOfFrame, WaitUntil, a native enumerator, an AsyncOperation: the
-                // engine owns these and reads them natively.
+                // WaitForSeconds、WaitForEndOfFrame、WaitUntil、原生枚举器、AsyncOperation:这些
+                // 都归引擎所有,并由它以原生方式读取。
                 return engineObject;
 
             default:
-                // A managed object with no engine counterpart. Handing it over would raise the exception this
-                // class exists to prevent, so it costs one frame and names itself once.
+                // 没有引擎对应物的托管对象。把它交出去就会抛出本类
+                // 存在就是为了防止的那个异常,因此它要花掉一帧并自我点名一次。
                 EngineCoroutines.ReportUnsupportedYield(_site, yielded);
                 return null;
         }
@@ -169,8 +169,8 @@ internal sealed class EngineRoutineBridge : IEnumerator
         }
         catch (Exception exception)
         {
-            // The wait is kept, only its clock changes: from now on it is measured against Time.time by this
-            // bridge instead of by the engine object.
+            // 等待被保留,只有它的时钟改变了:从现在起由这座
+            // 桥接改用 Time.time 来计量,而不再由引擎对象计量。
             _parkUntilScaled = Time.time + wait.Seconds;
             EngineCoroutines.ReportConversionFallback(_site, wait.Seconds, exception);
             return null;

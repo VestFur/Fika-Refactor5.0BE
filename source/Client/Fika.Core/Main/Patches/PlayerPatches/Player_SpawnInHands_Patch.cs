@@ -10,7 +10,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.PlayerPatches;
 
 /// <summary>
-/// Fixes a bug with BSG's <see cref="SpatialAudioSystem"/> causing and endless spam of nullrefs, reducing the framerate for every player
+/// 修复 BSG 的 <see cref="SpatialAudioSystem"/> 导致空引用无限刷屏、从而降低每个玩家帧率的问题
 /// </summary>
 public class Player_SpawnInHands_Patch : ModulePatch
 {
@@ -44,7 +44,7 @@ public class Player_SpawnInHands_Patch : ModulePatch
         else
         {
 #if DEBUG
-            FikaGlobals.LogError($"pivot not found in, {____spawnedKey}, for keyId = {item.Id}");
+            FikaGlobals.LogError($"pivot not found in, {__instance._spawnedKey}, for keyId = {item.Id}");
 #endif
         }
 

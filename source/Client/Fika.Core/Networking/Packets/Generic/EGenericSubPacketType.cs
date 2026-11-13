@@ -1,110 +1,110 @@
 ﻿namespace Fika.Core.Networking.Packets.Generic;
 
 /// <summary>
-/// Represents generic game-level packet events unrelated to specific systems.
+/// 表示与具体系统无关的通用游戏级数据包事件。
 /// </summary>
 public enum EGenericSubPacketType : byte
 {
     /// <summary>
-    /// Client extraction event.
+    /// 客户端撤离事件。
     /// </summary>
     ClientExtract,
 
     /// <summary>
-    /// Client connected to the server.
+    /// 客户端已连接到服务器。
     /// </summary>
     ClientConnected,
 
     /// <summary>
-    /// Client disconnected from the server.
+    /// 客户端已从服务器断开连接。
     /// </summary>
     ClientDisconnected,
 
     /// <summary>
-    /// Exfiltration countdown event.
+    /// 撤离倒计时事件。
     /// </summary>
     ExfilCountdown,
 
     /// <summary>
-    /// Update backend data.
+    /// 更新后端数据。
     /// </summary>
     UpdateBackendData,
 
     /// <summary>
-    /// Secret exfiltration found event.
+    /// 发现秘密撤离点事件。
     /// </summary>
     SecretExfilFound,
 
     /// <summary>
-    /// Border zone event.
+    /// 边界区域事件。
     /// </summary>
     BorderZone,
 
     /// <summary>
-    /// Mine triggered.
+    /// 地雷被触发。
     /// </summary>
     Mine,
 
     /// <summary>
-    /// Disarm a tripwire event.
+    /// 解除绊线事件。
     /// </summary>
     DisarmTripwire,
 
     /// <summary>
-    /// Player muffled state changed.
+    /// 玩家消音状态发生变化。
     /// </summary>
     MuffledState,
 
     /// <summary>
-    /// Spawns the BTR vehicle.
+    /// 生成 BTR 载具。
     /// </summary>
     SpawnBTR,
 
     /// <summary>
-    /// Sync characters with server
+    /// 与服务器同步角色
     /// </summary>
     CharacterSync,
 
     /// <summary>
-    /// Inventory operation
+    /// 库存操作
     /// </summary>
     InventoryOperation,
 
     /// <summary>
-    /// Callback status for operation
+    /// 操作的回调状态
     /// </summary>
     OperationCallback,
 
     /// <summary>
-    /// Pinging
+    /// 发送 ping
     /// </summary>
     Ping,
 
     /// <summary>
-    /// Sending character data
+    /// 发送角色数据
     /// </summary>
     SendCharacter,
 
     /// <summary>
-    /// Syncable item, e.g. window or lamp
+    /// 可同步物品，例如窗户或灯
     /// </summary>
     SyncableItem,
 
     /// <summary>
-    /// AI loaded by all clients
+    /// 所有客户端已加载 AI
     /// </summary>
     SpawnAI,
 
-    /// <summary>Trader dialog entry occupancy.</summary>
+    /// <summary>商人对话入口占用。</summary>
     DialogEntry
 
     /// <summary>
-    /// Train synchronization event (commented out).
+    /// 火车同步事件（已注释掉）。
     /// </summary>
     // TrainSync,
 
     /// <summary>
-    /// Trader service notification event (commented out).
+    /// 商人服务通知事件（已注释掉）。
     /// </summary>
     // TraderServiceNotification,
 }

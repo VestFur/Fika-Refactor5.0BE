@@ -21,8 +21,8 @@ public class BufferZoneController_OnGameTypeSeted_Patch : ModulePatch
     {
         if (FikaBackendUtils.IsClient)
         {
-            // Let the native initializer own its subscriptions and cleanup while
-            // clients consume the host's buffer-zone state as an online peer.
+            // 让原生初始化器负责自身的订阅与清理，
+            // 客户端则以在线对端的身份使用主机的缓冲区状态。
             gameType = EGameType.Online;
         }
     }

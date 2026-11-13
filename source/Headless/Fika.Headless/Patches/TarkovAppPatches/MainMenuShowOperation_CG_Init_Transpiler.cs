@@ -6,7 +6,7 @@ using System.Reflection;
 namespace Fika.Headless.Patches.TarkovAppPatches;
 
 /// <summary>
-/// Stops the <see cref="MainMenuShowOperation"/> from trying to set the hideout inventory
+/// 阻止 <see cref="MainMenuShowOperation"/> 尝试设置藏身处库存
 /// </summary>
 public class MainMenuShowOperation_CG_Init_Transpiler : ModulePatch
 {

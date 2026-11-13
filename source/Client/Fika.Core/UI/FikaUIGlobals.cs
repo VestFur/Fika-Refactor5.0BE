@@ -16,12 +16,12 @@ using static EFT.UI.PreloaderUI;
 namespace Fika.Core.UI;
 
 /// <summary>
-/// Provides global UI utilities and helpers
+/// 提供全局 UI 工具与辅助方法
 /// </summary>
 public static class FikaUIGlobals
 {
     /// <summary>
-    /// Dictionary mapping <see cref="EColor"/> values to their corresponding hex color codes.
+    /// 把 <see cref="EColor"/> 值映射到对应十六进制颜色代码的字典。
     /// </summary>
     private static readonly Dictionary<EColor, string> _keyValuePairs = new()
     {
@@ -34,10 +34,10 @@ public static class FikaUIGlobals
     };
 
     /// <summary>
-    /// Creates an overlay text element in the UI with the specified text.
+    /// 在 UI 中创建一个带有指定文本的覆盖层文本元素。
     /// </summary>
-    /// <param name="overlayText">The text to display in the overlay.</param>
-    /// <returns>The created <see cref="TextMeshProUGUI"/> component.</returns>
+    /// <param name="overlayText">要在覆盖层中显示的文本。</param>
+    /// <returns>创建出的 <see cref="TextMeshProUGUI"/> 组件。</returns>
     public static TextMeshProUGUI CreateOverlayText(string overlayText, Vector4 margin = default)
     {
         var obj = GameObject.Find("/Preloader UI/Preloader UI/Watermark");
@@ -68,16 +68,16 @@ public static class FikaUIGlobals
     }
 
     /// <summary>
-    /// Shows a Fika message using the <see cref="PreloaderUI"/> error screen.
+    /// 使用 <see cref="PreloaderUI"/> 错误界面显示一条 Fika 消息。
     /// </summary>
-    /// <param name="preloaderUI">The preloader UI instance.</param>
-    /// <param name="header">The header text for the message.</param>
-    /// <param name="message">The message body text.</param>
-    /// <param name="buttonType">The type of button to display.</param>
-    /// <param name="waitingTime">The time to wait before auto-closing the message.</param>
-    /// <param name="acceptCallback">Callback to invoke when the message is accepted.</param>
-    /// <param name="endTimeCallback">Callback to invoke when the waiting time ends.</param>
-    /// <returns>The context object for the displayed message.</returns>
+    /// <param name="preloaderUI">预加载 UI 实例。</param>
+    /// <param name="header">消息的标题文本。</param>
+    /// <param name="message">消息正文文本。</param>
+    /// <param name="buttonType">要显示的按钮类型。</param>
+    /// <param name="waitingTime">自动关闭消息前等待的时间。</param>
+    /// <param name="acceptCallback">消息被接受时调用的回调。</param>
+    /// <param name="endTimeCallback">等待时间结束时调用的回调。</param>
+    /// <returns>所显示消息的上下文对象。</returns>
     public static ErrorWindowContext ShowFikaMessage(this PreloaderUI preloaderUI, string header, string message,
         ErrorScreen.EButtonType buttonType, float waitingTime, Action acceptCallback, Action endTimeCallback)
     {
@@ -100,17 +100,17 @@ public static class FikaUIGlobals
     }
 
     /// <summary>
-    /// Shows a Fika message using the <see cref="ErrorScreen"/> UI.
+    /// 使用 <see cref="ErrorScreen"/> 界面显示一条 Fika 消息。
     /// </summary>
-    /// <param name="errorScreen">The error screen instance.</param>
-    /// <param name="title">The title of the error message.</param>
-    /// <param name="message">The message body text.</param>
-    /// <param name="closeManuallyCallback">Callback to invoke when the message is closed manually.</param>
-    /// <param name="waitingTime">The time to wait before auto-closing the message.</param>
-    /// <param name="timeOutCallback">Callback to invoke when the waiting time ends.</param>
-    /// <param name="buttonType">The type of button to display.</param>
-    /// <param name="removeHtml">Whether to remove HTML tags from the message.</param>
-    /// <returns>The context object for the displayed message.</returns>
+    /// <param name="errorScreen">错误界面实例。</param>
+    /// <param name="title">错误消息的标题。</param>
+    /// <param name="message">消息正文文本。</param>
+    /// <param name="closeManuallyCallback">消息被手动关闭时调用的回调。</param>
+    /// <param name="waitingTime">自动关闭消息前等待的时间。</param>
+    /// <param name="timeOutCallback">等待时间结束时调用的回调。</param>
+    /// <param name="buttonType">要显示的按钮类型。</param>
+    /// <param name="removeHtml">是否从消息中移除 HTML 标签。</param>
+    /// <returns>所显示消息的上下文对象。</returns>
     public static ErrorWindowContext ShowFikaMessage(this ErrorScreen errorScreen, string title, string message,
         Action closeManuallyCallback = null, float waitingTime = 0f, Action timeOutCallback = null,
         ErrorScreen.EButtonType buttonType = ErrorScreen.EButtonType.OkButton, bool removeHtml = true)
@@ -120,8 +120,8 @@ public static class FikaUIGlobals
             return new ErrorWindowContext();
         }
         ItemUiContext.Instance.CloseAllWindows();
-        // Show owns the native context subscriptions, timeout coroutine and cleanup.
-        // Do not register its TimeOut/CloseSilent handlers a second time.
+        // Show 拥有原生上下文订阅、超时协程与清理逻辑。
+        // 不要再注册一次它的 TimeOut/CloseSilent 处理器。
         var context = errorScreen.Show(title, message, waitingTime, buttonType, removeHtml);
         var completed = false;
         context.OnAccept += (System.Action)(() =>
@@ -158,38 +158,38 @@ public static class FikaUIGlobals
     }
 
     /// <summary>
-    /// Gets the hex color code for the specified <see cref="EColor"/>.
+    /// 获取指定 <see cref="EColor"/> 的十六进制颜色代码。
     /// </summary>
-    /// <param name="color">The color enum value.</param>
-    /// <returns>The hex color code as a string.</returns>
+    /// <param name="color">颜色枚举值。</param>
+    /// <returns>以字符串形式返回的十六进制颜色代码。</returns>
     private static string GetHexByColor(EColor color)
     {
         return _keyValuePairs.TryGetValue(color, out var value) ? value : "ffffff";
     }
 
     /// <summary>
-    /// Utility used to color text within a <see cref="CustomTextMeshProUGUI"/>.
+    /// 用于给 <see cref="CustomTextMeshProUGUI"/> 中的文本上色的工具方法。
     /// </summary>
-    /// <param name="color">The color to return the text in.</param>
-    /// <param name="text">The original text.</param>
-    /// <returns>Text in color.</returns>
+    /// <param name="color">返回文本时使用的颜色。</param>
+    /// <param name="text">原始文本。</param>
+    /// <returns>带颜色的文本。</returns>
     public static string ColorizeText(EColor color, string text)
     {
         return $"<color=#{GetHexByColor(color)}>{text}</color>";
     }
 
     /// <summary>
-    /// Utility used to make text bold within a <see cref="CustomTextMeshProUGUI"/>.
+    /// 用于把 <see cref="CustomTextMeshProUGUI"/> 中的文本加粗的工具方法。
     /// </summary>
-    /// <param name="text">The original text.</param>
-    /// <returns>Text in bold.</returns>
+    /// <param name="text">原始文本。</param>
+    /// <returns>加粗后的文本。</returns>
     public static string BoldText(string text)
     {
         return $"<b>{text}</b>";
     }
 
     /// <summary>
-    /// Gets a static date and time value used for certain UI displays.
+    /// 获取一个供某些 UI 显示使用的静态日期时间值。
     /// </summary>
     public static DateTime StaticTime
     {
@@ -200,11 +200,11 @@ public static class FikaUIGlobals
     }
 
     /// <summary>
-    /// Returns a formatted time string based on the specified <see cref="EDateTime"/> and static time flag.
+    /// 根据指定的 <see cref="EDateTime"/> 与静态时间标志，返回格式化后的时间字符串。
     /// </summary>
-    /// <param name="time">The time type to format (current or previous).</param>
-    /// <param name="staticTime">Whether to use the static time or backend time.</param>
-    /// <returns>The formatted time string, or an empty string if unavailable.</returns>
+    /// <param name="time">要格式化的时间类型（当前或上一次）。</param>
+    /// <param name="staticTime">是否使用静态时间而不是后端时间。</param>
+    /// <returns>格式化后的时间字符串；若不可用则为空字符串。</returns>
     public static string FormattedTime(EDateTime time, bool staticTime)
     {
         if (TarkovApplication.Exist(out var tarkovApplication))
@@ -231,59 +231,59 @@ public static class FikaUIGlobals
     }
 
     /// <summary>
-    /// Represents the presence state of a Fika player.
+    /// 表示一名 Fika 玩家的在场状态。
     /// </summary>
     public enum EFikaPlayerPresence
     {
         /// <summary>
-        /// Player is in the menu.
+        /// 玩家位于菜单中。
         /// </summary>
         IN_MENU,
         /// <summary>
-        /// Player is in a raid.
+        /// 玩家位于战局中。
         /// </summary>
         IN_RAID,
         /// <summary>
-        /// Player is in the stash.
+        /// 玩家位于仓库中。
         /// </summary>
         IN_STASH,
         /// <summary>
-        /// Player is in the hideout.
+        /// 玩家位于藏身处中。
         /// </summary>
         IN_HIDEOUT,
         /// <summary>
-        /// Player is in the flea market.
+        /// 玩家位于跳蚤市场中。
         /// </summary>
         IN_FLEA
     }
 
     /// <summary>
-    /// Enum used for <see cref="ColorizeText"/> to specify text color.
+    /// 供 <see cref="ColorizeText"/> 指定文本颜色使用的枚举。
     /// </summary>
     public enum EColor
     {
         /// <summary>
-        /// White color.
+        /// 白色。
         /// </summary>
         WHITE,
         /// <summary>
-        /// Black color.
+        /// 黑色。
         /// </summary>
         BLACK,
         /// <summary>
-        /// Green color.
+        /// 绿色。
         /// </summary>
         GREEN,
         /// <summary>
-        /// Brown color.
+        /// 棕色。
         /// </summary>
         BROWN,
         /// <summary>
-        /// Blue color.
+        /// 蓝色。
         /// </summary>
         BLUE,
         /// <summary>
-        /// Red color.
+        /// 红色。
         /// </summary>
         RED
     }

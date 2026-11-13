@@ -5,44 +5,44 @@ using EFT;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// The one place that writes the "[LoadSync]" judgement lines of the loading screen / session wait path.
+/// 唯一写出加载界面 / 会话等待路径上 "[LoadSync]" 判定行的地方。
 ///
-/// Why a helper: the lines have to be greppable by a tester with a single pattern
-/// ("[LoadSync]") in both logs - the game log next to the loading screen and the
-/// crash-trail diagnostics file - and they have to survive the quiet diagnostics mode,
-/// which only keeps the scopes listed in FikaDiagnostics.QuietSteps. That list is prefix
-/// matched, so the scope "LoadingScreen" (already on the list) also keeps
-/// "LoadingScreen.LoadSync" without touching the diagnostics infrastructure itself.
+/// 为什么要单独做一个辅助类：测试者必须能用单一模式在两种日志里 grep 到这些行
+/// （"[LoadSync]"）—— 加载界面旁边的游戏日志，以及崩溃追踪诊断文件 ——
+/// 并且它们必须在安静诊断模式下仍然保留，
+/// 该模式只保留 FikaDiagnostics.QuietSteps 中列出的作用域。那个列表是前缀
+/// 匹配的，因此作用域 "LoadingScreen"（已在列表中）也会一并保留
+/// "LoadingScreen.LoadSync"，而无需改动诊断基础设施本身。
 ///
-/// The shape of a line, fixed on purpose (a tester reads these across two machines):
-///   [LoadSync] &lt;what is happening&gt;: role=host|client, ... =&gt; &lt;the verdict&gt;
-/// Every line names the local state, the peer state that matters and, where it applies,
-/// what would release the wait.
+/// 一行的形态，刻意固定下来（测试者会在两台机器上对照着读这些行）：
+///   [LoadSync] &lt;正在发生什么&gt;: role=host|client, ... =&gt; &lt;判定&gt;
+/// 每一行都会写明本地状态、对端的关键状态，以及在适用时
+/// 什么样的情况会解除等待。
 /// </summary>
 internal static class LoadSync
 {
-    /// <summary>Diagnostics scope: prefix-matched against the quiet-mode allow list ("LoadingScreen").</summary>
+    /// <summary>诊断作用域：以前缀匹配安静模式的白名单（"LoadingScreen"）。</summary>
     internal const string Scope = "LoadingScreen.LoadSync";
 
     /// <summary>
-    /// The host's pre-raid barrier backstop, in seconds, from <see cref="LoadSyncGate"/> (a config entry
-    /// is bound to that field; see the class comment there for why the value must be tunable).
+    /// 主机 raid 前屏障的兜底值（秒），来自 <see cref="LoadSyncGate"/>（有一个配置项
+    /// 绑定到那个字段；为什么该值必须可调，见那里的类注释）。
     /// </summary>
     internal static float PeerLoadTimeoutSeconds => LoadSyncGate.HostPeerLoadTimeoutSeconds;
 
-    // ------------------------------------------------------------------ peer liveness stamps
+    // ------------------------------------------------------------------ 对端存活时间戳
     //
-    // Two facts a [LoadSync] line needs to be readable in *both* outcomes ("everything worked" and
-    // "nothing happened"): when the last packet from the peer arrived, and - on the client - whether the
-    // transport is still connected. The transport is maintained by LiteNetLib's own thread (acks and
-    // keepalives), so it stays alive while the peer's *main thread* is busy loading a map, which is
-    // exactly the case that must not be mistaken for a dead peer.
+    // 两条事实，[LoadSync] 行需要在 *两种* 结果下都可读（"一切正常" 与
+    // "什么都没发生"）：对端最后一个包何时到达，以及在客户端上 —— 传输层是否
+    // 仍处于连接状态。传输层由 LiteNetLib 自己的线程维护（ack 与
+    // keepalive），因此当对端的 *主线程* 正忙于加载地图时它依然存活，而这
+    // 恰恰是绝不能被误判为对端已死的情形。
 
     private static float _lastPeerPacketAt;
     private static string _lastPeerPacketSource = "none";
     private static int _peerPacketCount;
 
-    /// <summary>Counts one inbound packet of the session (called from the receive entry points).</summary>
+    /// <summary>统计会话的一个入站包（从接收入口调用）。</summary>
     internal static void NotePeerPacket(string source)
     {
         try
@@ -56,7 +56,7 @@ internal static class LoadSync
         }
     }
 
-    /// <summary>Seconds since the last inbound packet, or -1 when none arrived yet.</summary>
+    /// <summary>距最后一个入站包的秒数；尚未收到任何包时为 -1。</summary>
     internal static int SecondsSincePeerPacket()
     {
         var last = _lastPeerPacketAt;
@@ -68,7 +68,7 @@ internal static class LoadSync
         return (int)(UnityEngine.Time.realtimeSinceStartup - last);
     }
 
-    /// <summary>One sentence of the inbound traffic, for a judgement line.</summary>
+    /// <summary>关于入站流量的一句话，用于判定行。</summary>
     internal static string DescribePeerTraffic()
     {
         return "inbound=" + _peerPacketCount + " sinceLastInbound=" + SecondsSincePeerPacket() + "s (last="
@@ -76,34 +76,35 @@ internal static class LoadSync
     }
 
     /// <summary>
-    /// A line a tester must see in both logs: the game log (next to the loading screen) and the
-    /// diagnostics file. The caller name is passed explicitly so the game log reads
-    /// "[WaitForOtherPlayersToLoad]: [LoadSync] ..." and not "[Report]: ...".
+    /// 测试者必须在两种日志里都能看到的一行：游戏日志（就在加载界面旁边）和
+    /// 诊断文件。调用方名称被显式传入，因此游戏日志读作
+    /// "[WaitForOtherPlayersToLoad]: [LoadSync] ..." 而不是 "[Report]: ..."。
     /// </summary>
     internal static void Report(string caller, string message)
     {
-        FikaGlobals.LogInfo("[LoadSync] " + message, caller);
-        
+        // (2026-10-18 refactor W1 / tracker A16) 仅诊断：加载等待不再每次轮询写一行。
+        // 入口保留，以免任何调用点改动；必须保留下来的失败行
+        // （超时、对端始终未到）是下面的 Warn。
     }
 
-    /// <summary>A line that names a degraded outcome (a wait that timed out, a peer that never came).</summary>
+    /// <summary>一行指明降级结果（等待超时、对端始终未到）。</summary>
     internal static void Warn(string caller, string message)
     {
         FikaGlobals.LogWarning("[LoadSync] " + message, caller);
         
     }
 
-    /// <summary>Diagnostics only: the per-poll detail that would flood the game log.</summary>
+    /// <summary>仅诊断：每次轮询的细节，它会把游戏日志刷爆。</summary>
     internal static void Trace(string message)
     {
         
     }
 
     /// <summary>
-    /// The rows the local loading screen currently holds, as one string: "screen=2 row(s)
-    /// [netId(nickname)=progress, ...]". This is the "local progress / peer progress" half of every
-    /// judgement line, and the only way to see from a log whether the engine-driven screen really
-    /// received the rows and the progress values.
+    /// 本地加载界面当前持有的行，作为一个字符串："screen=2 row(s)
+    /// [netId(nickname)=progress, ...]"。这是每条判定行中「本地进度 / 对端进度」的那一半，
+    /// 也是从日志中看出引擎驱动的界面是否真的
+    /// 收到了这些行与进度值的唯一途径。
     /// </summary>
     internal static string DescribeScreen()
     {
@@ -118,7 +119,7 @@ internal static class LoadSync
         }
     }
 
-    /// <summary>True while a game world exists on this machine (the state every world-bound packet needs).</summary>
+    /// <summary>当本机存在游戏世界时为真（每个绑定世界的包都需要的状态）。</summary>
     internal static bool WorldReady
     {
         get

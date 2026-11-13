@@ -8,33 +8,33 @@ using Il2CppInterop.Runtime.InteropTypes;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Serializes the raid-end profile descriptor for the server.
+/// 为服务器序列化 raid 结束时的 profile 描述符。
 /// <para>
-/// The original call - <c>descriptor.ToUnparsedData(new Il2CppReferenceArray&lt;JsonConverter&gt;(0)).JToken.ToString()</c> -
-/// requires the IL2CPP interop proxy of Newtonsoft.Json. When a managed
-/// Newtonsoft.Json.dll in BepInEx/plugins shadows that proxy, the converter
-/// array cannot be constructed and the JToken member stops resolving, which
-/// aborted the whole patch and lost the scav save.
+/// 原始调用 —— <c>descriptor.ToUnparsedData(new Il2CppReferenceArray&lt;JsonConverter&gt;(0)).JToken.ToString()</c> ——
+/// 需要 Newtonsoft.Json 的 IL2CPP interop 代理。当 BepInEx/plugins 中的
+/// 一个托管 Newtonsoft.Json.dll 遮蔽了该代理时，转换器
+/// 数组无法构造，JToken 成员也不再能解析，这
+/// 会中止整个补丁并丢失 scav 存档。
 /// </para>
 /// <para>
-/// Both forms produce the descriptor serialized with the game's own converters,
-/// so the shadowed install falls back to serializing the descriptor directly
-/// with the game's JsonConvert through IL2CPP - the same call the JSON bridge
-/// already uses for every other native object.
+/// 两种形式产生的描述符都用游戏自己的转换器序列化，
+/// 因此被遮蔽的安装会退回到通过 IL2CPP 直接
+/// 用游戏的 JsonConvert 序列化描述符 —— 与 JSON 桥
+/// 已用于其他每个原生对象的是同一次调用。
 /// </para>
 /// </summary>
 internal static class ProfileDescriptorJson
 {
     /// <summary>
-    /// The engine's own <c>UnparsedData</c> handle for a raid-end profile descriptor - the form
-    /// <c>SessionResult.profile</c> and <c>IEftSession.LocalRaidEnded</c> take.
+    /// 引擎自身的 <c>UnparsedData</c> 句柄，用于 raid 结束时的 profile 描述符 —— 即
+    /// <c>SessionResult.profile</c> 和 <c>IEftSession.LocalRaidEnded</c> 接受的形式。
     ///
     /// <para>
-    /// It lives here, next to <see cref="ToServerJson"/>, so the one call that needs the IL2CPP
-    /// <c>JsonConverter</c> array stays in this file - the file whose whole purpose is to survive an
-    /// install where a managed Newtonsoft.Json shadows the interop proxy (see the class comment).
-    /// If that array cannot be built, the token is produced by the engine's serializer and handed back
-    /// through the native bridge instead, which produces the same payload.
+    /// 它放在这里、紧邻 <see cref="ToServerJson"/>，这样唯一需要 IL2CPP
+    /// <c>JsonConverter</c> 数组的那次调用就留在此文件中 —— 而这个文件的全部意义正是在于撑过
+    /// 一个托管 Newtonsoft.Json 遮蔽 interop 代理的安装环境（见类注释）。
+    /// 如果该数组无法构造，就改由引擎的序列化器生成 token，并通过原生桥交回，
+    /// 两者产生相同的负载。
     /// </para>
     /// </summary>
     internal static UnparsedData ToUnparsedData(ProfileDescriptor descriptor)
@@ -58,8 +58,8 @@ internal static class ProfileDescriptorJson
     }
 
     /// <summary>
-    /// Builds the <see cref="UnparsedData"/> from the engine-produced JSON through reflection, so this
-    /// path never links against the Newtonsoft proxy.
+    /// 通过反射从引擎产出的 JSON 构造 <see cref="UnparsedData"/>，因此这条
+    /// 路径从不链接到 Newtonsoft 代理。
     /// </summary>
     private static UnparsedData FromJson(string json)
     {
@@ -82,7 +82,7 @@ internal static class ProfileDescriptorJson
         }
     }
 
-    /// <summary>Invokes a static IL2CPP method through reflection; null when it cannot be resolved.</summary>
+    /// <summary>通过反射调用一个静态 IL2CPP 方法；无法解析时返回 null。</summary>
     private static object InvokeStatic(string typeName, string methodName, string argument)
     {
         var type = typeof(ProfileDescriptor).Assembly.GetType(typeName);
@@ -92,9 +92,9 @@ internal static class ProfileDescriptorJson
     }
 
     /// <summary>
-    /// The engine's own conversion, used when the JSON round trip is not available. It needs the
-    /// IL2CPP <c>JsonConverter</c> array; on an install where a managed Newtonsoft.Json shadows that
-    /// proxy this call is expected to fail, which is what the two paths above are for.
+    /// 引擎自身的转换，在 JSON 往返不可用时使用。它需要
+    /// IL2CPP <c>JsonConverter</c> 数组；在托管 Newtonsoft.Json 遮蔽了该
+    /// 代理的安装环境中，这次调用预期会失败，上面两条路径正是为此而存在。
     /// </summary>
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private static UnparsedData DirectUnparsedData(ProfileDescriptor descriptor) =>
@@ -105,9 +105,9 @@ internal static class ProfileDescriptorJson
     {
         if (descriptor == null) return null;
 
-        // The engine's own pipeline is the only form the server route accepts:
-        // /raid/profile/scavsave deserializes ScavSaveRequestData, whose Info.Side
-        // is a string, while a plain JsonConvert writes the enum as a number.
+        // 引擎自己的管道是服务器路由唯一接受的形式：
+        // /raid/profile/scavsave 反序列化为 ScavSaveRequestData，其 Info.Side
+        // 是字符串，而普通的 JsonConvert 会把该枚举写成数字。
         var engineJson = TryEngineJson(descriptor);
         if (!string.IsNullOrEmpty(engineJson)) return NormalizeForServer(engineJson);
 
@@ -120,25 +120,25 @@ internal static class ProfileDescriptorJson
     }
 
     /// <summary>
-    /// SPT deserializes this body into PmcData, whose Info.Side is a string
-    /// ("Usec"/"Bear"/"Savage" - exactly what its own profile files contain),
-    /// while the engine writes the enum as a number. Writing the number made the
-    /// server answer "The JSON value could not be converted to System.String.
-    /// Path: $.Info.Side" and the scav save was lost.
+    /// SPT 会把该请求体反序列化为 PmcData，其 Info.Side 是字符串
+    /// ("Usec"/"Bear"/"Savage" —— 正是它自己的 profile 文件所包含的内容)，
+    /// 而引擎把该枚举写成数字。写成数字后
+    /// 服务器回答 "The JSON value could not be converted to System.String.
+    /// Path: $.Info.Side" 而 scav 存档就此丢失。
     /// <para>
-    /// Only the Side inside the top level Info object is rewritten; later
-    /// occurrences (inventory data) keep their numeric form.
+    /// 只有顶层 Info 对象内部的 Side 会被重写；之后出现的
+    /// 同名属性（背包数据）保持其数字形式。
     /// </para>
     /// </summary>
     private static string NormalizeForServer(string json) => NormalizeInfoType(NormalizePlayerSide(json));
 
     /// <summary>
-    /// SPT's Tables.Info declares Type as a string as well, while the engine writes
-    /// the enum as a number. The server answered
+    /// SPT 的 Tables.Info 也把 Type 声明为字符串，而引擎把
+    /// 该枚举写成数字。服务器对 /raid/profile/scavsave 回答
     /// "The JSON value could not be converted to System.String. Path: $.Info.Type"
-    /// for /raid/profile/scavsave, which dropped the whole scav save. The numeric
-    /// property is removed instead of renamed: SPT's own profiles leave Type null,
-    /// so the server stores exactly what it writes itself.
+    /// 于是整份 scav 存档被丢弃。该数字属性被删除而不是被改名：SPT 自己的
+    /// profile 让 Type 保持 null，
+    /// 因此服务器存储的正是它自己写入的内容。
     /// </summary>
     private static string NormalizeInfoType(string json)
     {
@@ -150,15 +150,15 @@ internal static class ProfileDescriptorJson
         var info = json.IndexOf(infoMarker, StringComparison.Ordinal);
         if (info < 0) return json;
 
-        // Info writes its scalars before any nested object, so the first Type
-        // marker after Info belongs to it. Bound the search anyway.
+        // Info 会先写它的标量，再写任何嵌套对象，所以 Info 之后的第一个
+        // Type 标记属于它。无论如何都要给搜索加上限界。
         var type = json.IndexOf(typeMarker, info + infoMarker.Length, StringComparison.Ordinal);
         if (type < 0 || type - info > 2000) return json;
 
         var valueStart = type + typeMarker.Length;
         var valueEnd = valueStart;
         while (valueEnd < json.Length && (char.IsDigit(json[valueEnd]) || json[valueEnd] == '-')) valueEnd++;
-        if (valueEnd == valueStart) return json; // already a string or null, leave it alone
+        if (valueEnd == valueStart) return json; // 已经是字符串或 null，不做改动
 
         var removeEnd = valueEnd;
         if (removeEnd < json.Length && json[removeEnd] == ',')
@@ -214,11 +214,11 @@ internal static class ProfileDescriptorJson
     }
 
     /// <summary>
-    /// Runs the engine's <c>JsonExtensions.ToUnparsedData&lt;T&gt;(T, JsonConverter[] = null)</c>
-    /// and returns its JToken text. The method is generic and takes a converter
-    /// array whose type cannot be named while a managed Newtonsoft.Json shadows
-    /// the IL2CPP proxy, so it is reached through reflection and the JToken is
-    /// read natively.
+    /// 运行引擎的 <c>JsonExtensions.ToUnparsedData&lt;T&gt;(T, JsonConverter[] = null)</c>
+    /// 并返回它的 JToken 文本。该方法是泛型的，且接收一个转换器
+    /// 数组，而在托管 Newtonsoft.Json 遮蔽 IL2CPP 代理时
+    /// 该数组的类型无法被写出来，因此通过反射触达它，
+    /// 并以原生方式读取 JToken。
     /// </summary>
     private static string TryEngineJson(ProfileDescriptor descriptor)
     {
@@ -257,8 +257,8 @@ internal static class ProfileDescriptorJson
     }
 
     /// <summary>
-    /// True while Newtonsoft.Json still resolves to the IL2CPP interop proxy.
-    /// The shadowing managed assembly is not an Il2CppObjectBase.
+    /// 当 Newtonsoft.Json 仍解析到 IL2CPP interop 代理时为 true。
+    /// 遮蔽用的托管程序集不是 Il2CppObjectBase。
     /// </summary>
     internal static bool InteropAvailable()
     {
@@ -273,9 +273,9 @@ internal static class ProfileDescriptorJson
     }
 
     /// <summary>
-    /// Kept in its own non-inlined method: with a shadowing assembly the linkage
-    /// failure surfaces while this method is compiled, and a try/catch in the
-    /// caller could not observe it otherwise.
+    /// 保持在独立的、不被内联的方法中：在有遮蔽程序集的情况下，链接
+    /// 失败会在编译此方法时浮现，而调用方中的 try/catch
+    /// 否则就无法观察到它。
     /// </summary>
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private static string SerializeThroughInterop(ProfileDescriptor descriptor) =>

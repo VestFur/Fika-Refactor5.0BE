@@ -5,16 +5,16 @@ using Il2CppInterop.Runtime.InteropTypes;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Sends a backend operation (the payload the game posts to
-/// /client/game/profile/items/moving) without naming any Newtonsoft.Json type in
-/// managed metadata.
+/// 发送一个后端操作（游戏 POST 到
+/// /client/game/profile/items/moving 的载荷），且在托管元数据中不指名任何
+/// Newtonsoft.Json 类型。
 /// <para>
-/// The direct call builds a <c>JObject</c> and hands it to
-/// <c>ClientBackendSession.SendOperationRightNow</c>. With a managed
-/// Newtonsoft.Json in BepInEx/plugins that constructor produces a managed object
-/// which the native method cannot accept. The JSON is parsed by the game's own
-/// JToken.Parse through IL2CPP instead, and the same method is invoked with the
-/// raw pointer.
+/// 直接调用会构建一个 <c>JObject</c> 并交给
+/// <c>ClientBackendSession.SendOperationRightNow</c>。当 BepInEx/plugins 中存在
+/// 托管的 Newtonsoft.Json 时，该构造函数会产出原生方法
+/// 无法接受的托管对象。改为通过 IL2CPP 用游戏自身的
+/// JToken.Parse 解析 JSON，并用原始指针调用
+/// 同一个方法。
 /// </para>
 /// </summary>
 internal static unsafe class NativeBackendSession
@@ -22,7 +22,7 @@ internal static unsafe class NativeBackendSession
     private static IntPtr _parse;
     private static bool _parseResolved;
 
-    /// <summary>Parses Fika built JSON into a native Newtonsoft JToken.</summary>
+    /// <summary>把 Fika 构建的 JSON 解析为原生 Newtonsoft JToken。</summary>
     internal static IntPtr ParsePayload(string json)
     {
         if (!_parseResolved)
@@ -42,8 +42,8 @@ internal static unsafe class NativeBackendSession
     }
 
     /// <summary>
-    /// Sends the operation through IL2CPP. Returns false when the game's parser or
-    /// the backend method cannot be reached, so the caller can fall back.
+    /// 通过 IL2CPP 发送该操作。当无法到达游戏的解析器或
+    /// 后端方法时返回 false，以便调用方回退。
     /// </summary>
     internal static bool TrySend(Il2CppObjectBase session, string payloadJson, Il2CppObjectBase callback)
     {
@@ -58,9 +58,9 @@ internal static unsafe class NativeBackendSession
             var method = NativeIl2Cpp.FindMethod(runtimeClass, "SendOperationRightNow", 2);
             if (method == IntPtr.Zero)
             {
-                // The runtime type can be a wrapper that does not inherit the
-                // method from ClientBackendSession, so search the declaring class
-                // as well before giving up on the native path.
+                // 运行时类型可能是一个未从 ClientBackendSession 继承该方法的
+                // 包装器，因此在放弃原生路径之前
+                // 也要搜索其声明类。
                 var declaring = NativeIl2Cpp.FindClass("Assembly-CSharp", "EFT", "ClientBackendSession");
                 method = NativeIl2Cpp.FindMethod(declaring, "SendOperationRightNow", 2);
             }

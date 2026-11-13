@@ -5,79 +5,79 @@ using System;
 namespace Fika.Core.Networking.Packets.Communication;
 
 /// <summary>
-/// Per-player activation of a green flare exfiltration point ("signal flare" exits).
+/// 绿色信号弹撤离点(「signal flare」出口)的按玩家激活。
 /// <para>
-/// Native model (verified against the 47888 interop member dump, see
-/// analysis/flare-exfil-verification): a green flare corresponds to
-/// <c>EFT.InventoryLogic.FlareEventType.ExitActivate</c>. The flare's success raises
-/// <c>EFT.GlobalEvents.FlareSuccessEvent</c> locally, which every
-/// <c>EFT.Interactive.FlareShootDetectorZone</c> on that machine consumes: it adds
-/// <b>the firing player's profile id</b> to <c>_shotPlayerProfiles</c> and fires its
-/// output triggers, and the point's per-player requirement
-/// (<c>ExfiltrationRequirement.Met(Player, ExfiltrationPoint)</c>, the manual activation
-/// one) then answers for that player only. Because the flare success event is never
-/// replayed on the host for a client's flare, a client's flare could not activate
-/// anything, while the point-level status Fika did replicate made the point usable for
-/// the whole team.
+/// 原生模型(已对照 47888 互操作成员转储验证,见
+/// analysis/flare-exfil-verification):绿色信号弹对应
+/// <c>EFT.InventoryLogic.FlareEventType.ExitActivate</c>。信号弹成功会在本地触发
+/// <c>EFT.GlobalEvents.FlareSuccessEvent</c>,该机器上每一个
+/// <c>EFT.Interactive.FlareShootDetectorZone</c> 都会消费它:它把
+/// <b>开火玩家的 profile id</b> 加进 <c>_shotPlayerProfiles</c>,并触发其
+/// 输出触发器,随后撤离点的按玩家条件
+/// (<c>ExfiltrationRequirement.Met(Player, ExfiltrationPoint)</c>,即手动激活那一条)
+/// 便只对那名玩家给出满足。由于客户端信号弹的成功事件从不会在主机上
+/// 被重放,客户端的信号弹无法激活任何东西,
+/// 而 Fika 确实同步过的点级状态却让整个小队都能用这个
+/// 撤离点。
 /// </para>
 /// <para>
-/// This packet restores the per-player binding over the wire:
+/// 本数据包通过线路恢复这种按玩家的绑定:
 /// <list type="bullet">
-/// <item><see cref="EKind.Report"/>: client -&gt; host, "I fired an ExitActivate flare
-/// inside detector zone ZoneId, at FlarePosition, and the point there is PointName".</item>
-/// <item><see cref="EKind.Grant"/>: host -&gt; all peers, "ProfileId is allowed at
-/// PointName". A receiver that is not ProfileId never applies it (and logs the ignored
-/// line), so the point is never opened for a player that did not fire.</item>
+/// <item><see cref="EKind.Report"/>:客户端 -&gt; 主机,「我在检测区 ZoneId、位置 FlarePosition
+/// 打出了一发 ExitActivate 信号弹,那里的撤离点是 PointName」。</item>
+/// <item><see cref="EKind.Grant"/>:主机 -&gt; 所有对端,「ProfileId 在 PointName」
+/// 被允许」。非 ProfileId 的接收方绝不会应用它(并会在日志里记下这次忽略),
+/// 因此撤离点绝不会为没有开火的玩家开放。</item>
 /// </list>
 /// </para>
 /// <para>
-/// Wire compatibility: this is a new packet type. Fika's LiteNetLib dispatch is keyed by
-/// a CRC16 of the packet type name (<c>NetPacketProcessor.GetShortHash</c>) and an unknown
-/// key throws during deserialization, so a peer that does not know this type cannot ignore
-/// it. The compatibility gate is the handshake: <see cref="FikaProtocol.Revision"/> is
-/// raised together with this packet, which rejects an older peer at the connection request
-/// instead of mid-raid.
+/// 线路兼容性:这是一个新的数据包类型。Fika 的 LiteNetLib 派发以
+/// 包类型名的 CRC16 作为键(<c>NetPacketProcessor.GetShortHash</c>),而未知的键
+/// 会在反序列化时抛出,因此不认识该类型的对端无法忽略它。
+/// 兼容性闸门就是握手:<see cref="FikaProtocol.Revision"/> 会与本数据包
+/// 一起提升,从而在连接请求阶段就拒绝较旧的对端,
+/// 而不是在 raid 中途。
 /// </para>
 /// </summary>
 public sealed class FlareExfilActivationPacket : INetSerializable
 {
-    /// <summary>Report (client to host) or Grant (host to every peer).</summary>
+    /// <summary>Report(客户端到主机)或 Grant(主机到每个对端)。</summary>
     public EKind Kind;
 
-    /// <summary>Profile id of the player that fired the flare. Cross-checked against the sending peer on the host.</summary>
+    /// <summary>打出信号弹的玩家的 profile id。主机上会与发送对端做交叉核对。</summary>
     public string ProfileId = string.Empty;
 
-    /// <summary>Name of the exfiltration point (<c>ExfiltrationPoint.Settings.Name</c>) that the flare activates.</summary>
+    /// <summary>该信号弹所激活的撤离点名称(<c>ExfiltrationPoint.Settings.Name</c>)。</summary>
     public string PointName = string.Empty;
 
-    /// <summary><c>FlareShootDetectorZone.zoneID</c> of the detector zone the flare was fired in.</summary>
+    /// <summary>信号弹发射所在检测区的 <c>FlareShootDetectorZone.zoneID</c>。</summary>
     public string ZoneId = string.Empty;
 
     /// <summary>
-    /// Group id of the shooter when the squad shares the activation (the vanilla party channel,
-    /// <c>EZoneEventType.PlayerByPartyAddedInShotList</c>). Empty when the activation is bound to
-    /// the shooter alone: a receiver then applies it only when <see cref="ProfileId"/> is its own.
+    /// 小队共享激活时开火者的组 id(原版小队通道,
+    /// <c>EZoneEventType.PlayerByPartyAddedInShotList</c>)。当激活只绑定到开火者本人时为
+    /// 空:此时接收方只有在 <see cref="ProfileId"/> 是自己时才应用它。
     /// </summary>
     public string SquadId = string.Empty;
 
-    /// <summary>Native flare bookkeeping uses the numeric raid id (<c>FlareShootZoneEvent.PlayerRaidID</c>).</summary>
+    /// <summary>原生信号弹簿记使用数值 raid id(<c>FlareShootZoneEvent.PlayerRaidID</c>)。</summary>
     public int RaidId;
 
-    /// <summary>World position the flare was fired from, used by the host to re-derive and validate the point.</summary>
+    /// <summary>信号弹发射的世界坐标,主机用它重新推导并校验撤离点。</summary>
     public Vector3 FlarePosition;
 
     /// <summary>
-    /// Where the flare burned for the shooter, which is the point the exit chain was started at. Set on grants
-    /// only; <see cref="Vector3.zero"/> means "no flare position was carried" and the receiver then re-applies
-    /// nothing. The whole squad needs it, because the native scene chain of a flare exit
-    /// (<c>EFT.GameTriggers.TriggerFlareSuccess</c> -&gt; <c>TriggersEmitter</c> -&gt; the map's handlers) plays its
-    /// animation on the machine that raises the flare event, and that machine is the shooter's alone.
+    /// 信号弹为开火者燃烧的位置,也就是退出链被启动的那一点。只在 grant 中设置;
+    /// <see cref="Vector3.zero"/> 表示「没有携带信号弹位置」,此时接收方不会重新应用
+    /// 任何东西。整个小队都需要它,因为信号弹撤离的原生场景链
+    /// (<c>EFT.GameTriggers.TriggerFlareSuccess</c> -&gt; <c>TriggersEmitter</c> -&gt; 地图的处理器)会在
+    /// 触发信号弹事件的那台机器上播放动画,而那台机器只有开火者有。
     /// </summary>
     public Vector3 FlareDirection;
 
     public void Serialize(NetDataWriter writer)
     {
-        // Write the fields in the exact order they are read in Deserialize.
+        // 按 Deserialize 读取字段的完全相同顺序写入字段。
         writer.Put((byte)Kind);
         writer.Put(ProfileId ?? string.Empty);
         writer.Put(PointName ?? string.Empty);
@@ -102,10 +102,10 @@ public sealed class FlareExfilActivationPacket : INetSerializable
 
     public enum EKind : byte
     {
-        /// <summary>Client to host: the local player fired an ExitActivate flare inside a detector zone.</summary>
+        /// <summary>客户端到主机:本地玩家在某个检测区内打出了一发 ExitActivate 信号弹。</summary>
         Report = 1,
 
-        /// <summary>Host to peers: the named profile is allowed at the named point.</summary>
+        /// <summary>主机到各对端:指定 profile 在指定撤离点被允许。</summary>
         Grant = 2
     }
 

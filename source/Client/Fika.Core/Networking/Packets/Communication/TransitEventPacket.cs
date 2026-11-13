@@ -10,18 +10,18 @@ namespace Fika.Core.Networking.Packets.Communication;
 public class TransitEventPacket : INetSerializable
 {
     /// <summary>
-    /// Event type byte no receiver maps to a payload. <see cref="Serialize"/> writes it when
-    /// the payload of the declared type could not be built: a body that is only partially
-    /// written makes NetPacketProcessor.ReadAllPackets parse the leftover bytes as another
-    /// packet, and that misparse reports a random packet type.
+    /// 没有任何接收方会映射到载荷的事件类型字节。<see cref="Serialize"/> 在声明的类型载荷
+    /// 无法构建时会写入它:一个只被部分写入的主体
+    /// 会让 NetPacketProcessor.ReadAllPackets 把剩余字节解析成另一个
+    /// 数据包,而这种误解析会报告出一个随机的包类型。
     /// </summary>
     private const byte NoPayloadEventType = byte.MaxValue;
 
     /// <summary>
-    /// Raid id the native transit initialization treats as "any player"
-    /// (EFT TransitInteractionControllerAbstractClass.IsTargetPlayer). An initialization
-    /// without a usable payload is sent with this id, so no peer can apply it to its own
-    /// transit state while the packet stream stays aligned.
+    /// 原生转发初始化视作「任意玩家」的 raid id
+    /// (EFT TransitInteractionControllerAbstractClass.IsTargetPlayer)。一次没有可用
+    /// 载荷的初始化会带上这个 id 发出,因此没有任何对端会把它应用到自己
+    /// 的转发状态上,同时数据包流保持对齐。
     /// </summary>
     internal const int AnyPlayerRaidId = -1;
 
@@ -48,9 +48,9 @@ public class TransitEventPacket : INetSerializable
         }
         catch (Exception ex)
         {
-            // Deserialize runs inside FikaClient.Update (NetManager.PollEvents). A packet we
-            // could not finish reading would leave NetPacketProcessor.ReadAllPackets parsing
-            // its leftover bytes as further packets, so the rest of this packet is dropped.
+            // Deserialize 运行在 FikaClient.Update 内部(NetManager.PollEvents)。一个我们
+            // 无法读完的数据包会让 NetPacketProcessor.ReadAllPackets 继续
+            // 把它的剩余字节解析成更多数据包,因此本数据包的其余部分被丢弃。
             FikaGlobals.LogError($"[Transit] Dropping a malformed {EventType} transit packet: {ex}");
             TransitEvent = null;
             DrainRemaining(reader);
@@ -176,17 +176,17 @@ public class TransitEventPacket : INetSerializable
                 Destination = ReadDestination(reader);
                 break;
             default:
-                // NoPayloadEventType and every type this build does not know: the sender
-                // declared a payload it could not build, so there is nothing to read.
+                // NoPayloadEventType 以及本构建不认识的每一种类型:发送方
+                // 声明了一个它无法构建的载荷,因此没有可读的内容。
                 break;
         }
     }
 
     /// <summary>
-    /// Rebuilds the native <see cref="TransitInitEvent"/> of an Init packet. A payload that is
-    /// missing or too large for the shared native buffer leaves <see cref="TransitEvent"/> null:
-    /// receivers check for a usable payload (ClientTransitController.ReceiveSnapshot) and ignore
-    /// the snapshot instead of applying an uninitialized one.
+    /// 重建 Init 包的原生 <see cref="TransitInitEvent"/>。缺失的载荷,或对共享原生缓冲区
+    /// 来说过大的载荷,都会让 <see cref="TransitEvent"/> 保持为 null:
+    /// 接收方会检查载荷是否可用(ClientTransitController.ReceiveSnapshot),并忽略
+    /// 该快照,而不是应用一个未初始化的快照。
     /// </summary>
     private void ReadInitializationPayload(byte[] data)
     {
@@ -319,10 +319,10 @@ public class TransitEventPacket : INetSerializable
     }
 
     /// <summary>
-    /// Serializes the native payload of an initialization. The shared native writer and a
-    /// native exception both stay contained here: HostGameController.SetupEventsAndExfils
-    /// continues with the exfiltration setup, the game status and the bot activation after
-    /// this send, so an escaping exception would abort the whole raid startup.
+    /// 序列化一次初始化的原生载荷。共享的原生写入器与一个
+    /// 原生异常都会在这里被收住:HostGameController.SetupEventsAndExfils
+    /// 在这次发送之后还会继续做撤离点设置、游戏状态和机器人激活,
+    /// 因此一个逃逸出去的异常会中止整个 raid 启动。
     /// </summary>
     private static byte[] SerializeInitialization(TransitInitEvent initEvent)
     {
@@ -338,8 +338,8 @@ public class TransitEventPacket : INetSerializable
         {
             if (initEvent.Points == null || initEvent.CompletedQuestRequirementMetByPointId == null)
             {
-                // A null native field is what makes TransitInitEvent.Serialize throw a native
-                // NullReferenceException mid write. Send a well formed empty initialization.
+                // 原生字段为 null 正是让 TransitInitEvent.Serialize 在写入中途抛出原生
+                // NullReferenceException 的原因。发送一个格式良好的空初始化。
                 FikaGlobals.LogError($"[Transit] The initialization of raid id {initEvent.PlayerRaidId} had no point or requirement dictionary; an empty initialization is sent instead");
                 initEvent = CreateEmptyInitialization();
             }
@@ -366,8 +366,8 @@ public class TransitEventPacket : INetSerializable
     }
 
     /// <summary>
-    /// A well formed initialization without content. The raid id is the native "any player"
-    /// sentinel, so the native transit controller never applies it to the local player.
+    /// 一个格式良好但没有内容的初始化。raid id 用的是原生的「任意玩家」
+    /// 哨兵值,因此原生转发控制器绝不会把它应用到本地玩家身上。
     /// </summary>
     private static TransitInitEvent CreateEmptyInitialization()
     {
@@ -380,9 +380,9 @@ public class TransitEventPacket : INetSerializable
     }
 
     /// <summary>
-    /// The declared event type has no payload. Writing a short body would make the receiver
-    /// parse the remaining bytes of that body as another packet, so the packet is written as
-    /// an event type every receiver ignores.
+    /// 所声明的事件类型没有载荷。写入一个过短的主体会让接收方
+    /// 把该主体剩下的字节解析成另一个数据包,因此该包会写成一个
+    /// 每个接收方都会忽略的事件类型。
     /// </summary>
     private static void WriteNoPayload(NetDataWriter writer, string eventName)
     {
@@ -403,8 +403,8 @@ public class TransitEventPacket : INetSerializable
     {
         if (data == null)
         {
-            // The peer validates the destination against its own transit points
-            // (ClientTransitController.HandleClientExtract) and drops an empty one.
+            // 对端会用自己那些转发点来校验目的地
+            // (ClientTransitController.HandleClientExtract),并丢弃空目的地。
             FikaGlobals.LogError("[Transit] Extract packet had no destination; an empty destination is sent instead");
             writer.Put(string.Empty);
             writer.Put(0);
@@ -454,8 +454,8 @@ public class TransitEventPacket : INetSerializable
         var count = reader.GetInt();
         if (count < 0 || count > MaxTransitProfileCount)
         {
-            // The destination is the last field of this packet, so the unusable tail is
-            // dropped here instead of being parsed as another packet.
+            // 目的地是本数据包的最后一个字段,因此不可用的尾部会
+            // 就在这里被丢弃,而不会被解析成另一个数据包。
             FikaGlobals.LogError($"[Transit] Extract packet reported {count} transit profiles; the destination is treated as empty");
             DrainRemaining(reader);
             return data;
@@ -487,12 +487,12 @@ public class TransitEventPacket : INetSerializable
         Extract,
 
         /// <summary>
-        /// "The host has started loading the next map of a transit reload" (analysis/transit-reload-sync).
-        /// The packet carries no payload on purpose: the type byte alone is the signal. A receiver whose
-        /// build does not know this value reads that byte, finds an unknown type and ignores the packet -
-        /// exactly what the serializer's default branch writes for it. Both halves of that contract must
-        /// stay in place: the default case of <see cref="Serialize"/> keeps writing the bare type byte and
-        /// the default case of <see cref="DeserializeBody"/> keeps reading nothing.
+        /// 「主机已开始加载转发重载的下一张地图」(analysis/transit-reload-sync)。
+        /// 本数据包刻意不携带载荷:仅类型字节就是信号。构建不认识该值的
+        /// 接收方读到那个字节,发现是未知类型,于是忽略这个包——
+        /// 这正是序列化器的 default 分支为它写下的内容。该契约的两半都必须
+        /// 保持原样:<see cref="Serialize"/> 的 default 分支继续只写裸类型字节,而
+        /// <see cref="DeserializeBody"/> 的 default 分支继续不读任何东西。
         /// </summary>
         ReloadGo
     }

@@ -89,6 +89,40 @@ public sealed class FikaTransitInteractPatch : ModulePatch
     }
 }
 
+/// <summary>
+/// (2026-10-19) Fika 客户端并不拥有原生需求所读取的过境记录（队伍人数、
+/// 小队成员），于是每个过境点都回答“这个过境点现在无法使用”，交互
+/// 提示始终不可用。主机自己会校验这次交互（<c>InteractWithTransit</c>），因此
+/// 客户端侧的需求检查一律回答 true，其余交给现有的数据包完成。
+/// </summary>
+public sealed class FikaTransitClientRequirementsPatch : ModulePatch
+{
+    protected override MethodBase GetTargetMethod() =>
+        AccessTools.DeclaredMethod(typeof(TransitPoint), nameof(TransitPoint.CheckInitialRequirements));
+
+    [PatchPrefix]
+    private static bool Prefix(ref bool __result)
+    {
+        if (!Fika.Core.Main.Utils.FikaBackendUtils.IsClient) return true;
+        __result = true;
+        return false;
+    }
+}
+
+public sealed class FikaTransitClientPartySizePatch : ModulePatch
+{
+    protected override MethodBase GetTargetMethod() =>
+        AccessTools.DeclaredMethod(typeof(TransitPoint), nameof(TransitPoint.CheckAlivePartySizeRequirement));
+
+    [PatchPrefix]
+    private static bool Prefix(ref bool __result)
+    {
+        if (!Fika.Core.Main.Utils.FikaBackendUtils.IsClient) return true;
+        __result = true;
+        return false;
+    }
+}
+
 public sealed class FikaTransitExtractPatch : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.DeclaredMethod(typeof(LocalTransitController), nameof(LocalTransitController.Transit));

@@ -6,7 +6,7 @@ using Fika.Core.Networking;
 namespace Fika.Core.Main.Components;
 
 /// <summary>
-/// Adds the <see cref="BTRViewSynchronizer"/> to the <see cref="BTRView"/> GameObject so that the position is synced
+/// 把 <see cref="BTRViewSynchronizer"/> 添加到 <see cref="BTRView"/> 的 GameObject 上，以便同步位置
 /// </summary>
 internal class BTRViewSynchronizer : ThrottledMono
 {

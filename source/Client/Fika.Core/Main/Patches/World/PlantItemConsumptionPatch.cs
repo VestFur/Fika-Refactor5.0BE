@@ -13,82 +13,82 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.World;
 
 /// <summary>
-/// AU (analysis/plant-item-consumption): the "the charge is still in the backpack after a successful
-/// plant" repair.
+/// AU（analysis/plant-item-consumption）：针对"成功放置后电芯仍留在背包里"
+/// 这一问题的修复。
 ///
-/// Where the native build takes a planted item out of the inventory was pinned down from the 4.0
-/// decompile:
+/// 原生版本究竟在哪里把已放置的物品从物品栏中取出，已由 4.0 的反编译
+/// 确定下来：
 ///
-///   EFT.Player.PlantItemNetwork(string itemId, string zoneId, bool successful)   // the plant
+///   EFT.Player.PlantItemNetwork(string itemId, string zoneId, bool successful)   // 放置入口
 ///     -> EFT.Player.PlantItem(itemId, zoneId, successful)
-///          -> Profile.ItemDroppedAtPlace(itemId, zoneId)                          // a note only
-///          -> EFT.Player.vmethod_1(operation, callback)                           // the item action
+///          -> Profile.ItemDroppedAtPlace(itemId, zoneId)                          // 仅是一条记录
+///          -> EFT.Player.vmethod_1(operation, callback)                           // 物品操作
 ///               -> plant operation(id, controller, discardResult, zone, ...)       // GClass3498
 ///                    -> InteractionsHandlerClass.Discard(item, controller, true)
-///                         => DiscardResult                                 // the cached removal
+///                         => DiscardResult                                 // 缓存的移除结果
 ///
-/// (Player.cs:26159-26175 for the entry point, Player.cs:1396-1412 for the operation, and
-/// Player.cs:23049-23055 for the shape the same Discard-plus-RemoveOperation pair has on the amulet
-/// path: ItemManipulator.Discard, then a RemoveOperation built from its DiscardResult.)
+/// （入口点见 Player.cs:26159-26175，操作见 Player.cs:1396-1412，而同样的 Discard-plus-RemoveOperation
+/// 组合在护身符路径上的形态见 Player.cs:23049-23055：
+/// 先 ItemManipulator.Discard，再用其 DiscardResult 构建一个 RemoveOperation。）
 ///
-/// AY correction (analysis/plant-client-host-crash), from the same decompile: there is no plant
-/// operation to run in this build. EFT.Player.PlantItem is exactly one line -
-/// Profile.ItemDroppedAtPlace(itemId, zoneId) (eft40-decompiled/EFT/Player.cs:26164-26170) - and
-/// Player.PlantItemLocalOnly (Player.cs:26172-26175) only forwards to it; the vmethod_1/plant-operation
-/// chain above exists in GClass1979/Player.cs around the amulet path, not behind PlantItem. So the
-/// charge really is never removed by the game here, the Discard-plus-RemoveOperation pair below is the
-/// only removal that will happen, and on a client it can only travel through the ordinary
-/// inventory-operation relay. That relay works: the host answered the client's first relayed
-/// RemoveOperation with Succeeded (logs-coop2-20261013-110333/LogOutput.log:2933).
+/// AY 更正（analysis/plant-client-host-crash），依据同一份反编译：这个版本里根本没有可执行的
+/// 放置操作。EFT.Player.PlantItem 只有一行——
+/// Profile.ItemDroppedAtPlace(itemId, zoneId)（eft40-decompiled/EFT/Player.cs:26164-26170）——而
+/// Player.PlantItemLocalOnly（Player.cs:26172-26175）只是转发给它；上面那条 vmethod_1/放置操作
+/// 调用链存在于 GClass1979/Player.cs 中护身符路径附近，并不在 PlantItem 后面。所以在这里
+/// 游戏确实从不移除那枚电芯，下面这对 Discard-plus-RemoveOperation 才是
+/// 唯一会发生的移除；而在客户端上它只能通过普通的
+/// 物品栏操作转发通道传递。该通道是有效的：主机对客户端首次转发的
+/// RemoveOperation 回复了 Succeeded（logs-coop2-20261013-110333/LogOutput.log:2933）。
 ///
-/// The hook is the gate that answers "is the charge there" -
-/// EFT.GameTriggers.ItemTriggerRequirement.TryRedeem(InventoryController, SkillManager) - because that
-/// is the moment the plant is committed to (the map's HandlerRequirementsWithFailedTrigger fires the
-/// plant trigger right after it) and because the live r16/cgok logs prove the item is still in the
-/// inventory after it answered true (logs-cgok-20261013-004053/LogOutput.log:3322-3323, from the same
-/// build that runs this patch). Whatever the plant's own removal is called, one thing is invariant:
-/// the requirement has been redeemed, so the item it was redeemed with must leave the inventory.
+/// 这个钩子就是回答"电芯还在不在"的那道关卡——
+/// EFT.GameTriggers.ItemTriggerRequirement.TryRedeem(InventoryController, SkillManager)——因为那
+/// 正是放置被确定的时刻（地图的 HandlerRequirementsWithFailedTrigger 紧接着就会触发
+/// 放置触发器），也因为实机 r16/cgok 日志证明在它回答 true 之后物品仍留在
+/// 物品栏中（logs-cgok-20261013-004053/LogOutput.log:3322-3323，来自运行
+/// 本补丁的同一版本）。无论放置自身的移除逻辑叫什么名字，有一件事是不变的：
+/// 需求已被兑换，因此用于兑换它的物品必须离开物品栏。
 ///
-/// This patch invents nothing: it searches the local player's own inventory for the template the
-/// requirement asked for, and when exactly one item matches, it runs exactly the two native steps
-/// above - ItemManipulator.Discard plus the RemoveOperation built from that DiscardResult - through
-/// the player's own controller, i.e. host player locally and client player through the port's
-/// inventory operation relay like every other inventory action. When the item is already gone (native
-/// consumed it, or a second handler fires for the same requirement) nothing is executed, so no plant
-/// ever consumes twice, and when the template matches more than one item nothing is executed either -
-/// the repair never guesses.
+/// 本补丁不臆造任何东西：它在本机玩家自己的物品栏中搜索需求所要求的那
+/// 个模板，并且当恰好只有一件物品匹配时，它执行的正是上面那两步原生操作
+/// ——ItemManipulator.Discard 加上用该 DiscardResult 构建的 RemoveOperation——通过
+/// 玩家自己的 controller，即主机玩家在本地执行、客户端玩家则经由本移植版的
+/// 物品栏操作转发通道，与其它所有物品栏动作一样。当物品已经不在时（原生
+/// 已消耗它，或同一需求触发了第二个处理器）不执行任何操作，因此任何放置
+/// 都不会消耗两次；而当模板匹配到多件物品时同样不执行任何操作——
+/// 这套修复从不猜测。
 ///
-/// AY: "nothing is executed twice" was still wrong in one place - the gate itself is answered twice by
-/// the map handler for a single plant, and the removal is dispatched asynchronously, so presence in the
-/// inventory is not a "was it already consumed" test. One plant therefore sent two identical removals
-/// (LogOutput.log:2931-2932); the host applied the first and refused the second, and that refusal
-/// resynced the client's item graph and aborted the plant (LogOutput.log:2934-2938). The ledger below
-/// makes the dispatch exactly-once per item, which is what the native code does.
+/// AY："不会执行两次"在一个地方仍然是错的——对于单次放置，地图处理器会把
+/// 这道关卡回答两次，而移除是异步分派的，所以物品是否存在于
+/// 物品栏并不能当作"它是否已被消耗"的判据。因此一次放置发出了两次完全相同的移除
+/// （LogOutput.log:2931-2932）；主机执行了第一次而拒绝了第二次，而这次拒绝
+/// 又触发了客户端物品图的重新同步并中止了放置（LogOutput.log:2934-2938）。下面的
+/// 台账让每个物品的分派恰好一次，这正是原生代码的行为。
 ///
-/// Switches: Fika.cfg -> [Gameplay] -> "Plant Consumes Item" (default on) and "Plant Consume On Client"
-/// (default on; off keeps the removal strictly on the host, so a client's plant consumes nothing and
-/// sends nothing). Evidence lines: [PlantDiag] consume: ...
+/// 开关：Fika.cfg -> [Gameplay] -> "Plant Consumes Item"（默认开启）与 "Plant Consume On Client"
+/// （默认开启；关闭后移除严格限制在主机上执行，此时客户端的放置不消耗任何东西、也不
+/// 发送任何东西）。证据行：[PlantDiag] consume: ...
 /// </summary>
 internal sealed class ItemTriggerRequirement_TryRedeem_Consume_Patch : ModulePatch
 {
     /// <summary>
-    /// AY (analysis/plant-client-host-crash): the removals this machine has already dispatched, so one
-    /// plant never dispatches two.
+    /// AY（analysis/plant-client-host-crash）：本机已经分派过的移除，这样一次
+    /// 放置就绝不会分派两次。
     ///
-    /// The native map handler answers this gate twice for a single plant - proven in the host run
-    /// (analysis/plant-item-consumption quotes logs-cgok-20261013-004053/LogOutput.log:3319-3324,
-    /// "op=TryRedeem -> result=True (x2)") and again by the two identical sends in
-    /// logs-coop2-20261013-110333/LogOutput.log:2931-2932. The old guard ("the item is already gone,
-    /// so a second call does nothing") cannot catch that: controller.Execute is asynchronous
-    /// (ClientInventoryController.cs:119-131 queues RunClientOperation and yields), so the second call
-    /// still found the charge in the inventory and sent a second removal for it. On a client that
-    /// second removal was refused by the host ("Could not find item with id", LogOutput.log:2934), and
-    /// the refusal drove an authoritative inventory resync that released the plant interaction
-    /// mid-animation (LogOutput.log:2936-2938) - the whole reported crash chain starts here.
+    /// 对于单次放置，原生地图处理器会把这道关卡回答两次——主机运行中已证明
+    /// （analysis/plant-item-consumption 引用了 logs-cgok-20261013-004053/LogOutput.log:3319-3324，
+    /// "op=TryRedeem -> result=True (x2)"），logs-coop2-20261013-110333/LogOutput.log:2931-2932 中
+    /// 两次完全相同的发送也再次证明了这一点。旧的防护（"物品已经不在了，
+    /// 所以第二次调用什么也不做"）抓不住这种情况：controller.Execute 是异步的
+    /// （ClientInventoryController.cs:119-131 将 RunClientOperation 入队后让出），所以第二次调用
+    /// 仍然在物品栏中找到了那枚电芯，并为它发送了第二次移除。在客户端上，那
+    /// 第二次移除被主机拒绝（"Could not find item with id"，LogOutput.log:2934），而
+    /// 这次拒绝引发了一次权威的物品栏重新同步，导致放置在动画播放中途被释放
+    /// （LogOutput.log:2936-2938）——所报告的整条崩溃链就是从这里开始的。
     ///
-    /// The ledger is keyed by the item id and expires after
-    /// <see cref="DispatchLedgerTtlSeconds"/>, so a later raid (or the same item removed for real
-    /// later) is never blocked by an old entry.
+    /// 该台账以物品 id 为键，并在
+    /// <see cref="DispatchLedgerTtlSeconds"/> 之后过期，因此之后的某次战局（或同一物品稍后
+    /// 被真正移除）永远不会被一条旧记录挡住。
     /// </summary>
     private const float DispatchLedgerTtlSeconds = 60f;
 
@@ -139,19 +139,19 @@ internal sealed class ItemTriggerRequirement_TryRedeem_Consume_Patch : ModulePat
             return;
         }
 
-        // AY: the side policy. The repair belongs to the inventory that owns the item, and on a
-        // client that inventory is authoritative on the host, so the removal has to be relayed
-        // (ClientInventoryController.RunClientOperation) - which the host applies, proven by
-        // logs-coop2-20261013-110333/LogOutput.log:2933. "Plant Consume On Client" = false keeps the
-        // removal strictly on the host: a client's plant then consumes nothing and sends nothing.
+        // AY：侧别策略。修复归属于拥有该物品的物品栏，而在客户端上
+        // 那个物品栏的权威在主机，因此移除必须被转发
+        // （ClientInventoryController.RunClientOperation）——由主机执行，已由
+        // logs-coop2-20261013-110333/LogOutput.log:2933 证明。"Plant Consume On Client" = false 会把
+        // 移除严格限制在主机上：此时客户端的放置不消耗任何东西、也不发送任何东西。
         if (!PlantDiag.ConsumeOnClient && !PlantDiag.IsHostMachine)
         {
             
             return;
         }
 
-        // Only the inventory this machine owns may be changed: the controller the requirement was
-        // handed has to be the local player's own, exactly like the requirement diagnostics.
+        // 只有本机拥有的物品栏才可以被改动：需求所收到的 controller
+        // 必须是本机玩家自己的，与需求诊断信息的处理方式完全一致。
         if (!PlantDiag.IsLocalController(controller))
         {
             
@@ -168,8 +168,8 @@ internal sealed class ItemTriggerRequirement_TryRedeem_Consume_Patch : ModulePat
         var item = FindRedeemedItem(player, requirement);
         if (item == null)
         {
-            // The native chain already removed it, or the template matches no single item. Never
-            // invent an item; 
+            // 原生调用链已经移除了它，或该模板匹配不到唯一的一件物品。绝不
+            // 凭空臆造物品；
             return;
         }
 
@@ -182,7 +182,7 @@ internal sealed class ItemTriggerRequirement_TryRedeem_Consume_Patch : ModulePat
 
         
 
-        // Step 1 - the same simulation the native plant operation is built from.
+        // 第 1 步——与原生放置操作构建时所依据的同一套模拟。
         OperationResult<DiscardResult> discard;
         try
         {
@@ -201,16 +201,16 @@ internal sealed class ItemTriggerRequirement_TryRedeem_Consume_Patch : ModulePat
             return;
         }
 
-        // Step 2 - the native step that executes that discard: a RemoveOperation over the plant
-        // controller, executed through the controller so a client plant is relayed to the host like
-        // every other inventory operation. The callback carries the answer of that execution.
+        // 第 2 步——执行该 discard 的原生步骤：一个作用于放置
+        // controller 的 RemoveOperation，通过 controller 执行，这样客户端的放置就会像
+        // 其它所有物品栏操作一样被转发给主机。回调携带该次执行的结果。
         try
         {
             var operation = new RemoveOperation(controller.GetAndIncrementNextOperationId(), controller, discard.Value);
             var callback = (Comfort.Common.Callback)(result => ReportExecution(player, reference));
             controller.Execute(operation, callback);
-            // AY: the removal is in flight now, so the second answer of the same plant must not send
-            // a second one. Only a dispatch that returned counts; a throw keeps the door open.
+            // AY：移除现在已在途中，所以同一次放置的第二次回答不得再发送
+            // 第二次。只有成功返回的分派才计数；抛异常则保持通路开放。
             NoteDispatched(item);
         }
         catch (Exception exception)
@@ -219,15 +219,15 @@ internal sealed class ItemTriggerRequirement_TryRedeem_Consume_Patch : ModulePat
             return;
         }
 
-        // The host executes an operation asynchronously, so this first read is only the immediate
-        // state; the step=callback line above is the one that judges the execution.
+        // 主机是异步执行操作的，因此这次初读只反映即时
+        // 状态；判断该次执行的是上面那行 step=callback。
         var presentAfter = FindRedeemedItem(player, requirement) != null;
         
     }
 
     /// <summary>
-    /// The answer of the dispatched removal, so a run distinguishes "dispatched but refused later"
-    /// from "dispatched and finished".
+    /// 已分派移除的回答，使一次运行能区分"已分派但稍后被拒绝"
+    /// 与"已分派并已完成"。
     /// </summary>
     private static void ReportExecution(FikaPlayer player, string reference)
     {
@@ -243,9 +243,9 @@ internal sealed class ItemTriggerRequirement_TryRedeem_Consume_Patch : ModulePat
     }
 
     /// <summary>
-    /// The item the requirement was redeemed with: the template it asked for, but only when that
-    /// template is present exactly once in the local inventory - the repair never picks between
-    /// candidates.
+    /// 需求被兑换时所用的物品：即它所要求的模板，但仅当该
+    /// 模板在本机物品栏中恰好出现一次——这套修复从不在多个
+    /// 候选中做选择。
     /// </summary>
     private static Item FindRedeemedItem(FikaPlayer player, EFT.GameTriggers.ItemTriggerRequirement requirement)
     {
@@ -309,13 +309,13 @@ internal sealed class ItemTriggerRequirement_TryRedeem_Consume_Patch : ModulePat
         }
     }
 
-    /// <summary>Whether this machine already dispatched the removal of this item.</summary>
+    /// <summary>本机是否已经分派过该物品的移除。</summary>
     private static bool AlreadyDispatched(Item item)
     {
         var key = ItemKey(item);
         if (key == null)
         {
-            // An unreadable id must not block a removal the native side would have made.
+            // 无法读取的 id 不得阻止一次原生侧本来会执行的移除。
             return false;
         }
 
@@ -330,7 +330,7 @@ internal sealed class ItemTriggerRequirement_TryRedeem_Consume_Patch : ModulePat
         }
     }
 
-    /// <summary>Records a dispatched removal. Called only after the controller took it.</summary>
+    /// <summary>记录一次已分派的移除。仅在 controller 接受了它之后调用。</summary>
     private static void NoteDispatched(Item item)
     {
         var key = ItemKey(item);
@@ -346,7 +346,7 @@ internal sealed class ItemTriggerRequirement_TryRedeem_Consume_Patch : ModulePat
         }
         catch
         {
-            // The ledger only suppresses a duplicate; failing to write it must not stop the repair.
+            // 台账只用于抑制重复；写入失败不得中断修复。
         }
     }
 

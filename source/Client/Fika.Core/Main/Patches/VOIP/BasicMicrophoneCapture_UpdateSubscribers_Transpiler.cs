@@ -6,7 +6,7 @@ using SPTushonka.Reflection.Patching;
 
 namespace Fika.Core.Main.Patches.VOIP;
 
-/// <summary>Suppress repeated empty-clip warnings while retaining native capture/restart behavior.</summary>
+/// <summary>抑制重复的空音频片段警告，同时保留原生的采集/重启行为。</summary>
 public class BasicMicrophoneCapture_UpdateSubscribers_Transpiler : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(Dissonance.Log),
@@ -15,7 +15,7 @@ public class BasicMicrophoneCapture_UpdateSubscribers_Transpiler : ModulePatch
     [PatchPrefix]
     public static bool Prefix(Dissonance.Log __instance, string message)
     {
-        // Keep all other recording errors and the native sample processing path.
+        // 保留其他所有录制错误以及原生的采样处理路径。
         return __instance.Pointer != BasicMicrophoneCapture.Log.Pointer ||
             !string.Equals(message, "Unknown microphone capture error (zero length clip) - restarting mic", StringComparison.Ordinal);
     }

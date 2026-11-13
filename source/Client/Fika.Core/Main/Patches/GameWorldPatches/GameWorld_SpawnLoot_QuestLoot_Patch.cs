@@ -7,13 +7,13 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.GameWorldPatches;
 
 /// <summary>
-/// SPT 5.0 defers every QuestItem loot entry: the world loot pass routes the descriptor through
-/// GameWorld.GetQuestLootReady, which moves the quest entries into GameWorld._questLootItems, and only
-/// GameWorld.ManageQuestLoot(Player) ever puts them into the world (per-player, which is why the headless
-/// mode is the only place in the port that called GetQuestLootReady). Fika drives the raid through its own
-/// game mode, so the deferred entries stayed queued forever and forced quest spawns - the Interchange cargo
-/// manifests of 库存清单 / 损失惨重 among them - never appeared in raid.
-/// Materialise the local player's share right after the world loot pass.
+/// SPT 5.0 会推迟每一个 QuestItem 战利品条目：世界战利品流程把描述符交给
+/// GameWorld.GetQuestLootReady，后者把任务条目移入 GameWorld._questLootItems，而只有
+/// GameWorld.ManageQuestLoot(Player) 才会真正把它们放进世界（按玩家处理，这也是移植版中
+/// 只有无头模式调用 GetQuestLootReady 的原因）。Fika 用自己的游戏模式驱动突袭，
+/// 因此被推迟的条目永远排在队列中，被强制生成的任务战利品——其中包括立交桥的货运
+/// 清单 库存清单 / 损失惨重——从不在突袭中出现。
+/// 在世界战利品流程之后立即把本地玩家的那一份实体化。
 /// </summary>
 internal sealed class GameWorld_SpawnLoot_QuestLoot_Patch : ModulePatch
 {
@@ -34,11 +34,11 @@ internal sealed class GameWorld_SpawnLoot_QuestLoot_Patch : ModulePatch
     {
         try
         {
-            // AP (analysis/nonfika-raid-inertness): this patch exists because *Fika's* game mode never
-            // called GetQuestLootReady, so the deferred quest loot stayed queued. A native single-player
-            // raid is driven by the native local game, which materialises its own share at the right time -
-            // our early call would be at best redundant and at worst a second materialisation. Outside a
-            // Fika raid the native flow is left alone; [Inert] skip=GameWorld.SpawnLoot postfix names it.
+            // AP（analysis/nonfika-raid-inertness）：这个补丁之所以存在，是因为 *Fika 的*游戏模式从不
+            // 调用 GetQuestLootReady，于是被推迟的任务战利品一直留在队列里。原生单人
+            // 突袭由原生本地游戏驱动，它会在合适的时机把自己的那一份实体化——
+            // 我们提前调用往好里说是多余的，往坏里说就是第二次实体化。在 Fika 突袭
+            // 之外，原生流程不被干涉；[Inert] skip=GameWorld.SpawnLoot 后置会点名这一点。
             if (FikaRaidGate.Skip("GameWorld.SpawnLoot postfix"))
             {
                 return;

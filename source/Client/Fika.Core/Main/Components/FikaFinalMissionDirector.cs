@@ -20,65 +20,67 @@ using Fika.Core.Networking.Packets.World;
 namespace Fika.Core.Main.Components;
 
 /// <summary>
-/// One mission per bound raid. The host owns seats, zone membership and outcomes;
-/// each player plays and saves their own ending. A client never supplies an exit status.
+/// 每个绑定突袭一个任务。主机掌管席位、区域归属与结果；
+/// 每名玩家自行播放并保存自己的结局。客户端从不提供退出状态。
 /// </summary>
 internal static class FikaFinalMissionDirector
 {
-    /// <summary>Frames between the raid start and the map's raid-start story scene.</summary>
+    /// <summary>从突袭开始到地图的突袭开场剧情场景之间的帧数。</summary>
     private const int IntroDelayFrames = 120;
 
-    // (analysis/terminal-ending-settlement) The clock of the personal ending and its judgement. The ending is a
-    // client-only cutscene of this machine (no CutsceneProcess), so the two native signals that report it -
-    // the timeline's exit action and the viewer completion - are the only way it can say that it is over, and
-    // DeferStop holds every other stop of this game back while it is open. The constants below bound that wait
-    // instead of letting one lost signal freeze the raid on its ending picture.
-    /// <summary>How long the ending scene may take to appear before the director enters its playback itself.</summary>
+    // (analysis/terminal-ending-settlement) 个人结局的时钟及其判定。该结局是本机独有的
+    // 客户端过场（没有 CutsceneProcess），因此能报告它的只有两个原生信号——
+    // 时间线的退出动作与观看器完成——这是它唯一能宣告自己已结束的途径，而
+    // 在它开启期间 DeferStop 会拦住该游戏的其他所有停止。下面的常量给这段等待设了上界，
+    // 以免丢失一个信号就把突袭冻结在结局画面上。
+    /// <summary>结局场景出现之前最多等待多久，超时后导演就自行进入其播放。</summary>
     private const float EndingPlayGraceSeconds = 2f;
 
-    /// <summary>Seconds between two rescue attempts of the ending scene.</summary>
+    /// <summary>两次尝试抢救结局场景之间的秒数。</summary>
     private const float EndingRescueRetrySeconds = 2f;
 
-    /// <summary>How many times the director enters the ending playback before it stops trying.</summary>
+    /// <summary>导演在放弃之前最多进入结局播放多少次。</summary>
     private const int EndingRescueMaxAttempts = 3;
 
-    /// <summary>Seconds between two samples of the ending scene.</summary>
+    /// <summary>两次采样结局场景之间的秒数。</summary>
     private const float EndingSampleSeconds = 0.25f;
 
-    /// <summary>How long a scene that stopped advancing may stay before the ending is treated as over.</summary>
+    /// <summary>停止推进的场景可以停留多久，之后才把结局视为已结束。</summary>
     private const float EndingStoppedGraceSeconds = 3f;
 
-    /// <summary>How long the native completion is awaited after the scene is over before the director settles.</summary>
+    /// <summary>场景结束后、导演定论之前等待原生完成多久。</summary>
     private const float EndingSettleGraceSeconds = 3f;
 
-    /// <summary>No frame of the ending played within this many seconds: the scene is taken down anyway.</summary>
+    /// <summary>这么多秒内结局没有播放过任何一帧：无论如何都要把场景撤下。</summary>
     private const float EndingWithoutSceneSeconds = 30f;
 
-    /// <summary>Hard deadline of the whole ending: after it the raid is settled with the outcome the host sent.</summary>
+    /// <summary>整个结局的硬性截止时间：超过之后就用主机发来的结果结算突袭。</summary>
     private const float EndingHardDeadlineSeconds = 45f;
 
-    /// <summary>How long the raid stop may be deferred for an ending that does not finish.</summary>
+    /// <summary>对于不会结束的结局，突袭停止最多可被推迟多久。</summary>
     private const float EndingDeferCapSeconds = 90f;
 
-    /// <summary>Seconds between two acknowledgements of a completion the host has not answered yet.</summary>
+    /// <summary>对主机尚未回应的完成进行两次确认之间的秒数。</summary>
     private const float EndingCompleteRetrySeconds = 5f;
 
-    /// <summary>Seconds between two progress lines of a playing ending scene.</summary>
+    /// <summary>正在播放的结局场景两次进度日志之间的秒数。</summary>
     private const float EndingProgressSeconds = 5f;
 
-    /// <summary>How many progress lines one ending writes at most.</summary>
+    /// <summary>一个结局最多写出多少条进度日志。</summary>
     private const int EndingProgressLines = 12;
 
     /// <summary>
-    /// (analysis/terminal-ending-settlement) One switch for the whole ending repair: the watchdog that follows
-    /// the personal ending of this machine, accepts its completion under either of its two native ids, ends a
-    /// scene that is over (or never played) through the native stop, repeats an unacknowledged completion, and
-    /// bounds the hold <see cref="DeferStop"/> puts on every other stop of this game. With <c>false</c> exactly
-    /// the previous behaviour is left: the ending is started as before and only the two native signals can finish
-    /// it. It is a <c>static bool</c> and not a <c>const</c> on purpose - the same deal as the switches of the
-    /// cutscene bridge - so the rollback is one assignment (or one config key the main agent wires).
+    /// (analysis/terminal-ending-settlement) 整个结局修复的单一开关：跟随本机的个人结局，
+    /// 用它的两个原生 id 中任一者接受其完成，通过原生停止把一个已结束（或从未播放）的
+    /// 场景收尾，重复一次未被确认的完成，并为 <see cref="DeferStop"/> 对该游戏其他所有
+    /// 停止施加的拦截设定上界。设为 <c>false</c> 时恰好保留原有行为：结局照旧启动，
+    /// 且只有那两个原生信号能将它结束。它被有意设为 <c>static bool</c> 而非
+    /// <c>const</c>——与过场桥接的各个开关一样——因此回滚只需一次赋值
+    /// （或由主 agent 接上的一个配置键）。
     /// </summary>
-    internal static bool EndingRepair = true;
+    // (2026-10-18 refactor W3-finalmission) 结局修复层已关闭：周期性 watchdog、完成重试与
+    // 场景抢救都由该开关控制；最终任务现在只依赖原生信号运行。
+    internal static bool EndingRepair = false;
 
     private sealed class Ending
     {
@@ -104,23 +106,23 @@ internal static class FikaFinalMissionDirector
     private static float _nextState, _nextError, _nextQuestState, _nextQuestRefresh;
 
     /// <summary>
-    /// (perf 2026-10-14) CutsceneBoundary.Tick drives five pumps (adopt link / takeover / local playback /
-    /// skip overlay / host playback repair) and used to be called once per frame from TickMission. The method
-    /// watch measured it at 6.2 ms average per call, ~20 calls/s, 25.5 s of a 194 s raid (13% of wall time) -
-    /// and it is the same chain that made story cutscenes hitch. Each pump already polls on its own internal
-    /// timer (playback 0.25 s, adopt link RetrySeconds), so a 10 Hz cap is invisible to the logic.
+    /// (perf 2026-10-14) CutsceneBoundary.Tick 驱动五个泵（adopt link / takeover / local playback /
+    /// skip overlay / host playback repair），过去每帧由 TickMission 调用一次。方法
+    /// 监视测得它平均每次 6.2 ms、约 20 次/秒，在 194 秒的突袭中占 25.5 秒（挂钟时间的 13%）——
+    /// 而正是同一条链路让剧情过场出现卡顿。每个泵本就按各自的内部定时器轮询
+    /// （playback 0.25 s、adopt link RetrySeconds），因此 10 Hz 的上限对逻辑没有可见影响。
     /// </summary>
     private const float CutsceneTickIntervalSeconds = 0.1f;
 
     private static float _nextCutsceneTick;
 
     /// <summary>
-    /// (perf 2026-10-14, measured) Throttling only CutsceneBoundary.Tick left the method at 22,529 ms over
-    /// 5,151 calls in a 184 s raid (worst single call 571.6 ms) - i.e. 4.4 ms per call, 12% of wall clock.
-    /// The rest of the body is retry/watchdog work: the story-intro driver, the final-mission queue drain and
-    /// the host-side arming retries. All of it is explicitly "retried until it works" by design, and the
-    /// fastest inner cadence anywhere below is the 0.25 s playback pump, so 10 Hz loses nothing and removes
-    /// most of that tax.
+    /// (perf 2026-10-14, 实测) 只对 CutsceneBoundary.Tick 限流后，该方法在 184 秒的突袭中
+    /// 用时仍有 22,529 ms / 5,151 次调用（单次最差 571.6 ms）——即每次 4.4 ms，占挂钟时间 12%。
+    /// 方法体的其余部分是重试/watchdog 工作：剧情开场驱动、最终任务队列排空，以及
+    /// 主机侧的 arming 重试。按设计这些全部都是“重试到成功为止”，而
+    /// 下面任何地方最快的内部节奏是 0.25 s 的播放泵，所以 10 Hz 不会损失任何东西，还能去掉
+    /// 那笔开销的大部分。
     /// </summary>
     private const float MissionTickIntervalSeconds = 0.1f;
 
@@ -129,10 +131,10 @@ internal static class FikaFinalMissionDirector
     private static FinalMissionPacket? _localEnding;
     private static EFinalExitStatus? _localEligibility;
     private static bool _localZoneUi;
-    // (analysis/terminal-ending-settlement) The ending chain's own state: when the ending was handed to this
-    // machine's viewer, whether its scene ever advanced a frame, when it stopped, and which of the fallbacks
-    // already ran. Every one of them answers one question of the report - the screen stays on the ending picture
-    // and nothing settles - without needing a second raid to reproduce it.
+    // (analysis/terminal-ending-settlement) 结局链路自身的状态：结局何时交给
+    // 本机的观看器、它的场景是否推进过任何一帧、何时停止，以及哪些兜底
+    // 已经执行过。每一项都回答了报告中的一个问题——画面停在结局画面上、
+    // 什么都不结算——而无需再跑一次突袭来复现它。
     private static float _localEndingAt, _endingStoppedAt, _nextEndingSample, _nextEndingRescue, _nextEndingProgress, _localCompleteAt, _nextCompleteRetry;
     private static double _localEndingSceneTime = -1d;
     private static bool _endingPlayed, _endingVisible, _endingRescued, _endingNoScene, _endingSceneOver, _endingSettledByWatchdog;
@@ -143,21 +145,21 @@ internal static class FikaFinalMissionDirector
     private static CoopHandler Handler => _handler ??= Network?.CoopHandler;
     internal static bool Bound => World != null;
 
-    /// <summary>True while this machine plays its own ending (its outcome arrived and was started here).</summary>
+    /// <summary>当本机播放自己的结局（其结果已到达并在此处启动）时为 true。</summary>
     internal static bool HasLocalEnding => _localEnding.HasValue && _localStarted;
     internal static bool Owns(FinallExitZone zone) => Bound && (_zone == null || _zone.Pointer == zone.Pointer);
 
     /// <summary>
-    /// True when the director runs this zone's clock itself: after arming on the host, or after the
-    /// host's state packet on a peer. While it is false the native zone update is left alone, so a
-    /// zone the director could not take over is still driven by the game instead of by nobody.
+    /// 当导演自行运行该区域的时钟时为 true：在主机上完成 arming 之后，或在
+    /// 对等端收到主机的状态包之后。它为 false 时，原生区域更新不受干扰，
+    /// 因此导演无法接管的区域仍由游戏驱动，而不是无人驱动。
     /// </summary>
     internal static bool DrivesZone(FinallExitZone zone)
     {
         if (!Bound || zone == null) return false;
         if (_zone != null && _zone.Pointer != zone.Pointer) return false;
-        // A peer never drives the mission itself: seats, clock and outcome arrive in the host's
-        // FinalMissionPacket(State) stream, so its native update stays suppressed.
+        // 对等端从不自行驱动任务：席位、时钟与结果都经由主机的
+        // FinalMissionPacket(State) 流传入，因此它的原生更新保持被抑制。
         return !FikaBackendUtils.IsServer || _armed || _departed;
     }
 
@@ -208,7 +210,7 @@ internal static class FikaFinalMissionDirector
         try { TickMission(game); }
         catch (Exception error)
         {
-            // Preserve the state for retry, but do not flood the log every frame.
+            // 为重试保留状态，但不要每帧都刷日志。
             if (Time.unscaledTime >= _nextError)
             {
                 _nextError = Time.unscaledTime + 5;
@@ -231,18 +233,18 @@ internal static class FikaFinalMissionDirector
                     .Where(door => door.KeyId == "6866adbe09b973bf45094339").ToArray();
             }
         }
-        // (analysis/icebreaker-cutscene) The native cutscene controllers are created without their timeline
-        // bank on a Fika raid; repair that link before anything reads it, so the story marker has a controller
-        // that can actually resolve its cutscene - and so the client controller can decode a timeline at all.
-        // (perf 2026-10-14) reverted to the original per-frame call: the 10 Hz throttle did not help the
-        // stutter and it displaced the cutscene skip overlay (one of the pumps below), so vanilla cadence wins.
+        // (analysis/icebreaker-cutscene) 在 Fika 突袭中，原生过场控制器创建时没有带上它们的 timeline
+        // bank；在任何东西读取它之前修复这个链接，这样剧情标记就有一个能够
+        // 真正解析其过场的控制器——也让客户端控制器至少能解码出一条 timeline。
+        // (perf 2026-10-14) 已还原为原来的每帧调用：10 Hz 限流既没有改善
+        // 卡顿，反而挤掉了过场跳过遮罩（下面的某个泵），所以原版节奏胜出。
         CutsceneBoundary.Tick(World);
         AdoptTimelinesBank();
         _frames++;
-        // The raid-start story scene belongs to the map marker, not to the final exit: drive it
-        // before the final-mission gates, so a story map without a FinallExitZone still plays it.
-        // (perf 2026-10-14) reverted to the original per-frame body: throttling the whole tick to 10 Hz did
-        // not reduce the per-second stutter, and it delayed the on-screen mission UI the same way.
+        // 突袭开场的剧情场景属于地图标记，而不属于最终撤离：在
+        // 最终任务网关之前驱动它，这样没有 FinallExitZone 的剧情地图也照样播放它。
+        // (perf 2026-10-14) 已还原为原来的每帧方法体：把整个 tick 限流到 10 Hz
+        // 并未减少每秒的卡顿，还以同样方式延迟了屏幕上的任务 UI。
         DriveStoryIntro();
         if (World.CutscenesClientController?._timelinesMapBank == null)
         {
@@ -266,17 +268,17 @@ internal static class FikaFinalMissionDirector
         {
             if (World.CutscenesServerController?._timelinesMapBank == null) return;
             var players = Participants();
-            // The native zone initialisation asks to arm the zone, but it can run before the raid
-            // is started or before a single player is registered; that request is retried here so
-            // a mission is never left unarmed by a hook that fired too early.
+            // 原生区域初始化会请求 arm 该区域，但它可能在突袭
+            // 开始之前、或在注册到第一名玩家之前运行；该请求在此重试，使得
+            // 任务不会因为某个钩子触发过早而一直处于未 arm 状态。
             if (!_armed && _zoneRequested) TryArm("native-zone-init retry");
             if (!_armed && _introStarted && (_gates.Any(gate => gate != null && gate.DoorState == EDoorState.Open) ||
                 (_gates.Length == 0 && players.Any(InZone)))) TryArm("gate-open");
             if (_armed && !_departed)
             {
-                // Native UI initialization also writes these zone fields. Keep
-                // the authoritative clock separately so a delayed UI coroutine
-                // cannot shorten/extend the host's mission timer.
+                // 原生 UI 初始化也会写这些区域字段。把权威时钟
+                // 单独保存，这样延迟的 UI 协程
+                // 就无法缩短/延长主机的任务计时器。
                 _evacuationElapsed += Time.deltaTime;
                 _zone.evacuateTimer = _evacuationDuration;
                 _zone._evacuateTimerElapsed = _evacuationElapsed;
@@ -294,30 +296,35 @@ internal static class FikaFinalMissionDirector
             _zone._evacuateTimerElapsed = Math.Min(_zone.evacuateTimer, _zone._evacuateTimerElapsed + Time.deltaTime);
 
         if (_localEnding.HasValue && !_localStarted) StartLocalEnding();
-        // (analysis/terminal-ending-settlement) The ending of this machine is followed from here: the native
-        // signals that report its end are the only other way it can finish, and one lost signal must not leave
-        // the raid on its ending picture (see WatchLocalEnding).
+        // (2026-10-26 W18, 从上游 3.0.4 恢复) 结局修复层曾被 W3-finalmission 移除
+        // 接线：开关留了下来，它守护的行为却没有。现已逐字恢复，仍
+        // 由 EndingRepair 守护（配置 'Final Mission: Ending Repair'，默认 true）：
+        //   * WatchLocalEnding - 本机自己的结局会被跟随直到真正完成，这样一个丢失的
+        //     原生信号就不会把突袭留在结局画面上；
+        //   * 完成时执行 PrepareLocal - 结局一完成就准备好本地退出路径；
+        //   * RetryCompletion - 丢失的 ExitAuthorized 确认会被重发（主机处理器
+        //     对同一结果 id 是幂等的），而不是永远等一个回答。
         if (EndingRepair && _localStarted && !_localComplete) WatchLocalEnding();
         if (_localComplete) PrepareLocal(game);
-        // The host acknowledges a completion with ExitAuthorized. A reliable packet can still be lost with the
-        // peer that has to deliver it, so an unacknowledged completion is repeated instead of waiting forever -
-        // the host's handler is idempotent for the same outcome id.
         if (EndingRepair && _localComplete && !_exitAuthorized)
         {
-            var now = Time.unscaledTime;
-            if (now >= _nextCompleteRetry)
+            var retryNow = Time.unscaledTime;
+            if (retryNow >= _nextCompleteRetry)
             {
-                _nextCompleteRetry = now + EndingCompleteRetrySeconds;
+                _nextCompleteRetry = retryNow + EndingCompleteRetrySeconds;
                 RetryCompletion();
             }
         }
+        // (analysis/terminal-ending-settlement) 本机的结局从这里开始被跟随：能报告其结束的
+        // 那些原生信号是它另一种可能的结束方式，而一个丢失的信号绝不能让
+        // 突袭停在结局画面上（见 WatchLocalEnding）。
         if (FikaBackendUtils.IsClient && _localComplete &&
             FikaSingleton<FikaClient>.Instance?.ServerConnection?.ConnectionState != ConnectionState.Connected)
             _exitAuthorized = true; // Save the already-issued host outcome after connection loss.
         if (FikaBackendUtils.IsServer && _departed && (FikaBackendUtils.IsHeadless || _localComplete))
         {
-            // Wait for clients to leave after their own save/exit. An acknowledgement
-            // alone does not prove that the host's reliable response has arrived.
+            // 等客户端在自行保存/退出之后离开。仅有一个确认
+            // 并不证明主机的可靠响应已经到达。
             foreach (var peer in PendingDepartures.Keys.ToArray())
                 if (peer.ConnectionState != ConnectionState.Connected) PendingDepartures.Remove(peer);
             if (PendingDepartures.Count == 0)
@@ -365,13 +372,13 @@ internal static class FikaFinalMissionDirector
     }
 
     /// <summary>
-    /// (2026-10-17) The native cutscene controllers are created without their timeline bank (CutsceneBoundary
-    /// creates them and deliberately does not run the private native Init), and the bridge's own adoption
-    /// stops after three attempts inside the load. A map whose <see cref="MapTimelinesBank"/> streams in
-    /// later therefore never got the link, and the native <c>StartCutscene</c> of that map - the Terminal
-    /// arrival scene - threw a NullReferenceException on every attempt (309 times in the 2026-10-17 host
-    /// log) while the screen it had already switched to stayed black. The bank this director resolves is
-    /// handed to both controllers here, idempotent and only when the controller has none.
+    /// (2026-10-17) 原生过场控制器创建时没有带上它们的 timeline bank（由 CutsceneBoundary
+    /// 创建，并有意不运行私有的原生 Init），而桥接自身的采纳
+    /// 在加载过程中的三次尝试后即停止。因此，<see cref="MapTimelinesBank"/> 稍后
+    /// 才流入的地图永远得不到该链接，而该地图的原生 <c>StartCutscene</c>——即 Terminal
+    /// 抵达场景——每次尝试都抛出 NullReferenceException（2026-10-17 主机日志中 309 次），
+    /// 而它已经切换到的那块屏幕一直是黑的。本导演解析到的 bank 在此
+    /// 交给两个控制器，操作幂等，且仅在控制器尚无 bank 时执行。
     /// </summary>
     private static void AdoptTimelinesBank()
     {
@@ -406,10 +413,10 @@ internal static class FikaFinalMissionDirector
         if (timer._timeElapsed < timer.time) return;
         var ids = PlayerIds(Participants());
         if (ids.Count == 0 || World.CutscenesServerController == null) return;
-        // (2026-10-17) Without the timeline bank the native StartCutscene throws a NullReferenceException
-        // inside the IL2CPP runtime (309 of them in the 2026-10-17 host log) and the cutscene screen it was
-        // called for stays black. The bank is linked by AdoptTimelinesBank once the map carries it; until
-        // then the timer is simply not fired.
+        // (2026-10-17) 没有 timeline bank 时，原生 StartCutscene 会在
+        // IL2CPP 运行时内部抛出 NullReferenceException（2026-10-17 主机日志中有 309 次），而它被
+        // 调用所对应的过场屏幕会一直黑着。一旦地图带上 bank，就由 AdoptTimelinesBank 完成链接；
+        // 在此之前，定时器就是不会触发。
         if (World.CutscenesServerController._timelinesMapBank == null)
         {
             if (!_timerBankMissingReported)
@@ -427,11 +434,11 @@ internal static class FikaFinalMissionDirector
     }
 
     /// <summary>
-    /// The raid-start story scene. The map marks it with <see cref="StartCutsceneByStartRaid"/>,
-    /// and the single-player driver honours that marker on Terminal only; a Fika raid replaces
-    /// that driver, so the marker is honoured on every map that carries it. Host only: the
-    /// timeline bank and the server controller own the process, and every peer receives a
-    /// CutsceneStartPacket from it.
+    /// 突袭开场的剧情场景。地图用 <see cref="StartCutsceneByStartRaid"/> 标记它，
+    /// 而单人驱动只在 Terminal 上遵循该标记；Fika 突袭替换了那个
+    /// 驱动，因此凡是携带它的地图都会遵循该标记。仅限主机：timeline bank
+    /// 与服务器控制器掌控该流程，每个对等端都会从它那里收到一个
+    /// CutsceneStartPacket。
     /// </summary>
     private static void DriveStoryIntro()
     {
@@ -479,10 +486,10 @@ internal static class FikaFinalMissionDirector
     }
 
     /// <summary>
-    /// Called by the replaced native <see cref="FinallExitZone.InitZoneServer"/> hook. The request
-    /// is recorded even when the zone cannot be armed yet - the map asks for its zone long before
-    /// the first player is registered - and <see cref="TickMission"/> retries it. Returns true
-    /// only when the director owns the zone, so the caller knows whether to suppress the native body.
+    /// 由被替换的原生 <see cref="FinallExitZone.InitZoneServer"/> 钩子调用。即便区域
+    /// 尚无法 arm，该请求也会被记录下来——地图早在第一名玩家注册之前
+    /// 就请求它的区域——<see cref="TickMission"/> 会重试它。仅当导演拥有该区域时
+    /// 才返回 true，这样调用者就知道是否要抑制原生方法体。
     /// </summary>
     internal static bool Arm(FinallExitZone zone)
     {
@@ -524,12 +531,12 @@ internal static class FikaFinalMissionDirector
         zone._playersToEvacuate = Math.Min(count, Math.Max(settings.MinPlayersToEvac,
             count - (int)UnityEngine.Random.Range(settings.SeatsRandom.x, settings.SeatsRandom.y)));
         var configuredEvacuationTime = Math.Max(0, settings.EvacuateTime);
-        // Seed the native field first: GetEvacuateTimerByEndRaid() uses the
-        // configured evacuation value when applying the raid-end boundary.
+        // 先写入原生字段：GetEvacuateTimerByEndRaid() 在应用
+        // 突袭结束边界时会使用已配置的撤离时长。
         zone.evacuateTimer = configuredEvacuationTime;
-        // The final mission timer may not extend beyond the native raid end.
-        // GetEvacuateTimerByEndRaid() is the remaining raid time, not a
-        // replacement for the configured final-mission duration.
+        // 最终任务计时器不可超出原生突袭结束时间。
+        // GetEvacuateTimerByEndRaid() 是剩余突袭时间，而不是对
+        // 所配置最终任务时长的替代。
         var remainingRaidTime = Math.Max(0, zone.GetEvacuateTimerByEndRaid());
         zone.evacuateTimer = Math.Min(configuredEvacuationTime, remainingRaidTime);
         if (settings.FinalCutscenesByQuest != null)
@@ -552,8 +559,8 @@ internal static class FikaFinalMissionDirector
     private static bool InZone(FikaPlayer player)
     {
         if (_colliders == null) _colliders = _zone.GetComponentsInChildren<Collider>(true).ToArray();
-        // ClosestPoint also handles rotated/non-box trigger shapes without admitting
-        // the empty corners of their world-space axis-aligned bounds.
+        // ClosestPoint 也能处理旋转的/非盒形触发形状，而不会
+        // 引入它们世界空间轴对齐包围盒中的空角。
         return _colliders.Any(collider => collider != null && collider.enabled &&
             (collider.ClosestPoint(player.Position) - player.Position).sqrMagnitude < 0.01f);
     }
@@ -562,9 +569,9 @@ internal static class FikaFinalMissionDirector
     {
         if (string.IsNullOrEmpty(questId)) return true;
         if (!player.IsYourPlayer && QuestStates.TryGetValue(player.ProfileId, out var statuses))
-            // The report is a complete snapshot of this map's relevant quests.
-            // An absent quest was not accepted by the client; the host's copy of
-            // its profile can be stale after an in-raid quest transition.
+            // 该报告是本地图相关任务的一份完整快照。
+            // 缺失的任务表示客户端未接受它；在一次突袭中的任务变更之后，
+            // 主机持有的该客户端档案副本可能已经过时。
             return statuses.TryGetValue(questId, out var status) &&
                 status is EQuestStatus.Started or EQuestStatus.AvailableForFinish;
         foreach (var quest in player.Profile.QuestsData)
@@ -596,8 +603,8 @@ internal static class FikaFinalMissionDirector
         var packet = new FinalMissionQuestPacket { NetId = Handler.MyPlayer.NetId, Statuses = statuses };
         Network.SendData(ref packet, DeliveryMethod.ReliableOrdered);
         _sentQuests = statuses;
-        // A reliable packet can arrive before the host's world/peer is ready.
-        // Periodically repeat the bounded snapshot, even without a quest change.
+        // 可靠包可能在主机的世界/对等端就绪之前到达。
+        // 即使没有任务变化，也要周期性重发这份有界快照。
         _nextQuestRefresh = Time.unscaledTime + 5;
     }
 
@@ -606,18 +613,18 @@ internal static class FikaFinalMissionDirector
         if (!FikaBackendUtils.IsServer || player == null || packet.NetId != player.NetId || _departed ||
             _relevantQuests == null || packet.Statuses == null) return;
         if (packet.Statuses.Any(quest => !_relevantQuests.Contains(quest.Key))) return;
-        // Quest progression is client-owned in Fika. Keep the report in a scoped
-        // table; never mutate the observed profile or trust a client-supplied ending.
+        // 在 Fika 中任务进度由客户端掌管。把报告放在作用域内的
+        // 表中；绝不要改动被观察的档案，也不要相信客户端提供的结果。
         QuestStates[player.ProfileId] = packet.Statuses;
     }
 
     private static string VariantFor(FikaPlayer player)
     {
-        // Match native GetVariantCutsceneId: the first Started/AvailableForFinish
-        // quest in profile order whose ID is in the map's cutscene mapping.
+        // 与原生 GetVariantCutsceneId 保持一致：按档案顺序取第一个
+        // Started/AvailableForFinish 且 ID 在地图过场映射中的任务。
         foreach (var quest in player.Profile.QuestsData)
             if (ActiveQuest(player, quest.Id) && _zone._cutsceneByQuest.TryGetValue(quest.Id, out var cutscene)) return cutscene;
-        // A quest accepted in this raid may not exist in the host's initial profile.
+        // 本次突袭中接受的任务可能不在主机的初始档案里。
         if (!player.IsYourPlayer && QuestStates.TryGetValue(player.ProfileId, out var reported))
             foreach (var quest in reported)
                 if ((quest.Value is EQuestStatus.Started or EQuestStatus.AvailableForFinish) &&
@@ -633,8 +640,8 @@ internal static class FikaFinalMissionDirector
             if (!ActiveQuest(player, requirement.questId) || string.IsNullOrEmpty(requirement.itemId)) continue;
             var items = player.Profile.Inventory.GetAllItemByTemplate(requirement.itemId);
             if (items?.GetEnumerator()?.MoveNext() == true) continue;
-            // Quest pickups are private to each player and are synchronized through
-            // QuestSyncPacket rather than observed equipment inventory operations.
+            // 任务拾取物是每名玩家的私有数据，通过
+            // QuestSyncPacket 同步，而不通过观察到的装备库存操作。
             if (player.FikaQuests is ObservedQuestController observed && observed.HasCollectedQuestItem(requirement.itemId)) continue;
             return false;
         }
@@ -665,7 +672,7 @@ internal static class FikaFinalMissionDirector
         if (!FikaBackendUtils.IsHeadless && !players.Any(player => player.IsYourPlayer))
             players = players.Append(Handler.MyPlayer).ToArray();
         var decisions = new Dictionary<string, Ending>(StringComparer.Ordinal);
-        // Determine every outcome before invoking any local native ending/action.
+        // 先确定所有结果，之后再调用任何本地的原生结局/动作。
         foreach (var player in players)
         {
             var alive = player.HealthController?.IsAlive == true;
@@ -692,7 +699,7 @@ internal static class FikaFinalMissionDirector
                 if (World.CutscenesClientController._actions.TryGetValue(id, out var action) &&
                     action.TryCast<CutsceneActionExitAfterCutscene>() is { } exit) return exit.ExitStatus;
         }
-        // Do not invent a successful save if the map's exit action is missing.
+        // 若地图的退出动作缺失，不要凭空造出一个成功的存档。
         throw new InvalidOperationException($"Final cutscene '{cutscene}' has no registered exit action");
     }
 
@@ -706,12 +713,12 @@ internal static class FikaFinalMissionDirector
             PendingDepartures[peer] = player.NetId;
             ending.Packet.NetId = player.NetId;
             Send(player, ending.Packet, peer);
-            // The reconnecting game needs to prepare its local state before exiting.
-            // A duplicate Complete will receive the same authorization below.
+            // 重连的游戏需要在退出之前准备好它的本地状态。
+            // 重复的 Complete 将在下面收到同样的授权。
         }
         else if (_departed)
         {
-            // Reconnecting after the ship departed cannot obtain a new seat.
+            // 飞船离开之后再重连，无法获得新的席位。
             var packet = new FinalMissionPacket { Message = FinalMissionMessage.Outcome, NetId = player.NetId,
                 OutcomeId = ++_nextOutcome, CutsceneId = string.Empty,
                 ExitStatus = player.HealthController?.IsAlive == true ? ExitStatus.MissingInAction : ExitStatus.Killed };
@@ -735,8 +742,8 @@ internal static class FikaFinalMissionDirector
                         _zone.InitZoneClient(packet.Seats);
                         _zone.evacuateTimer = packet.Remaining;
                     }
-                    // The native UI coroutine writes evacuateTimer from this
-                    // event. Keep the host's authoritative total and elapsed time.
+                    // 原生 UI 协程会从这个事件写入 evacuateTimer。
+                    // 保留主机的权威总时长与已用时间。
                     var duration = _zone.evacuateTimer;
                     GlobalEventsController.CreateEvent<FinalExitZoneInitEvent>().Invoke(packet.Seats, (int)Math.Ceiling(packet.Remaining));
                     if (FikaBackendUtils.IsServer) _zone.evacuateTimer = duration;
@@ -752,8 +759,8 @@ internal static class FikaFinalMissionDirector
                     _localEligibility = packet.Eligibility;
                 }
                 var panel = GameUI.Instance?.TimerPanel;
-                // The locked/condition setters animate the panel's colours through its own
-                // coroutines, so a closed (inactive) panel must not be driven at all.
+                // locked/condition 的 setter 通过面板自身的协程
+                // 为其颜色做动画，因此绝不应驱动已关闭（未激活）的面板。
                 if (panel?.FinalExitTimerIsExist() == true &&
                     FikaUiPanels.CanDrive(panel, "FikaFinalMissionDirector.FinalExitZoneText"))
                 {
@@ -786,8 +793,8 @@ internal static class FikaFinalMissionDirector
             CompleteLocal("the outcome carries no ending scene, so there is nothing to play here");
             return;
         }
-        // The native final ending is a client-only view (no server CutsceneProcess).
-        // Play from the start on reconnect so its local quest/action effects run too.
+        // 原生最终结局是仅客户端的视图（没有服务器端 CutsceneProcess）。
+        // 重连时从头播放，这样它的本地任务/动作效果也会执行。
         _localStarted = true;
         try
         {
@@ -795,17 +802,17 @@ internal static class FikaFinalMissionDirector
                 new[] { Handler.MyPlayer.PlayerId }, 0, false, true);
         }
         catch { _localStarted = false; throw; }
-        // The native counterpart of this call is FinallExitZone.ActivateCutsceneForPlayer, which plays the very
-        // same client-only event; 
+        // 此调用对应的原生实现是 FinallExitZone.ActivateCutsceneForPlayer，它播放完全相同的
+        // 仅客户端事件；
     }
 
     /// <summary>
-    /// This machine's own viewer finished the timeline it was shown (the native
-    /// <c>CutscenesClientController.TimelineShowed</c> is what reports it). Two ids can arrive for the ending:
-    /// the cutscene id of the outcome packet, and the <b>scene</b> name of that cutscene's timeline entry -
-    /// the native event this signal travels in carries exactly that pair (<c>SceneName</c> plus the process id,
-    /// and the ending owns no process), so both answers are accepted instead of dropping the completion of a
-    /// scene that really did finish.
+    /// 本机自己的观看器播放完了提供给它的那条 timeline（上报它的是原生
+    /// <c>CutscenesClientController.TimelineShowed</c>）。结局可能送来两个 id：
+    /// 结果包中的过场 id，以及该过场 timeline 条目的<b>场景</b>名——
+    /// 该信号所走的原生事件携带的正是这一对（<c>SceneName</c> 加上进程 id，
+    /// 而结局并不拥有进程），因此两种答案都被接受，而不是丢弃
+    /// 一个确实结束了的场景的完成。
     /// </summary>
     internal static void LocalTimelineComplete(string cutscene)
     {
@@ -820,7 +827,7 @@ internal static class FikaFinalMissionDirector
             CompleteLocal("the timeline of the ending was shown on this machine (reported by the scene name '" + cutscene + "')");
     }
 
-    /// <summary>The scene name of the ending's timeline entry in the map's timeline bank, or null.</summary>
+    /// <summary>结局的 timeline 条目在地图 timeline bank 中的场景名，或 null。</summary>
     private static string SceneOfEnding(string cutscene)
     {
         if (string.IsNullOrEmpty(cutscene)) return null;
@@ -842,21 +849,21 @@ internal static class FikaFinalMissionDirector
     }
 
     /// <summary>
-    /// (analysis/terminal-ending-settlement) The watchdog of the ending chain.
+    /// (analysis/terminal-ending-settlement) 结局链路的 watchdog。
     ///
-    /// The ending is a client-only cutscene of this machine (<see cref="StartLocalEnding"/>): no
-    /// CutsceneProcess drives it, so every process-based repair of the cutscene bridge stands aside, and the two
-    /// native signals that can report it as over are the timeline's exit action (SPT's ClientInitActionPatch ->
-    /// <see cref="LocalExitAction"/>) and the viewer completion (TimelineShowed ->
-    /// <see cref="LocalTimelineComplete"/>). The raid of 2026-10-13 is the shape of what happens when neither of
-    /// them lands: the outcome was announced, the ending picture was on screen and nothing settled - because
-    /// <see cref="DeferStop"/> keeps every other stop of this game out of the way while the ending is open.
+    /// 结局是本机特有的仅客户端过场（<see cref="StartLocalEnding"/>）：没有
+    /// CutsceneProcess 驱动它，所以过场桥接中所有基于进程的修复都退让，而能够
+    /// 将它报告为结束的两个原生信号是时间线的退出动作（SPT 的 ClientInitActionPatch ->
+    /// <see cref="LocalExitAction"/>）与观看器完成（TimelineShowed ->
+    /// <see cref="LocalTimelineComplete"/>）。2026-10-13 的那次突袭正是两者都没有
+    /// 落地时所发生的情形：结果已宣告，结局画面仍在屏幕上，什么都不结算——因为
+    /// 在结局开启期间 <see cref="DeferStop"/> 把该游戏的其他所有停止都挡在外面。
     ///
-    /// The watchdog closes that hole without replacing either signal: it samples the scene of the ending, enters
-    /// the native playback when the scene never started, ends the scene through the native stop once it is over
-    /// (the call that runs the timeline's own cleanup), and only after both were given their chance and the hard
-    /// deadline passed, completes the ending itself - so the raid stops with the exit status the host already
-    /// sent. Every step writes one [FinalDiag] line, which is what the next raid is read from.
+    /// watchdog 补上了这个漏洞，同时并不替换任何一个信号：它采样结局场景，在场景
+    /// 从未启动时进入原生播放，在场景结束后通过原生停止将它结束
+    /// （那个会执行 timeline 自身清理的调用），并且在两者都获得机会且已过
+    /// 硬性截止时间之后，才由它自己完成结局——于是突袭按主机已经送来的
+    /// 退出状态停下。每一步都写一行 [FinalDiag]，下一场突袭正是据此读取的。
     /// </summary>
     private static void WatchLocalEnding()
     {
@@ -872,9 +879,9 @@ internal static class FikaFinalMissionDirector
             if (!string.IsNullOrEmpty(sample.Scene)) _endingScene = sample.Scene;
             if (sample.Director)
             {
-                // A director that merely exists is not a scene that played: the first frame of a scene that was
-                // never started sits at time 0, so only a playing director - or a clock that moved past its last
-                // sample - counts as progress.
+                // 一个仅仅存在的导演并不等于一个播放过的场景：从未启动的场景的
+                // 首帧停在时间 0，因此只有正在播放的导演——或时钟越过了上一次
+                // 采样点的导演——才算有进展。
                 if (sample.Playing || sample.Time > _localEndingSceneTime + 0.05d)
                 {
                     if (!_endingPlayed)
@@ -906,7 +913,7 @@ internal static class FikaFinalMissionDirector
             
         }
 
-        // 1) The scene never started: enter its playback through the same native calls the story rescue uses.
+        // 1) 场景从未启动：用剧情侧抢救所用的同一批原生调用进入它的播放。
         if (!_endingPlayed && !_endingRescued && elapsed >= EndingPlayGraceSeconds && now >= _nextEndingRescue &&
             _endingRescueAttempts < EndingRescueMaxAttempts)
         {
@@ -914,16 +921,16 @@ internal static class FikaFinalMissionDirector
             _nextEndingRescue = now + EndingRescueRetrySeconds;
             if (_endingRescueAttempts >= EndingRescueMaxAttempts) _endingRescued = true;
             var verdict = CutsceneBoundary.RescueSceneOf(cutscene);
-            // Same rule as the story side uses for its take-over (analysis/cutscene-slowmo): the controller's own
-            // per-frame step is driven from here only while the director of the scene is stopped. A playing
-            // director is being advanced by the engine, and a second caller would run the timeline on two clocks.
+            // 与剧情侧接管所用的规则相同（analysis/cutscene-slowmo）：仅当场景的
+            // 导演已停止时，才从这里驱动控制器自身的每帧步进。正在播放的
+            // 导演由引擎推进，第二个调用者会让 timeline 跑在两个时钟上。
             var ticked = 0f;
             var after = CutsceneBoundary.SampleSceneOf(cutscene);
             if (after.Director && !after.Playing) ticked = CutsceneBoundary.TickSceneOf();
             
         }
 
-        // 2) The scene is over: end it through the native stop, which is the call that runs its own cleanup.
+        // 2) 场景已结束：通过原生停止将它结束，那个调用会执行它自身的清理。
         if (_endingPlayed && _endingStoppedAt > 0f && !_endingSceneOver &&
             now - _endingStoppedAt >= EndingStoppedGraceSeconds)
         {
@@ -932,8 +939,8 @@ internal static class FikaFinalMissionDirector
             
         }
 
-        // 3) Nothing of the ending ever played: after the native viewer wait is over, take the scene down anyway,
-        //    so a cutscene camera of this machine cannot keep the local player locked either way.
+        // 3) 结局什么都没播放过：在原生观看器等待结束之后，仍然把场景撤下，
+        //    这样本机的过场摄像机无论如何都无法继续锁住本地玩家。
         if (!_endingPlayed && !_endingSceneOver && elapsed >= EndingWithoutSceneSeconds)
         {
             _endingSceneOver = true;
@@ -941,8 +948,8 @@ internal static class FikaFinalMissionDirector
             
         }
 
-        // 4) The completion itself. Both native signals had their full chance by now, and the raid has to settle
-        //    regardless: while the ending is open, DeferStop holds every other stop of this game back.
+        // 4) 完成本身。此时两个原生信号都已获得充分机会，而突袭无论如何
+        //    都要结算：结局开启期间，DeferStop 会拦住该游戏的其他所有停止。
         var settledByScene = _endingSceneOver && _endingStoppedAt > 0f &&
             now - _endingStoppedAt >= EndingStoppedGraceSeconds + EndingSettleGraceSeconds;
         if (settledByScene || elapsed >= EndingHardDeadlineSeconds)
@@ -960,18 +967,13 @@ internal static class FikaFinalMissionDirector
     {
         if (_localEnding is not { } ending || !_localStarted) return false;
         if (_localComplete) return true;
-        // The native FinalCutsceneTimer is the map's own safety net for an ending that does not finish: it calls
-        // this through the patched ImmediateExitFromRaid. Its body is the same native stop the bridge uses, and
-        // when the director of the ending is not resolvable the raid must still settle instead of being kept open
-        // by the suppressed native exit (analysis/terminal-ending-settlement).
+        // 原生 FinalCutsceneTimer 是地图自身针对不会结束的结局的安全网：它通过
+        // 打过补丁的 ImmediateExitFromRaid 调用此处。其方法体与桥接所用的原生停止相同，
+        // 而当结局的导演无法解析时，突袭仍必须结算，而不是被
+        // 被抑制的原生退出留在开启状态（analysis/terminal-ending-settlement）。
         var verdict = CutsceneBoundary.StopSceneOf(ending.CutsceneId);
         
-        if (EndingRepair && verdict.StartsWith("no-director", StringComparison.Ordinal))
-        {
-            FikaGlobals.LogError($"Cannot finish timed-out final cutscene '{ending.CutsceneId}': its director is unavailable");
-            CompleteLocal("the cutscene timer expired and the ending's director was unavailable, so the outcome of the host is settled directly");
-        }
-        // Never signal success without running the native end-actions/cleanup.
+        // 绝不在未执行原生结束动作/清理的情况下就上报成功。
         return true;
     }
 
@@ -1004,9 +1006,9 @@ internal static class FikaFinalMissionDirector
     }
 
     /// <summary>
-    /// Repeats the acknowledgement of a completion the host has not answered yet. The response travels in a
-    /// reliable packet, and the host's handler is idempotent for the same outcome id - so a lost response costs
-    /// a repeated packet instead of a raid that never ends.
+    /// 重复发送主机尚未回应的完成确认。响应通过一个
+    /// 可靠包传输，而主机的处理器对同一结果 id 是幂等的——因此响应丢失的代价
+    /// 是重发一个包，而不是一场永不结束的突袭。
     /// </summary>
     private static void RetryCompletion()
     {
@@ -1040,8 +1042,8 @@ internal static class FikaFinalMissionDirector
 
     internal static void PlayerExtracted(int netId)
     {
-        // The client's reliable ClientExtract follows receipt of ExitAuthorized.
-        // Its local save no longer needs the gameplay host at this point.
+        // 客户端的可靠 ClientExtract 在收到 ExitAuthorized 之后执行。
+        // 此时它的本地保存已不再需要游戏主机。
         if (!Endings.Values.Any(ending => ending.Packet.NetId == netId && ending.Completed)) return;
         foreach (var pending in PendingDepartures.Where(entry => entry.Value == netId).ToArray())
             PendingDepartures.Remove(pending.Key);
@@ -1057,8 +1059,8 @@ internal static class FikaFinalMissionDirector
         game.GameController.LocalTriggerZones.AddRange(player.TriggerZones.ToArray());
         if (!game.ExtractedPlayers.Contains(player.NetId)) game.ExtractedPlayers.Add(player.NetId);
         if (!Handler.ExtractedPlayers.Contains(player.NetId)) Handler.ExtractedPlayers.Add(player.NetId);
-        // Do not use normal Extract: it teleports during the cinematic and can
-        // rewrite a mission's result to Runner based on XP/time.
+        // 不要使用普通 Extract：它会在过场动画期间传送玩家，并可能
+        // 依据 XP/时间把任务结果改写成 Runner。
         player.ActiveHealthController.SetDamageCoeff(0);
         player.ActiveHealthController.DamageMultiplier = 0;
         player.ActiveHealthController.DisableMetabolism();
@@ -1070,14 +1072,14 @@ internal static class FikaFinalMissionDirector
         _localPrepared = true;
     }
 
-    // Keep native raid-time expiry from tearing down a host while peers are still
-    // playing/saving. The explicit authorized stop above bypasses this guard.
+    // 阻止原生突袭计时到期在对等端仍在
+    // 游玩/保存时拆掉主机。上面那条显式授权的停止会绕过这个守卫。
     //
-    // (analysis/terminal-ending-settlement) The hold is bounded: an ending whose completion signal never arrives
-    // used to hold the whole game back for the rest of the session - every other stop path of this port asks this
-    // property first - which is exactly the state the report describes (a screen on the ending picture, nothing
-    // else happening, no way to settle). After EndingDeferCapSeconds the guard releases, so the game can end the
-    // raid through its own paths even in the worst case.
+    // (analysis/terminal-ending-settlement) 该拦截是有界的：某个完成信号永不到达的结局
+    // 过去会在本会话余下的时间里拦住整个游戏——这个端口的其他每条停止路径都会先查询本
+    // 属性——而这正是报告所描述的状态（屏幕停在结局画面上，别的什么都没发生，也无从结算）。
+    // 超过 EndingDeferCapSeconds 之后守卫解除，因此即使最坏情况下
+    // 游戏也能通过自身路径结束突袭。
     internal static bool DeferStop
     {
         get

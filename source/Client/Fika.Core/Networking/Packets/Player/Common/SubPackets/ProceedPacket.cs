@@ -100,8 +100,8 @@ public sealed class ProceedPacket : IPoolSubPacket
 
     public void Dispose()
     {
-        // This native struct is represented by a CLR reference wrapper. default
-        // is null, and reusing the old wrapper retains a prior heal's body parts.
+        // 该原生结构体由 CLR 引用包装器表示。default 为 null，
+        // 而重用旧包装器会保留上一次治疗的部位数据。
         BodyParts = new OneAndList<EBodyPart>();
         ItemId = default;
         Amount = 0f;

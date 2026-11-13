@@ -1,11 +1,11 @@
-﻿using EFT.Settings.Graphics;
+﻿﻿using EFT.Settings.Graphics;
 using SPTushonka.Reflection.Patching;
 using System.Reflection;
 
 namespace Fika.Headless.Patches;
 
 /// <summary>
-/// Keeps the game from overriding the headless frame limit
+/// 阻止游戏覆盖无头端的帧率上限
 /// </summary>
 public class GraphicsSettingsController_ChangeFramerate_Patch : ModulePatch
 {

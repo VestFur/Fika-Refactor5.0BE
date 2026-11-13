@@ -8,7 +8,7 @@ using Fika.Core.Networking.Packets.FirearmController.SubPackets;
 namespace Fika.Core.Main.ClientClasses.HandsControllers;
 
 /// <summary>
-/// This is only used by AI
+/// 仅由 AI 使用
 /// </summary>
 public class FikaClientQuickGrenadeController : EFT.Player.QuickGrenadeThrowHandsController
 {

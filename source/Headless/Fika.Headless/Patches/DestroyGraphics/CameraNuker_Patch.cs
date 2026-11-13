@@ -6,11 +6,11 @@ using System.Reflection;
 namespace Fika.Headless.Patches.DestroyGraphics;
 
 /// <summary>
-/// This patch deletes various effects out of the player's camera that the headless will never see.
+/// 本补丁会删除玩家相机上 headless 永远看不到的各种效果。
 /// </summary>
 public class CameraNuker : ModulePatch
 {
-    // Whitelisted types we can delete out of the camera that will not cause it to throw exceptions.
+    // 允许从相机中删除、且不会导致其抛出异常的白名单类型。
     private static List<string> _deleteTypes = [
         "HBAO",
         "TOD_Scattering",

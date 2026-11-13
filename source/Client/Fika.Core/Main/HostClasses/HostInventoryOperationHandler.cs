@@ -43,8 +43,8 @@ public sealed class HostInventoryOperationHandler : IDisposable
 
     private void HandleResult(uint generation, IResult result)
     {
-        // A native completion from an earlier use of this pooled handler must
-        // not complete the newer operation after the handler has been reused.
+        // 这个池化处理器早先使用时的原生完成回调，
+        // 不得在处理器被复用后完成较新的操作。
         if (generation != _generation || Completed) return;
         Completed = true;
         Succeeded = result.Succeed;
@@ -69,8 +69,8 @@ public sealed class HostInventoryOperationHandler : IDisposable
         _pendingPacket = packet;
     }
 
-    // Execute may complete synchronously. Keep the operation and callback alive
-    // until its network descriptor has been sent (or explicitly discarded).
+    // Execute 可能同步完成。保持操作与回调存活，
+    // 直到其网络描述符已发送（或已被显式丢弃）。
     public void FinishDispatch()
     {
         _dispatching = false;
@@ -80,8 +80,8 @@ public sealed class HostInventoryOperationHandler : IDisposable
 
     public void CancelDispatch()
     {
-        // A native callback can still arrive after Execute throws or the
-        // operation is rejected. It must not touch this pooled instance.
+        // 在 Execute 抛出异常或操作被拒绝之后，原生回调仍可能到达。
+        // 它不得触碰这个池化实例。
         unchecked { ++_generation; }
         Completed = true;
         _dispatching = false;

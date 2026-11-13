@@ -1,0 +1,1136 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using CommonAssets.Scripts.Cutscenes;
+using EFT;
+using EFT.GlobalEvents;
+using EFT.Interactive;
+using EFT.Passcodes;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using Fika.Core.Main.Players;
+using Fika.Core.Main.Utils;
+using Fika.Core.Networking;
+using Fika.Core.Networking.Packets.World;
+
+namespace Fika.Core.Main.Components;
+
+/// <summary>Owns native event subscriptions for one raid; transport IDs are always Fika NetIds.</summary>
+internal static class RaidInteractionSync
+{
+    internal static GameWorld World { get; private set; }
+    internal static bool Ready { get; private set; }
+    private static readonly List<Il2CppSystem.Action> Unsubscribe = new();
+    private static readonly Dictionary<int, CutsceneStartPacket> Cutscenes = new();
+    private static readonly HashSet<(int Process, int Player)> Completed = new();
+    private static readonly Dictionary<int, HashSet<int>> Votes = new();
+    private static readonly HashSet<NetPeer> PendingInit = new();
+    private static readonly HashSet<int> DisconnectedViewers = new();
+    private static bool _requested;
+    private static IntPtr _configuredPasscodes;
+    /// <summary>Throttle of the host-side cutscene watchdog (analysis/rally-gate-deadlock).</summary>
+    private static float _nextWatchdog;
+
+    // ---- BB (analysis/icebreaker-keypad-door): the passcode state of this raid -------------------------
+    // Two observable facts decide whether a keypad works on a client of this raid: (a) did the host answer
+    // this client's passcode request at all (its snapshot carries the hints every peer needs for the wall
+    // hints and for the panel), and (b) did this machine apply that snapshot. The repair of this round
+    // hangs off them, and every transition of either writes one [KeypadDiag] line.
+    private static bool _hostPasscodeReady;
+    private static bool _passcodeInitApplied;
+    private static int _passcodeInitRequests;
+    private static float _nextPasscodeInitRequest;
+    private static int _passcodeRelays;
+    private static int _lastAttemptTerminal = int.MinValue;
+    private static string _lastAttemptInput;
+    private static long _lastAttemptSentAt;
+
+    // BO (analysis/icebreaker-keypad-2): the two facts of the r32 client log are a world that carries NO passcode
+    // controller at all (so the native menu cannot offer a code entry) and a host snapshot with zero hints. The
+    // controller is therefore adopted in a short grace window and, if the native side never creates one, created
+    // here in its network shape. The host's own snapshot is re-asked once while it is still empty.
+    private static int _lastSnapshotHints = -1;
+    private static int _emptySnapshotAsks;
+    private static float _startedAt;
+    private static bool _loggedGraceWait;
+    private static float _nextControllerFailureLine;
+
+    /// <summary>Whatever the native raid pipeline creates for a client arrives after the first ready frame.</summary>
+    private const float PasscodeControllerGraceSeconds = 12f;
+
+    /// <summary>How often a client repeats its passcode request while the host has not answered yet.</summary>
+    private const float PasscodeInitRequestSeconds = 3f;
+
+    /// <summary>How many times an EMPTY host snapshot is asked again (the host may generate its hints later).</summary>
+    private const int PasscodeEmptySnapshotAsks = 3;
+
+    /// <summary>How many repeats are worth sending before the silence is written down as permanent.</summary>
+    private const int PasscodeInitRequestLimit = 40;
+
+    /// <summary>Two attempts with the same terminal and code inside this window are the same attempt.</summary>
+    private const long PasscodeRelayDedupMillis = 3000;
+
+    /// <summary>The host answered this client's passcode request at least once in this raid.</summary>
+    internal static bool HostPasscodeReady => _hostPasscodeReady;
+
+    /// <summary>This machine applied the host's snapshot (its hint set is in the local controller now).</summary>
+    internal static bool PasscodeInitApplied => _passcodeInitApplied;
+
+    private static IFikaNetworkManager Manager => FikaSingleton<IFikaNetworkManager>.Instance;
+
+    internal static void Bind(GameWorld world)
+    {
+        if (World?.Pointer == world.Pointer) return;
+        if (World != null) Release(World);
+        World = world;
+        DialogEntryOccupancy.Bind(world.RaidDialogEntryController);
+        Unsubscribe.Add(GlobalEventsController.Instance.SubscribeOnEvent<PasscodeAttemptEvent>(
+            (Action<PasscodeAttemptEvent>)OnPasscodeAttempt));
+        Unsubscribe.Add(GlobalEventsController.Instance.SubscribeOnEvent<CutsceneSkipIntentionEventFromClient>(
+            (Action<CutsceneSkipIntentionEventFromClient>)OnSkipIntention));
+        Unsubscribe.Add(GlobalEventsController.Instance.SubscribeOnEvent<SendEndCutsceneOnServerEvent>(
+            (Action<SendEndCutsceneOnServerEvent>)OnViewComplete));
+        Unsubscribe.Add(GlobalEventsController.Instance.SubscribeOnEvent<CorrectCutsceneTimerEvent>(
+            (Action<CorrectCutsceneTimerEvent>)OnCutsceneTime));
+    }
+
+    internal static void LevelReady(GameWorld world)
+    {
+        if (World?.Pointer != world.Pointer) return;
+        ConfigureControllers();
+        Ready = true;
+    }
+
+    private static void ConfigureControllers()
+    {
+        var world = World;
+        // BO (analysis/icebreaker-keypad-2): the grace stamp is taken on the first ready frame of this world; every
+        // controller line below reports how long this machine waited for the native one.
+        if (_startedAt <= 0f) _startedAt = UnityEngine.Time.unscaledTime;
+        // BU (analysis/icebreaker-keypad-3): a LOCAL controller this port built around the host's table is the
+        // wanted end state of a client - it checks the raid's codes itself with the game's own code. It must
+        // never be swapped back into the network shape, which is what the branch below does for a native local
+        // controller (whose table would be the table of this machine alone).
+        var localController = FikaBackendUtils.IsClient
+            ? world.PasscodeController?.TryCast<ClientLocalPasscodeController>()
+            : null;
+        if (localController != null && localController.Pointer != _configuredPasscodes
+            && KeypadCodeSync.OwnsLocalController(localController))
+        {
+            _configuredPasscodes = localController.Pointer;
+            _requested = false;
+        }
+        else if (localController != null && localController.Pointer != _configuredPasscodes)
+        {
+            var local = localController;
+            var settings = local._passcodeLocationSettings;
+            
+            local.Dispose();
+            world.PasscodeController = new ClientNetworkPasscodeController(settings);
+            _configuredPasscodes = world.PasscodeController.Pointer;
+            _requested = false;
+        }
+        else if (FikaBackendUtils.IsClient && world.PasscodeController == null)
+        {
+            // BO (analysis/icebreaker-keypad-2): the r32 client log proved this state, and the report has to say
+            // WHEN it was observed. 'waited=' is the age of this world at this frame; while it is below the grace
+            // window the native pipeline may still create its controller and nothing is written at all.
+            var waited = UnityEngine.Time.unscaledTime - _startedAt;
+            if (waited < PasscodeControllerGraceSeconds)
+            {
+                if (!_loggedGraceWait)
+                {
+                    _loggedGraceWait = true;
+                    
+                }
+            }
+            else if (AdoptOwnController(world, waited))
+            {
+                // Nothing below changes for this state: the controller is this machine's own network controller
+                // from here on, so the native menu has something to ask again.
+            }
+            else
+            {
+                // A failure is retried every frame (a scene that loads late must still be caught), but written
+                // down once and then at most once per this window, so a permanently broken state stays readable.
+                if (!_loggedGraceWait || waited >= _nextControllerFailureLine)
+                {
+                    _loggedGraceWait = true;
+                    _nextControllerFailureLine = waited + 10f;
+                    
+                }
+            }
+        }
+        // Fika carries the offline client's native events over its own connection.
+        // The native client must not perform single-player skip/completion locally.
+        if (world.CutscenesClientController != null) world.CutscenesClientController._offlineMode = false;
+        if (world.CutscenesServerController != null) world.CutscenesServerController._offlineMode = false;
+    }
+
+    // ---- BO (analysis/icebreaker-keypad-2): the client world that carries no passcode controller --------------
+
+    /// <summary>
+    /// The second gap of the reported defect: on a client of this port nobody creates the world's passcode
+    /// controller - the native raid pipeline of a client stops before that point, and the network controller
+    /// this class installs is only ever built out of the native local one (see <see cref="ConfigureControllers"/>).
+    /// With no controller the interaction dispatcher of this machine has nothing to ask, so the keypad offers no
+    /// code entry at all ("cannot interact"), and the game's own submit guard would refuse every code anyway.
+    /// This creates that controller here, in exactly the shape it has on the host's peers in the native flow:
+    ///   * the entries are the passcode ids this machine's own location scene really carries (the same base.json
+    ///     the host reads; both installs were compared and carry the identical four icebreaker entries) - the ids
+    ///     are not what decides a code, the host's validation is (see <see cref="TryRelayPasscodeAttempt"/>);
+    ///   * the terminals come from this machine's own location scene, which is the same scene the host reads;
+    ///   * the hints come from the host's snapshot, the only set that matters (a client must never generate its own
+    ///     codes - two machines drawing different codes out of the same list is the desync BB refused to create).
+    /// Nothing of this runs on a host, on a machine outside a Fika raid, or when the native controller exists:
+    /// it is exactly the fallback for the state the r32 client log proved.
+    /// </summary>
+    private static bool AdoptOwnController(GameWorld world, float waited)
+    {
+        var result = "failed";
+        var reason = "creating the client's passcode controller threw";
+        var terminals = 0;
+        var ids = "none";
+        var settings = "none";
+        try
+        {
+            var byId = new Dictionary<string, List<PasscodeTerminal>>();
+            var all = UnityEngine.Object.FindObjectsOfType<PasscodeTerminal>(true);
+            for (var i = 0; i < all.Length; i++)
+            {
+                var terminal = all[i];
+                if (terminal == null || string.IsNullOrEmpty(terminal.PasscodeId)) continue;
+                if (!byId.TryGetValue(terminal.PasscodeId, out var list))
+                {
+                    list = new List<PasscodeTerminal>();
+                    byId[terminal.PasscodeId] = list;
+                }
+
+                list.Add(terminal);
+            }
+
+            terminals = all.Length;
+            var entryIds = _hostPasscodeEntries != null && _hostPasscodeEntries.Count > 0
+                ? _hostPasscodeEntries.Keys.AsEnumerable()
+                : byId.Keys.AsEnumerable();
+            var entries = ByIdToEntries(entryIds);
+            if (entries.Length > 0) ids = string.Join(",", entries.Take(4));
+            var location = new PasscodeLocationSettings { Entries = entries };
+            settings = "entries=" + (location.Entries?.Length ?? 0);
+            var controller = new ClientNetworkPasscodeController(location);
+            var map = new Il2CppSystem.Collections.Generic.Dictionary<string, Il2CppSystem.Collections.Generic.List<PasscodeTerminal>>();
+            foreach (var pair in byId)
+            {
+                var list = new Il2CppSystem.Collections.Generic.List<PasscodeTerminal>();
+                foreach (var terminal in pair.Value) list.Add(terminal);
+                map.Add(pair.Key, list);
+            }
+
+            controller._passcodeTerminals = map;
+            world.PasscodeController = controller;
+            _configuredPasscodes = controller.Pointer;
+            _requested = false;
+            result = "client-created";
+            reason = "the native raid pipeline of a client never created a passcode controller, so this machine built"
+                + " the network controller itself - the keypad of this map is interactable on this client from here on";
+        }
+        catch (Exception exception)
+        {
+            reason = reason + " (" + exception.GetType().Name + ")";
+        }
+
+        
+        return result == "client-created";
+    }
+
+    /// <summary>
+    /// A settings object for a client that had to build its own controller: one entry per passcode id the
+    /// location scene of this machine really carries. The list ids are not needed for anything a client does -
+    /// the codes of this raid are the host's - so the entry is only there to make the native guard of this
+    /// location satisfied (it asks the location settings for the id it is about to open).
+    /// </summary>
+    private static Il2CppReferenceArray<PasscodeEntry> ByIdToEntries(IEnumerable<string> ids)
+    {
+        var entries = new List<PasscodeEntry>();
+        foreach (var id in ids)
+        {
+            if (string.IsNullOrEmpty(id)) continue;
+            entries.Add(new PasscodeEntry { PasscodeId = id, PasscodeListId = string.Empty });
+        }
+
+        return new Il2CppReferenceArray<PasscodeEntry>(entries.ToArray());
+    }
+
+    /// <summary>How many passcode terminals this machine's scene holds, for the lines of a machine without one.</summary>
+
+    internal static void Release(GameWorld world)
+    {
+        if (World?.Pointer != world.Pointer) return;
+        DropRaidState();
+        World = null;
+        Ready = _requested = false;
+        _configuredPasscodes = IntPtr.Zero;
+    }
+
+    /// <summary>One implementation for both entry points (world rebind and world teardown).</summary>
+    private static void DropRaidState()
+    {
+        FikaFinalMissionDirector.Reset();
+        FikaLocalCutsceneTrigger.Reset();
+        foreach (var unsubscribe in Unsubscribe) unsubscribe.Invoke();
+        Unsubscribe.Clear();
+        DialogEntryOccupancy.Reset();
+        Cutscenes.Clear();
+        Completed.Clear();
+        Votes.Clear();
+        PendingInit.Clear();
+        DisconnectedViewers.Clear();
+        FikaSingleton<FikaClient>.Instance?.ClearRaidInteractions();
+        FikaSingleton<FikaClient>.Instance?.DropRaidScopedInteractionCache();
+        // BB (analysis/icebreaker-keypad-door): the passcode readiness and the relay ledger belong to the
+        // world that just ended - a reconnect or a transit must not inherit either of them.
+        _hostPasscodeReady = false;
+        _passcodeInitApplied = false;
+        _passcodeInitRequests = 0;
+        _nextPasscodeInitRequest = 0f;
+        _passcodeRelays = 0;
+        _lastAttemptTerminal = int.MinValue;
+        _lastAttemptInput = null;
+        _lastAttemptSentAt = 0L;
+        // BO (analysis/icebreaker-keypad-2): the controller grace window, the snapshot ledger and the re-ask
+        // counter belong to the world that just ended - a reconnect or a transit must not inherit either.
+        _startedAt = 0f;
+        _loggedGraceWait = false;
+        _nextControllerFailureLine = 0f;
+        _lastSnapshotHints = -1;
+        _emptySnapshotAsks = 0;
+        _hostPasscodeEntries = null;
+        // BU (analysis/icebreaker-keypad-3): the raid's code table and the controller built around it belong
+        // to the world that just ended - a reconnect or a transit draws a new one.
+        KeypadCodeSync.Reset();
+        
+        // BJ (analysis/terminal-rauf-card): the sentry access ledger of the terminal belongs to the world
+        // that just ended too - a second raid has to write its own lines.
+        FikaSentryAccess.Reset();
+    }
+
+    /// <summary>
+    /// Drops every cross-raid holder of the native world that just ended and reports how many raid-scoped
+    /// entries were released. Called by the world lifecycle's teardown (see
+    /// <see cref="Fika.Core.Main.Utils.FikaWorldControllers"/>): this class owns static state - event
+    /// subscriptions, the cutscene table, the passcode snapshot queue - and a native object of the world that
+    /// just ended must never survive into the next raid.
+    /// </summary>
+    internal static int ForceResetForWorldTeardown(string reason)
+    {
+        var dropped = Cutscenes.Count + Votes.Count + Completed.Count + DisconnectedViewers.Count
+            + PendingInit.Count + Unsubscribe.Count;
+        if (World == null && dropped == 0)
+        {
+            // Nothing of this class is alive: the teardown happened before the raid was ever bound.
+            FikaLocalCutsceneTrigger.Reset();
+            return 0;
+        }
+
+        // Both entry points converge here: a rebind releases the previous world itself, a teardown ends the
+        // current one. Whatever the path, no holder of the ended world's native objects survives it.
+        DropRaidState();
+        World = null;
+        Ready = _requested = false;
+        _configuredPasscodes = IntPtr.Zero;
+        FikaGlobals.LogInfo("world teardown (" + reason + "): dropped " + dropped
+            + " raid-scoped raid-interaction entry(ies); the cutscene controller link of that world is released with it",
+            "RaidInteractionSync");
+        return dropped;
+    }
+
+    internal static void Tick()
+    {
+        if (World == null) return;
+        // BU (analysis/icebreaker-keypad-3): the raid's passcode table, made by the game on the host and
+        // applied natively on every client. It runs before ConfigureControllers so a client that received the
+        // table already holds its native local controller when the swap decision of that method is taken.
+        KeypadCodeSync.Tick(World);
+        if (Ready) ConfigureControllers();
+        DialogEntryOccupancy.Tick();
+        // (analysis/rally-gate-deadlock) The rally gate of this raid and the two ways out of a cutscene the
+        // viewers cannot finish: the vote of the viewers that are still inside it, and the completion counter
+        // of a viewer that never entered it. Both are host-side and both only report when they act.
+        // (analysis/cutscene-client-native-trigger) The client-side decision of the local native trigger: a
+        // cutscene this machine's own chain asked for and the host never dispatched is run natively here.
+        FikaLocalCutsceneTrigger.Tick(World);
+        SkipWatchdog();
+        if (!Ready || Manager?.CoopHandler?.MyPlayer == null || !Manager.CoopHandler.ShouldSync) return;
+        if (FikaBackendUtils.IsClient && Manager.CoopHandler.MyPlayer != null)
+        {
+            if (!_requested)
+            {
+                _requested = true;
+                SendPasscodeInitRequest("first");
+            }
+            else if (KeypadDiag.RepairEnabled && !KeypadCodeSync.Ready && _passcodeInitRequests < PasscodeInitRequestLimit)
+            {
+                // BB (analysis/icebreaker-keypad-door): the old shape asked the host exactly once. A host that
+                // was not ready yet at that moment (or whose answer was lost) left this client without the
+                // codes' hint set for the whole raid - the state the game answers with "Tried to enter code on
+                // location without passcodes". Repeats are throttled, capped and each one is a [KeypadDiag]
+                // line, so a silent host is visible on the machine whose log is available.
+                var now = UnityEngine.Time.unscaledTime;
+                if (now >= _nextPasscodeInitRequest)
+                {
+                    _nextPasscodeInitRequest = now + PasscodeInitRequestSeconds;
+                    SendPasscodeInitRequest(_passcodeInitRequests + 1 >= PasscodeInitRequestLimit ? "retry-final" : "retry");
+                }
+            }
+        }
+        if (FikaBackendUtils.IsServer)
+        {
+            foreach (var peer in PendingInit.ToArray())
+            {
+                if (peer.ConnectionState != ConnectionState.Connected) PendingInit.Remove(peer);
+                else if (peer.Player != null) { PendingInit.Remove(peer); SendSnapshot(peer); }
+            }
+        }
+    }
+
+    /// <summary>
+    /// BB (analysis/icebreaker-keypad-door): one passcode request to the host. The first one and every repeat
+    /// write one line, so a host that never answers is provable from this machine's own log.
+    /// </summary>
+    private static void SendPasscodeInitRequest(string source)
+    {
+        try
+        {
+            _passcodeInitRequests++;
+            var request = new PasscodeInitPacket(true);
+            Manager.SendData(ref request, DeliveryMethod.ReliableOrdered);
+            
+        }
+        catch (Exception exception)
+        {
+            
+        }
+    }
+
+    /// <summary>
+    /// BB (analysis/icebreaker-keypad-door): the host answered this client's passcode request. The snapshot is
+    /// what carries the codes' hint set to this machine, so this line is the client-side proof that the host's
+    /// passcode layer is alive (it is also the precondition of the fallback relay below).
+    /// </summary>
+    internal static void NoteHostPasscodeSnapshot(int hintDoors)
+    {
+        // BO (analysis/icebreaker-keypad-2): the r32 client log proves a snapshot with hints=0. An empty snapshot is
+        // proof that the host's passcode layer answered, but not that it already holds this raid's hints: the host
+        // generates them on its own timeline, and a snapshot sent before that point carries an empty set. The hint
+        // count is therefore kept, and while the set stays empty the host is asked again - the client cannot make
+        // those hints itself without inventing codes.
+        var first = !_hostPasscodeReady;
+        _hostPasscodeReady = true;
+        var changed = first || _lastSnapshotHints != hintDoors;
+        _lastSnapshotHints = hintDoors;
+        if (hintDoors == 0 && _emptySnapshotAsks < PasscodeEmptySnapshotAsks)
+        {
+            _emptySnapshotAsks++;
+            _nextPasscodeInitRequest = 0f;
+        }
+
+        if (!changed) return;
+        
+    }
+
+    /// <summary>This machine applied the snapshot: its hints were raised as the native init event.</summary>
+    internal static void NotePasscodeInitApplied(int hintDoors)
+    {
+        _passcodeInitApplied = true;
+        
+    }
+
+    /// <summary>
+    /// The ledger of the attempts that already went over the wire (Fika's own native-event path records the
+    /// ones it sent), so the fallback relay can never send the same attempt twice.
+    /// </summary>
+    internal static void NotePasscodeAttemptSent(int terminalNetId, string input)
+    {
+        _lastAttemptTerminal = terminalNetId;
+        _lastAttemptInput = input;
+        _lastAttemptSentAt = Environment.TickCount64;
+    }
+
+    private static bool RecentlySentAttempt(int terminalNetId, string input) =>
+        _lastAttemptTerminal == terminalNetId && string.Equals(_lastAttemptInput, input, StringComparison.Ordinal)
+        && Environment.TickCount64 - _lastAttemptSentAt < PasscodeRelayDedupMillis;
+
+    /// <summary>
+    /// BB (analysis/icebreaker-keypad-door): the repair of the reported defect. The game refuses a client's code
+    /// inside its own <c>ClientPasscodeController.SubmitPasscode</c> with "Tried to enter code on location
+    /// without passcodes" whenever this machine's controller holds no codes of its own - which is by design for
+    /// the network controller Fika installs on every client (only the host's set counts). Nothing of the attempt
+    /// reaches the host then, so the door never opens although the host knows the right code. This method hands
+    /// the very same attempt to the host through the very same packet the native event path uses, so the host
+    /// validates it with its own codes and answers over the native result event.
+    /// It refuses to act while the host has never answered this client (a relay would then only turn a readable
+    /// refusal into a silent wait), and it deduplicates, because the native panel repeats a refused submit.
+    /// </summary>
+    internal static bool TryRelayPasscodeAttempt(Player player, PasscodeTerminal terminal, string input, out string reason)
+    {
+        reason = null;
+        try
+        {
+            if (!KeypadDiag.RepairEnabled)
+            {
+                reason = "the keypad repair is switched off (KeypadDiag.RepairEnabled=false)";
+                return false;
+            }
+
+            if (!Ready || World == null)
+            {
+                reason = "this machine's raid-interaction layer is not bound";
+                return false;
+            }
+
+            if (!FikaBackendUtils.IsClient)
+            {
+                reason = "the local player is not a client of this raid";
+                return false;
+            }
+
+            if (player == null || terminal == null)
+            {
+                reason = "no player or terminal on this submit";
+                return false;
+            }
+
+            var local = LocalPlayer;
+            if (local == null || local.Pointer != player.Pointer)
+            {
+                reason = "the attempt did not come from this machine's own player";
+                return false;
+            }
+
+            if (!_hostPasscodeReady)
+            {
+                reason = "the host never answered this client's passcode request (no snapshot, no hint set)";
+                return false;
+            }
+
+            if (string.IsNullOrEmpty(input))
+            {
+                reason = "the panel submitted an empty code";
+                return false;
+            }
+
+            if (RecentlySentAttempt(terminal.NetId, input))
+            {
+                reason = "this attempt is already on its way to the host";
+                return false;
+            }
+
+            if (Manager == null)
+            {
+                reason = "this machine has no network manager";
+                return false;
+            }
+
+            var packet = new PasscodeAttemptPacket { NetId = local.NetId, PasscodeId = terminal.PasscodeId,
+                TerminalNetId = terminal.NetId, Input = input };
+            Manager.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+            NotePasscodeAttemptSent(terminal.NetId, input);
+            _passcodeRelays++;
+            
+            return true;
+        }
+        catch (Exception exception)
+        {
+            reason = "the relay threw " + exception.GetType().Name;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// BU (analysis/icebreaker-keypad-3): a client that checks its codes itself reports a SUCCESSFUL attempt to
+    /// the host. The host then runs the very same native check on its own copy of the keypad and announces the
+    /// outcome to every peer, so a door typed open on one machine opens on all of them. Fika carries the fact,
+    /// it does not judge it - and a refused code needs no message at all, because no other machine changes for it.
+    /// </summary>
+    internal static bool TrySyncLocalSuccess(Player player, PasscodeTerminal terminal, string input, out string reason)
+    {
+        reason = null;
+        try
+        {
+            if (!KeypadDiag.RepairEnabled)
+            {
+                reason = "the keypad repair is switched off (KeypadDiag.RepairEnabled=false)";
+                return false;
+            }
+
+            if (!Ready || World == null)
+            {
+                reason = "this machine's raid-interaction layer is not bound";
+                return false;
+            }
+
+            if (!FikaBackendUtils.IsClient || Manager == null)
+            {
+                reason = "this machine is not a client of this raid";
+                return false;
+            }
+
+            if (player == null || terminal == null || string.IsNullOrEmpty(input))
+            {
+                reason = "the attempt carries no player, terminal or code";
+                return false;
+            }
+
+            if (RecentlySentAttempt(terminal.NetId, input))
+            {
+                reason = "this attempt is already on its way to the host";
+                return false;
+            }
+
+            var packet = new PasscodeAttemptPacket { NetId = LocalPlayerId, PasscodeId = terminal.PasscodeId,
+                TerminalNetId = terminal.NetId, Input = input };
+            Manager.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+            NotePasscodeAttemptSent(terminal.NetId, input);
+            _passcodeRelays++;
+            
+            return true;
+        }
+        catch (Exception exception)
+        {
+            reason = "the local-success sync threw " + exception.GetType().Name;
+            return false;
+        }
+    }
+
+    /// <summary>This machine's own player, or null before it exists (a headless host has none).</summary>
+    internal static FikaPlayer LocalPlayer => Manager?.CoopHandler?.MyPlayer;
+
+    /// <summary>The native PlayerId of this machine's own player, or -1 when there is none.</summary>
+    internal static int LocalPlayerId => LocalPlayer?.PlayerId ?? -1;
+
+    /// <summary>
+    /// True when this machine's own player already reported that it watched <paramref name="processId"/>
+    /// (the acknowledgement a viewer sends when its timeline ends).
+    /// </summary>
+    internal static bool HasLocalViewCompleted(int processId) =>
+        LocalPlayer is { } player && Completed.Contains((processId, player.NetId));
+
+    internal static int ToRaidId(int netId) => netId == 0 ? 0 :
+        Manager?.CoopHandler?.Players != null && Manager.CoopHandler.Players.TryGetValue(netId, out var player)
+            ? player.RaidId : netId;
+
+    internal static int ToNetId(int raidId)
+    {
+        if (raidId == 0) return 0;
+        if (Manager?.CoopHandler?.Players != null)
+            foreach (var player in Manager.CoopHandler.Players.Values)
+                if (player.RaidId == raidId) return player.NetId;
+        return raidId;
+    }
+
+    internal static int ToPlayerId(int netId) =>
+        Manager?.CoopHandler?.Players != null && Manager.CoopHandler.Players.TryGetValue(netId, out var player)
+            ? player.PlayerId : netId;
+
+    private static int PlayerIdToNetId(int playerId)
+    {
+        if (Manager?.CoopHandler?.Players != null)
+            foreach (var player in Manager.CoopHandler.Players.Values)
+                if (player.PlayerId == playerId) return player.NetId;
+        return playerId;
+    }
+
+    /// <summary>
+    /// (analysis/cutscene-client-dispatch) The seat table of a process with one more viewer. The table is a plain
+    /// array, so it is copied instead of appended in place - the packet the host already sent must not change
+    /// under a later reader.
+    /// </summary>
+    private static int[] AppendViewer(int[] netIds, int netId)
+    {
+        if (netIds == null) return new[] { netId };
+        for (var i = 0; i < netIds.Length; i++) if (netIds[i] == netId) return netIds;
+        var extended = new int[netIds.Length + 1];
+        System.Array.Copy(netIds, extended, netIds.Length);
+        extended[netIds.Length] = netId;
+        return extended;
+    }
+
+    /// <summary>
+    /// BU (analysis/icebreaker-keypad-3): the host's table just became ready (or was adopted from the native
+    /// controller). Every peer of this raid is handed that snapshot right away, so a client does not have to
+    /// wait for its next retry to build its native controller.
+    /// </summary>
+    internal static void PushPasscodeSnapshot()
+    {
+        try
+        {
+            if (!FikaBackendUtils.IsServer || World == null) return;
+            var server = FikaSingleton<FikaServer>.Instance;
+            if (server == null) return;
+            var peers = new List<NetPeer>();
+            server.NetServer.GetConnectedPeers(peers);
+            var sent = 0;
+            foreach (var peer in peers)
+            {
+                if (peer.ConnectionState != ConnectionState.Connected || peer.Player == null) continue;
+                SendSnapshot(peer);
+                sent++;
+            }
+
+            
+        }
+        catch (Exception)
+        {
+            // A push that throws must not touch the raid: the request/answer path of this class stays as the fallback.
+        }
+    }
+
+    internal static void RequestSnapshot(NetPeer peer)
+    {
+        if (!Ready || peer.Player == null) PendingInit.Add(peer);
+        else SendSnapshot(peer);
+    }
+
+    internal static void SendSnapshot(NetPeer peer)
+    {
+        var server = FikaSingleton<FikaServer>.Instance;
+        if (World == null || server == null || peer.Player == null) return;
+        DisconnectedViewers.Remove(peer.Player.NetId);
+        var init = new PasscodeInitPacket(false) { Hints = new() };
+        if (World.PasscodeController?.TryCast<ClientLocalPasscodeController>() is { } local)
+            foreach (var entry in local._generatedHints)
+                init.Hints.Add(entry.Key, entry.Value.ToArray());
+        // BO (analysis/icebreaker-keypad-2): the passcode ids this host's location carries travel with the
+        // snapshot (id -> list id). They are the only part of the location's passcode settings a client cannot
+        // prove by itself, and a peer that had to build its own controller uses them as its entry set.
+        init.Entries = PasscodeEntries(World);
+        // BU (analysis/icebreaker-keypad-3): the raid's code table itself. The host is the only machine that
+        // draws it (with the game's own PasscodeGenerator); a client applies it to a native local controller
+        // and never draws one of its own - two machines with two tables is exactly what made every code wrong.
+        init.Codes = KeypadCodeSync.HostCodes();
+        server.SendDataToPeer(ref init, DeliveryMethod.ReliableOrdered, peer);
+        // An assigned final ending supersedes earlier shared scenes on reconnect.
+        if (FikaFinalMissionDirector.SendSnapshot(peer)) return;
+        foreach (var start in Cutscenes.Values.ToArray())
+        {
+            if (!start.NetIds.Contains(peer.Player.NetId) || Completed.Contains((start.ProcessId, peer.Player.NetId))) continue;
+            var snapshot = start;
+            if (World.CutscenesServerController?._cutsceneProcesses.TryGetValue(start.ProcessId, out var process) == true)
+                snapshot.InitTime = Math.Max(start.InitTime, process.afterStartTimeElapsed);
+            server.SendDataToPeer(ref snapshot, DeliveryMethod.ReliableOrdered, peer);
+            if (Votes.TryGetValue(start.ProcessId, out var votes))
+            {
+                var eligible = start.NetIds.Where(id => !Completed.Contains((start.ProcessId, id)) && IsActiveViewer(id)).ToArray();
+                var vote = new CutsceneSkipPacket { ProcessId = start.ProcessId,
+                    PlayersCount = eligible.Length, SkippingNetIds = votes.Where(eligible.Contains).ToArray() };
+                server.SendDataToPeer(ref vote, DeliveryMethod.ReliableOrdered, peer);
+            }
+        }
+    }
+
+    /// <summary>
+    /// BO (analysis/icebreaker-keypad-2): the passcode ids the host's last snapshot carried. Null while no snapshot
+    /// has arrived yet - the fallback of <see cref="AdoptOwnController"/> then uses the ids of this machine's scene,
+    /// which are the same ids (both machines load the same location file).
+    /// </summary>
+    internal static void NoteHostPasscodeEntries(Dictionary<string, string> entries) => _hostPasscodeEntries = entries;
+
+    private static Dictionary<string, string> _hostPasscodeEntries;
+
+    /// <summary>
+    /// BO (analysis/icebreaker-keypad-2): the passcode ids of a location, as a plain string map for the wire.
+    /// The native set lives in <c>Location.PasscodeLocationSettings.Entries</c>, and the host reaches it through
+    /// the settings object its own passcode controller was built with - the same object every machine of this
+    /// raid holds, because both load the same SPT location file. Null (or an empty map) means the host's controller
+    /// was not up yet; the peer then keeps the ids of its own scene, which are those very ids.
+    /// </summary>
+    private static Dictionary<string, string> PasscodeEntries(GameWorld world)
+    {
+        try
+        {
+            var settings = world?.PasscodeController?._passcodeLocationSettings;
+            var entries = settings?.Entries;
+            if (entries == null) return null;
+            var map = new Dictionary<string, string>(entries.Length);
+            for (var i = 0; i < entries.Length; i++)
+            {
+                var entry = entries[i];
+                if (entry == null || string.IsNullOrEmpty(entry.PasscodeId)) continue;
+                map[entry.PasscodeId] = entry.PasscodeListId ?? string.Empty;
+            }
+
+            return map;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static void OnPasscodeAttempt(PasscodeAttemptEvent attempt)
+    {
+        if (!Ready || !FikaBackendUtils.IsClient || Manager?.CoopHandler?.MyPlayer is not { } player) return;
+        var packet = new PasscodeAttemptPacket { NetId = player.NetId, PasscodeId = attempt.PasscodeId,
+            TerminalNetId = attempt.TerminalNetId, Input = attempt.Input };
+        Manager.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+        // BB (analysis/icebreaker-keypad-door): the native event path sent this attempt itself, so the fallback
+        // relay of the submit patch must not send it a second time.
+        NotePasscodeAttemptSent(attempt.TerminalNetId, attempt.Input);
+        
+    }
+
+    internal static void BroadcastPasscodeResult(Player player, PasscodeTerminal terminal, bool success)
+    {
+        if (!Ready || !FikaBackendUtils.IsServer || player == null || terminal == null) return;
+        var result = new PasscodeResultPacket { NetId = ToNetId(player.RaidId), PasscodeId = terminal.PasscodeId,
+            TerminalNetId = terminal.NetId, Successful = success };
+        Manager.SendData(ref result, DeliveryMethod.ReliableOrdered);
+    }
+
+    internal static void StartCutscene(CutsceneProcess process, bool forceMode, float initTime)
+    {
+        if (!FikaBackendUtils.IsServer || World == null || process == null || Cutscenes.ContainsKey(process.processId)) return;
+        // A process the rally trigger started belongs to every participant: a peer the world did not count
+        // when the process was created would otherwise be left outside a cutscene the host is inside, and its
+        // skip vote could never be completed (analysis/rally-gate-deadlock).
+        // (analysis/cutscene-client-dispatch) The window-free half of the same repair: the rally window above is
+        // armed by TriggerRallyZone.EmitTrigger, and the Icebreaker trigger really emits through SPTushonka's own
+        // watcher (TriggersEmitter.Emit), so the window is not armed at the moment this runs. The viewer table is
+        // what the broadcast carries and what the native client controller of a peer filters against, so a peer
+        // missing from it can never enter the scene - the one code-level gap of the "the client was not
+        // addressed" branch (analysis/cutscene-client-dispatch, section 3).
+        var start = new CutsceneStartPacket { ProcessId = process.processId, CutsceneId = process.currentCutsceneId,
+            InitTime = initTime, FixedTime = process.fixedTimeOn, ForceMode = forceMode,
+            NetIds = process.playersInCurrentView.ToArray().Select(PlayerIdToNetId).ToArray() };
+        Cutscenes[start.ProcessId] = start;
+        Votes[start.ProcessId] = new();
+        Manager?.SendData(ref start, DeliveryMethod.ReliableOrdered);
+        
+        // (analysis/cutscene-client-dispatch) The one line that names the seat table the broadcast carries - the
+        // fact a client-side log cannot show and the reason a peer does or does not enter the scene. One line per
+        // process; 
+    }
+
+    /// <summary>
+    /// (analysis/cutscene-client-native-trigger) The dispatch half of a cutscene process <b>this machine created
+    /// itself</b> - the cutscene the granted local native start of <see cref="FikaLocalCutsceneTrigger"/> just
+    /// built. On a host that half is the broadcast of <see cref="StartCutscene"/>; on a client the native one (the
+    /// offline mode handing <c>CutSceneStartEvent</c> to the local client controller) is switched off by
+    /// <see cref="ConfigureControllers"/>, so the bridge raises the very same event the host-packet path raises.
+    /// The process id is this machine's own, so the local viewer's completion, the native <c>EndCutscene</c> and
+    /// with it the end actions of the timeline (the door of the map) run on this machine's own controller.
+    /// </summary>
+    internal static void PlayLocalNativeProcess(CutsceneProcess process)
+    {
+        if (process == null) return;
+        var cutscene = process.currentCutsceneId;
+        if (string.IsNullOrEmpty(cutscene)) return;
+        int[] viewerIds;
+        try
+        {
+            var viewers = process.playersInCurrentView;
+            viewerIds = viewers == null ? null : ((IEnumerable<int>)viewers).ToArray();
+        }
+        catch (Exception)
+        {
+            viewerIds = null;
+        }
+        FikaLocalCutsceneTrigger.NoteLocalProcess(process);
+        var local = LocalPlayerId;
+        if (viewerIds == null || local <= 0 || !viewerIds.Contains(local))
+        {
+            
+            return;
+        }
+        // (analysis/cutscene-slowmo) A scene this machine is already playing is never started a second time. The
+        // second CutSceneStartEvent would run the controller's start handler again - that is a second timeline
+        // entry with its own audio start, and a picture that jumps back to the beginning while the sound keeps
+        // its position, i.e. exactly the out-of-sync playback this round repairs. The guard is readable state
+        // (the controller's own process id and cutscene id), not a heuristic.
+        var controller = World?.CutscenesClientController;
+        var running = 0;
+        var runningScene = (string)null;
+        try
+        {
+            if (controller != null)
+            {
+                running = controller._cutsceneProcessId;
+                runningScene = controller._cutsceneId;
+            }
+        }
+        catch (Exception) { running = 0; }
+        if (running != 0 && string.Equals(runningScene, cutscene, StringComparison.Ordinal))
+        {
+            
+            return;
+        }
+        GlobalEventsController.CreateEvent<CutSceneStartEvent>().Invoke(cutscene, process.processId, viewerIds, 0f, true, false);
+        
+    }
+
+    /// <summary>
+    /// (analysis/cutscene-slowmo) The fixed-time flag of a process, for the line of the local trigger: it is the
+    /// field the host packet carries as <c>FixedTime</c> (filled from <c>process.fixedTimeOn</c>), so naming it in
+    /// the local path makes the two paths comparable in one grep.
+    /// </summary>
+    private static string FixedTime(CutsceneProcess process)
+    {
+        try { return process.fixedTimeOn ? "true" : "false"; }
+        catch (Exception) { return "?"; }
+    }
+
+    internal static void EndCutscene(int processId, bool skip)
+    {
+        if (!FikaBackendUtils.IsServer || !Cutscenes.Remove(processId, out var start)) return;
+        Votes.Remove(processId);
+        Completed.RemoveWhere(x => x.Process == processId);
+        if (skip)
+        {
+            var skipped = new CutsceneSkipPacket { ProcessId = processId, Skip = true };
+            Manager.SendData(ref skipped, DeliveryMethod.ReliableOrdered);
+        }
+        var end = new CutsceneEndPacket { ProcessId = processId };
+        Manager.SendData(ref end, DeliveryMethod.ReliableOrdered);
+        
+    }
+
+    private static void OnSkipIntention(CutsceneSkipIntentionEventFromClient intention)
+    {
+        if (Manager?.CoopHandler?.MyPlayer is not { } player) return;
+        var packet = new CutsceneSkipIntentionPacket { NetId = player.NetId, ProcessId = intention.ProcessId,
+            CutsceneId = intention.CutsceneId, WantsToSkip = intention.WantsToSkip };
+        if (FikaBackendUtils.IsServer) HandleSkip(packet, player);
+        else Manager.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+    }
+
+    private static void OnCutsceneTime(CorrectCutsceneTimerEvent correction)
+    {
+        if (!FikaBackendUtils.IsServer || World == null) return;
+        var packet = new CutsceneTimePacket { ProcessId = correction.processId,
+            CutsceneId = correction.cutsceneId, ElapsedTime = correction.elapsedTime };
+        Manager?.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+    }
+
+    private static void OnViewComplete(SendEndCutsceneOnServerEvent completed)
+    {
+        if (Manager?.CoopHandler?.MyPlayer is not { } player) return;
+        var packet = new CutsceneViewCompletePacket { NetId = player.NetId, ProcessId = completed.CutsceneID };
+        if (FikaBackendUtils.IsServer) HandleComplete(packet, player);
+        else Manager.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+    }
+
+    internal static void HandleSkip(CutsceneSkipIntentionPacket packet, FikaPlayer player)
+    {
+        if (!FikaBackendUtils.IsServer || !Cutscenes.TryGetValue(packet.ProcessId, out var start) ||
+            packet.CutsceneId != start.CutsceneId ||
+            Completed.Contains((packet.ProcessId, player.NetId)) || !Votes.TryGetValue(packet.ProcessId, out var votes)) return;
+        // Same seat repair as HandleComplete: a peer that sends a cutscene signal is demonstrably inside the
+        // scene (analysis/cutscene-client-dispatch), so a table that did not hold it is completed here instead of
+        // dropping the vote - which is what left the host unable to move in analysis/rally-gate-deadlock.
+        if (!start.NetIds.Contains(player.NetId))
+        {
+            start.NetIds = AppendViewer(start.NetIds, player.NetId);
+            Cutscenes[packet.ProcessId] = start;
+            
+        }
+        // A vote is the proof that a viewer is really inside the cutscene; WantsToSkip=false is the same
+        // message and is also what a peer sends when it just entered the scene (see AnnounceLocalCutsceneStart).
+        if (packet.WantsToSkip) votes.Add(player.NetId);
+        else votes.Remove(player.NetId);
+        BroadcastVotes(start, votes);
+    }
+
+    private static void BroadcastVotes(CutsceneStartPacket start, HashSet<int> votes)
+    {
+        var eligible = DecidingViewers(start, votes, "vote");
+        var skipping = votes.Where(eligible.Contains).ToArray();
+        var update = new CutsceneSkipPacket { ProcessId = start.ProcessId,
+            PlayersCount = eligible.Length, SkippingNetIds = skipping };
+        Manager.SendData(ref update, DeliveryMethod.ReliableOrdered);
+        GlobalEventsController.CreateEvent<CutsceneSkipIntentionEventFromServer>().Invoke(
+            start.ProcessId, update.PlayersCount, update.SkippingNetIds.Select(ToPlayerId).ToArray());
+        EndIfEveryViewerVoted(start, eligible, votes, "vote");
+    }
+
+    /// <summary>
+    /// The viewers whose vote decides the skip of a process (analysis/rally-gate-deadlock). Up to the
+    /// silent-viewer timeout that is every viewer of the broadcast - the native rule. Afterwards a viewer that
+    /// never sent a single signal is dropped: a peer that never entered the cutscene can never vote, and
+    /// waiting for it is what left the host unable to move with a vote it could not complete. The local viewer
+    /// and every viewer that did vote always stay in the set, so the decision never falls below the players
+    /// that are demonstrably in the scene.
+    /// </summary>
+    private static int[] DecidingViewers(CutsceneStartPacket start, HashSet<int> votes, string source)
+    {
+        var all = start.NetIds.Where(id => !Completed.Contains((start.ProcessId, id)) && IsActiveViewer(id)).ToArray();
+        if (all.Length == 0) return all;
+        var local = LocalPlayer?.NetId ?? -1;
+        var deciding = all.Where(id => votes.Contains(id) || id == local).ToArray();
+        if (deciding.Length == 0) return all;
+        
+        return deciding;
+    }
+
+    /// <summary>
+    /// The native skip: every deciding viewer voted, so the host ends the process through the native
+    /// <c>EndCutscene(skip: true)</c> - the call that also runs the timeline's end actions (the door of the map).
+    /// </summary>
+    private static void EndIfEveryViewerVoted(CutsceneStartPacket start, int[] eligible, HashSet<int> votes, string source)
+    {
+        if (eligible == null || eligible.Length == 0 || !eligible.All(votes.Contains)) return;
+        if (World?.CutscenesServerController?._cutsceneProcesses.TryGetValue(start.ProcessId, out var process) != true) return;
+        
+        World.CutscenesServerController.EndCutscene(start.CutsceneId, start.ProcessId, process, process.playersInCurrentView, true);
+    }
+
+    /// <summary>
+    /// The way out of a cutscene nobody can finish (analysis/rally-gate-deadlock). Runs on the host once per
+    /// second while a process is on and does exactly two things, both of them only after the silent-viewer
+    /// timeout: it lets the vote of the viewers that are still inside the scene decide (a viewer that never
+    /// entered it no longer holds the vote), and it closes the completion counter of a viewer that never
+    /// entered it, so the native end - and with it the end actions of the timeline - can run instead of
+    /// waiting for a peer that is not in the cutscene at all. Nothing happens while the timeout has not
+    /// passed, and nothing happens for a viewer that sent any signal.
+    /// </summary>
+    private static void SkipWatchdog()
+    {
+        if (World == null || !FikaBackendUtils.IsServer || Cutscenes.Count == 0) return;
+        var now = UnityEngine.Time.unscaledTime;
+        if (now < _nextWatchdog) return;
+        _nextWatchdog = now + 1f;
+        foreach (var entry in Cutscenes.ToArray())
+        {
+            var start = entry.Value;
+            if (Votes.TryGetValue(start.ProcessId, out var votes) && votes.Count > 0)
+                EndIfEveryViewerVoted(start, DecidingViewers(start, votes, "timeout"), votes, "timeout");
+            CloseSilentViewers(start);
+        }
+    }
+
+    /// <summary>
+    /// Counts a viewer that never entered the cutscene as done through the very native call a real
+    /// acknowledgement uses (<c>PlayerViewCutsceneComplete</c>), so the process' own counter fills and its
+    /// native end can run. The viewer is only closed once the silent-viewer timeout passed, only when it sent
+    /// no signal at all, and never twice for one process.
+    /// </summary>
+    private static void CloseSilentViewers(CutsceneStartPacket start)
+    {
+        var server = World?.CutscenesServerController;
+        if (server?._cutsceneProcesses == null ||
+            !server._cutsceneProcesses.TryGetValue(start.ProcessId, out var process) || process == null) return;
+        var viewers = process.playersInCurrentView;
+        if (viewers == null || viewers.Count == 0) return;
+        var local = LocalPlayer?.NetId ?? -1;
+        for (var i = 0; i < viewers.Count; i++)
+        {
+            int playerId;
+            try { playerId = viewers[i]; }
+            catch (Exception) { continue; }
+            var netId = PlayerIdToNetId(playerId);
+            if (netId == local || Completed.Contains((start.ProcessId, netId))) continue;
+            if (!Completed.Add((start.ProcessId, netId))) continue;
+            
+            server.PlayerViewCutsceneComplete(start.CutsceneId, start.ProcessId, playerId);
+        }
+    }
+
+    /// <summary>
+    /// This machine's own viewer entered a cutscene: the one signal that tells "inside the scene and quiet" from
+    /// "never entered it". The host records it locally, a peer sends it as the native skip-intention event with
+    /// <c>wantsToSkip: false</c> - the existing packet, not a new one, which is why nothing about the wire
+    /// protocol changes for this repair.
+    /// </summary>
+    internal static void AnnounceLocalCutsceneStart(string cutsceneId, int processId)
+    {
+        if (processId == 0 || string.IsNullOrEmpty(cutsceneId)) return;
+        var local = LocalPlayer?.NetId ?? -1;
+        if (FikaBackendUtils.IsServer || local < 0) return;
+        GlobalEventsController.CreateEvent<CutsceneSkipIntentionEventFromClient>().Invoke(processId, cutsceneId, false);
+    }
+
+    internal static void HandleComplete(CutsceneViewCompletePacket packet, FikaPlayer player)
+    {
+        if (!FikaBackendUtils.IsServer || !Cutscenes.TryGetValue(packet.ProcessId, out var start)) return;
+        // (analysis/cutscene-client-dispatch) A viewer that really watched is a viewer. The seat table of a
+        // process is built from a local player list, so a peer can be missing from it and still play the scene
+        // (the client half of this repair: FikaClient.RaidInteractions.cs re-raises the start for itself). Dropping
+        // that peer's completion would leave the host's process open with nothing left to wait for. Only a
+        // participant of this raid is accepted, and only while the seat repair is on.
+        if (!start.NetIds.Contains(player.NetId))
+        {
+            start.NetIds = AppendViewer(start.NetIds, player.NetId);
+            Cutscenes[packet.ProcessId] = start;
+            
+        }
+        if (!Completed.Add((packet.ProcessId, player.NetId))) return;
+        World?.CutscenesServerController?.PlayerViewCutsceneComplete(start.CutsceneId, packet.ProcessId, player.PlayerId);
+        
+        if (Votes.TryGetValue(packet.ProcessId, out var votes))
+        {
+            votes.Remove(player.NetId);
+            BroadcastVotes(start, votes);
+        }
+    }
+
+
+    /// <summary>
+    /// What the ended cutscene was supposed to run at its end, and whether the doors of that action are open
+    /// now (analysis/cutscene-play-and-end). The gate a story cutscene opens is the only visible proof that the
+    /// end actions ran, so the line carries the action ids of the timeline, how many of them are registered in
+    /// the controllers and how many of those open doors, plus the door states read right after the native end.
+    /// </summary>
+
+    private static CutsceneBaseAction FindAction(CutscenesServerController controller, string actionId)
+    {
+        if (controller?._actions == null || string.IsNullOrEmpty(actionId)) return null;
+        return controller._actions.TryGetValue(actionId, out var action) ? action : null;
+    }
+
+    private static CutsceneBaseAction FindAction(CutscenesClientController controller, string actionId)
+    {
+        if (controller?._actions == null || string.IsNullOrEmpty(actionId)) return null;
+        return controller._actions.TryGetValue(actionId, out var action) ? action : null;
+    }
+
+    /// <summary>The live state of every door the action names, so "doors=1" can be told from "doors=1 open".</summary>
+    private static string DoorStates(List<string> doorIds)
+    {
+        if (doorIds.Count == 0) return string.Empty;
+        var objects = UnityEngine.Object.FindObjectsOfType<WorldInteractiveObject>(true);
+        var text = new System.Text.StringBuilder(" doorState=[");
+        var written = 0;
+        foreach (var id in doorIds)
+            foreach (var door in objects)
+            {
+                if (door == null || !string.Equals(door.Id, id, StringComparison.Ordinal)) continue;
+                if (written++ > 0) text.Append(", ");
+                text.Append(id).Append('=').Append(door.DoorState);
+            }
+        if (written == 0) text.Append("no live object for ").Append(doorIds.Count).Append(" id(s)");
+        return text.Append(']').ToString();
+    }
+
+    internal static void OnDisconnected(FikaPlayer player)
+    {
+        if (player == null) return;
+        DisconnectedViewers.Add(player.NetId);
+        DialogEntryOccupancy.ReleaseAllFor(player.NetId);
+        // Disconnecting is not a completed view: reconnect must still resume it.
+        foreach (var entry in Votes.ToArray())
+        {
+            entry.Value.Remove(player.NetId);
+            if (Cutscenes.TryGetValue(entry.Key, out var start) && start.NetIds.Contains(player.NetId))
+                BroadcastVotes(start, entry.Value);
+        }
+    }
+
+    private static bool IsActiveViewer(int netId)
+    {
+        if (DisconnectedViewers.Contains(netId)) return false;
+        if (Manager?.CoopHandler?.Players == null || !Manager.CoopHandler.Players.TryGetValue(netId, out var player) ||
+            player.HealthController?.IsAlive != true || Manager.CoopHandler.ExtractedPlayers.Contains(netId)) return false;
+        if (player.IsYourPlayer) return !FikaBackendUtils.IsHeadless;
+        var peers = new List<NetPeer>();
+        FikaSingleton<FikaServer>.Instance?.NetServer.GetConnectedPeers(peers);
+        return peers.Any(peer => peer.ConnectionState == ConnectionState.Connected && peer.Player?.NetId == netId);
+    }
+}

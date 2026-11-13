@@ -27,8 +27,8 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.LocalGame;
 
 /// <summary>
-/// Created by: Paulov
-/// Paulov: Overwrite and use our own CoopGame instance instead
+/// 创建者：Paulov
+/// Paulov：改为覆盖并使用我们自己的 CoopGame 实例
 /// </summary>
 public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
 {
@@ -43,21 +43,21 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
     {
         
 
-        // The standalone Headless plugin owns LocalGameCreate on dedicated
-        // hosts. Do not let the normal player-owned game factory race it if
-        // Harmony retains its prefix while enabling Headless's own patch.
+        // 独立的 Headless 插件在专用主机上拥有 LocalGameCreate。
+        // 如果 Harmony 在启用 Headless 自己的补丁时仍保留我们的 prefix，
+        // 就不要让普通的、由玩家拥有的游戏工厂与它竞争。
         if (FikaBackendUtils.IsHeadless) return true;
 
-        // A failed result operation may never consume the previous raid's
-        // Scav descriptor. Starting any new raid invalidates that snapshot,
-        // including when the next raid is a native single-player session.
+        // 失败的结果操作绝不能消耗上一场 raid 的
+        // Scav 描述符。启动任何新 raid 都会使那份快照失效，
+        // 包括下一场 raid 是原生单人会话的情况。
         Main.Patches.Overrides.RaidEndProfile.Clear();
         if (FikaBackendUtils.ClientType == EClientType.None)
         {
-            // AP (analysis/nonfika-raid-inertness): this is the decisive moment - the raid that starts
-            // now is the native local game (the map selection screen without Fika), so the port has to
-            // stay out of it until it creates a game of its own again. Reported once per transition; the
-            // line is [Inert] raid kind=native source=... in the game log.
+            // AP (analysis/nonfika-raid-inertness)：这是决定性的时刻 —— 现在启动的这场 raid
+            // 是原生本地游戏（不带 Fika 的地图选择界面），因此移植层必须
+            // 在它再次创建属于自己的游戏之前一直置身事外。每次状态转换只上报一次；
+            // 该行在游戏日志中是 [Inert] raid kind=native source=...
             FikaRaidGate.NativeRaidStarted("LocalGameCreate with clientType=None");
             return true;
         }
@@ -73,11 +73,11 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
     }
 
     /// <summary>
-    /// Entry point of the cooperative raid start. Any failure of the session setup is turned
-    /// into a clean abort here: the reason goes to BepInEx/Fika-diagnostics.log with its full
-    /// stack, the half-created session (client, loading screen) is torn down so the player
-    /// lands on a usable main menu, and a readable error screen replaces the bare
-    /// "Object reference not set to an instance of an object." box.
+    /// 合作 raid 启动的入口点。会话建立的任何失败都会在这里被转成
+    /// 一次干净的终止：原因连同完整堆栈写入 BepInEx/Fika-diagnostics.log，
+    /// 半创建状态的会话（客户端、加载界面）被拆除，好让玩家
+    /// 落在一个可用的主菜单上，并用一个可读的错误界面替代原来那个干巴巴的
+    /// "Object reference not set to an instance of an object." 对话框。
     /// </summary>
     public static async Task CreateFikaGame(TarkovApplication instance, TimeAndWeatherSettings timeAndWeather,
         RaidSettings raidSettings, InputTree inputTree, GameDateTime localGameDateTime, float fixedDeltaTime,
@@ -121,18 +121,18 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
         CompositeDisposable unsubscriber, BundleLock bundleLock)
     {
         var isServer = FikaBackendUtils.IsServer;
-        // AP (analysis/nonfika-raid-inertness): the one place that knows a raid of ours really starts.
-        // Everything that asks FikaRaidGate.Skip before acting inside a raid is enabled by this line and
-        // by nothing else - not by the plugin being loaded, not by FikaBackendUtils.ClientType, which a
-        // finished raid used to leave at Host/Client for the rest of the session.
+        // AP (analysis/nonfika-raid-inertness)：唯一知道"我们的 raid 真的开始了"的地方。
+        // 所有在 raid 内动手之前会询问 FikaRaidGate.Skip 的代码，都由这一行启用，
+        // 而不是别的任何东西 —— 既不是插件被加载，也不是 FikaBackendUtils.ClientType，
+        // 因为一场结束的 raid 以前会把后者留在 Host/Client 上，直到会话结束。
         FikaRaidGate.Arm("CreateFikaGameCore(location=" + (raidSettings?.LocationId ?? "-") + ", role="
             + (isServer ? "host" : "client") + ")");
         
         var isTransit = FikaBackendUtils.IsTransit;
 
-        // A preparation that failed (no network manager, no host endpoint, a rejected join)
-        // must stop the raid start here: continuing is what produced the "0 % loading screen
-        // plus generic NullReferenceException" report.
+        // 失败的准备工作（没有网络管理器、没有主机端点、加入被拒）
+        // 必须在这里终止 raid 启动：继续下去正是产生"0 % 加载界面
+        // 加上通用 NullReferenceException"报告的原因。
         if (FikaBackendUtils.JoinFailed)
         {
             throw new InvalidOperationException("The raid could not be started: " + FikaBackendUtils.JoinFailure);
@@ -181,8 +181,8 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
 
         if (profile == null)
         {
-            // session.GetProfileBySide returns null when the profile for the requested side
-            // was never loaded, and the next statement used to fault on it.
+            // 当所请求阵营的 profile 从未被加载时，session.GetProfileBySide 返回 null，
+            // 而下一条语句以前就会在它上面出错。
             throw new InvalidOperationException(
                 $"The backend session has no {raidSettings.Side} profile, so the raid cannot be started for that side.");
         }
@@ -224,7 +224,7 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
         var localSettings = await instance.Session.LocalRaidStarted(localRaidSettings).AsManaged();
         raidSettings.BotSettings.ExcludedBosses = localSettings.excludedBosses;
         var raidSettingsToUpdate = instance._localRaidSettings;
-        // SPT 5 applies scav raid-time adjustments to the returned location.
+        // SPT 5 会对返回的位置应用 scav 的 raid 时间调整。
         var escapeTimeLimit = raidSettings.IsScav ? localSettings.locationLoot.EscapeTimeLimit : raidSettings.SelectedLocation.EscapeTimeLimit;
         raidSettings.SelectedLocation = localSettings.locationLoot;
         raidSettings.SelectedLocation.EscapeTimeLimit = escapeTimeLimit;
@@ -234,9 +234,9 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
 
         var transitData = FikaBackendUtils.TransitData;
         transitData.transitionType = raidSettings.transitionType;
-        // The default TransitData getter creates a new native object until it
-        // is assigned. Keep the configured transition on the same object used
-        // by this raid and by Stop() when the party changes maps.
+        // 在被赋值之前，TransitData 的默认 getter 会一直创建一个新的本机对象。
+        // 把配置好的 transition 保留在本场 raid 以及
+        // 队伍换图时 Stop() 所使用的同一个对象上。
         FikaBackendUtils.TransitData = transitData;
         raidSettingsToUpdate.transition = transitData;
 
@@ -274,7 +274,7 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
             FikaSingleton<FikaServer>.Instance.LocationReceived = true;
         }
 
-        // This gets incorrectly reset by the server, update it manually here during transit
+        // 这个值会被服务器错误地重置，因此在 transit 期间在这里手动更新它
         if (!FikaBackendUtils.IsHeadless && isTransit && MainMenuUIScript.Exist)
         {
             MainMenuUIScript.Instance.UpdatePresence(UI.FikaUIGlobals.EFikaPlayerPresence.IN_RAID);
@@ -294,19 +294,19 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
         startHandler.CoopGame = coopGame;
 
         Singleton<AbstractGame>.Create(coopGame);
-        // Register both raid-scoped cleanups through the game's own NON-generic
-        // CompositeDisposable.AddDisposable(Il2CppSystem.Action) overload. The generated
-        // AddDisposable<T>(T) overload must not be reached from here: its interop wrapper resolves the
-        // type argument through Il2CppClassPointerStore<T>, and that store only exists for
-        // interop-generated types, enums, primitives/strings and ClassInjector-registered types.
-        // Handing it a CLR delegate (System.Action) leaves NativeClassPtr at 0 and the generated
-        // MethodInfoStoreGeneric cctor dies with a TypeInitializationException inside Il2CppInterop's
-        // Class::FromIl2CppType hook (47888 run 2026-10-09 23:38, frame 9425). The game's own field is
-        // a native List<Action>, so the Action overload is also the semantically correct one.
-        // The two cleanups are plain managed lambdas declared on this class, never il2cpp delegates bound
-        // to an injected instance method (see AddRaidDisposable): an injected method's registered MethodInfo
-        // is reached by the engine through the interop invoker, which is the fatal path of
-        // analysis/delegate-targets/REPORT.md.
+        // 通过游戏自己的 NON-generic（非泛型）
+        // CompositeDisposable.AddDisposable(Il2CppSystem.Action) 重载注册这两个 raid 作用域清理。绝不能从这里
+        // 走到生成的 AddDisposable<T>(T) 重载：它的 interop 包装器会通过
+        // Il2CppClassPointerStore<T> 解析类型实参，而那个 store 只对
+        // interop 生成的类型、枚举、基元类型/字符串以及 ClassInjector 注册的类型存在。
+        // 传给它一个 CLR 委托（System.Action）会让 NativeClassPtr 保持为 0，生成的
+        // MethodInfoStoreGeneric cctor 会在 Il2CppInterop 的
+        // Class::FromIl2CppType 钩子里以 TypeInitializationException 挂掉（47888 run 2026-10-09 23:38，frame 9425）。游戏自己的字段是
+        // 一个本机 List<Action>，所以 Action 重载在语义上也是正确的那个。
+        // 这两个清理都是声明在本类上的普通托管 lambda，绝不是绑定到
+        // 注入实例方法上的 il2cpp 委托（见 AddRaidDisposable）：注入方法所注册的 MethodInfo
+        // 会被引擎经由 interop invoker 抵达，而那正是
+        // analysis/delegate-targets/REPORT.md 中的致命路径。
         AddRaidDisposable(unsubscriber, "CoopGame.Dispose", () => coopGame.Dispose());
         AddRaidDisposable(unsubscriber, "StartHandler.ReleaseSingleton", () => startHandler.ReleaseSingleton());
         metricsEvents.SetGameCreated();
@@ -336,10 +336,10 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
     }
 
     /// <summary>
-    /// Logs, once per session, that the file must never instantiate AddDisposable&lt;System.Action&gt;.
-    /// Reading the store only runs the managed type initializer of the type argument
-    /// (RunClassConstructor, no il2cpp call), so this measurement cannot fault; it documents the state
-    /// that aborted the 23:38 run as a named line.
+    /// 每个会话记录一次：本文件绝不能实例化 AddDisposable&lt;System.Action&gt;。
+    /// 读取该 store 只会运行类型实参的托管类型初始化器
+    /// （RunClassConstructor，不涉及 il2cpp 调用），因此这次测量不会出错；它把
+    /// 导致 23:38 那次运行中止的状态记录成一条具名日志行。
     /// </summary>
     private static void ReportGenericOverloadHazard()
     {
@@ -365,23 +365,23 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
     }
 
     /// <summary>
-    /// Registers one raid cleanup with the game's CompositeDisposable.
+    /// 把一个 raid 清理注册到游戏的 CompositeDisposable 上。
     ///
-    /// The delegate target is always a managed lambda declared on this (plain managed, non-injected)
-    /// class. It must never be an il2cpp delegate built over an injected instance method
-    /// (<c>Il2CppSystem.Delegate.CreateDelegate</c> / <c>NativeDelegates.Bind</c>): such a delegate carries
-    /// the injected method's registered MethodInfo, and the engine reaches it through the interop invoker
-    /// whose closing <c>calli</c> targets the method's trampoline thunk - the pair coreclr fail-fasts on
-    /// ("attempted to call a UnmanagedCallersOnly method from managed code",
-    /// analysis/delegate-targets/REPORT.md). <c>CoopGame.Dispose</c> and
-    /// <c>StartHandler.ReleaseSingleton</c> were bound that way until round 8.
+    /// 委托目标始终是声明在本类（普通托管、非注入类）上的托管 lambda。
+    /// 它绝不能是基于注入实例方法构建的 il2cpp 委托
+    /// （<c>Il2CppSystem.Delegate.CreateDelegate</c> / <c>NativeDelegates.Bind</c>）：这种委托携带
+    /// 注入方法所注册的 MethodInfo，而引擎会经由 interop invoker 抵达它，
+    /// 后者的收尾 <c>calli</c> 指向该方法的 trampoline thunk —— coreclr 正是对这一对执行 fail-fast
+    /// （"attempted to call a UnmanagedCallersOnly method from managed code"，
+    /// analysis/delegate-targets/REPORT.md）。<c>CoopGame.Dispose</c> 与
+    /// <c>StartHandler.ReleaseSingleton</c> 直到第 8 轮都是以这种方式绑定的。
     ///
-    /// The conversion below is the interop's managed-to-native delegate bridge
-    /// (<c>DelegateSupport.ConvertDelegate</c>): it builds its own reverse-P/Invoke trampoline whose body
-    /// performs one plain managed call into the lambda, i.e. the engine's invoke stops at managed code and
-    /// never enters an injected method's invoker. The result stays <c>Il2CppSystem.Action</c> so the
-    /// declaring type's own non-generic member is the better candidate: no generic method instantiation is
-    /// created, and the native delegate is stored in the game's List&lt;Action&gt; exactly as before.
+    /// 下面的转换是 interop 的托管到本机委托桥
+    /// （<c>DelegateSupport.ConvertDelegate</c>）：它构建自己的 reverse-P/Invoke trampoline，其主体
+    /// 对 lambda 执行一次普通的托管调用，也就是说引擎的 invoke 停在托管代码处，
+    /// 绝不进入注入方法的 invoker。结果类型仍是 <c>Il2CppSystem.Action</c>，因此
+    /// 声明类型自身的非泛型成员是更好的候选：不会创建任何泛型方法实例化，
+    /// 而本机委托仍像以前一样存进游戏的 List&lt;Action&gt; 里。
     /// </summary>
     private static void AddRaidDisposable(CompositeDisposable unsubscriber, string label, System.Action cleanup)
     {
@@ -430,43 +430,43 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
     }
 
     /// <summary>
-    /// The measured probe above is a property of the interop, not of one call, so it is logged once.
+    /// 上面测得的探针是 interop 的一种性质，而不是某一次调用的性质，因此只记录一次。
     /// </summary>
     private static bool _genericAddDisposableHazardReported;
 
     /// <summary>
-    /// Waits until the host confirms it received the local player's location.
+    /// 等待主机确认它已收到本地玩家的位置。
     ///
-    /// The loop used to dereference <see cref="FikaSingleton{T}.Instance"/> unconditionally and
-    /// never time out: a client that was never created (preparation aborted) threw the generic
-    /// NullReferenceException, and a client that never reached the host span here forever while
-    /// the Fika loading screen stayed at 0 %. It now waits for the client to appear, reports
-    /// its connection state every second and fails with a readable reason.
+    /// 这个循环以前会无条件解引用 <see cref="FikaSingleton{T}.Instance"/>，
+    /// 而且永不超时：从未被创建的客户端（准备阶段被终止）会抛出那个通用的
+    /// NullReferenceException，而一个始终连不上主机的客户端会在这里永远空转，
+    /// 而 Fika 加载界面一直停在 0 %。现在它会等待客户端出现，每秒上报一次
+    /// 它的连接状态，并以可读的原因失败。
     /// </summary>
     /// <summary>
-    /// Waits until the host confirms it received the local player's location.
+    /// 等待主机确认它已收到本地玩家的位置。
     ///
-    /// Three different states used to look the same here, and the healthy case paid for it:
-    ///   * a host that is still loading its own map answers every poll with HostReceivedLocation=false;
-    ///   * a host whose main thread is blocked inside a long frame answers nothing at all while its
-    ///     socket thread keeps the connection alive;
-    ///   * a host that is gone stops answering *and* the transport drops.
-    /// A single fixed cap therefore aborted joins that only needed more time - in the 2026-10-11 18:58
-    /// round the host needed 145 s for TarkovStreets (host Fika-diagnostics.log 464548 -> 609164 ms)
-    /// while the client reached its own location wait after 89 s and aborted after a fixed 40 s
-    /// (client Fika-diagnostics.log 477018 -> 517290 ms); that abort is what left the host waiting for a
-    /// character that never came.
+    /// 三种不同的状态以前在这里看起来一模一样，而正常情况为此付出了代价：
+    ///   * 仍在加载自己地图的主机对每次轮询都回答 HostReceivedLocation=false；
+    ///   * 主线程卡在长帧里的主机完全不作答，而它的
+    ///     socket 线程仍然保活着连接；
+    ///   * 已经消失的主机停止作答，*并且*传输层会断开。
+    /// 因此单一的固定上限会终止那些只需要更多时间的加入 —— 在 2026-10-11 18:58
+    /// 那一轮，主机为 TarkovStreets 需要 145 秒（主机 Fika-diagnostics.log 464548 -> 609164 ms），
+    /// 而客户端在 89 秒后才进入自己的位置等待，并在固定的 40 秒后中止
+    /// （客户端 Fika-diagnostics.log 477018 -> 517290 ms）；正是那次中止让主机一直等待一个
+    /// 从未到来的角色。
     ///
-    /// What ends this wait, in this order:
-    ///   * the transport: <c>ServerConnection.ConnectionState != Connected</c> is the only proof that the
-    ///     host is gone (LiteNetLib's own thread maintains the connection, acks and keepalives, so it
-    ///     survives a busy host main thread);
-    ///   * <see cref="LoadSyncGate.ClientCeilingSeconds"/>, which is longer inside a transit reload
-    ///     window - a connected host that never makes progress cannot be waited for forever;
-    ///   * a long application-level silence is reported as a warning (every 15 s) and never ends the wait
-    ///     by itself. That is the difference to the fixed cap this join died on.
-    /// The counter of host responses and the local loading progress are in every [LoadSync] line, so a
-    /// run can be judged whether it succeeded or not.
+    /// 以下情况会结束这次等待，顺序如下：
+    ///   * 传输层：<c>ServerConnection.ConnectionState != Connected</c> 是主机已消失的唯一证据
+    ///     （LiteNetLib 自己的线程维护连接、ack 与 keepalive，因此它能在主机主线程繁忙时
+    ///     依然存活）；
+    ///   * <see cref="LoadSyncGate.ClientCeilingSeconds"/>，它在 transit 重载窗口内会更长
+    ///     —— 一个始终没有任何进展的已连接主机不能被永远等待下去；
+    ///   * 长时间的应用层沉默会以警告形式上报（每 15 秒一次），而绝不会自行
+    ///     结束等待。这正是与那个让本次加入死掉的固定上限的区别。
+    /// 主机应答计数器和本地加载进度出现在每一行 [LoadSync] 里，因此无论一次运行
+    /// 成功与否都能据此判定。
     /// </summary>
     private static async Task WaitForServerToReceiveLocation()
     {
@@ -538,9 +538,9 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
                 throw;
             }
 
-            // A growing response counter means the host's *application* is answering; the flags inside
-            // those responses say how far its own raid start is. Silence with a live transport means the
-            // host's main thread is busy (its own map load) - that is a warning, not a failure.
+            // 应答计数器在增长，说明主机的*应用层*正在作答；
+            // 这些应答里的标志说明它自己的 raid 启动进行到哪一步。传输层存活却沉默，说明
+            // 主机的主线程正忙（在加载它自己的地图）—— 那是警告，不是失败。
             if (client.HostResponseCount != lastResponseCount)
             {
                 lastResponseCount = client.HostResponseCount;
@@ -554,8 +554,6 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
             if (attempts >= reportedAt)
             {
                 reportedAt = attempts + 5;
-                LoadSync.Report("WaitForServerToReceiveLocation", DescribeLocationWait()
-                    + " => waiting; the host acknowledges this once its own copy of the raid is created");
             }
 
             if (silentSeconds >= LoadSyncGate.ClientSilentWarnSeconds && silentSeconds % 15 == 0)
@@ -577,13 +575,10 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
             await Task.Delay(span);
         }
 
-        LoadSync.Report("WaitForServerToReceiveLocation",
-            "the host acknowledged the location after " + attempts + "s (responses=" + client.HostResponseCount
-            + ") => this client continues with its own game creation");
     }
 
     /// <summary>
-    /// The progress this machine has published for itself, for the [LoadSync] lines ("local=92.5").
+    /// 本机为自己公布的上报进度，供 [LoadSync] 行使用（"local=92.5"）。
     /// </summary>
     private static string DescribeLocalProgress()
     {
@@ -641,11 +636,11 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
     {
         var MainPlayer = Singleton<GameWorld>.Instance.MainPlayer;
 
-        // Teleport the player underground to avoid it from being looted
+        // 把玩家传送到地下，以免它被搜刮
         var currentPosition = MainPlayer.Position;
         MainPlayer.Teleport(new(currentPosition.x, currentPosition.y - 75, currentPosition.z));
 
-        // Small delay to ensure the teleport command is processed first
+        // 短暂延迟，以确保传送命令先被处理
         await Task.Delay(250);
 
         DamageInfo damageInfo = new()
@@ -654,7 +649,7 @@ public sealed class TarkovApplication_LocalGameCreator_Patch : ModulePatch
             DamageType = EDamageType.Impact
         };
 
-        // Kill the player to put it in spectator mode
+        // 杀死玩家以使其进入观战模式
         MainPlayer.ApplyDamageInfo(damageInfo, EBodyPart.Head, EBodyPartColliderType.Eyes, 0);
     }
 }

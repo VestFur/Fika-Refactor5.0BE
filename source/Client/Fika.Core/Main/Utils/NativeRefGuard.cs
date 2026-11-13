@@ -7,28 +7,28 @@ using Il2CppInterop.Runtime.InteropTypes;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Validation for il2cpp/Unity references before they are handed to native code.
+/// 在 il2cpp/Unity 引用被交给原生代码之前对其做校验。
 ///
-/// A null managed reference is cheap to test, but a *bogus* one is not: Il2CppInterop wraps
-/// whatever a serialized prefab field, a bundle asset or a stale object slot happens to
-/// contain, and the first native member access then faults inside GameAssembly
-/// (0xC0000005 reading 0xA through "mov rax,[rcx]" in the 47888 crash dumps) instead of
-/// throwing a managed exception.
+/// 空的托管引用测试起来很便宜,但一个*伪造的*引用并不便宜:Il2CppInterop 会把
+/// 序列化 prefab 字段、bundle 资源或失效对象槽位里恰好存在的任何东西
+/// 包装起来,随后第一次原生成员访问就会在 GameAssembly 内部触发故障
+/// (47888 份崩溃转储中,0xC0000005 通过 "mov rax,[rcx]" 读取 0xA),而不是
+/// 抛出一个托管异常。
 ///
-/// The previous version of this class only checked that the value *looks* like a pointer
-/// (small and misaligned values were rejected). The 22:15 run proved that is not enough:
-/// the value that reaches the fault is 0xA, but a field can also hold a perfectly aligned
-/// pointer to memory that is not an il2cpp object at all, and then the write corrupts
-/// whatever lives there.
+/// 本类此前的版本只检查值*看起来*像不像一个指针
+/// (过小与未对齐的值会被拒绝)。22:15 的那次运行证明这还不够:
+/// 到达故障点的值是 0xA,但某个字段也可能持有一个完全对齐的
+/// 指针,它指向根本不是 il2cpp 对象的内存,此时写入就会破坏
+/// 那里原本存在的任何东西。
 ///
-/// Every check here therefore asks the operating system first ("is this address committed
-/// and readable?") and only then reads the object header, the class pointer and the class
-/// name. Nothing is dereferenced before VirtualQuery answered for the page it lives in, so
-/// a bogus reference is rejected without ever being dereferenced.
+/// 因此这里每一次检查都先向操作系统询问(「这个地址是否已提交
+/// 且可读?」),然后才读取对象头、类指针和类
+/// 名。在 VirtualQuery 对该值所在页作出回答之前不会解引用任何东西,因此
+/// 伪造的引用会在从未被解引用的情况下被拒绝。
 /// </summary>
 internal static class NativeRefGuard
 {
-    // Real native objects live far above this and are always pointer aligned.
+    // 真正的原生对象位于远高于此的地址,且总是按指针对齐。
     private const long MinimumNativePointer = 0x10000;
     private const long AlignmentMask = 0x7;
 
@@ -37,7 +37,7 @@ internal static class NativeRefGuard
     private const uint PageGuard = 0x100;
     private const uint ReadableProtections = 0x02 | 0x04 | 0x08 | 0x20 | 0x40 | 0x80;
 
-    // Il2CppClass layout used by this runtime: image, gc_desc, name, namespaze, ... parent.
+    // 本运行时使用的 Il2CppClass 布局:image、gc_desc、name、namespaze、... parent。
     private const int KlassNameOffset = 0x10;
     private const int KlassNamespaceOffset = 0x18;
     private const int KlassParentOffset = 0x48;
@@ -45,13 +45,13 @@ internal static class NativeRefGuard
     private const int MaxHierarchyDepth = 10;
 
     /// <summary>
-    /// Set by <see cref="VerifyTypeProbe"/>. False means the class-name layout could not be
-    /// confirmed on a reference whose type is known, so references are only required to be
-    /// readable - a broken probe must not disable working UI.
+    /// 由 <see cref="VerifyTypeProbe"/> 设置。为 False 表示无法在一个类型已知的引用上
+    /// 确认类名布局,因此此时只要求引用
+    /// 可读——一个坏掉的探针不能让正常工作的 UI 停摆。
     /// </summary>
     private static bool _typeProbeTrusted;
 
-    /// <summary>Set by <see cref="VerifyTypeProbe"/>. False means the parent chain is unusable.</summary>
+    /// <summary>由 <see cref="VerifyTypeProbe"/> 设置。为 False 表示父链不可用。</summary>
     private static bool _hierarchyTrusted;
 
     private static bool _fallbackReported;
@@ -71,14 +71,14 @@ internal static class NativeRefGuard
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr VirtualQuery(IntPtr address, out MemoryBasicInformation buffer, IntPtr length);
 
-    /// <summary>True when the pointer can be a real native object (cheap plausibility test).</summary>
+    /// <summary>当该指针可能是一个真正的原生对象时为 true(廉价的可能性判断)。</summary>
     internal static bool IsUsable(IntPtr pointer)
     {
         long value = pointer.ToInt64();
         return value >= MinimumNativePointer && (value & AlignmentMask) == 0;
     }
 
-    /// <summary>True when the wrapper exists and its pointer is plausible.</summary>
+    /// <summary>当包装对象存在且其指针可信时为 true。</summary>
     internal static bool IsUsable(Il2CppObjectBase instance)
     {
         if (instance is null)
@@ -97,8 +97,8 @@ internal static class NativeRefGuard
     }
 
     /// <summary>
-    /// True when the whole [pointer, pointer+length) range is committed and readable.
-    /// This is answered by the memory manager and never dereferences the address itself.
+    /// 当整个 [pointer, pointer+length) 区间都已提交且可读时为 true。
+    /// 这由内存管理器回答,并且绝不亲自解引用该地址。
     /// </summary>
     internal static bool IsProvablyReadable(IntPtr pointer, int length)
     {
@@ -135,14 +135,14 @@ internal static class NativeRefGuard
         }
         catch (Exception)
         {
-            // No kernel32 (or a hostile loader): the caller keeps the plausibility result.
+            // 没有 kernel32(或加载器不友善):调用方沿用可能性判断的结果。
             return false;
         }
     }
 
     /// <summary>
-    /// Reads the il2cpp class name of an object. Every hop is proven readable first, so this
-    /// can be called on a reference whose validity is still unknown.
+    /// 读取一个对象的 il2cpp 类名。每一跳都先被证明可读,因此本方法
+    /// 可以在有效性仍未知的引用上调用。
     /// </summary>
     internal static string TryReadTypeName(IntPtr instance)
     {
@@ -182,10 +182,10 @@ internal static class NativeRefGuard
     }
 
     /// <summary>
-    /// Walks the class hierarchy of an object and looks for a class name. Returns true when
-    /// the name matched, false when the hierarchy was readable but did not contain it, and
-    /// null (in <paramref name="hierarchyReadable"/>) when it could not be walked safely -
-    /// the caller decides what to do with that.
+    /// 遍历一个对象的类层级以查找某个类名。名称匹配时返回 true,
+    /// 层级可读但不包含该名称时返回 false,
+    /// 而当无法安全遍历时返回 null(放在 <paramref name="hierarchyReadable"/> 中)——
+    /// 如何处理由调用方决定。
     /// </summary>
     internal static bool TypeNameIsOrDerivesFrom(IntPtr instance, string expectedTypeName,
         out string actualName, out bool hierarchyReadable)
@@ -206,7 +206,7 @@ internal static class NativeRefGuard
             string name = TryReadTypeNameOfKlass(klass);
             if (name is null)
             {
-                // The chain broke at this level; what was read so far is still evidence.
+                // 链条在这一层断了;到目前为止读到的内容仍然是证据。
                 hierarchyReadable = depth > 0;
                 break;
             }
@@ -241,9 +241,9 @@ internal static class NativeRefGuard
     }
 
     /// <summary>
-    /// True when the reference is a real, readable il2cpp object. When
-    /// <paramref name="expectedTypeName"/> is given and the class hierarchy can be read, the
-    /// object also has to be of that type (or derive from it).
+    /// 当该引用是一个真实、可读的 il2cpp 对象时为 true。当
+    /// 给出了 <paramref name="expectedTypeName"/> 且类层级可读时,
+    /// 该对象还必须属于该类型(或由它派生)。
     /// </summary>
     internal static bool IsProvablyUsable(Il2CppObjectBase instance, string expectedTypeName, out string detail)
     {
@@ -279,8 +279,8 @@ internal static class NativeRefGuard
         string typeName = TryReadTypeName(pointer);
         if (typeName is null)
         {
-            // The page is readable but there is no class name where an il2cpp object must
-            // have one. Treat it as unusable unless the probe itself is unproven.
+            // 该页可读,但在 il2cpp 对象必须有类名的位置却没有类名。
+            // 除非探针本身尚未被证实,否则视其为不可用。
             if (!_typeProbeTrusted)
             {
                 ReportFallbackOnce();
@@ -307,8 +307,8 @@ internal static class NativeRefGuard
 
         if (!hierarchyReadable)
         {
-            // The class name was readable but the parent chain was not: the name alone is
-            // the best evidence available, so the object is accepted.
+            // 类名可读但父链不可读:此时名称本身
+            // 就是可获得的最好证据,因此接受该对象。
             detail = Describe(pointer) + " (" + (chain ?? typeName) + ", hierarchy unreadable)";
             return true;
         }
@@ -318,9 +318,9 @@ internal static class NativeRefGuard
     }
 
     /// <summary>
-    /// Confirms that the Il2CppClass layout this class uses matches the running runtime by
-    /// reading a reference whose type is already known. Must be called once, before the
-    /// stricter checks are relied upon.
+    /// 通过读取一个类型已知的引用来确认本类使用的 Il2CppClass 布局
+    /// 与正在运行的运行时一致。必须在依赖更严格的检查之前
+    /// 调用一次。
     /// </summary>
     internal static bool VerifyTypeProbe(Il2CppObjectBase knownReference, string knownTypeName)
     {
@@ -478,7 +478,7 @@ internal static class NativeRefGuard
         return true;
     }
 
-    /// <summary>Short, log friendly description of a reference, safe to call on any value.</summary>
+    /// <summary>引用的简短、适合日志的描述,可安全用于任何值。</summary>
     internal static string Describe(Il2CppObjectBase instance)
     {
         if (instance is null)
@@ -496,7 +496,7 @@ internal static class NativeRefGuard
         }
     }
 
-    /// <summary>Short, log friendly description of a raw pointer value.</summary>
+    /// <summary>原始指针值的简短、适合日志的描述。</summary>
     internal static string Describe(IntPtr pointer)
     {
         long value = pointer.ToInt64();

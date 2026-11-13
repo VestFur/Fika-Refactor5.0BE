@@ -3,32 +3,32 @@ using System;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// (analysis/session-log-archive) The reporter for a natively subscribed handler that throws inside its own
-/// native frame, and the bound that keeps it readable.
+/// (analysis/session-log-archive) 本机订阅的处理器在自身原生帧内部抛出异常时的上报器，
+/// 以及让它保持可读的限流边界。
 ///
 /// <para>
-/// The shape it replaces: <c>BotStateManager.Update</c> pumps the game's own <c>IBotGame.UpdateByUnity</c>
-/// event, the native <c>BotGroupHostility</c> subscribed its per-frame hostility recalculation to it, and that
-/// native method dereferences a field that is still null while the raid world is being built. The exception
-/// escaped through the invoke stub into <c>NativeManagedInvoker.Shim</c>, which reported it as
-/// "[FAIL] [ManagedInvoker] the managed shim failed for Fika.Core.Main.Components.BotStateManager.Update" -
-/// true, but it also meant the whole rest of that Update (the bot state batch of that tick) was skipped, and
-/// on the client only the first native subscriber of the frame ran.
+/// 它所要取代的形态：<c>BotStateManager.Update</c> 会泵动游戏自身的 <c>IBotGame.UpdateByUnity</c>
+/// 事件，原生 <c>BotGroupHostility</c> 把它的逐帧敌对性重算订阅到了该事件上，而那个
+/// 原生方法在 raid 世界构建期间解引用了一个仍为 null 的字段。异常
+/// 经 invoke 桩逃逸进 <c>NativeManagedInvoker.Shim</c>，后者将其报告为
+/// 日志原文："[FAIL] [ManagedInvoker] the managed shim failed for Fika.Core.Main.Components.BotStateManager.Update" ——
+/// 这是真的，但它同时意味着那次 Update 剩下的全部内容（该 tick 的 bot 状态批次）都被跳过，
+/// 而在客户端上，本帧只有第一个原生订阅者执行了。
 /// </para>
 ///
 /// <para>
-/// The three observations of that failure (2026-10-11 17:19, 2026-10-13 09:00, 2026-10-13 14:08; the last one
-/// is analysis/logs-coop4-20261013-140826/Fika-diagnostics.log:28439) all sit in the window in which the
-/// world is built and the bots are spawned - once before <c>SessionRun</c>, twice while the bots were created
-/// - which is also why no "do not call it in that state" guard can be written for it: the event carries no
-/// state of its own and the failing handler cannot be identified from the delegate. So the fix is isolation
-/// plus a named report, and the frame keeps its remaining work.
+/// 该失败的三次观测（2026-10-11 17:19、2026-10-13 09:00、2026-10-13 14:08；最后一次
+/// 是 analysis/logs-coop4-20261013-140826/Fika-diagnostics.log:28439）都落在下面这个窗口内：
+/// 世界已被构建、bot 已被生成 —— 一次在 <c>SessionRun</c> 之前，两次在 bot 创建过程中
+/// —— 这也正是无法为它写出「不要在该状态下调用它」这类防护的原因：该事件不携带任何
+/// 自身状态，且无法从委托识别出失败的处理器。因此修复方式是隔离
+/// 加具名上报，而该帧仍能完成它剩余的工作。
 /// </para>
 ///
 /// <para>
-/// Bounds: the first failure of a signature is written in full to the diagnostics file (the complete il2cpp
-/// stack, the line a report needs), the following ones of the same signature at 1, 2, 4, 8 ... occurrences,
-/// and everything between them is counted only. Nothing here throws.
+/// 边界：某个签名的第一次失败会完整写入诊断文件（完整的 il2cpp
+/// 调用栈，也就是一份报告所需要的那一行），同一签名的后续失败则在第 1、2、4、8…… 次出现时写入，
+/// 其间的全部只做计数。这里不会有任何抛出。
 /// </para>
 /// </summary>
 internal static class NativeHandlerFault
@@ -41,8 +41,8 @@ internal static class NativeHandlerFault
     private static bool _detailed;
 
     /// <summary>
-    /// Reports one failure of a natively subscribed handler and returns; the caller continues with the rest of
-    /// its frame, which is what the engine's own loop does with an exception that leaves a native handler.
+    /// 上报本机订阅处理器的一次失败后返回；调用方继续执行它这一帧的其余部分，
+    /// 这正是引擎自身的循环在异常离开原生处理器时的做法。
     /// </summary>
     internal static void Report(Exception exception)
     {
@@ -69,7 +69,7 @@ internal static class NativeHandlerFault
                 }
                 else if ((count & (count - 1)) != 0)
                 {
-                    // Already reported this signature at the previous power of two: count only.
+                    // 已在上一档 2 的幂处上报过该签名：只做计数。
                     return;
                 }
             }
@@ -98,13 +98,13 @@ internal static class NativeHandlerFault
         }
         catch (Exception)
         {
-            // A reporter that breaks the pump it protects is worse than the failure it reports.
+            // 一个弄坏它所保护的泵的上报器，比它所上报的失败更糟。
         }
     }
 
     /// <summary>
-    /// Type, first line of the message and the innermost native frame: what makes two failures "the same" for
-    /// the report bound, and what a reader needs to recognize the family in the next session.
+    /// 类型、消息的第一行与最内层原生帧：这些让两次失败在上报限流看来是「同一个」，
+    /// 也是读者在下一个会话中认出这一族问题所需要的。
     /// </summary>
     private static string Signature(Exception exception)
     {
@@ -140,9 +140,9 @@ internal static class NativeHandlerFault
     }
 
     /// <summary>
-    /// The innermost frame of the il2cpp block. Il2CppInterop renders the native trace inside the exception
-    /// message ("--- BEGIN IL2CPP STACK TRACE ---" followed by one line per frame), so this is a text read,
-    /// not a reflection over the runtime.
+    /// il2cpp 块的最内层帧。Il2CppInterop 会把原生调用栈渲染在异常消息
+    /// 内部（"--- BEGIN IL2CPP STACK TRACE ---" 之后每帧一行），因此这是一次文本读取，
+    /// 而不是对运行时做反射。
     /// </summary>
     private static string NativeFrame(string message)
     {

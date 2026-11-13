@@ -45,8 +45,8 @@ public class PresenceService(SaveServer saveServer, TimeUtil timeUtil, ISptLogge
         if (!saveServer.GetProfiles().TryGetValue(sessionID, out var profile) ||
             profile.CharacterData?.PmcData?.Info is null)
         {
-            // This used to return silently, which made "the client connected but never showed
-            // up in the online list" indistinguishable from "the client never connected".
+            // 这里过去会静默返回，导致“客户端已连接但从未出现在在线列表中”
+            // 与“客户端从未连接”无法区分。
             logger.Warning($"[Fika Presence] {sessionID} connected but has no PMC profile; no presence entry was created");
             return;
         }
@@ -89,13 +89,13 @@ public class PresenceService(SaveServer saveServer, TimeUtil timeUtil, ISptLogge
             }
         }
 
-        // Leaving the loop means this session has no entry. The dictionary used to be filled by
-        // the notification websocket alone (NotificationWebSocket.OnConnectionAsync), so a client
-        // whose /fika/notification/ socket never connected had every presence update dropped in
-        // silence - and /fika/presence/get answered an empty array, which left the main menu
-        // roster without a single row, not even the local player's.
-        // A presence update is proof that the player is online, so it creates the missing entry.
-        // The websocket close handler still removes it when the client leaves.
+        // 跳出循环意味着该会话没有条目。这个字典过去仅由通知
+        // websocket 填充（NotificationWebSocket.OnConnectionAsync），因此若某个客户端的
+        // /fika/notification/ socket 从未连接，它的每次 presence 更新都会被静默丢弃，
+        // 而 /fika/presence/get 返回空数组，导致主菜单
+        // 名单一行都没有，甚至连本地玩家也没有。
+        // presence 更新即证明玩家在线，因此会补建缺失的条目。
+        // 客户端离开时，websocket 关闭处理器仍会将其移除。
         FikaPlayerPresence created = new()
         {
             Nickname = profile.CharacterData.PmcData.Info.Nickname,

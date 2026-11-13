@@ -8,23 +8,23 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.HandsController;
 
 /// <summary>
-/// Observed (remote/bot) firearm controllers must not adjust shot vectors locally - the shot the
-/// shooter replicates is already in its final position. Upstream Fika expressed that as an empty
-/// override on the injected <see cref="ObservedFirearmController"/>.
+/// 被观察方（远端/机器人）的武器控制器不得在本地调整射击向量——射手同步过来的那一发
+/// 已经处在它的最终位置上。上游 Fika 把这一点表达成注入的 <see cref="ObservedFirearmController"/> 上
+/// 的一个空 override。
 ///
-/// Every method of an injected type gets an Il2CppInterop reverse-P/Invoke entry point (an
-/// "Invoker_&lt;signature&gt;" dynamic method behind an InvokerDelegateMetadataV29 stub, and a
-/// "Trampoline_&lt;signature&gt;&lt;type&gt;&lt;method&gt;" dynamic method behind the method pointer). Those entries are
-/// JIT compiled lazily, on the first native call, i.e. inside the native callout that reaches them;
-/// a compile that the JIT refuses there is a fatal 0x80131506 fail fast, not a managed exception
-/// (see analysis/adjust-shot-vectors/REPORT.md). No override means no injected entry point for
-/// this method at all.
+/// 注入类型的每个方法都会获得一个 Il2CppInterop 反向 P/Invoke 入口点（一个
+/// 位于 InvokerDelegateMetadataV29 stub 之后的 "Invoker_&lt;signature&gt;" 动态方法，以及一个
+/// 位于方法指针之后的 "Trampoline_&lt;signature&gt;&lt;type&gt;&lt;method&gt;" 动态方法）。这些入口是
+/// 惰性 JIT 编译的——在第一次原生调用时，也就是在到达它们的那个原生 callout 内部；
+/// JIT 在那里拒绝编译就是致命的 0x80131506 fail fast，而不是托管异常
+/// （见 analysis/adjust-shot-vectors/REPORT.md）。没有 override 就意味着
+/// 这个方法根本没有注入入口点。
 ///
-/// The same behaviour is therefore kept as a prefix on the native method: the native
-/// implementation stays in place for every other controller (local player, AI without Fika's
-/// observed controller) and is skipped only for the observed one - which is exactly what the empty
-/// override did. The prefix deliberately declares only __instance, so the patch's own callable
-/// shape carries no struct parameters either.
+/// 因此同样的行为被保留为原生方法上的一个 prefix：原生
+/// 实现对每一个其他控制器都保持不变（本地玩家、没有 Fika 的
+/// 观察控制器的 AI），只对被观察的那个跳过——这正是那个空
+/// override 所做的事。这个 prefix 有意只声明 __instance，所以补丁自身的可调用
+/// 形状也不携带任何结构体参数。
 /// </summary>
 public sealed class FirearmController_AdjustShotVectors_Patch : ModulePatch
 {

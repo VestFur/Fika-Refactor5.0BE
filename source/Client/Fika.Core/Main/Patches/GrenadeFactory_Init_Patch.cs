@@ -7,7 +7,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches;
 
 /// <summary>
-/// Used to help us keep track of thrown grenades during a session for kill progression
+/// 用于帮助我们在一场战局中跟踪已投出的手雷，以统计击杀进度
 /// </summary>
 public class GrenadeFactory_Init_Patch : ModulePatch
 {

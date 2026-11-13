@@ -16,12 +16,12 @@ public class MenuScreen_Awake_Patch : ModulePatch
     }
 
     /// <summary>
-    /// Adds the injected presence/panel behaviour to the menu screen the engine owns.
+    /// 把注入的存在感/面板行为添加到引擎持有的菜单界面上。
     ///
-    /// The behaviour is rooted (and any previous one is torn down) before it can run anything:
-    /// the engine calls Start/OnEnable/OnDisable on it, so its managed side must stay reachable
-    /// from the moment it exists. A menu screen that wakes twice (a relog) must not end up with
-    /// two behaviours, each with its own panel and its own listeners registered with the engine.
+    /// 在该行为运行任何东西之前先把它根住（并拆除上一个）：
+    /// 引擎会在它上面调用 Start/OnEnable/OnDisable，所以它的托管侧必须从存在的
+    /// 那一刻起就保持可达。一个唤醒两次的菜单界面（重新登录）绝不能最终留下
+    /// 两个行为，各自带着自己的面板和自己注册到引擎上的监听器。
     /// </summary>
     [PatchPostfix]
     public static void Postfix(MenuScreen __instance)
@@ -38,11 +38,11 @@ public class MenuScreen_Awake_Patch : ModulePatch
             return;
         }
 
-        // Fallback for the presence registration. The roster this panel shows is filled by the
-        // server from its online list, and a player only lands in that list when the
-        // /fika/notification/ websocket connected. That socket is normally opened by
-        // TarkovApplication_InitNotificationManager_Patch; this call makes the panel work even
-        // when that patch cannot be installed (it targets a game method the build may rename).
+        // 存在感注册的兜底路径。这个面板显示的名册由
+        // 服务器从其在线列表填充，而只有当
+        // /fika/notification/ websocket 连接成功时玩家才会进入该列表。那个 socket 通常由
+        // TarkovApplication_InitNotificationManager_Patch 打开；这次调用让面板即使在
+        // 该补丁无法安装时（它针对的是构建中可能被改名的游戏方法）也能工作。
         FikaNotificationManager.EnsureCreated("MenuScreen.Awake");
 
         var existing = gameObject.GetComponent<MainMenuUIScript>();

@@ -16,9 +16,9 @@ internal static class RaidEndProfile
 
     internal static void Capture(Profile profile)
     {
-        // Failed raid setup can reach CoopGame.Stop without a profile that
-        // should be offered to the scav result screen.  Do not leave the
-        // previous raid's descriptor alive across that path.
+        // 战局设置失败时可能在没有任何应提供给 scav 结算界面的
+        // profile 的情况下走到 CoopGame.Stop。不要让上一场战局的
+        // 描述符在这条路径上存活下来。
         if (profile == null)
         {
             ProfileDescriptor = null;
@@ -26,17 +26,17 @@ internal static class RaidEndProfile
         }
 
         ProfileDescriptor = new ProfileDescriptor(profile, FikaGlobals.SearchControllerSerializer);
-        // The raid-end descriptor is posted to /raid/profile/scavsave; the local
-        // profile's group still holds Fika's "Fika" sentinel at this point and must
-        // not end up in the saved profile.
+        // 战局结束描述符会被提交到 /raid/profile/scavsave；此时本地
+        // profile 的 group 仍持有 Fika 的 "Fika" 哨兵值，它绝不能
+        // 出现在被保存的 profile 中。
         FikaGlobals.StripFikaGroupSentinel(ProfileDescriptor);
     }
 
     internal static void Clear() => ProfileDescriptor = null;
 }
 /// <summary>
-/// Get profile from other patch (GetProfileAtEndOfRaidPatch)
-/// if our profile is savage Create new Session.AllProfiles and pass in our own profile to allow us to use the ScavengerInventoryScreen
+/// 从另一个补丁（GetProfileAtEndOfRaidPatch）获取 profile
+/// 若我们的 profile 是 savage，则新建 Session.AllProfiles 并传入自己的 profile，以便使用 ScavengerInventoryScreen
 /// </summary>
 public class FixSavageInventoryScreenPatch_Override : ModulePatch
 {
@@ -48,18 +48,18 @@ public class FixSavageInventoryScreenPatch_Override : ModulePatch
     [PatchPrefix]
     public static void PatchPrefix(EFT.SessionResultShowOperation __instance)
     {
-        // GameWorld.Dispose releases the network manager before the native
-        // result operation starts, resetting ClientType to None. The captured
-        // raid-end descriptor is the marker for this Fika result screen.
+        // GameWorld.Dispose 会在原生结果操作开始之前释放网络管理器，
+        // 把 ClientType 重置为 None。捕获到的战局结束描述符
+        // 就是此 Fika 结算界面的标记。
         var descriptor = RaidEndProfile.ProfileDescriptor;
         if (descriptor == null || __instance?._session == null)
         {
             return;
         }
 
-        // Consume the cross-raid descriptor before deserializing it.  If the
-        // native profile constructor throws, a later result-screen callback
-        // must not retry the previous raid's profile.
+        // 在反序列化之前先取走跨战局描述符。如果
+        // 原生 profile 构造函数抛异常，后续的结算界面回调
+        // 不得再重试上一场战局的 profile。
         RaidEndProfile.Clear();
 
         Profile profile = new(descriptor);
@@ -69,10 +69,10 @@ public class FixSavageInventoryScreenPatch_Override : ModulePatch
             return;
         }
 
-        // The result operation retains the Scav profile supplied when this
-        // raid started. The backend's current ProfileOfPet may already have
-        // been regenerated after death, so compare against the operation's
-        // raid profile before applying a captured inventory to this screen.
+        // 结果操作保留的是本场战局开始时提供的 Scav profile。
+        // 后端的当前 ProfileOfPet 可能在死亡之后已经
+        // 被重新生成，因此在把捕获的库存应用到本界面之前，
+        // 要与其所属操作的战局 profile 做比较。
         var raidScavProfile = __instance._savageProfile;
         if (raidScavProfile == null ||
             !string.Equals(profile.Id, raidScavProfile.Id, System.StringComparison.Ordinal))
@@ -99,7 +99,7 @@ public class FixSavageInventoryScreenPatch_Override : ModulePatch
         };
         session.ProfileOfPet?.LearnAll();
 
-        // make a request to the server, so it knows of the items we might transfer
+        // 向服务器发起请求，让它知道我们可能转移的物品
         var payload = Serialize(descriptor);
         if (payload == null)
         {
@@ -111,9 +111,9 @@ public class FixSavageInventoryScreenPatch_Override : ModulePatch
     }
 
     /// <summary>
-    /// Kept in its own non-inlined method: a linkage failure against a shadowing
-    /// Newtonsoft.Json surfaces while this method is compiled, and a try/catch in
-    /// the same method could never observe it.
+    /// 单独放在一个不被内联的方法里：针对被遮蔽的 Newtonsoft.Json 的链接失败
+    /// 会在该方法被编译时暴露，而同一方法内的 try/catch
+    /// 永远无法观察到它。
     /// </summary>
     private static string Serialize(EFT.ProfileDescriptor descriptor)
     {

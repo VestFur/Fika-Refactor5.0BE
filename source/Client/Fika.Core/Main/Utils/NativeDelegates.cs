@@ -4,8 +4,8 @@ namespace Fika.Core;
 
 internal static class NativeDelegates
 {
-    // Bind native methods directly so native code can later remove the same
-    // target/method pair. A managed trampoline would have a different identity.
+    // 直接绑定原生方法，这样原生代码稍后可以移除同一个
+    // target/method 对。托管 trampoline 会具有不同的身份。
     public static T Bind<T>(Il2CppSystem.Object target, string method) where T : Il2CppSystem.Delegate =>
         Il2CppSystem.Delegate.CreateDelegate(Il2CppType.Of<T>(), target, method).Cast<T>();
 
@@ -21,9 +21,9 @@ internal static class NativeDelegates
         return null;
     }
 
-    // 47888 exposes several events with MANAGED delegate types (System.Action<...>)
-    // instead of Il2CppSystem delegates, so Il2CppSystem.Delegate.CreateDelegate cannot be used.
-    // Managed delegates compare by target+method, so the same call site can also unsubscribe.
+    // 47888 以托管委托类型（System.Action<...>）暴露了若干事件，
+    // 而不是 Il2CppSystem 委托，所以无法使用 Il2CppSystem.Delegate.CreateDelegate。
+    // 托管委托按 target+method 比较，因此同一个调用点也能取消订阅。
     public static T BindManaged<T>(Il2CppSystem.Object target, string method) where T : System.Delegate
     {
         var flags = System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic
@@ -37,15 +37,15 @@ internal static class NativeDelegates
     }
 
     /// <summary>
-    /// <see cref="BindManaged{T}"/> that reports a failure instead of throwing.
+    /// <see cref="BindManaged{T}"/> 的变体：失败时上报而不是抛出异常。
     ///
-    /// A CLR delegate whose parameter list carries a by-value struct (Nullable&lt;T&gt;, Vector3,
-    /// DamageInfo, ValueStruct, a pair of small structs...) cannot always be marshalled across this
-    /// boundary: the interop builds a per-signature conversion plan when the delegate is bound and
-    /// aborts with an ArgumentException when an argument is register-sized. That shape already
-    /// aborted a host raid through the matchmaker status delegate (Nullable&lt;float&gt;). An event
-    /// subscription is never worth a raid, so callers disable that one feature and keep their
-    /// pull-based path instead of propagating the exception.
+    /// 参数列表中含有按值传递结构体（Nullable&lt;T&gt;、Vector3、
+    /// DamageInfo、ValueStruct、一对小结构体……）的 CLR 委托并不总能跨过这道
+    /// 边界被封送：互操作层在委托绑定时会构建按签名生成的转换计划，并在
+    /// 某个参数是寄存器大小的时候以 ArgumentException 中止。这种形态已经通过
+    /// 匹配器状态委托（Nullable&lt;float&gt;）中止过一次主机突袭。一次事件
+    /// 订阅从不值得拿一整局突袭来冒，所以调用方会关掉那一个特性、保留自己的
+    /// 拉取式路径，而不是把异常继续传播出去。
     /// </summary>
     public static bool TryBindManaged<T>(Il2CppSystem.Object target, string method, string site, out T handler)
         where T : System.Delegate

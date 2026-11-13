@@ -25,7 +25,7 @@ public partial class IndexPage : IDisposable
 
         while (!token.IsCancellationRequested)
         {
-            // CPU usage over 1 second
+            // 1 秒内的 CPU 占用
             var startCpu = process.TotalProcessorTime;
             var startTime = DateTime.UtcNow;
             await Task.Delay(1000, token);

@@ -1,11 +1,11 @@
-﻿using SPTushonka.Reflection.Patching;
+﻿﻿using SPTushonka.Reflection.Patching;
 using System.Reflection;
 using System.Threading.Tasks;
 
 namespace Fika.Headless.Patches;
 
 /// <summary>
-/// This prevents the season controller from running due to no graphics being used
+/// 由于未使用图形，这阻止季节控制器运行
 /// </summary>
 public class SeasonsController_Run_Patch : ModulePatch
 {

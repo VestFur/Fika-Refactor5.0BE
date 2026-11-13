@@ -8,28 +8,28 @@ using System.Runtime.CompilerServices;
 namespace Fika.Core.Networking.Pooling;
 
 /// <summary>
-/// A pool for reusable packets of type <typeparamref name="T"/>.
+/// 类型为 <typeparamref name="T"/> 的可复用包池。
 /// </summary>
-/// <typeparam name="T">The packet type, must be a reference type.</typeparam>
+/// <typeparam name="T">包类型，必须是引用类型。</typeparam>
 public class PacketPool<T> : IDisposable
     where T : class
 {
     /// <summary>
-    /// Internal stack storing available packet instances.
+    /// 存储可用包实例的内部栈。
     /// </summary>
     private readonly Stack<T> _pool;
 
     /// <summary>
-    /// Function to construct new instances when pool is empty.
+    /// 池为空时用于构造新实例的函数。
     /// </summary>
     private readonly Func<T> _constructor;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="PacketPool{T}"/> class.
-    /// Pre-allocates <paramref name="size"/> instances.
+    /// 初始化 <see cref="PacketPool{T}"/> 类的新实例。
+    /// 预分配 <paramref name="size"/> 个实例。
     /// </summary>
-    /// <param name="size">Initial pool size.</param>
-    /// <param name="constructor">Factory function to create new instances.</param>
+    /// <param name="size">初始池大小。</param>
+    /// <param name="constructor">创建新实例的工厂函数。</param>
     public PacketPool(int size, Func<T> constructor)
     {
         _pool = new Stack<T>(size);
@@ -41,9 +41,9 @@ public class PacketPool<T> : IDisposable
     }
 
     /// <summary>
-    /// Gets an instance from the pool or creates a new one if empty.
+    /// 从池中取出一个实例，池为空时创建新实例。
     /// </summary>
-    /// <returns>A reusable instance of <typeparamref name="T"/>.</returns>
+    /// <returns>一个可复用的 <typeparamref name="T"/> 实例。</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public T Get()
     {
@@ -59,9 +59,9 @@ public class PacketPool<T> : IDisposable
     }
 
     /// <summary>
-    /// Returns an instance back to the pool.
+    /// 将实例归还到池中。
     /// </summary>
-    /// <param name="item">The instance to return.</param>
+    /// <param name="item">要归还的实例。</param>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Return(T item)
     {
@@ -69,7 +69,7 @@ public class PacketPool<T> : IDisposable
     }
 
     /// <summary>
-    /// Clears the pool and releases references.
+    /// 清空池并释放引用。
     /// </summary>
     public void Dispose()
     {

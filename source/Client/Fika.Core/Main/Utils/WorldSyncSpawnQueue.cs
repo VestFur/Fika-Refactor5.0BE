@@ -13,7 +13,7 @@ using Fika.Core.Networking.Packets.World;
 
 namespace Fika.Core.Main.Utils;
 
-/// <summary>Owns asynchronous world spawns for one raid, including updates arriving before their assets.</summary>
+/// <summary>负责一场战局中的异步世界生成，包括先于其资源到达的更新。</summary>
 internal sealed class WorldSyncSpawnQueue(FikaClientWorld owner)
 {
     private readonly HashSet<(SynchronizableObjectType, int)> _pending = [];
@@ -44,9 +44,9 @@ internal sealed class WorldSyncSpawnQueue(FikaClientWorld owner)
     {
         var key = (type, id);
         if (!IsCurrent || !_pending.Add(key)) return;
-        // Explicit reliable spawns can reuse the native byte-sized object id.
-        // Keep a removal received during a pending spawn. A new reliable spawn
-        // after completion may reuse the id, so discard the previous generation.
+        // 显式的可靠生成可以复用原生按字节大小的对象 id。
+        // 保留在待处理生成期间收到的移除事件。完成之后新的可靠生成
+        // 可能复用该 id，因此丢弃上一代记录。
         _removed.Remove(key);
         if (_updates.TryGetValue(key, out var prior) && prior.Outdated) _updates.Remove(key);
         MainThreadDispatcher.RunAsync(async () =>
@@ -70,7 +70,7 @@ internal sealed class WorldSyncSpawnQueue(FikaClientWorld owner)
                         ObjectsFactory.AssemblyType.Online, resources, JobYieldPriority.General, null,
                         new Il2CppSystem.Threading.CancellationToken()).AsManaged().WaitAsync(TimeSpan.FromMinutes(2));
 
-                // The world processor/container can finish initializing after the packet.
+                // 世界处理器/容器可能在数据包之后才完成初始化。
                 for (var attempt = 0; attempt < 40 && IsCurrent && !_removed.Contains(key); attempt++)
                 {
                     var complete = packet switch
@@ -128,8 +128,8 @@ internal sealed class WorldSyncSpawnQueue(FikaClientWorld owner)
             consumed.Add(key);
         }
         foreach (var key in consumed) _updates.Remove(key);
-        // The processor also advances native object logic on frames without a
-        // network update. Only the received packets are consumed once.
+        // 在没有网络更新的帧上，处理器同样会推进原生对象逻辑。
+        // 收到的数据包只被消费一次。
         processor.ProcessSyncObjectPackets(ready);
     }
 }

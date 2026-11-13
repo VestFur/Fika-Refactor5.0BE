@@ -3,10 +3,11 @@ using Comfort.Common;
 using Fika.Core.Main.Utils;
 using Fika.Core.Main.Components;
 using Fika.Core.Main.GameMode;
+using Fika.Core.Main.HostClasses;
 
 namespace Fika.Core;
 
-/// <summary>Unity lifecycle entry point for the BepInEx IL2CPP plugin.</summary>
+/// <summary>BepInEx IL2CPP 插件的 Unity 生命周期入口点。</summary>
 public sealed class FikaPluginBehaviour : MonoBehaviour
 {
     public FikaPluginBehaviour(IntPtr pointer) : base(pointer) { }
@@ -17,27 +18,30 @@ public sealed class FikaPluginBehaviour : MonoBehaviour
 
     private void Update()
     {
-        // This method is a native -> managed boundary: il2cpp calls it once per frame. Anything that
-        // escapes from here is an exception with no managed frame above it, which is exactly the shape
-        // the runtime turns into a crash instead of a log line (analysis/crash-clr). Every segment is
-        // therefore guarded on its own, so one broken segment cannot starve the others - above all the
-        // routine pump, which is the last statement and drives the whole raid start sequence.
-        FikaBoundaries.Enter(BoundaryUpdate);
+        // 本方法是一个 native -> managed 边界：il2cpp 每帧调用它一次。任何从
+        // 这里逃逸出去的东西，都是一次其上方没有托管帧的异常，而这正是运行时
+        // 会转成崩溃而不是日志行的形态（analysis/crash-clr）。因此每一段
+        // 都被单独防护，这样一个坏掉的段就不会饿死其他段 —— 尤其是
+        // routine 泵，它是最后一条语句，并驱动整个 raid 启动序列。
 
         FikaPlugin.Instance.UpdateInitialization();
 
         RepairLocalStateInUpdate();
 
-        // AP (analysis/nonfika-raid-inertness): the raid kind is re-verified here - at most one singleton
-        // read per 500 ms - so a gate that was armed for a raid of ours cannot survive into a native one
-        // even if the raid-start or raid-end patch never ran.
+        // 主机端库存操作的 native 完成若始终不到达，会让 EFT.PickUpState 一直保持在进入状态；
+        // 这里在其超时后让它失败，从而完成拾取回调。
+        FikaBoundaries.Run(BoundaryUpdate + "/HostOperationWatchdog.Tick", static () => HostOperationWatchdog.Tick());
+
+        // AP (analysis/nonfika-raid-inertness)：raid 类型在此被重新核实 —— 最多每 500 ms 一次
+        // 单例读取 —— 这样一个为我们自己的 raid 布置的门就不可能存活进一场原生 raid，
+        // 即使 raid 开始或 raid 结束的补丁从未运行过。
         FikaRaidGate.Verify();
 
-        // Night vision / thermal self-heal: the camera effects cannot re-enable themselves once the game
-        // disabled them (analysis/night-vision/REPORT.md). Read-only unless the camera effect was left
-        // disabled or drifted away from the equipped headwear device.
-        // AP: the self-heal writes into native camera state, so outside a Fika raid this port does not
-        // touch it. "Coop / Inert Outside Fika Raids" off restores the old behaviour for every caller.
+        // 夜视 / 热成像自愈：一旦游戏禁用了这些相机效果，它们无法自行重新启用
+        // （analysis/night-vision/REPORT.md）。除非相机效果被留在禁用状态，
+        // 或已漂离所装备头戴设备的设置，否则这里是只读的。
+        // AP：自愈会写入原生相机状态，因此在 Fika raid 之外本移植不会
+        // 碰它。关闭 "Coop / Inert Outside Fika Raids" 会为所有调用方恢复旧行为。
         if (!FikaRaidGate.Skip("NvgDiagnostics.Tick"))
         {
             NvgDiagnostics.Tick();
@@ -45,24 +49,24 @@ public sealed class FikaPluginBehaviour : MonoBehaviour
 
         DrainMainThreadQueue();
 
-        // The same tick drives Fika's managed routines (the session start, the countdown path, the raid view
-        // restore): they used to be engine coroutines, and the engine crashed while releasing the managed
-        // enumerator wrapper of exactly that shape (analysis/host-raid-coroutine).
+        // 同一个 tick 还驱动 Fika 的托管 routine（会话启动、倒计时路径、raid 视图
+        // 恢复）：它们过去是引擎协程，而引擎在释放正是那种形态的托管
+        // 枚举器包装器时崩溃了（analysis/host-raid-coroutine）。
         FikaBoundaries.Run(BoundaryUpdate + "/FikaRoutinePump.Tick", static () => FikaRoutinePump.Instance.Tick());
     }
 
-    /// <summary>Journal label of this boundary; a constant so the journal never allocates for it.</summary>
+    /// <summary>这个边界的 journal 标签；用常量，使 journal 从不为它分配。</summary>
     internal const string BoundaryUpdate = "FikaPluginBehaviour.Update (il2cpp -> managed)";
 
     private static void RepairLocalStateInUpdate()
     {
-        // (analysis/transit-crash-unload) Between the teardown of a world and the creation of its successor
-        // the game singleton still points at the raid that just ended, while its world, its local player and
-        // its hands are already released. Every repair below touches exactly those objects, so the window is
-        // skipped as a whole; it is short (the map load) and nothing in it can be repaired anyway.
-        // The second half of the condition is the safety net: as soon as the engine reports a world again,
-        // the repairs resume even if a teardown was ever recorded late - a skipped repair cannot outlive its
-        // window, so this guard can never disable the hands/interaction/inventory repairs of a live raid.
+        // (analysis/transit-crash-unload) 在一个世界被拆解与其后继被创建之间，
+        // 游戏单例仍指向刚刚结束的那场 raid，而它的世界、它的本地玩家与
+        // 它的 hands 都已释放。下面每一处修复都恰好触碰这些对象，因此这个窗口
+        // 被整体跳过；它很短（就是地图加载），而且其中任何东西本来也无法修复。
+        // 该条件的后半段是安全网：一旦引擎重新报告出一个世界，
+        // 修复就会恢复，即使某次拆解曾被记录得太晚 —— 一次被跳过的修复不可能超出它的
+        // 窗口，因此这个防护永远不会停掉一场活跃 raid 的 hands/交互/库存修复。
         if (WorldLifecycle.WorldDown && !LoadSync.WorldReady)
         {
             return;

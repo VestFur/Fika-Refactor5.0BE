@@ -9,8 +9,8 @@ using EFT.InventoryLogic;
 namespace Fika.Core.Main.ObservedClasses;
 
 /// <summary>
-/// Created by: Paulov
-/// Paulov: Uses stubs for all of Statistics Manager
+/// 创建者：Paulov
+/// Paulov：为 Statistics Manager 的所有成员使用桩实现
 /// </summary>
 public sealed class ObservedStatisticsManager : Il2CppSystem.Object, IStatisticsManager
 {
@@ -34,24 +34,24 @@ public sealed class ObservedStatisticsManager : Il2CppSystem.Object, IStatistics
 #pragma warning disable CS0067
 #pragma warning restore CS0067
     private readonly NativeActionEvent _nativeOnUniqueLoot = new();
-    // The 47888 IStatisticsManager event accessors take the IL2CPP delegate;
-    // the System.Action overloads are only the interface's *_Managed helpers.
+    // 47888 的 IStatisticsManager 事件访问器接收的是 IL2CPP 委托；
+    // 那些 System.Action 重载只是该接口的 *_Managed 辅助方法。
     public void add_OnUniqueLoot(Il2CppSystem.Action handler) => _nativeOnUniqueLoot.Add(handler);
     public void remove_OnUniqueLoot(Il2CppSystem.Action handler) => _nativeOnUniqueLoot.Remove(handler);
 
     public void AddDoorExperience(bool breached)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void BeginStatisticsSession()
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void EndStatisticsSession(ExitStatus exitStatus, float pastTime)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void Init(Player player)
@@ -61,32 +61,32 @@ public sealed class ObservedStatisticsManager : Il2CppSystem.Object, IStatistics
 
     public void OnEnemyDamage(DamageInfo damage, EBodyPart bodyPart, string playerProfileId, EPlayerSide playerSide, WildSpawnType role, string groupId, float fullHealth, bool isHeavyDamage, float distance, int hour, List<string> targetEquipment, HealthEffects enemyEffects, List<string> zoneIds)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void OnEnemyKill(DamageInfo damage, EDamageType lethalDamageType, EBodyPart bodyPart, EPlayerSide playerSide, WildSpawnType role, string playerAccountId, string playerProfileId, string playerName, string groupId, int level, int killExp, float distance, int hour, List<string> targetEquipment, HealthEffects enemyEffects, List<string> zoneIds, bool isFriendly, bool isAI)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void OnGrabLoot(Item item)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void OnGroupMemberConnected(Inventory inventory)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void OnInteractWithLootContainer(Item item)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public void OnShot(Weapon weapon, Ammo ammo)
     {
-        // Do nothing
+        // 不做任何事
     }
 }
 

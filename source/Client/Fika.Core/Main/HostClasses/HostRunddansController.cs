@@ -20,26 +20,26 @@ public class HostRunddansController(RunddansGlobalSettings settings, LocationSet
 
     private void HandleInteraction(Player player, InteractWithEventObjectPacket packet)
     {
-        // Apply the same eligibility and transition rules to local, remote and headless users.
+        // 对本地、远程和无头用户应用同样的资格与状态转换规则。
         if (player == null || player.HealthController?.IsAlive != true || !packet.hasInteraction) return;
 
         TransitController transit;
         if (FikaBackendUtils.IsHeadless)
         {
-            // Headless installs FikaHeadlessTransitController, which is a
-            // direct TransitController subclass and deliberately has no local
-            // UI/event transition history.  The native IsValid<T> helper
-            // requires that history and therefore rejects valid headless
-            // interactions.  Preserve the old headless contract: only the
-            // presence of a transit controller is required.
+            // 无头安装注册的是 FikaHeadlessTransitController，它是
+            // TransitController 的直接子类，并且有意没有本地
+            // UI/事件转换历史。原生的 IsValid<T> 辅助方法
+            // 需要那段历史，因此会拒绝合法的无头
+            // 交互。保持旧的无头契约：只要求
+            // 存在一个中转控制器。
             transit = Singleton<GameWorld>.Instance?.TransitController;
             if (transit == null || !Native.Objects.TryGetValue(packet.objectId, out var eventObject)) return;
             HandleInteractionCore(player, packet, transit, eventObject);
             return;
         }
 
-        // Graphical hosts use LocalTransitController and retain the native
-        // event-history eligibility check.
+        // 图形主机使用 LocalTransitController，并保留原生的
+        // 事件历史资格检查。
         if (!Native.IsValid(player, out LocalTransitController localTransit, out var history) ||
             history?.events != true || !Native.Objects.TryGetValue(packet.objectId, out var localEventObject)) return;
         transit = localTransit;

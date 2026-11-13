@@ -1,11 +1,11 @@
-﻿using EFT.CameraControl;
+﻿﻿using EFT.CameraControl;
 using SPTushonka.Reflection.Patching;
 using System.Reflection;
 
 namespace Fika.Headless.Patches.ReflexPatches;
 
 /// <summary>
-/// Target the IsReflexAvailable() method with no parameters
+/// 定位无参数的 IsReflexAvailable() 方法
 /// </summary>
 public class IsReflexAvailablePatch : ModulePatch
 {

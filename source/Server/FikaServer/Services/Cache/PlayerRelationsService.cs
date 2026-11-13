@@ -56,9 +56,9 @@ public class PlayerRelationsService(ProfileHelper profileHelper, FikaPaths fikaP
         var profiles = profileHelper.GetProfiles();
         var shouldSave = false;
 
-        // Deleted accounts must not leave behind relation records. In
-        // particular, GetFriendsList can otherwise encounter a stale friend
-        // and recreate its record while trying to prune the caller's list.
+        // 已删除的账号不得留下关系记录。尤其是，
+        // 否则 GetFriendsList 可能会遇到过期的好友，并在
+        // 尝试清理调用方列表时重新创建该记录。
         foreach (var profileId in _playerRelations.Keys)
         {
             if (!profiles.ContainsKey(profileId) && _playerRelations.TryRemove(profileId, out _))

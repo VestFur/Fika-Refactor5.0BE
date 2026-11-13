@@ -1,32 +1,32 @@
 ﻿namespace Fika.Core.Networking.Packets;
 
 /// <summary>
-/// Represents packet types used for requesting environmental or server state data.
+/// 表示用于请求环境或服务器状态数据的数据包类型。
 /// </summary>
 public enum ERequestSubPacketType : byte
 {
     /// <summary>
-    /// Spawn point request.
+    /// 出生点请求。
     /// </summary>
     SpawnPoint,
 
     /// <summary>
-    /// Weather update request.
+    /// 天气更新请求。
     /// </summary>
     Weather,
 
     /// <summary>
-    /// Exfiltration request.
+    /// 撤离请求。
     /// </summary>
     Exfiltration,
 
     /// <summary>
-    /// Request trader services information.
+    /// 请求商人服务信息。
     /// </summary>
     TraderServices,
 
     /// <summary>
-    /// Request character synchronization.
+    /// 请求角色同步。
     /// </summary>
     CharacterSync
 }

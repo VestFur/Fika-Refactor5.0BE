@@ -15,9 +15,9 @@ public class HeadlessHelper(FikaServerConfig fikaServerConfig, SaveServer saveSe
     HeadlessProfileService headlessProfileService, ISptLogger<HeadlessHelper> logger)
 {
     /// <summary>
-    /// Gets all currently logged in headlesses
+    /// 获取所有当前已登录的 headless
     /// </summary>
-    /// <returns>A <see cref="ConcurrentDictionary{TKey, TValue}"/> where the key is the sessionID and the value is an IHeadlessClientInfo object</returns>
+    /// <returns>一个 <see cref="ConcurrentDictionary{TKey, TValue}"/>，键为 sessionID，值为 IHeadlessClientInfo 对象</returns>
     public ConcurrentDictionary<MongoId, HeadlessClientInfo> HeadlessClients
     {
         get
@@ -27,10 +27,10 @@ public class HeadlessHelper(FikaServerConfig fikaServerConfig, SaveServer saveSe
     }
 
     /// <summary>
-    /// Allows for checking if a SessionID is a headless client
+    /// 用于检查某个 SessionID 是否为 headless 客户端
     /// </summary>
-    /// <param name="sessionId">The sessionID to check</param>
-    /// <returns>Returns true if the passed sessionID is a headless, returns false if not.</returns>
+    /// <param name="sessionId">要检查的 sessionID</param>
+    /// <returns>传入的 sessionID 是 headless 时返回 true，否则返回 false。</returns>
     public bool IsHeadlessClient(MongoId sessionId)
     {
         return headlessProfileService.HeadlessProfiles
@@ -38,10 +38,10 @@ public class HeadlessHelper(FikaServerConfig fikaServerConfig, SaveServer saveSe
     }
 
     /// <summary>
-    /// Allows for checking if the given headless client is available
+    /// 用于检查给定的 headless 客户端是否可用
     /// </summary>
     /// <param name="headlessSessionID"></param>
-    /// <returns>Returns true if it's available, returns false if it isn't available.</returns>
+    /// <returns>可用时返回 true，不可用时返回 false。</returns>
     public bool IsHeadlessClientAvailable(MongoId headlessSessionID)
     {
         if (headlessService.HeadlessClients.TryGetValue(headlessSessionID, out var headlessClientInfo))
@@ -59,10 +59,10 @@ public class HeadlessHelper(FikaServerConfig fikaServerConfig, SaveServer saveSe
     }
 
     /// <summary>
-    /// Gets the requester's username for a headless client if there is any.
+    /// 获取请求某个 headless 客户端的用户的用户名（若有）。
     /// </summary>
     /// <param name="headlessSessionID"></param>
-    /// <returns>The nickname if the headless has been requested by a user, returns null if not.</returns>
+    /// <returns>若该 headless 已被某个用户请求则返回其昵称，否则返回 null。</returns>
     public string? GetRequesterUsername(MongoId headlessSessionID)
     {
         if (headlessService.HeadlessClients.TryGetValue(headlessSessionID, out var headlessClientInfo))
@@ -89,10 +89,10 @@ public class HeadlessHelper(FikaServerConfig fikaServerConfig, SaveServer saveSe
     }
 
     /// <summary>
-    /// Gets the alias (If it has been given one) or nickname of the headless client
+    /// 获取 headless 客户端的别名（若已设定）或昵称
     /// </summary>
     /// <param name="headlessSessionID"></param>
-    /// <returns>the alias, or nickname or the headless client.</returns>
+    /// <returns>headless 客户端的别名或昵称。</returns>
     public string GetHeadlessNickname(MongoId headlessSessionID)
     {
         if (fikaServerConfig.Headless.Profiles.Aliases.TryGetValue(headlessSessionID, out var alias))
@@ -110,9 +110,9 @@ public class HeadlessHelper(FikaServerConfig fikaServerConfig, SaveServer saveSe
     }
 
     /// <summary>
-    /// Gets all available headless clients
+    /// 获取所有可用的 headless 客户端
     /// </summary>
-    /// <returns>Returns an array of available headless clients</returns>
+    /// <returns>返回可用 headless 客户端的数组</returns>
     public HeadlessAvailableClients[] GetAvailableHeadlessClients()
     {
         List<string> availableClients = [];

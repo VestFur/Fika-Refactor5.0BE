@@ -1,32 +1,32 @@
 namespace Fika.Core.Networking.Packets.World;
 
 /// <summary>
-/// BJ (analysis/terminal-rauf-card): one line of the RAUF access decision that the native chain keeps
-/// per machine - 「this player has passed the card check of the terminal」.
+/// BJ (analysis/terminal-rauf-card)：原生链路每台机器各自维护的 RAUF 访问决策中的一行——
+/// 「该玩家已通过终端的刷卡检查」。
 ///
-/// Native: the card swipe ends in <c>GlobalEventDispatcher.OnTerminalTransitAccessGained</c>, whose only
-/// consumer is <c>SentryBossLogic.OnTerminalAccessGained(Player)</c>, which writes the player id into the
-/// sentry's private <c>_accessedPlayerIds</c>. The hostility of the sentry is recomputed on every machine
-/// (<c>BotGroupHostility.UpdateHostilityStatusForAllPlayers</c> -> <c>BotHostilityService</c> ->
-/// <c>BossSentryHostilityRule</c> -> <c>IAccessBossLogic.HaveAccess</c>), so a machine whose sentry never
-/// saw the event keeps attacking. This packet carries the same fact to every machine instead.
+/// 原生：刷卡结束于 <c>GlobalEventDispatcher.OnTerminalTransitAccessGained</c>，其唯一的
+/// 消费者是 <c>SentryBossLogic.OnTerminalAccessGained(Player)</c>，它把玩家 id 写入
+/// 哨兵的私有 <c>_accessedPlayerIds</c>。哨兵的敌意在每台机器上都会重新计算
+/// （<c>BotGroupHostility.UpdateHostilityStatusForAllPlayers</c> -> <c>BotHostilityService</c> ->
+/// <c>BossSentryHostilityRule</c> -> <c>IAccessBossLogic.HaveAccess</c>），因此哨兵从未见过该事件的
+/// 机器会持续攻击。此包改为把同一事实传达到每台机器。
 /// </summary>
 public struct SentryAccessPacket() : INetSerializable
 {
-    /// <summary>Profile id of the player the check passed for (stable across machines).</summary>
+    /// <summary>检查通过的那个玩家的档案 id（跨机器稳定）。</summary>
     public string ProfileId;
-    /// <summary>Raid id of the player on the sending machine, -1 when unknown.</summary>
+    /// <summary>玩家在发送方机器上的战局 id，未知时为 -1。</summary>
     public int RaidId = -1;
-    /// <summary>True = the check passed, false = it was lost (left the zone / died).</summary>
+    /// <summary>true = 检查通过，false = 该状态已丢失（离开区域／死亡）。</summary>
     public bool Granted = true;
-    /// <summary>The machine the line came from: 0 = host, 1 = client.</summary>
+    /// <summary>该行的来源机器：0 = 主机，1 = 客户端。</summary>
     public byte FromClient;
 
     /// <summary>
-    /// BT (analysis/terminal-hostility-graph): the verdict the AUTHORITY read back from its own native state
-    /// (<c>IAccessBossLogic.HaveAccess</c> answered yes for how many sentries, no for how many) and how many
-    /// of its sentry groups took the fact through <c>AlliesBySentryAcces</c>. A client sends zeros; the
-    /// authority fills them, so the echo carries the answer of the machine that owns the bots.
+    /// BT (analysis/terminal-hostility-graph)：权威端从自身原生状态读回的判定
+    /// （<c>IAccessBossLogic.HaveAccess</c> 对多少哨兵回答是、对多少回答否），以及它的多少个
+    /// 哨兵组通过 <c>AlliesBySentryAcces</c> 接收了该事实。客户端发送零值；
+    /// 由权威端填充它们，因此回显携带的是拥有这些 bot 的机器的答案。
     /// </summary>
     public int HostAccessYes;
     public int HostAccessNo;

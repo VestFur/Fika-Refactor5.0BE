@@ -5,12 +5,12 @@ using Fika.Core.Main.Players;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Class to convert world positions to canvas positions, safe for DLSS / SSAA / viewport scaling
+/// 把世界坐标转换为画布坐标的类，对 DLSS / SSAA / 视口缩放均安全
 /// </summary>
 public static class WorldToScreen
 {
     /// <summary>
-    /// Projects a world position to a canvas position
+    /// 把世界坐标投影为画布坐标
     /// </summary>
     public static bool ProjectToCanvas(Vector3 worldPosition, FikaPlayer mainPlayer, RectTransform canvasRect,
         out Vector2 canvasPosition, bool useOpticCamera = true, bool skipBehindCheck = false)
@@ -28,7 +28,7 @@ public static class WorldToScreen
         var canvasSize = canvasRect.sizeDelta;
         var scaleFactor = 1f;
 
-        // Use optic camera if zoomed
+        // 处于缩放状态时使用光学瞄具相机
         if (useOpticCamera && IsZoomedOpticAiming(mainPlayer.ProceduralWeaponAnimation))
         {
             var opticCam = camClass.OpticCameraManager.Camera;
@@ -42,13 +42,13 @@ public static class WorldToScreen
 
         var viewportPoint = projCam.WorldToViewportPoint(worldPosition);
 
-        // Check if point is in front of camera
+        // 检查该点是否在相机前方
         if (viewportPoint.z <= 0f && !skipBehindCheck)
         {
             return false;
         }
 
-        // Convert normalized viewport (0-1) to canvas local position
+        // 把归一化视口坐标（0-1）转换为画布本地坐标
         canvasPosition = new Vector2((viewportPoint.x - 0.5f) * canvasSize.x * scaleFactor,
             (viewportPoint.y - 0.5f) * canvasSize.y * scaleFactor);
 
@@ -78,7 +78,7 @@ public static class WorldToScreen
     }
 
     /// <summary>
-    /// Rotate an indicator if the target is off-screen
+    /// 当目标在屏幕外时旋转指示器
     /// </summary>
     public static void TargetOutOfSight(bool outOfSight, Vector3 indicatorPosition, RectTransform rectTransform, RectTransform canvasRect)
     {
@@ -93,7 +93,7 @@ public static class WorldToScreen
     }
 
     /// <summary>
-    /// Calculates off-screen indicator position (keeps it clamped at canvas edges)
+    /// 计算屏幕外指示器的位置（使其始终被夹在画布边缘内）
     /// </summary>
     public static Vector3 OutOfRangeIndicatorPosition(Vector3 indicatorPosition, RectTransform canvasRect, float outOfSightOffset)
     {
@@ -122,7 +122,7 @@ public static class WorldToScreen
     }
 
     /// <summary>
-    /// Calculates rotation for off-screen target indicator
+    /// 计算屏幕外目标指示器的旋转
     /// </summary>
     public static Vector3 RotationOutOfSightTargetIndicator(Vector3 indicatorPosition, RectTransform canvasRect)
     {

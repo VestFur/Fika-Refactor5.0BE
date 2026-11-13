@@ -8,9 +8,9 @@ using SPTushonka.Reflection.Patching;
 
 namespace Fika.Core.Main.Patches.AI;
 
-// Surgery can be requested in the completion callback of first aid, before
-// its return-to-weapon Process finishes. Keep the request rather than replace
-// that weapon Process and let its delayed retry interrupt the new treatment.
+// 手术可能就在急救的完成回调中被请求，此时其返回武器的 Process
+// 还没有结束。保留该请求，而不要替换那个武器
+// Process，以免它延迟的重试打断新的治疗。
 internal static class BotSurgeryPending
 {
     private sealed class Request(BotSurgicalKit surgery, FikaBot bot, AITaskManager manager,
@@ -19,8 +19,8 @@ internal static class BotSurgeryPending
         internal readonly BotSurgicalKit Surgery = surgery;
         internal readonly FikaBot Bot = bot;
         internal readonly AITaskManager Manager = manager;
-        // The interop's own delegate type: it is passed back to the native
-        // ApplyToCurrentPart(Il2CppSystem.Action) overload untouched.
+        // interop 自己的委托类型：它被原样传回原生的
+        // ApplyToCurrentPart(Il2CppSystem.Action) 重载。
         internal readonly Il2CppSystem.Action Callback = callback;
         internal int TaskId;
     }
@@ -28,9 +28,9 @@ internal static class BotSurgeryPending
     private static readonly Dictionary<IntPtr, Request> Requests = new();
 
     /// <summary>
-    /// Drops every pending surgery request at a world teardown (analysis/transit-crash-unload): each one
-    /// holds a native bot and the native callback of an action that was refused during the raid that ended.
-    /// Returns the number dropped.
+    /// 在世界拆除时丢弃所有待处理的手术请求（analysis/transit-crash-unload）：每一个
+    /// 都持有原生 bot，以及已结束战局中被拒绝动作的原生回调。
+    /// 返回丢弃的数量。
     /// </summary>
     internal static int ClearForWorldTeardown()
     {
@@ -78,9 +78,9 @@ internal static class BotSurgeryPending
             Schedule(request);
             return;
         }
-        // Re-evaluate the real inventory, injured limb and native CanApplyItem
-        // after the transition. Preserve the original completion callback; no
-        // Using/health edits or synthetic completion when eligibility changed.
+        // 在过渡之后重新评估真实库存、受伤肢体和原生
+        // CanApplyItem。保留原有的完成回调；资格变化时
+        // 不做 Using／生命值编辑，也不做合成完成。
         Requests.Remove(surgery.Pointer);
         surgery.Refresh();
         surgery.FindDamagedPart();
@@ -99,9 +99,9 @@ public sealed class BotSurgicalKit_ApplyToCurrentPart_Patch : ModulePatch
     protected override MethodBase GetTargetMethod() =>
         typeof(BotSurgicalKit).GetMethod(nameof(BotSurgicalKit.ApplyToCurrentPart));
 
-    // Mirrors the interop signature BotSurgicalKit.ApplyToCurrentPart(Il2CppSystem.Action). A
-    // System.Action parameter produced the Il2CppInterop warning "takes callbackEndUse as
-    // System.Action (not an il2cpp type) ... the patch will read it as the wrong type".
+    // 与 interop 签名 BotSurgicalKit.ApplyToCurrentPart(Il2CppSystem.Action) 保持一致。用
+    // System.Action 参数会产生 Il2CppInterop 警告 "takes callbackEndUse as
+    // System.Action (not an il2cpp type) ... the patch will read it as the wrong type"。
     [PatchPrefix]
     public static bool Prefix(BotSurgicalKit __instance, Il2CppSystem.Action callbackEndUse)
     {

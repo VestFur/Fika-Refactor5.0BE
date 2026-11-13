@@ -4,7 +4,7 @@ using Comfort.Common;
 using Diz.Jobs;
 using Diz.Utils;
 using EFT;
-using EFT.Console.Core;
+using SPTushonka.Reflection.Commands;
 using EFT.HealthSystem;
 using EFT.InventoryLogic;
 using EFT.UI;
@@ -69,7 +69,7 @@ public class FikaCommands
     }
 
     /// <summary>
-    /// Used during replication
+    /// 在复制（replication）期间使用
     /// </summary>
     /// <param name="netId"></param>
     public static void BringReplicated(int netId)
@@ -459,7 +459,7 @@ public class FikaCommands
 
             LogInfo($"Moved to: {moveResult.Value.ResultItem.Parent.ContainerName}");
 
-            player.InventoryController.ConvertOperationResultToOperation(moveResult.Value).Execute(result =>
+            player.InventoryController.ConvertOperationResultToOperation(moveResult.Value).Execute((Callback)(result =>
             {
                 if (result.Failed)
                 {
@@ -469,10 +469,16 @@ public class FikaCommands
                 {
                     LogInfo($"Moved item to: {item.Parent.ContainerName}");
                 }
-            });
+            }));
+
+            var resources = new Il2CppSystem.Collections.Generic.List<ResourceKey>();
+            foreach (var resource in item.Template.AllResources)
+            {
+                resources.Add(resource);
+            }
 
             Singleton<ObjectsFactory>.Instance.LoadBundlesAndCreatePools(ObjectsFactory.PoolsCategory.Raid, ObjectsFactory.AssemblyType.Online,
-                item.Template.AllResources.ToHashSet(), JobYieldPriority.Immediate, null, new Il2CppSystem.Threading.CancellationToken())
+                resources, JobYieldPriority.Immediate, null, new Il2CppSystem.Threading.CancellationToken())
                 .HandleExceptions();
 
             var packet = new SpawnItemInInventoryPacket
@@ -494,7 +500,7 @@ public class FikaCommands
     }
 
     /// <summary>
-    /// Based on SSH's TarkyMenu command
+    /// 基于 SSH 的 TarkyMenu 命令
     /// </summary>
     /// <param name="wildSpawnType"></param>
     /// <param name="amount"></param>

@@ -34,9 +34,9 @@ internal sealed class ObservedMedsController : Player.MedsController
     public static ObservedMedsController Create(FikaPlayer player, Item item, OneAndList<EBodyPart> bodyParts, float amount, int animationVariant)
     {
         var controller = CreateController<ObservedMedsController>(player, item, bodyParts, amount, animationVariant);
-            // OnOutUseEvent is an event in 47888 and cannot be cleared by assignment
-        // controller._fikaPlayer no longer exists in 47888
-// controller._animation no longer exists in 47888: controller._animation = animationVariant;
+            // OnOutUseEvent 在 47888 中是事件，无法通过赋值清除
+        // controller._fikaPlayer 在 47888 中已不存在
+// controller._animation 在 47888 中已不存在：controller._animation = animationVariant;
         return controller;
     }
 

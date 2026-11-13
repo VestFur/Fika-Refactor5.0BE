@@ -48,22 +48,22 @@ public sealed class BotInventoryController : BaseInventoryController
 
     public override void CallMalfunctionRepaired(Weapon weapon)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     /// <summary>
-    /// Gets an inventory handler
+    /// 获取一个库存处理器
     /// </summary>
-    /// <returns>A pooled handler</returns>
+    /// <returns>一个池化的处理器</returns>
     public BotInventoryOperationHandler GetHandler()
     {
         return _botInventoryOperationHandlerPool.Get();
     }
 
     /// <summary>
-    /// Returns a handler
+    /// 归还一个处理器
     /// </summary>
-    /// <param name="handler">The handler to return</param>
+    /// <param name="handler">要归还的处理器</param>
     public void ReturnHandler(BotInventoryOperationHandler handler)
     {
         _botInventoryOperationHandlerPool.ReturnHandler(handler);
@@ -80,17 +80,17 @@ public sealed class BotInventoryController : BaseInventoryController
     }
 
     /// <summary>
-    /// Override to not replicate the tripwire
+    /// 重写以不复制绊线
     /// </summary>
     public override void PlantTripwire(ThrowWeap grenade, PlantingKit plantingKit, Vector3 fromPosition, Vector3 toPosition, Callback callback = null)
     {
-        // [PlantDiag] (analysis/plant-explosive-door): the native plant result always carries a
-        // DiscardResult for the grenade, so when the AI hands over a grenade that is no longer
-        // attached to any container, ItemManipulator.Discard dereferences Item.Parent and throws
-        // ("Trying to get parent of an item that doesn't have a parent: ...") out of
-        // PlantTripwireResult.Execute - one IL2CPP exception per attempt, five of them in the
-        // 2026-10-12 raid. The operation cannot succeed for a detached item, so it is refused
-        // before it is built and the refusal is logged once instead.
+        // [PlantDiag] (analysis/plant-explosive-door)：原生放置结果总会携带一个
+        // 针对手雷的 DiscardResult，因此当 AI 交出一枚已不再
+        // 附着于任何容器的手雷时，ItemManipulator.Discard 会解引用 Item.Parent，并从
+        // PlantTripwireResult.Execute 抛出（"Trying to get parent of an item that doesn't have a parent: ..."）
+        // ——每次尝试一个 IL2CPP 异常，在
+        // 2026-10-12 的战局中出现了五次。对于已脱离的物品该操作不可能成功，
+        // 因此在构建之前就拒绝，并改为记录一次拒绝日志。
         if (!PlantDiag.HasParent(grenade) || (plantingKit != null && !PlantDiag.HasParent(plantingKit)))
         {
             
@@ -139,17 +139,17 @@ public sealed class BotInventoryController : BaseInventoryController
         }
         catch (System.Exception exception)
         {
-            // [PlantDiag] (analysis/plant-explosive-door): a native operation can throw out of
-            // Execute (PlantTripwireResult.Execute does it for a detached grenade). Failing the
-            // callback keeps the AI bookkeeping intact and stops the exception from escaping into
-            // Fika.Core.TaskExtensions.Forget as a log storm.
+            // [PlantDiag] (analysis/plant-explosive-door)：原生操作可能从
+            // Execute 抛出（PlantTripwireResult.Execute 对已脱离的手雷就会这样）。让
+            // 回调失败可以保持 AI 记账完整，并阻止异常逃逸到
+            // Fika.Core.TaskExtensions.Forget 变成日志风暴。
             try
             {
                 handler.Operation.Dispose();
             }
             catch
             {
-                // Disposing twice is not worth another exception.
+                // 二次 Dispose 不值得再引发一个异常。
             }
             handler.Callback?.Fail($"{operation?.GetType().Name} threw: {exception.Message}", 1);
         }

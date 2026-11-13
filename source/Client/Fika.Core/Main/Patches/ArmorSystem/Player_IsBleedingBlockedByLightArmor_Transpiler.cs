@@ -20,7 +20,7 @@ internal class Player_IsBleedingBlockedByLightArmor_Transpiler : ModulePatch
         for (var i = 0; i < armors.Count; i++)
         {
             var armor = armors[i];
-            // Native SPT 5 compares against 0.01f (not one durability point).
+            // 原生 SPT 5 用的是与 0.01f 的比较（不是一点耐久值）。
             if (armor.Repairable.Durability < 0.01f || armor.ArmorType != EArmorType.Light) continue;
             foreach (var covered in armor.ArmorColliders)
             {

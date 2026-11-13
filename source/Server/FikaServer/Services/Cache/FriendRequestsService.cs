@@ -104,7 +104,7 @@ public class FriendRequestsService(
     }
 
     /// <summary>
-    /// Checks if there is a friend request between to ProfileIDs
+    /// 检查两个 ProfileID 之间是否存在好友请求
     /// </summary>
     /// <param name="from"></param>
     /// <param name="to"></param>
@@ -119,12 +119,12 @@ public class FriendRequestsService(
     }
 
     /// <summary>
-    /// Checks if there is a friend request between two ProfileIDs
+    /// 检查两个 ProfileID 之间是否存在好友请求
     /// </summary>
     /// <param name="from"></param>
     /// <param name="to"></param>
     /// <param name="response"></param>
-    /// <returns>The friend request</returns>
+    /// <returns>该好友请求</returns>
     public bool HasFriendRequest(MongoId from, MongoId to, out FriendRequestListResponse? response)
     {
         lock (_listLock)

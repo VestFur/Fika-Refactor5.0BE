@@ -34,10 +34,10 @@ public class ItemPositionSyncer : MonoBehaviour
 
     public static void Create(GameObject gameObject, bool isServer, ObservedLootItem lootItem)
     {
-        // AP (analysis/nonfika-raid-inertness): this component is injected into il2cpp and its transport
-        // (FikaServer/FikaClient) only exists inside a raid of ours. Outside one it used to be added to a
-        // native loot item and faulted afterwards on every frame; the guard is the belt to the caller's
-        // braces, so a future call site cannot reintroduce that state either.
+        // AP（analysis/nonfika-raid-inertness）：这个组件被注入 il2cpp，而它的传输层
+        // （FikaServer/FikaClient）只存在于我们自己的突袭内。在突袭之外，它过去被添加到一个
+        // 原生战利品物品上，随后每一帧都出错；这个守卫是调用方那层保险之外
+        // 的第二道保险，这样将来的调用点也无法再引入那个状态。
         if (FikaRaidGate.Skip("ItemPositionSyncer.Create"))
         {
             return;
@@ -61,10 +61,10 @@ public class ItemPositionSyncer : MonoBehaviour
     }
 
     /// <summary>
-    /// AP (analysis/nonfika-raid-inertness): the transport this component exists for. Inside a raid of
-    /// ours one of the two singletons is always there; outside one both are absent, and every method
-    /// below used to fault on that instead of ending its own life. The check is the one thing that turns
-    /// "our component on a native loot item" from a per-frame exception source into a clean self-destroy.
+    /// AP（analysis/nonfika-raid-inertness）：这个组件为之而存在的传输层。在我们自己的突袭
+    /// 内，两个单例中总有一个在；在突袭外两个都缺席，而下面每个方法过去
+    /// 都只会在此出错，而不是结束自己的生命周期。这个检查是唯一一个把
+    /// “我们的组件挂在一个原生战利品物品上”从逐帧异常源变成干净自我销毁的东西。
     /// </summary>
     private bool HasTransport()
     {
@@ -117,8 +117,8 @@ public class ItemPositionSyncer : MonoBehaviour
 
     public void FixedUpdate()
     {
-        // AP: a component whose transport is gone (raid teardown, or a loot item that outlived the raid)
-        // ends itself here; the old shape kept faulting once per physics frame until the world was gone.
+        // AP：传输层已经消失的组件（突袭拆除，或者一个比突袭活得更久的战利品物品）
+        // 在这里结束自己；旧形态会一直每个物理帧出错，直到世界消失。
         if (!HasTransport())
         {
             Destroy(this);

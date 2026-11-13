@@ -9,9 +9,9 @@ public struct EventControllerEventPacket : INetSerializable
     public string ItemId;
     public EEventType Type;
     public SyncEventFromServer Event;
-    // Runddans' native event only carries the state enum.  These two maps
-    // preserve the native generator progress across a late join/reconnect so
-    // a running or damaged generator does not reset its timer.
+    // Runddans 的原生事件只携带状态枚举。这两个映射
+    // 在延迟加入/重连时保留原生发电机的进度，使
+    // 运行中或已损坏的发电机不会重置其计时器。
     public System.Collections.Generic.Dictionary<int, float> Durability;
     public System.Collections.Generic.Dictionary<int, long> DateTimeTicks;
 
@@ -75,9 +75,9 @@ public struct EventControllerEventPacket : INetSerializable
             }
             var durability = Durability ?? new();
             var dateTimes = DateTimeTicks ?? new();
-            // Write the union of both maps. This keeps a valid timestamp even
-            // when an object has zero durability and avoids silently dropping
-            // its native damage time from the snapshot.
+            // 写入两个映射的并集。这样即使对象的耐久为零
+            // 也能保留有效的时间戳，并避免在快照中
+            // 静默丢弃它的原生受损时间。
             var ids = new System.Collections.Generic.HashSet<int>(durability.Keys);
             ids.UnionWith(dateTimes.Keys);
             writer.Put(ids.Count);

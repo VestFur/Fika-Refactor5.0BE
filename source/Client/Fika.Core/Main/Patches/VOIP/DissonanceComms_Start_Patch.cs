@@ -19,7 +19,7 @@ public class DissonanceComms_Start_Patch : ModulePatch
     [PatchPrefix]
     public static bool Prefix(DissonanceComms __instance)
     {
-        // Outside a Fika raid, the stock SPT voice scene owns initialization.
+        // 在 Fika 战局之外，由原版 SPT 语音场景负责初始化。
         if (FikaBackendUtils.ClientType == EClientType.None) return true;
         var native = __instance.GetComponent<MirrorIgnoranceCommsNetwork>();
         return !__instance.IsStarted && FikaCommsNetwork.Find(native)?.IsActive == true;

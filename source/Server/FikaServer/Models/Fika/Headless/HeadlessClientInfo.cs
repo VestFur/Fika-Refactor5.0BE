@@ -5,7 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 namespace FikaServer.Models.Fika.Headless;
 
 /// <summary>
-/// Record containing data for a headless client
+/// 包含 headless 客户端数据的记录
 /// </summary>
 public record HeadlessClientInfo
 {
@@ -17,72 +17,72 @@ public record HeadlessClientInfo
     }
 
     /// <summary>
-    /// Websocket of the headless client
+    /// headless 客户端的 WebSocket
     /// </summary>
     public required System.Net.WebSockets.WebSocket WebSocket { get; set; }
     /// <summary>
-    /// State of the headless client
+    /// headless 客户端的状态
     /// </summary>
     public required EHeadlessStatus State { get; set; }
     /// <summary>
-    /// The old connection is being replaced and its match is still being
-    /// cleaned. Do not offer it to another requester until the new socket is
-    /// installed.
+    /// 旧连接正在被替换,而它的对局仍在清理中。
+    /// 在新 socket 装载完成之前,
+    /// 不要把它提供给另一个请求方。
     /// </summary>
     public bool IsReconnecting { get; set; }
     /// <summary>
-    /// True only after the headless has completed its menu/profile lifecycle
-    /// and explicitly reported readiness over the current websocket.
+    /// 只有当 headless 完成其菜单/profile 生命周期,
+    /// 并通过当前 websocket 明确报告就绪之后才为 true。
     /// </summary>
     public bool ClientReady { get; private set; }
     /// <summary>
-    /// Serializes reservation and connection replacement for this profile.
+    /// 为该 profile 串行化预留与连接替换。
     /// </summary>
     public SemaphoreSlim LifecycleGate { get; } = new(1, 1);
     /// <summary>
-    /// Changes whenever this headless is reserved for a new raid. Distinguishes
-    /// two consecutive requests from the same player.
+    /// 每当这个 headless 被预留用于新的 raid 时改变。用于区分
+    /// 同一玩家连续两次请求。
     /// </summary>
     public long ReservationVersion { get; private set; }
     /// <summary>
-    /// Wire token for a Headless start request. A new value is issued for every
-    /// reservation so a delayed create from an older raid is rejected.
+    /// Headless 启动请求的线路令牌。每次预留都会签发
+    /// 一个新值,因此来自更旧 raid 的延迟创建会被拒绝。
     /// </summary>
     public string? ReservationToken { get; private set; }
     /// <summary>
-    /// The reservation token which was just ended.  It remains available for
-    /// the client's post-raid readiness handshake, then is cleared only when
-    /// a new reservation starts or a replacement socket is installed. Keeping
-    /// it after readiness prevents a late null-token report from impersonating
-    /// this connection's initial readiness message.
+    /// 刚刚结束的那个预留令牌。它会一直可用,以供
+    /// 客户端在 raid 结束后的就绪握手使用,之后只有在新的预留开始
+    /// 或替换 socket 装载完成时才会被清除。在就绪之后仍保留它,
+    /// 可以防止一条迟到的空令牌报告冒充
+    /// 本连接的初始就绪消息。
     /// </summary>
     public string? LastEndedReservationToken { get; private set; }
     /// <summary>
-    /// A readiness message can race the server's final /raid/leave cleanup.
-    /// Keep it until Reset can safely publish the headless again.
+    /// 一条就绪消息可能与服务器的最后一次 /raid/leave 清理竞争。
+    /// 在 Reset 能安全地再次发布该 headless 之前,保留它。
     /// </summary>
     public string? PendingReadyToken { get; private set; }
     /// <summary>
-    /// The players that are playing on this headless client, only set if the state is IN_RAID
+    /// 正在这个 headless 客户端上游玩的玩家,仅当状态为 IN_RAID 时设置
     /// </summary>
     public List<MongoId> Players { get; set; } = [];
     /// <summary>
-    /// SessionID of the person who has requested the headless client, it will only ever be set if the status is IN_RAID
+    /// 请求该 headless 客户端者的 SessionID,仅当状态为 IN_RAID 时才会设置
     /// </summary>
     public string? RequesterSessionID { get; set; }
     /// <summary>
-    /// Allows for checking if the requester has been notified the match has started through the requester WebSocket so he can auto-join
+    /// 用于检查是否已通过请求方的 WebSocket 通知其「对局已开始」,以便其自动加入
     /// </summary>
     public bool? HasNotifiedRequester { get; set; }
     /// <summary>
-    /// The current level of the headless, mainly used for transits
+    /// headless 当前的关卡,主要用于转发
     /// </summary>
     public int Level { get; set; }
 
     /// <summary>
-    /// Sets the info of the client after starting a raid
+    /// 在启动 raid 之后设置客户端的信息
     /// </summary>
-    /// <param name="requestId">The id who requested the raid</param>
+    /// <param name="requestId">请求该 raid 的 id</param>
     public void StartRaid(string requestId)
     {
         ReservationVersion++;
@@ -95,7 +95,7 @@ public record HeadlessClientInfo
     }
 
     /// <summary>
-    /// Resets the data of the <see cref="HeadlessClientInfo"/>
+    /// 重置 <see cref="HeadlessClientInfo"/> 的数据
     /// </summary>
     public void Reset()
     {
@@ -112,8 +112,8 @@ public record HeadlessClientInfo
     }
 
     /// <summary>
-    /// Record a readiness report from this connection. The caller must have
-    /// checked socket ownership and hold the client lock.
+    /// 记录来自本连接的就绪报告。调用方必须已经检查过
+    /// socket 归属并持有客户端锁。
     /// </summary>
     public bool TryMarkReady(string? reservationToken)
     {

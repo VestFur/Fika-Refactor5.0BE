@@ -43,9 +43,9 @@ internal class Headless_LocalGameCreator_Patch : ModulePatch
     }
 
     /// <summary>
-    /// Raid-start trace: a failure inside the native or async frames reports only this
-    /// method, so each risky statement logs its name. The last trace line before a
-    /// failure names the statement that threw.
+    /// 战局启动追踪：原生帧或异步帧内部的失败只会报告到这个
+    /// 方法，因此每条有风险的语句都记录自己的名字。故障之前的
+    /// 最后一条追踪行即指出抛异常的那条语句。
     /// </summary>
     private static void TraceStep(string step)
     {
@@ -81,12 +81,12 @@ internal class Headless_LocalGameCreator_Patch : ModulePatch
             raidSettings.MetabolismDisabled = cachedSettings.MetabolismDisabled;
             raidSettings.PlayersSpawnPlace = cachedSettings.PlayersSpawnPlace;
 
-            // LocalGameMatching(inTransition: true) restores the destination
-            // from TarkovApplication.TransitionStatus, while the native raid
-            // settings object is rebuilt by SPT. Keep the two transition
-            // representations aligned so LocalGameStarted and the transit
-            // history receive the continuation state instead of the first
-            // raid's None/Event value.
+            // LocalGameMatching(inTransition: true) 会从
+            // TarkovApplication.TransitionStatus 恢复目的地，而原生战局
+            // 设置对象由 SPT 重建。让两种中转表示保持对齐，
+            // 使 LocalGameStarted 和中转历史接收到的都是续接状态，
+            // 而不是第一场战局留下的
+            // None/Event 值。
             var transitionSettings = FikaBackendUtils.TransitData;
             raidSettings.isInTransition = true;
             raidSettings.transitionType = transitionSettings?.transitionType ?? ELocationTransition.Common;
@@ -139,11 +139,11 @@ internal class Headless_LocalGameCreator_Patch : ModulePatch
         FikaHeadlessPlugin.FikaHeadlessLogger.LogInfo($"[Headless] Stage: server returned the local raid (serverId={localSettings.serverId}, " +
             $"location={localSettings.locationLoot.Id}, escapeTimeLimit={localSettings.locationLoot.EscapeTimeLimit})");
         TraceStep("start: merging the bot settings");
-        // RaidSettings.BotSettings is a native field and the headless raid builds its
-        // RaidSettings itself, so it is the one prerequisite the UI path is given for
-        // free. Never let a missing one abort the raid start: the excluded boss list
-        // only narrows bot spawning, and the statement is traced so a regression here
-        // names itself instead of only reporting the enclosing method.
+        // RaidSettings.BotSettings 是原生字段，而无头战局自己构建其
+        // RaidSettings，因此这是 UI 路径免费获得的那一项前置条件。
+        // 绝不要让它的缺失中断战局启动：被排除的 boss 列表
+        // 只会缩小 bot 生成范围，而且该语句带有追踪，这里的回归
+        // 会自己报出名字，而不只是报告外层方法。
         try
         {
             var botControllerSettings = raidSettings.BotSettings;
@@ -174,10 +174,10 @@ internal class Headless_LocalGameCreator_Patch : ModulePatch
             TraceStep($"start: isScav={isScav}");
             var selectedLocation = raidSettings.SelectedLocation;
             TraceStep($"start: selectedLocation null={selectedLocation is null}");
-            // RaidSettings.SelectedLocation is a property whose backing field the native
-            // raid-start path may not have populated in a headless process (there is no
-            // matchmaker screen to do it). The server's location loot is the authoritative
-            // fallback - the very next statement installs it as the raid location anyway.
+            // RaidSettings.SelectedLocation 是一个属性，在无头进程中其支持字段
+            // 可能尚未被原生战局启动路径填充（没有匹配器界面去填它）。
+            // 服务器的地点战利品是权威的回退值——紧接着的那条语句
+            // 本来就会把它安装为战局地点。
             int escapeTimeLimit = (isScav || selectedLocation is null)
                 ? localSettings.locationLoot.EscapeTimeLimit
                 : selectedLocation.EscapeTimeLimit;
@@ -194,8 +194,8 @@ internal class Headless_LocalGameCreator_Patch : ModulePatch
         }
         catch (Exception exception)
         {
-            // The copied managed stack names the interop member that threw; the IL2CPP
-            // marshalled exception only keeps the async entry method.
+            // 复制下来的托管堆栈指明了抛异常的 interop 成员；而 IL2CPP
+            // 编组后的异常只保留了异步入口方法。
             FikaHeadlessPlugin.FikaHeadlessLogger.LogError($"[Headless] Stage: updating the raid settings FAILED: {exception}");
             throw;
         }

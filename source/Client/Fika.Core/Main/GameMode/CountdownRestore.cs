@@ -8,74 +8,74 @@ using Fika.Core.Main.Utils;
 namespace Fika.Core.Main.GameMode;
 
 /// <summary>
-/// The opening countdown of the raid - the overlay that counts the deploy time down - put back while the
-/// countdown body is skipped (analysis/countdown-restore).
+/// 突袭的开场倒计时——也就是把部署时间倒数下去的那层覆盖界面——在倒计时
+/// 主体被跳过的情况下重新补回来（analysis/countdown-restore）。
 ///
-/// Why it is gone today: 'Skip Countdown Body' (default ON) skips every statement of
-/// <see cref="BaseGameController.CountdownScreen"/>, and the statement that shows the countdown is the first
-/// one of them (statement 389, <c>new MatchmakerFinalCountdown.FinalCountdownScreenController(profile,
-/// dateTime).ShowScreen(EScreenState.Root)</c>). The routine still reaches the deploy wait, so the player
-/// deploys out of a screen that never counted anything down.
+/// 它现在为何消失了：'Skip Countdown Body'（默认开启）会跳过
+/// <see cref="BaseGameController.CountdownScreen"/> 中的每一条语句，而显示倒计时的那条语句正是其中
+/// 第一条（语句 389，<c>new MatchmakerFinalCountdown.FinalCountdownScreenController(profile,
+/// dateTime).ShowScreen(EScreenState.Root)</c>）。例程仍然会走到部署等待，于是玩家
+/// 是从一个从未真正倒数过的界面里部署出去的。
 ///
-/// Why it is safe to put back now: the master switch was added because the host raid died inside the window
-/// "countdown -> deploy wait" (0x80131506). Round 3 read the trail of the last of those deaths back and the
-/// routine was *parked* in the deploy wait when it happened - no statement of the body was on the stack
-/// (analysis/countdown-bisect-round3 section 1.2) - and the two conditions that the earlier rounds did blame
-/// are gone from this path: no managed read of an engine <c>WaitForSeconds.m_Seconds</c> (the deploy wait is
-/// the managed <see cref="WaitSeconds"/>), no engine coroutine started from managed code, no engine
-/// reflection into an injected method. Every call this class makes is managed -> native on a *native* object
-/// (the screen manager, the countdown screen controller), i.e. the legal direction.
+/// 它现在补回来为何是安全的：总开关当初被加进来，是因为主机端的突袭死在了
+/// "countdown -> deploy wait" 这个窗口内（0x80131506）。第 3 轮把最后几次这类死亡的
+/// 轨迹重新读了一遍，发现事情发生时例程正*停在*部署等待里——主体里没有任何语句在
+/// 栈上（analysis/countdown-bisect-round3 第 1.2 节）——而更早几轮确实归咎过的两个条件
+/// 已经从这条路径上消失了：没有对引擎 <c>WaitForSeconds.m_Seconds</c> 的托管读取（部署等待是
+/// 托管的 <see cref="WaitSeconds"/>），没有从托管代码启动的引擎协程，也没有引擎
+/// 对注入方法的反射。这个类发起的每一次调用都是托管 -> 原生、作用在*原生*对象
+/// （屏幕管理器、倒计时屏幕控制器）上，也就是合法的方向。
 ///
-/// What the restore is, in the order the player sees it:
+/// 补回的内容如下，按玩家看到的顺序：
 /// <list type="number">
-/// <item><description><b>1/4 - the overlay</b>: the same call statement 389 makes, so the countdown the
-/// player sees is the game's own screen (it reads its remaining time from the <c>gameStartTime</c> the
-/// controller is built with, which is "now + TimeBeforeDeployLocal" - exactly the value the vanilla body
-/// passes).</description></item>
-/// <item><description><b>the deploy wait</b>: statement 3/8, which runs with or without the master switch and
-/// is therefore the clock of the overlay. This class does not add a second wait - the countdown is as long as
-/// the deploy wait and no longer.</description></item>
-/// <item><description><b>2/4 - the close</b>: takes the overlay down again (<c>CloseAllScreensForced</c>,
-/// guarded by "is the countdown screen the current screen"). On its own switch because "the overlay could not
-/// be taken down" and "the raid view was not restored" are different faults.</description></item>
-/// <item><description><b>3/4 - the raid view</b>: the body of statement 4/8
-/// (<see cref="BaseGameController.RestoreRaidViewAfterCountdown()"/>). It exists precisely for "the countdown
-/// left its blur/effects/menu camera behind", so it is reused rather than re-derived.</description></item>
-/// <item><description><b>4/4 - the re-assert</b>: the body of statement 5/8, started on the Update pump
-/// (never as an engine coroutine): the native screen can apply its post-processing one frame after it closed.
+/// <item><description><b>1/4——覆盖界面</b>：与语句 389 完全相同的调用，因此玩家看到的
+/// 倒计时就是游戏自己的界面（它从构造控制器时传入的 <c>gameStartTime</c> 读取剩余
+/// 时间，而该值是 "now + TimeBeforeDeployLocal"——正是原版主体所传
+/// 的那个值）。</description></item>
+/// <item><description><b>部署等待</b>：语句 3/8，无论总开关是否开启它都会执行，
+/// 因此它就是覆盖界面的时钟。这个类不会再额外加一次等待——倒计时和
+/// 部署等待一样长，不会再长。</description></item>
+/// <item><description><b>2/4——关闭</b>：把覆盖界面重新收掉（<c>CloseAllScreensForced</c>，
+/// 由 "倒计时屏幕是否就是当前屏幕" 这个条件守护）。它有自己的开关，因为 "覆盖界面无法
+/// 被收掉" 和 "突袭视图没有恢复" 是两种不同的故障。</description></item>
+/// <item><description><b>3/4——突袭视图</b>：语句 4/8 的主体
+/// （<see cref="BaseGameController.RestoreRaidViewAfterCountdown()"/>）。它存在的意义正是 "倒计时
+/// 留下了它的模糊/特效/菜单相机"，因此直接复用而不是重新推导。</description></item>
+/// <item><description><b>4/4——重新断言</b>：语句 5/8 的主体，挂在 Update 泵上启动
+/// （绝不作为引擎协程）：原生屏幕可能在关闭后一帧才应用它的后处理。
 /// </description></item>
 /// </list>
 ///
-/// Every step is its own config switch and its own journal label, so the next trail names the step that
-/// died; the master switch of the whole restore is one line in the config file.
+/// 每个步骤都有自己的配置开关和自己的日志标签，因此下一次轨迹就能指出死掉的是
+/// 哪一步；整个补回的总开关是配置文件里的一行。
 /// </summary>
 internal static class CountdownRestore
 {
-    /// <summary>Journal label of the master switch: the whole opening countdown is restored.</summary>
+    /// <summary>总开关的日志标签：整个开场倒计时被补回。</summary>
     internal const string BoundaryPlay = "countdown restore 0/4: MASTER SWITCH 'Countdown: Play Opening Countdown' is ON - the opening countdown (the overlay and its teardown) runs while 'Skip Countdown Body' skips the body";
 
-    /// <summary>Journal label of step 1/4: the vanilla countdown overlay is constructed and shown.</summary>
+    /// <summary>步骤 1/4 的日志标签：原版倒计时覆盖界面被构造并显示。</summary>
     internal const string BoundaryOverlay = "countdown restore 1/4: FinalCountdownScreenController + ShowScreen(EScreenState.Root) (the countdown overlay, the same call as statement 389)";
 
-    /// <summary>Journal label written right after the overlay went up: the deploy wait that follows is the countdown the player sees.</summary>
+    /// <summary>覆盖界面升起后立即写入的日志标签：随后的部署等待就是玩家看到的倒计时。</summary>
     internal const string BoundaryOverlayUp = "countdown restore 1/4: the countdown overlay is ON SCREEN NOW - the deploy wait that follows is the countdown the player sees, and its length is what 'Countdown: Deploy Wait' decides";
 
-    /// <summary>Journal label of the teardown block (steps 2/4-4/4), written after the deploy wait returned.</summary>
+    /// <summary>收尾代码块（步骤 2/4-4/4）的日志标签，在部署等待返回后写入。</summary>
     internal const string BoundaryTeardown = "countdown restore: the deploy wait returned - the countdown's teardown follows (2/4 close, 3/4 raid view, 4/4 re-assert)";
 
-    /// <summary>Journal label of step 2/4: the countdown screen is closed.</summary>
+    /// <summary>步骤 2/4 的日志标签：倒计时屏幕被关闭。</summary>
     internal const string BoundaryClose = "countdown restore 2/4: EftScreenManager.CloseAllScreensForced() while the FinalCountdown screen is the current screen";
 
-    /// <summary>Journal label of step 3/4: the raid view the countdown left behind is restored.</summary>
+    /// <summary>步骤 3/4 的日志标签：倒计时留下的突袭视图被恢复。</summary>
     internal const string BoundaryViewRestore = "countdown restore 3/4: RestoreRaidViewAfterCountdown() - the countdown's camera/effect/screen restore (the body of statement 4/8)";
 
-    /// <summary>Journal label of step 4/4: the post-processing re-assert routine is started on the pump.</summary>
+    /// <summary>步骤 4/4 的日志标签：后处理重新断言例程在泵上启动。</summary>
     internal const string BoundaryReassert = "countdown restore 4/4: FikaRoutinePump.Start(RestoreRaidViewAfterCountdownRoutine) - the post-processing re-assert (the body of statement 5/8)";
 
-    /// <summary>Journal label: the restore ran and the countdown was taken down.</summary>
+    /// <summary>日志标签：补回流程已运行，倒计时已被收掉。</summary>
     internal const string BoundaryDone = "countdown restore: done - the countdown ran and was taken down (the labels after this one are in-raid)";
 
-    /// <summary>What the opening countdown is allowed to do in this raid. Read once per raid.</summary>
+    /// <summary>本次突袭中开场倒计时被允许做什么。每场突袭读取一次。</summary>
     internal readonly struct Switches
     {
         internal Switches(bool play, bool overlay, bool close, bool viewRestore, bool reassert)
@@ -87,19 +87,19 @@ internal static class CountdownRestore
             Reassert = reassert;
         }
 
-        /// <summary>Master switch: run the opening countdown at all (config: 'Countdown: Play Opening Countdown').</summary>
+        /// <summary>总开关：是否运行开场倒计时（配置项：'Countdown: Play Opening Countdown'）。</summary>
         internal bool Play { get; }
 
-        /// <summary>Step 1/4: show the overlay (config: 'Countdown: Opening Countdown Overlay').</summary>
+        /// <summary>步骤 1/4：显示覆盖界面（配置项：'Countdown: Opening Countdown Overlay'）。</summary>
         internal bool Overlay { get; }
 
-        /// <summary>Step 2/4: close it again (config: 'Countdown: Opening Countdown Close').</summary>
+        /// <summary>步骤 2/4：重新关闭它（配置项：'Countdown: Opening Countdown Close'）。</summary>
         internal bool Close { get; }
 
-        /// <summary>Step 3/4: restore the raid view (config: 'Countdown: Opening Countdown View Restore').</summary>
+        /// <summary>步骤 3/4：恢复突袭视图（配置项：'Countdown: Opening Countdown View Restore'）。</summary>
         internal bool ViewRestore { get; }
 
-        /// <summary>Step 4/4: re-assert the clear view for a bounded number of frames (config: 'Countdown: Opening Countdown Reassert').</summary>
+        /// <summary>步骤 4/4：在有限帧数内重新断言清晰视图（配置项：'Countdown: Opening Countdown Reassert'）。</summary>
         internal bool Reassert { get; }
 
         internal string Describe()
@@ -110,11 +110,11 @@ internal static class CountdownRestore
     }
 
     /// <summary>
-    /// Reads the five switches. An entry that is not bound yet - headless, or a raid that starts before the
-    /// locales were loaded - counts as ON, the same convention the in-raid HUD restore uses: the countdown is
-    /// what the player sees, and every switch has its own label, so an unbound read is visible in the trail
-    /// rather than silent. The headless case is decided by <see cref="FikaBackendUtils.IsHeadless"/>, not by
-    /// this default: a headless client has no countdown screen to show.
+    /// 读取这五个开关。尚未绑定的条目——无头模式，或在语言包加载完成之前就
+    /// 开始的突袭——都按开启计算，这与突袭内 HUD 补回所用的约定一致：倒计时是
+    /// 玩家看得见的东西，而每个开关都有自己的标签，因此未绑定的读取会出现在轨迹里
+    /// 而不是悄无声息。无头的情况由 <see cref="FikaBackendUtils.IsHeadless"/> 决定，而
+    /// 不是由这个默认值决定：无头客户端根本没有倒计时屏幕可以显示。
     /// </summary>
     internal static Switches Read()
     {
@@ -126,9 +126,9 @@ internal static class CountdownRestore
                 return Unbound();
             }
 
-            // (analysis/config-audit-2, 2026-10-13) The four step entries were merged into the umbrella:
-            // the steps are the shipped behaviour (all on) and 'Countdown: Play Opening Countdown' is the one
-            // line that turns the whole opening countdown off.
+            // (analysis/config-audit-2, 2026-10-13) 四个步骤条目已并入总开关：
+            // 这些步骤就是已发布的行为（全部开启），而 'Countdown: Play Opening Countdown' 是唯一
+            // 能把整个开场倒计时关掉的一行。
             return new Switches(Statement(settings.CountdownPlayOpening), true, true, true, true);
         }
         catch (Exception)
@@ -137,13 +137,13 @@ internal static class CountdownRestore
         }
     }
 
-    /// <summary>Every step ON, see <see cref="Read"/>.</summary>
+    /// <summary>所有步骤皆开启，见 <see cref="Read"/>。</summary>
     private static Switches Unbound()
     {
         return new Switches(true, true, true, true, true);
     }
 
-    /// <summary>A step switch: on unless the entry says otherwise (an unbound entry is not an "off").</summary>
+    /// <summary>步骤开关：除非条目另有说明，否则为开启（未绑定的条目不算 "关闭"）。</summary>
     private static bool Statement(ConfigEntry<bool> entry)
     {
         try
@@ -157,87 +157,71 @@ internal static class CountdownRestore
     }
 
     /// <summary>
-    /// Step 1/4: shows the countdown overlay, i.e. the statement the master switch skips. Returns true when the
-    /// overlay is up, which is also the condition for the teardown after the deploy wait ("nothing to take
-    /// down" is not the same statement as "the overlay could not be shown", and the trail says which one it
-    /// was).
+    /// 步骤 1/4：显示倒计时覆盖界面，即总开关所跳过的那条语句。当覆盖界面已升起
+    /// 时返回 true，这同时也是部署等待之后执行收尾的条件（"没有东西可收" 与
+    /// "覆盖界面无法显示" 不是同一条语句，轨迹会说明是哪一种
+    /// 情况）。
     ///
-    /// The call is the one the vanilla body makes, with the same arguments: the active profile and the
-    /// game-start time the routine already computed as "now + TimeBeforeDeployLocal".
+    /// 该调用与原版主体所做的完全相同，参数也相同：当前档案，以及
+    /// 例程已经算好的游戏开始时间 "now + TimeBeforeDeployLocal"。
     /// </summary>
     internal static bool ShowIfEnabled(Switches switches, Profile profile, Il2CppSystem.DateTime gameStartTime)
     {
         if (FikaBackendUtils.IsHeadless)
         {
-            FikaBoundaries.Enter(BoundaryPlay);
-            FikaBoundaries.Skipped(BoundaryPlay, "this is a headless client: it has no countdown screen to show (the vanilla path skips its UI statements there as well)");
             return false;
         }
 
         if (!switches.Play)
         {
-            FikaBoundaries.Enter(BoundaryPlay);
-            FikaBoundaries.Skipped(BoundaryPlay, "the master switch 'Countdown: Play Opening Countdown' is OFF");
             return false;
         }
 
-        FikaBoundaries.Enter(BoundaryPlay);
-        FikaBoundaries.Mark(BoundaryPlay);
 
-        FikaBoundaries.Enter(BoundaryOverlay);
-        FikaBoundaries.Mark(BoundaryOverlay);
 
         if (!switches.Overlay)
         {
-            FikaBoundaries.Skipped(BoundaryOverlay, "its switch ('Countdown: Opening Countdown Overlay') is OFF");
             return false;
         }
 
         if (profile is null)
         {
             
-            FikaBoundaries.Skipped(BoundaryOverlay, "the profile handed to the countdown is null");
             return false;
         }
 
         if (!FikaBoundaries.Run(BoundaryOverlay, () => Show(profile, gameStartTime)))
         {
-            // The label was written before the call and there is no RETURNED line after it: the [FAIL]
-            // [Boundary] line above names the exception. A fail fast cannot be caught at all - then the trail
-            // simply ends on this label, which is what makes the step readable.
+            // 标签在调用之前就已写入，且其后没有 RETURNED 行：[FAIL]
+            // [Boundary] 行在上面点出了异常。fail fast 根本无法被捕获——那样轨迹
+            // 就停在这个标签上，这正是该步骤可读的原因。
             return false;
         }
 
-        FikaBoundaries.Returned(BoundaryOverlay);
-        FikaBoundaries.Mark(BoundaryOverlayUp);
         
         return true;
     }
 
-    /// <summary>Step 2/4: takes the overlay down again. Runs only when step 1/4 really showed it.</summary>
+    /// <summary>步骤 2/4：把覆盖界面重新收掉。仅当步骤 1/4 确实显示了它时才运行。</summary>
     internal static void CloseIfEnabled(Switches switches)
     {
-        FikaBoundaries.Enter(BoundaryClose);
-        FikaBoundaries.Mark(BoundaryClose);
 
         if (!switches.Close)
         {
-            FikaBoundaries.Skipped(BoundaryClose, "its switch ('Countdown: Opening Countdown Close') is OFF - this statement is what takes the overlay down, so the countdown screen stays on screen after the wait");
             return;
         }
 
         if (FikaBoundaries.Run(BoundaryClose, CloseOverlay))
         {
-            FikaBoundaries.Returned(BoundaryClose);
         }
     }
 
     /// <summary>
-    /// The countdown screen is closed the way the vanilla post-countdown path closes it, and only when it really
-    /// is the current screen: the native screen may have closed itself the moment its own clock reached the
-    /// game-start time ("ShowControls" style screens do), in which case there is nothing to do and the report
-    /// line says so. The player-owner re-ready that belongs to this pairing in the vanilla tail is part of step
-    /// 3/4, which calls the same statement 4/8 the body calls.
+    /// 倒计时屏幕按原版倒计时之后那条路径的方式来关闭，且仅当它确实是当前
+    /// 屏幕时才关闭：原生屏幕可能在它自己的时钟到达游戏开始时间的那一刻就自行
+    /// 关闭了（"ShowControls" 这类屏幕就是这样），此时无事可做，报告
+    /// 行会如此说明。原版尾部中与这一配对相对应的玩家所有者重新就绪属于步骤
+    /// 3/4，它调用的是主体所调用的同一条语句 4/8。
     /// </summary>
     private static void CloseOverlay()
     {
@@ -259,9 +243,9 @@ internal static class CountdownRestore
     }
 
     /// <summary>
-    /// The overlay: the exact call statement 389 makes (kept as one expression so the two call sites cannot
-    /// drift apart). The controller reads its remaining time from the game-start time it is built with, so the
-    /// overlay counts the deploy time down by itself; this port only decides when it is shown and taken down.
+    /// 覆盖界面：与语句 389 完全相同的调用（保持为单个表达式，以免两个调用点
+    /// 彼此漂移）。控制器从构造它时传入的游戏开始时间读取剩余时间，因此
+    /// 覆盖界面自己就把部署时间倒数下去；这个移植版本只决定何时显示、何时收掉。
     /// </summary>
     private static void Show(Profile profile, Il2CppSystem.DateTime gameStartTime)
     {

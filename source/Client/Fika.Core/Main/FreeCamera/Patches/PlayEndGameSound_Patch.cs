@@ -16,7 +16,7 @@ public class PlayEndGameSound_Patch : ModulePatch
     [PatchPrefix]
     private static bool Prefix()
     {
-        // Don't play end game sound if spectator mode
+        // 观众模式下不要播放游戏结束音效
         if (FikaBackendUtils.IsSpectator)
         {
             return false;

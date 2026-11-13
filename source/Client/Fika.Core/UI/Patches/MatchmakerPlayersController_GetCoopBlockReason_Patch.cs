@@ -5,7 +5,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.UI.Patches;
 
 /// <summary>
-/// This allows all game editions to edit the <see cref="EFT.RaidSettings"/>
+/// 这允许所有游戏版本编辑 <see cref="EFT.RaidSettings"/>
 /// </summary>
 public class MatchmakerPlayersController_GetCoopBlockReason_Patch : ModulePatch
 {

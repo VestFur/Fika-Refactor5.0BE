@@ -16,7 +16,7 @@ internal interface IFikaMagazineProcess
     void TryProceedForItem(Item item);
 }
 
-/// <summary>Keeps the game's process handle so native stop/item-change paths reach Fika's batch process.</summary>
+/// <summary>保存游戏的进程句柄，使原生停止/物品变更路径能够到达 Fika 的批处理进程。</summary>
 internal static class FikaMagazineProcesses
 {
     private static readonly Dictionary<IntPtr, Entry> Processes = new();
@@ -28,10 +28,10 @@ internal static class FikaMagazineProcesses
 
     internal static IFikaMagazineProcess Find(Il2CppObjectBase native)
     {
-        // AP (analysis/nonfika-raid-inertness): this is the unload/load chain the 2026-10-12 23:52 crash
-        // ended in ("Perform UNLOAD" as the last line before the fail fast). The registry is empty outside
-        // a raid of ours anyway, so the entry below changes no behaviour - it makes the question explicit
-        // and puts [Inert] skip=FikaMagazineProcesses.Find in the log when a native unload asks.
+        // AP（analysis/nonfika-raid-inertness）：2026-10-12 23:52 那次崩溃终止于这条
+        // unload/load 链路（"Perform UNLOAD" 是快速失败前的最后一行）。无论如何，在
+        // 非我们自己的战局之外注册表都是空的，所以下面的条目不会改变任何行为——
+        // 它只是把这个问题显式化，并在原生 unload 询问时把 [Inert] skip=FikaMagazineProcesses.Find 写进日志。
         if (FikaRaidGate.Skip("FikaMagazineProcesses.Find"))
         {
             return null;
@@ -44,7 +44,7 @@ internal static class FikaMagazineProcesses
 
         if (!WorldLifecycle.IsCurrent(entry.Epoch))
         {
-            // A magazine process of a released world (analysis/transit-crash-unload): dropped, never entered.
+            // 已释放世界的弹匣进程（analysis/transit-crash-unload）：直接丢弃，绝不进入。
             Processes.Remove(native.Pointer);
             return null;
         }
@@ -52,7 +52,7 @@ internal static class FikaMagazineProcesses
         return entry.Process;
     }
 
-    /// <summary>Drops every process at a world teardown; returns how many there were.</summary>
+    /// <summary>在世界销毁时丢弃所有进程；返回丢弃的数量。</summary>
     internal static int ClearForWorldTeardown()
     {
         var count = Processes.Count;
@@ -64,7 +64,7 @@ internal static class FikaMagazineProcesses
         return count;
     }
 
-    /// <summary>One process plus the world generation it belongs to.</summary>
+    /// <summary>一个进程以及它所属的世界代号。</summary>
     private readonly struct Entry(IFikaMagazineProcess process, int epoch)
     {
         internal readonly IFikaMagazineProcess Process = process;

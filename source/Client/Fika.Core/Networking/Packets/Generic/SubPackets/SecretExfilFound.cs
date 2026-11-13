@@ -27,9 +27,9 @@ public sealed class SecretExfilFound : IPoolSubPacket
         return packet;
     }
 
-    // Keep the two-argument helper for source compatibility with extensions
-    // compiled against the Mono client. SPT 5.0's native event distinguishes
-    // team and group, so the old call falls back to the group value.
+    // 保留这个双参数辅助方法，以便与针对 Mono 客户端编译的
+    // 扩展保持源码兼容。SPT 5.0 的原生事件区分
+    // 队伍与小队，因此旧调用会回退到小队（group）的值。
     public static SecretExfilFound FromValue(string groupId, string exitName) =>
         FromValue(groupId, groupId, exitName);
 

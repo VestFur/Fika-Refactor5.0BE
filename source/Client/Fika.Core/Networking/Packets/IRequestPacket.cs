@@ -1,31 +1,31 @@
 ﻿namespace Fika.Core.Networking.Packets;
 
 /// <summary>
-/// Represents a request packet with handling for requests, responses, and serialization.
+/// 表示一个请求数据包，包含请求、响应与序列化的处理。
 /// </summary>
 public interface IRequestPacket
 {
     /// <summary>
-    /// Handles an incoming request from a network peer within the server context.
+    /// 在服务器上下文中处理来自网络对端的传入请求。
     /// </summary>
     /// <param name="peer">
-    /// The network peer that sent the request.
+    /// 发送该请求的网络对端。
     /// </param>
     /// <param name="server">
-    /// The server instance processing the request.
+    /// 处理该请求的服务器实例。
     /// </param>
     public void HandleRequest(NetPeer peer, FikaServer server);
 
     /// <summary>
-    /// Handles the response to a request.
+    /// 处理对某个请求的响应。
     /// </summary>
     public void HandleResponse();
 
     /// <summary>
-    /// Serializes the request packet data into the provided <see cref="NetDataWriter"/>.
+    /// 把请求数据包的数据序列化到给定的 <see cref="NetDataWriter"/>。
     /// </summary>
     /// <param name="writer">
-    /// The writer used to serialize data.
+    /// 用于序列化数据的 writer。
     /// </param>
     public void Serialize(NetDataWriter writer);
 }

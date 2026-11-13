@@ -12,14 +12,14 @@ using UnityEngine;
 namespace Fika.Core.Main.Patches.Inventory;
 
 /// <summary>
-/// A client discard is an EFT.InventoryLogic.Operations.ThrowOperation. The host executes its own
-/// copy and relays the operation to every peer EXCEPT the source peer, and Fika has no packet that
-/// spawns a single world LootItem, so the only thing that can create the ground object for the
-/// dropper is the dropper's own local execution of that operation. When that execution was aborted
-/// (or finished without the world spawn) the item stayed in limbo: gone from the inventory, never
-/// on the ground. Only the ABORT path (FailLocally) is repaired: the native operation spawns the
-/// world item at the very END of its async execution, so repairing right after a NORMAL completion
-/// created a second, non-interactable ghost entity with collision next to the real drop.
+/// 客户端丢弃是一个 EFT.InventoryLogic.Operations.ThrowOperation。主机会执行自己的一份，
+/// 并把该操作转发给除源节点之外的每个节点，而 Fika 没有能够
+/// 生成单个世界 LootItem 的包，因此唯一能为丢弃者创建地面物体的
+/// 途径是丢弃者自己对该操作的本地执行。当该执行被中止
+/// （或完成但没有世界生成）时，物品就滞留在中间态：从库存中消失，却从未
+/// 出现在地面上。只修复 ABORT 路径（FailLocally）：原生操作会在其异步执行
+/// 的最末端才生成世界物品，因此在 NORMAL 完成之后立刻修复
+/// 会在真实掉落物旁生成一个带碰撞、不可交互的第二个幽灵实体。
 /// </summary>
 internal static class ClientDiscardGroundItemRepairPatch
 {
@@ -27,10 +27,10 @@ internal static class ClientDiscardGroundItemRepairPatch
     {
         try
         {
-            // AP (analysis/nonfika-raid-inertness): the repair spawns a ground item through GameWorld.ThrowItem,
-            // so it may only ever run inside a raid of ours. The handler it hangs off (our own client
-            // inventory operation handler) does not exist in a native raid, which is why this is a guard and
-            // not a fix - if it ever fires, the line names it.
+            // AP (analysis/nonfika-raid-inertness)：修复会通过 GameWorld.ThrowItem 生成地面物品，
+            // 因此它只能在我们自己的战局内运行。它所挂靠的处理器（我们自己的客户端
+            // 库存操作处理器）在原生战局中并不存在，这就是为什么这里是一个防护
+            // 而不是修复——若它真的触发，日志行会点名它。
             if (FikaRaidGate.Skip("ClientDiscardGroundItemRepairPatch.Repair"))
             {
                 return;
@@ -46,8 +46,8 @@ internal static class ClientDiscardGroundItemRepairPatch
             {
                 return;
             }
-            // Still executing: its own GameWorld.ThrowItem call is still coming, so spawning now
-            // would duplicate the drop.
+            // 仍在执行：它自己的 GameWorld.ThrowItem 调用还没到，此时生成
+            // 会让掉落物重复。
             if (operation.Status.InProgress())
             {
                 return;
@@ -70,7 +70,7 @@ internal static class ClientDiscardGroundItemRepairPatch
             {
                 return;
             }
-            // Still inside the inventory: the native execution has not taken it out yet.
+            // 仍在库存中：原生执行还没有把它取出。
             if (item.CurrentAddress != null)
             {
                 return;
@@ -116,7 +116,7 @@ internal static class ClientDiscardGroundItemRepairPatch
     }
 }
 
-/// <summary>The abort path itself; the repair runs after it released the operation.</summary>
+/// <summary>中止路径本身；修复在它释放该操作之后运行。</summary>
 internal sealed class ClientDiscardGroundItemFailRepairPatch : ModulePatch
 {
     protected override MethodBase GetTargetMethod()

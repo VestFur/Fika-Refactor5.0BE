@@ -20,7 +20,7 @@ using HarmonyLib;
 namespace Fika.Core.Main.HostClasses;
 
 /// <summary>
-/// <see cref="ClientLocalGameWorld"/> used in Fika for hosts to override methods and logic
+/// <see cref="ClientLocalGameWorld"/>，在 Fika 中供主机覆写方法与逻辑
 /// </summary>
 public class FikaHostGameWorld : ClientLocalGameWorld
 {
@@ -92,14 +92,10 @@ public class FikaHostGameWorld : ClientLocalGameWorld
 
     public override void AfterPlayerTick(float dt)
     {
-        // (analysis/cutscene-rig-play) Host half of the same repair as the client world: the native per-frame
-        // step of ClientLocalGameWorld is what drives the cutscene controllers (and everything else the port
-        // made Fika own) on a normal raid. Off by default - one constant switches it on - and it never throws
-        // into the raid tick.
-        if (!Fika.Core.Main.Components.CutsceneBoundary.ForwardAfterPlayerTick) return;
-        Fika.Core.Main.Components.CutsceneBoundary.NativeEngineTick("host", () =>
-            Fika.Core.Main.Utils.NativeBaseInvoker
-                .Get<System.Action<float>>(typeof(ClientLocalGameWorld), "AfterPlayerTick", new[] { typeof(float) })(dt));
+        // (analysis/cutscene-rig-play) 与客户端世界同一修复的主机那一半：在正常 raid 中，
+        // 驱动过场动画 controller（以及本移植让 Fika 接管的其余一切）的正是 ClientLocalGameWorld 的
+        // 原生逐帧步骤。默认关闭 —— 由一个常量打开 —— 且它绝不会向 raid tick
+        // 抛出异常。
     }
 
     public override GrenadeFactory CreateGrenadeFactory()
@@ -116,14 +112,14 @@ public class FikaHostGameWorld : ClientLocalGameWorld
     }
 
     /// <summary>
-    /// Level initialisation of a host raid: this is the step behind the loading screen progress
-    /// bar, and it runs *before* <c>TarkovApplication.LocalGameCreate</c> ever sees the raid.
+    /// 主机 raid 的关卡初始化：这就是加载界面进度条背后的那一步，
+    /// 它运行在 <c>TarkovApplication.LocalGameCreate</c> 真正看到这场 raid 之 *前*。
     ///
-    /// It is instrumented because it used to be the silent dead end of the whole raid start: a
-    /// failure of the base call here aborted the map load - no loading screen dismissal, no
-    /// LocalGameCreate, no Fika log line - and the client dropped back to the main menu with the
-    /// progress bar at 0 % (2026-10-09 22:58:53.574, NotSupportedException from the native base
-    /// call machinery).
+    /// 之所以给它加上埋点，是因为它过去是整个 raid 启动过程中沉默的死胡同：
+    /// 这里基类调用的失败会中断地图加载 —— 加载界面不消失、没有
+    /// LocalGameCreate、也没有任何 Fika 日志行 —— 而客户端会退回主菜单，
+    /// 进度条停在 0 %（2026-10-09 22:58:53.574，来自原生基类调用
+    /// 机制抛出的 NotSupportedException）。
     /// </summary>
     private async Task InitLevelManaged(ItemFactory itemFactory, ObjectsFactoryConfig config, bool loadBundlesAndCreatePools,
         Il2CppSystem.Collections.Generic.List<ResourceKey> resources, Il2CppSystem.IProgress<InitLevelProgress> progress,
@@ -131,8 +127,8 @@ public class FikaHostGameWorld : ClientLocalGameWorld
     {
         if (_insideBaseInitLevel)
         {
-            // The native base call would have redispatched virtually into this override: fail
-            // loudly instead of re-entering until the loading screen is stuck forever.
+            // 这个原生基类调用本会以虚派发方式重新进入本覆写：因此改为响亮地失败，
+            // 而不是反复重入直到加载界面永远卡住。
             var recursion = new InvalidOperationException("InitLevel re-entered while the native base call was still in flight; "
                 + "the generated wrapper of this interop build dispatches virtually after all.");
             
@@ -143,23 +139,23 @@ public class FikaHostGameWorld : ClientLocalGameWorld
         _insideBaseInitLevel = true;
         try
         {
-            // The alignment anchor of a transit reload (analysis/transit-reload-sync): this is the moment
-            // this host starts creating the next map, and the clients that already ended their own raid are
-            // waiting for exactly this signal before they create their level. A host that never sends it is
-            // not waited for - the clients release themselves through the bounded fallbacks of
-            // TransitReloadGate - and the host itself never waits for a peer.
+            // 中转重载的对齐锚点（analysis/transit-reload-sync）：此刻这台主机
+            // 开始创建下一张地图，而已经结束自己 raid 的客户端正
+            // 在等待的正是这个信号，然后它们才创建自己的关卡。从不发送它的主机
+            // 不会被等待 —— 客户端会通过 TransitReloadGate 的有界兜底自我放行 ——
+            // 而主机自己也从不等待任何对端。
             if (FikaBackendUtils.IsServer && FikaBackendUtils.IsTransit)
             {
                 TransitReloadGate.AnnounceHostReloadStart(Server, LocationId ?? "unknown");
             }
 
-            // (analysis/transit-reload-oom) Symmetrical to the client: directly before the native level
-            // load the replaced raid's world is already disposed and this raid's bundles are not loaded
-            // yet, so this is the one point where the previous map's assets can be handed back to the
-            // system without touching anything this raid needs. Only a continuing transit schedules it
-            // (FikaRaidMemory.NoteWorldSwap is gated on FikaBackendUtils.IsTransit), it runs at most once
-            // per swap, and FikaRaidMemory.ReleaseWorldSwapAsync never faults - the level load below must
-            // never be able to fail because of the release.
+            // (analysis/transit-reload-oom) 与客户端对称：紧接在原生关卡加载之前，
+            // 被替换 raid 的世界已经释放，而本 raid 的 bundle 尚未加载，
+            // 因此这是唯一能把上一张地图的资源交还系统、同时不触碰
+            // 本 raid 所需任何东西的时刻。只有持续中的中转才会安排它
+            // （FikaRaidMemory.NoteWorldSwap 以 FikaBackendUtils.IsTransit 为条件），每次世界切换最多运行一次，
+            // 且 FikaRaidMemory.ReleaseWorldSwapAsync 从不置为故障 —— 下面的关卡加载
+            // 绝不能因为这次释放而失败。
             try
             {
                 await FikaRaidMemory.ReleaseWorldSwapAsync("new map: before the native level load (host)");
@@ -189,11 +185,11 @@ public class FikaHostGameWorld : ClientLocalGameWorld
         }
     }
 
-    /// <summary>Guards against a virtual redispatch of the native base call (see InitLevelManaged).</summary>
+    /// <summary>防止对原生基类调用的虚重派发（见 InitLevelManaged）。</summary>
     private bool _insideBaseInitLevel;
 
     /// <summary>
-    /// Triggers when a <see cref="MineDirectional"/> explodes
+    /// 当 <see cref="MineDirectional"/> 爆炸时触发
     /// </summary>
     /// <param name="directional"></param>
     private void OnMineExplode(MineDirectional directional)

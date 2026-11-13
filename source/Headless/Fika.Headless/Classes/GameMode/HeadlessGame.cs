@@ -89,7 +89,7 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
         }
     }
 
-    // A headless raid has no local player and therefore no player raid ID.
+    // 无头 raid 没有本地玩家，因此也没有玩家 raid ID。
     public override int RaidID => -1;
 
     public List<int> ExtractedPlayers { get; } = [];
@@ -183,16 +183,16 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
 
         var gameTime = backendDateTime;
 
-        // (analysis/map-fixed-time) The same block CoopGame.Create runs, on the dedicated host's own raid
-        // path: a map can pin its own clock in the native matchmaker panel
-        // (EFT.UI.Matchmaker.LocationConditionsPanel, one static "<map>FixedTime" value per such map), and a
-        // Fika raid never runs that panel. 'Coop / Honor Map Fixed Time' (default on) is the one switch, and
-        // a rejoin or a transit keeps the running clock either way because pinning it again would rewind it.
+        // (analysis/map-fixed-time) 与 CoopGame.Create 所运行的同一代码块，位于专用主机自身的 raid
+        // 路径上：地图可以在原生 matchmaker 面板中钉住自己的时钟
+        // （EFT.UI.Matchmaker.LocationConditionsPanel，每张这类地图一个静态的 "<map>FixedTime" 值），而
+        // Fika raid 从不运行那个面板。'Coop / Honor Map Fixed Time'（默认开启）就是那个开关，而
+        // 重新加入或 transit 无论如何都会保留正在运行的时钟，因为再次钉住它会让时钟倒退。
         //
-        // Note for whoever reads a headless log: DoWeatherThings (called further down in this method) derives
-        // the clock a second time - with IsRandomTime set it draws a random hour and discards the fixed time
-        // again. The judging line prints isRandomTime so that case is visible instead of silent, and switching
-        // 'Honor Map Fixed Time' off remains the one-flip rollback for this path as well.
+        // 给任何阅读无头日志的人一个提示：DoWeatherThings（在本方法后面被调用）会
+        // 第二次推导时钟——在设置 IsRandomTime 时它会抽取一个随机小时并再次丢弃固定时间。
+        // 判定行会打印 isRandomTime，因此那种情况是可见的而非静默的，而把
+        // 'Honor Map Fixed Time' 关掉仍然是这条路径的一键回滚。
         var fixedHour = 0;
         var fixedMinute = 0;
         var fixedSource = "none";
@@ -203,8 +203,8 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
         var fixedField = honorFixedTime
             ? fixedHour.ToString("D2") + ":" + fixedMinute.ToString("D2") + " (" + fixedSource + ")"
             : "none";
-        // A random time would redraw the hour inside DoWeatherThings and silently discard the fixed time, so it is
-        // skipped for exactly the raid that took the fixed time (see the call below and analysis/map-fixed-time §6.4).
+        // 随机时间会在 DoWeatherThings 内部重新抽取小时并静默丢弃固定时间，因此它恰好
+        // 只在那个采用了固定时间的 raid 上被跳过（见下面的调用与 analysis/map-fixed-time §6.4）。
         var skippedRandom = honorFixedTime && timeAndWeather.IsRandomTime;
         game._logger.LogInfo($"Raid time: hourOfDay={effectiveHourOfDay} " +
             $"({(honorFixedTime ? "map fixed time" : effectiveHourOfDay == -1 ? "current world time" : "custom")}), " +
@@ -259,17 +259,17 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
         game.GameDateTime = gameTime;
         game._localRaidSettings = localRaidSettings;
         TraceStep("create: weather");
-        // (analysis/map-fixed-time §6.4) Priority: the map's fixed time wins over a random time, and only then.
-        // When this raid did not take a fixed time (honorFixedTime == false, i.e. the map has none, the switch is
-        // off, or this is a rejoin/transit) the argument is exactly timeAndWeather.IsRandomTime - the original
-        // semantics, untouched.
+        // (analysis/map-fixed-time §6.4) 优先级：地图的固定时间优先于随机时间，且仅在那时优先。
+        // 当本次 raid 没有采用固定时间时（honorFixedTime == false，即该地图没有固定时间、开关
+        // 关闭，或这是一次重新加入/transit），该参数恰好就是 timeAndWeather.IsRandomTime——即原始
+        // 语义，未被改动。
         game.DoWeatherThings(timeAndWeather.IsRandomTime && !honorFixedTime, timeAndWeather.IsRandomWeather);
         TraceStep("create: weather ok");
         WorldInteractiveObject.InteractionShouldBeConfirmed = false;
 
         TraceStep("create: voip distance");
-        // A dedicated host has no VOIP instance of its own; the value only feeds
-        // game._voipDistance, so a missing handler must not abort the raid start.
+        // 专用主机没有自己的 VOIP 实例；该值只用于提供给
+        // game._voipDistance，因此缺少处理器绝不能中止 raid 启动。
         float hearingDistance = 0f;
         if (FikaGlobals.VOIPHandler is { } voipHandler)
         {
@@ -318,9 +318,9 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
     }
 
     /// <summary>
-    /// Raid-start trace. A failure inside native or async frames reports only the
-    /// entry method, so every risky statement of <see cref="Create"/> logs its name:
-    /// the last line before a failure names the statement that threw.
+    /// Raid 启动追踪。原生帧或异步帧内部的失败只报告
+    /// 入口方法，因此 <see cref="Create"/> 中每条有风险的语句都会记录其名称：
+    /// 失败前的最后一行就点出了抛异常的那条语句。
     /// </summary>
     private static void TraceStep(string step)
     {
@@ -464,10 +464,10 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
             AirdropParameters = _location.airdropParameters
         };
         airdropEventClass.Init(true);
-        // Mirrors CoopGame: an interop TryCast returns null instead of
-        // throwing, and the world is not guaranteed to be a ClientGameWorld
-        // (a mod, or a create path that did not request a Fika world, can
-        // install a plain GameWorld). Never dereference the result directly.
+        // 与 CoopGame 一致：interop 的 TryCast 返回 null 而不是
+        // 抛异常，而且世界并不保证是一个 ClientGameWorld
+        // （一个 mod，或一条未请求 Fika 世界的创建路径，可以
+        // 装入一个普通的 GameWorld）。绝不要直接解引用该结果。
         var clientGameWorld = Singleton<GameWorld>.Instance?.TryCast<ClientGameWorld>();
         if (clientGameWorld != null && clientGameWorld.ClientSynchronizableObjectLogicProcessor != null)
         {
@@ -490,8 +490,8 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
         _logger.LogInfo("[Headless] Stage: host ready, deploying players");
 
         TaskCompletionSource taskCompletionSource = new();
-        // Routed through the managed/engine value boundary: a routine that yields the port's managed
-        // WaitSeconds must never hand it to the engine's enumerator wrapper (analysis/red-errors-coroutines, E1).
+        // 经由托管/引擎值边界路由：一个 yield 出本移植托管
+        // WaitSeconds 的例程绝不能把它交给引擎的枚举器包装器（analysis/red-errors-coroutines，E1）。
         StartCoroutine(Fika.Core.EngineCoroutines.Wrap(FinishRaidSetup(() => taskCompletionSource.SetResult(true)), "Fika.Headless.FinishRaidSetup"));
         await taskCompletionSource.Task;
 
@@ -510,10 +510,10 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
         if (GameController.CoopHandler.HumanPlayers.Count > 0)
         {
             var player = GameController.CoopHandler.HumanPlayers[0];
-            // A headless host may run without a camera at all (Destroy
-            // Graphics, -nographics, or a host that never created one). This
-            // is a cosmetic anchoring step for the host's own view, so a
-            // missing camera must never fail the raid.
+            // 无头主机完全可能在没有相机的情况下运行（Destroy
+            // Graphics、-nographics，或一个从未创建过相机的主机）。这
+            // 是为主机自身视角所做的一个装饰性锚定步骤，因此
+            // 缺少相机绝不能导致 raid 失败。
             var cameraTransform = CameraManager.Instance != null ? CameraManager.Instance.Camera?.transform : null;
             if (cameraTransform != null)
             {
@@ -547,9 +547,9 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
 
     private void InitializeCameraAndUnloadAssets()
     {
-        // Fail-safe: this tears down cameras, culling and the spatial audio
-        // system. It must never run in a process that is not an armed
-        // dedicated host, whatever created this game object.
+        // 故障安全：这会拆除相机、剔除和空间音频
+        // 系统。它绝不能运行在一个并非已武装的
+        // 专用主机的进程里，无论这个游戏对象由谁创建。
         if (!FikaHeadlessPlugin.IsArmed)
         {
             _logger.LogError("[Headless] Refusing to start: this does not look like a dedicated headless host. " +
@@ -557,9 +557,9 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
             return;
         }
 
-        // The camera manager only exists when the native map load created it.
-        // A dedicated host can legitimately have no camera, so report it and
-        // keep the raid alive instead of failing initialization.
+        // 相机管理器只在原生地图加载创建了它时才存在。
+        // 专用主机完全可能确实没有相机，因此报告它并
+        // 保持 raid 存活，而不是让初始化失败。
         var cameraManager = CameraManager.Instance;
         if (cameraManager == null)
         {
@@ -623,7 +623,7 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
                     }
                 }
             }
-            // This calls the Dispose() method
+            // 这里调用 Dispose() 方法
             GameObject.Destroy(spatialAudioSystem);
         }
     }
@@ -689,10 +689,10 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
             }
 
             LoadingScreenUI.Instance?.UpdateAndBroadcast(50f);
-            // (analysis/transit-reload-sync) The headless twin of FikaHostGameWorld's alignment anchor: a client
-            // that already ended its own raid waits for this signal before it creates its level, so it has to go
-            // out at the moment this host really starts loading the new map. Only a continuing transit announces
-            // (the clients' own bounded fallbacks cover a host that never does), and the call never throws.
+            // (analysis/transit-reload-sync) FikaHostGameWorld 对齐锚点的无头孪生实现：一个已经
+            // 结束自身 raid 的客户端会在创建关卡之前等待这个信号，因此它必须在
+            // 本主机真正开始加载新地图的那一刻发出。只有仍在继续的 transit 才会宣告
+            // （客户端自身的有界兜底会覆盖一个从不宣告的主机），且该调用从不抛异常。
             if (FikaBackendUtils.IsTransit)
             {
                 TransitReloadGate.AnnounceHostReloadStart(FikaSingleton<FikaServer>.Instance,
@@ -779,7 +779,7 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
 
     public void ReportAbuse()
     {
-        // Do nothing
+        // 什么都不做
     }
 
     public void RepairLocalHands(bool force = false) { }
@@ -812,8 +812,8 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
             return;
         }
 
-        // Set the state before raising events: an event handler may request a
-        // second stop while the first one is still disposing players.
+        // 在触发事件之前设置状态：一个事件处理器可能在第一次停止仍在
+        // 处置玩家时请求第二次停止。
         Status = GameStatus.Stopping;
         _logger.LogInfo($"[Headless] Shutdown: raid stopping (exitStatus={exitStatus}, exitName={exitName ?? "<none>"})");
 
@@ -827,8 +827,8 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
         {
             Status = GameStatus.Stopped;
             _logger.LogInfo("[Headless] Shutdown: raid stopped, handing control back to the menu lifecycle");
-            // OnGameEnd may destroy this game. Do not access it after invoking
-            // the callback, and invoke the callback only for the first stop.
+            // OnGameEnd 可能销毁这个游戏。在调用回调之后不要再访问它，
+            // 并且只对第一次停止调用该回调。
             _exitCallback?.Invoke(new Result<ExitStatus, Il2CppSystem.TimeSpan, ClientMetrics>(
                 exitStatus, raidDuration, null));
         }
@@ -878,7 +878,7 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
         {
             if (GameController.CoopHandler != null)
             {
-                // Spawn mods may mutate the dictionary while players dispose.
+                // 生成 mod 可能在玩家处置过程中修改该字典。
                 FikaPlayer[] players = [.. GameController.CoopHandler.Players.Values];
                 foreach (var player in players)
                 {
@@ -960,7 +960,7 @@ public class HeadlessGame : AbstractGame, IFikaGame, IClientHearingTable
 
     public override void FixedUpdate()
     {
-        // Do nothing
+        // 什么都不做
     }
 }
 

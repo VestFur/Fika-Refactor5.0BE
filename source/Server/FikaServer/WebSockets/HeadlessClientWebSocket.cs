@@ -68,18 +68,18 @@ public class HeadlessClientWebSocket(HeadlessHelper headlessHelper, HeadlessServ
                 }
             }
 
-            // A room may be ending or may not have registered its host yet.
-            // Profile/player lookup omits both cases, while the headless room
-            // is always keyed directly by this profile ID.
+            // 房间可能正在结束，也可能尚未注册它的主机。
+            // Profile/player 查找会漏掉这两种情况，而 headless 房间
+            // 总是直接用这个 profile ID 作为键。
             if (matchService.GetMatch(userSessionID) != null)
             {
-                // A restarted headless process cannot resume the previous raid.
-                // End it through the normal path so reservation and insurance
-                // state are cleared before this socket becomes available again.
+                // 重启后的 headless 进程无法继续之前的战局。
+                // 通过正常路径结束它，以便在该 socket 再次可用之前
+                // 清空预约和保险状态。
                 await matchService.EndMatch(userSessionID, EFikaMatchEndSessionMessage.HostShutdown);
             }
 
-            // The peer can disconnect while the previous raid is being cleaned.
+            // 清理上一场战局期间，对端可能断开连接。
             if (ws.State != WebSocketState.Open)
             {
                 return;
@@ -151,9 +151,9 @@ public class HeadlessClientWebSocket(HeadlessHelper headlessHelper, HeadlessServ
                     return;
             }
 
-            // Resolve the profile from the authoritative socket index.  The
-            // authentication context alone cannot prove that an old socket
-            // still owns this headless after a replacement connection.
+            // 从权威的 socket 索引解析 profile。仅凭
+            // 认证上下文无法证明在替换连接之后旧 socket
+            // 仍然拥有这个 headless。
             var sessionId = _headlessWebSockets.FirstOrDefault(
                 entry => ReferenceEquals(entry.Value, ws)).Key;
             if (string.IsNullOrEmpty(sessionId)) return;
@@ -178,10 +178,10 @@ public class HeadlessClientWebSocket(HeadlessHelper headlessHelper, HeadlessServ
             {
                 logger.Debug($"[{GetSocketId()}] Deleting client {userSessionID}");
 
-                // The close callback for a replaced socket can arrive after a
-                // new socket has already started another raid. Re-check
-                // authority while holding the per-profile gate before ending
-                // anything; an old callback must never stop the new match.
+                // 被替换 socket 的关闭回调可能在新 socket 已经启动
+                // 另一场战局之后才到达。在结束任何东西之前，须在
+                // 持有 per-profile 门的情况下重新确认权威性；
+                // 旧回调绝不能停止新的对局。
                 if (!_headlessWebSockets.TryGetValue(userSessionID, out var currentSocket) ||
                     !ReferenceEquals(currentSocket, ws) ||
                     (headlessService.HeadlessClients.TryGetValue(userSessionID, out var currentInfo) &&
@@ -213,10 +213,10 @@ public class HeadlessClientWebSocket(HeadlessHelper headlessHelper, HeadlessServ
                 }
                 else
                 {
-                    // A failed replacement can leave the socket index alive
-                    // after the profile entry was removed. Still terminate a
-                    // match keyed by this headless session before dropping
-                    // the last connection index.
+                    // 失败的替换可能在 profile 条目被移除之后
+                    // 让 socket 索引仍然存活。在丢弃最后一个连接索引
+                    // 之前，仍要终止以该 headless 会话为键的
+                    // 对局。
                     await EndAuthoritativeMatchAsync(userSessionID);
                 }
 
@@ -239,9 +239,9 @@ public class HeadlessClientWebSocket(HeadlessHelper headlessHelper, HeadlessServ
         }
         catch (Exception exception)
         {
-            // MatchService uses finally blocks for insurance/match cleanup;
-            // still remove the dead socket even if persistence reports an
-            // error so it cannot be advertised as available.
+            // MatchService 用 finally 块做保险/对局清理；
+            // 即使持久化报告出错，也要移除已死的 socket，
+            // 以免它被宣告为可用。
             logger.Error($"Failed to end headless match {userSessionID} during websocket close", exception);
         }
     }

@@ -52,7 +52,7 @@ using EFT.UI.Matchmaker;
 namespace Fika.Core.Main.GameMode;
 
 /// <summary>
-/// Coop game used in Fika
+/// Fika 中使用的合作游戏
 /// </summary>
 public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, IClientHearingTable
 {
@@ -68,9 +68,9 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Invoked when the main player extracts
+    /// 主玩家撤离时触发
     /// </summary>
-    /// <remarks>Does not run on headless clients as there is no player</remarks>
+    /// <remarks>在无头客机上不会运行，因为没有玩家</remarks>
     public static Action<FikaPlayer> MainPlayerExtracted { get; set; }
 
     public BaseGameController GameController { get; set; }
@@ -114,22 +114,22 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     private float _nextInteractionRepairTime;
     private float _stuckInteractionSince;
     /// <summary>
-    /// Handle of the Update driven session start routine. The routine itself lives on
-    /// <see cref="Fika.Core.Main.Utils.SessionPump"/>, a plain managed static class: a private method of
-    /// this injected class would be registered with il2cpp (own trampoline thunk + shared managed
-    /// invoker), which is the construction that fail-fasted the 2026-10-10 host raid. The field stays
-    /// internal only so that helper can hold the handle (analysis/delegate-targets).
+    /// Update 驱动 session 启动例程的句柄。该例程本身位于
+    /// <see cref="Fika.Core.Main.Utils.SessionPump"/>——一个普通的托管静态类：这个注入类的私有方法
+    /// 会被注册到 il2cpp（自己的 trampoline thunk + 共享的托管
+    /// invoker），而正是这种构造让 2026-10-10 的主机 raid 发生 fail fast。该字段保持
+    /// internal 只是为了让那个辅助类能持有句柄（analysis/delegate-targets）。
     /// </summary>
     internal FikaRoutinePump.RoutineHandle _sessionRoutine;
-    /// <summary>Set by the <see cref="SessionRun"/> override, which the native session coroutine calls.</summary>
+    /// <summary>由 <see cref="SessionRun"/> 的 override 设置，原生 session 协程会调用它。</summary>
     internal bool _sessionRunReached;
     private int _handsRepairAttempts;
     private bool _handsRepairInFlight;
     private bool _nativeHandsSelectionNoted;
     private bool _handsProcessCompletedNoted;
 
-    // Hands lock watchdog ("operating too fast"). The timers live here so the
-    // per-frame plugin hook can keep calling one watchdog per concern.
+    // 手部锁定看门狗（"operating too fast"）。计时器放在这里，是为了让
+    // 逐帧的插件钩子能对每个关注点各调用一个看门狗。
     private float _stuckHandsSince;
     private float _nextHandsLockRepairTime;
     private int _handsLockRepairs;
@@ -140,7 +140,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     public EftGamePlayerOwner DiagnosticPlayerOwner => _playerOwner;
 
     /// <summary>
-    /// Creates a <see cref="CoopGame"/>
+    /// 创建一个 <see cref="CoopGame"/>
     /// </summary>
     internal static CoopGame Create(IInputTree inputTree, Profile profile, GameWorld gameWorld, GameDateTime backendDateTime,
         InsuranceCompany insurance, GameUI gameUI, LocationSettings.Location location,
@@ -155,17 +155,17 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
         var gameTime = backendDateTime;
 
-        // (analysis/map-fixed-time) Some maps pin their own clock. The native matchmaker panel
-        // (EFT.UI.Matchmaker.LocationConditionsPanel) carries one static "<map>FixedTime" value per such
-        // map (Icebreaker) and feeds exactly that value into the raid time selector, so the live game
-        // gives the player no time choice there. A Fika raid never runs that panel, so the raid started
-        // on whatever the raid settings held - on this port usually the -1 ("follow the world clock")
-        // the Fika raid settings screen leaves behind. Use the map's own time instead.
+        // （analysis/map-fixed-time）有些地图会固定自己的时钟。原生匹配面板
+        // （EFT.UI.Matchmaker.LocationConditionsPanel）为每张这样的地图携带一个静态的 "<map>FixedTime"
+        // 值（Icebreaker），并把这个值直接喂给 raid 时间选择器，所以正式游戏
+        // 在那里不给玩家任何时间选项。Fika 的 raid 从不运行那个面板，于是 raid 是按
+        // raid 设置里原有的值启动的——在本移植上通常是 -1（"跟随世界时钟"）
+        // 也就是 Fika raid 设置界面留下的那个值。改用地图自己的时间。
         //
-        // A transit is excluded on purpose: it continues a raid whose clock is already past the pinned
-        // time, so pinning it again would rewind the clock for that machine.
-        // 'Coop / Honor Map Fixed Time' off = the player's own setting, i.e. exactly the behaviour before
-        // this block existed (one flip = the old path).
+        // 转图被有意排除：它延续的是一个时钟已经越过固定时间的 raid，
+        // 再次固定会让那台机器的时钟倒退。
+        // 'Coop / Honor Map Fixed Time' 关闭 = 玩家自己的设置，也就是这段代码存在之前
+        // 的行为（翻一个开关即回到旧路径）。
         var fixedHour = 0;
         var fixedMinute = 0;
         var fixedSource = "none";
@@ -254,7 +254,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Used to create a <see cref="EftGamePlayerOwner"/>
+    /// 用于创建一个 <see cref="EftGamePlayerOwner"/>
     /// </summary>
     /// <param name="inputTree"></param>
     /// <param name="insurance"></param>
@@ -297,19 +297,18 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// The countdown deploy screen
+    /// 倒计时部署界面
     /// </summary>
     /// <remarks>
-    /// Only the native <see cref="SessionRun(Il2CppSystem.Action)"/> coroutine calls this, and the pump has
-    /// already run the countdown by the time it does (the pump starts that coroutine itself, step 3). What is
-    /// returned is therefore a finished *native* enumerator instead of the managed wrapper
-    /// (<c>InitSessionUIManaged().WrapToIl2Cpp()</c>) this used to hand the engine: the engine crashed while it
-    /// released exactly such a wrapper one frame after this method's caller ran during the host raid start
-    /// (analysis/host-raid-coroutine).
+    /// 只有原生 <see cref="SessionRun(Il2CppSystem.Action)"/> 协程会调用它，而泵在调用到它之前
+    /// 就已经跑完了倒计时（泵自己启动那个协程，见第 3 步）。因此返回的是
+    /// 一个已经跑完的*原生*枚举器，而不是本方法过去交给引擎的托管包装
+    /// （<c>InitSessionUIManaged().WrapToIl2Cpp()</c>）：正是释放这样一个包装时，引擎在主机 raid
+    /// 启动期间本方法调用方运行后的一帧崩溃了
+    /// （analysis/host-raid-coroutine）。
     /// </remarks>
     public override Il2CppSystem.Collections.IEnumerator InitSessionUI()
     {
-        FikaBoundaries.Enter(BoundaryInitSessionUI);
         
         return NativeRoutines.Completed();
     }
@@ -394,7 +393,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Initializes the local player, replaces <see cref="BaseLocalGame{TPlayerOwner}.method_4(BotControllerSettings, string, InventoryController)"/>
+    /// 初始化本地玩家，替换 <see cref="BaseLocalGame{TPlayerOwner}.method_4(BotControllerSettings, string, InventoryController)"/>
     /// </summary>
     public async Task InitPlayer(BotControllerSettings botsSettings)
     {
@@ -440,11 +439,11 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
         gameWorld.ClientBroadcastSyncController = new ClientBroadcastSyncController();
 
-        // (analysis/cutscene-native-registration) The last entry of this list the port was missing. The native
-        // method_4 creates this whole controller family and every controller registers its per-frame caller in
-        // the same place; the two cutscene controllers were created by the world factory instead and never
-        // registered anywhere, which is why nothing ever ticked them (gate:ticks engine=0). Created and registered here,
-        // where the native build does it.
+        // （analysis/cutscene-native-registration）这份列表里本移植缺失的最后一项。原生
+        // method_4 创建了这一整族控制器，而每个控制器都在同一处注册自己的逐帧
+        // 调用者；两个过场控制器却是由世界工厂创建、从未在任何地方注册，
+        // 这就是从来没有东西 tick 它们的原因（gate:ticks engine=0）。在原生构建所做的
+        // 那个位置创建并注册它们。
         try
         {
             GameController.InitCutsceneControllers(gameWorld);
@@ -469,22 +468,22 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             _playerOwner = _func_1(player);
             
 
-            // The stock SPT 5 LocalGame path registers the local player with
-            // the native world immediately after PlayerFactory returns. Fika
-            // creates the player through its managed path, so that native
-            // registration can be skipped even though MainPlayer happens to
-            // be populated by another startup callback. Register both sides
-            // explicitly before creating the camera/owner input chain. This
-            // binds GamePlayerOwner, MainPlayer and the native player list to
-            // the same object used by Fika networking.
+            // 原版 SPT 5 的 LocalGame 路径把本地玩家注册到
+            // 原生世界里，时机是 PlayerFactory 返回之后立刻。Fika
+            // 是通过自己的托管路径创建玩家的，所以那次原生
+            // 注册可以被跳过，即使 MainPlayer 恰好被
+            // 另一个启动回调填好。在创建相机/owner 输入链之前，
+            // 把两侧都显式注册好。这样就把
+            // GamePlayerOwner、MainPlayer 与原生玩家列表
+            // 绑定到 Fika 网络所使用的同一个对象上。
             RegisterNativePlayerWithWorld(gameWorld, player);
 
-            // The native call is intentionally deferred.  FikaPlayer starts
-            // with an empty-hands controller and the SPT 5 native helper can
-            // run before the owner/input chain exists, silently leaving the
-            // local player in EmptyHandsController forever.  RepairLocalHands
-            // retries the same stock selection after the owner and raid are
-            // fully started, then falls back to FikaPlayer.Proceed(Weapon).
+            // 这次原生调用是有意延迟的。FikaPlayer 启动时
+            // 持有的是一个空手控制器，而 SPT 5 的原生辅助方法可能
+            // 在 owner/输入链存在之前就运行，从而让本地玩家
+            // 静默地永久停在 EmptyHandsController。RepairLocalHands
+            // 会在 owner 与 raid 完全启动之后重试同一套原版选择，
+            // 然后回退到 FikaPlayer.Proceed(Weapon)。
 
             PlayerCameraController.Create(_playerOwner.Player);
             CameraManager.Instance.SetOcclusionCullingEnabled(new Il2CppSystem.Nullable<bool>(Location.OcculsionCullingEnabled));
@@ -504,21 +503,21 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         await GameController.InitializeLoot(location);
         await SpawnLoot(location).AsManaged();
 
-        // NOTE: do NOT call GetQuestLootReady + SpawnLoot again here. SpawnLoot(location) above
-        // already routes the descriptor through GetQuestLootReady, which diverts the quest-flagged
-        // entries into GameWorld._questLootItems and materialises the REST - so a second pass spawned
-        // a duplicate copy of every ordinary ground loot item (the reported ghost entities).
-        // The deferred quest entries are materialised by GameWorld_SpawnLoot_QuestLoot_Patch
-        // (postfix on GameWorld.SpawnLoot -> ManageQuestLoot), which logs [QuestLoot].
+        // 注意：不要在这里再次调用 GetQuestLootReady + SpawnLoot。上面的 SpawnLoot(location)
+        // 已经把该描述符过了一遍 GetQuestLootReady，后者会把带任务标记的条目
+        // 分流进 GameWorld._questLootItems，并把剩下的实例化——所以第二遍会给每一个
+        // 普通地面战利品物品再刷出重复的一份（即被报告的那些幽灵实体）。
+        // 被延迟的任务条目由 GameWorld_SpawnLoot_QuestLoot_Patch
+        // （GameWorld.SpawnLoot -> ManageQuestLoot 的 postfix）实例化，它会打 [QuestLoot]。
 
         GameController.CoopHandler.ShouldSync = true;
 
-        // Calling the inherited IL2CPP virtual wrapper here can re-enter the
-        // native BaseLocalGame.Run path. On SPT 5 that path invokes
-        // LocalBotsSpawnInitialization and bypasses Fika's host/client bot
-        // controller, which leaves the native spawn context incomplete and
-        // fails with a NullReferenceException before the lobby can start.
-        // Dispatch directly to the managed Fika controller instead.
+        // 在这里调用继承来的 IL2CPP 虚方法包装，可能会重入
+        // 原生的 BaseLocalGame.Run 路径。在 SPT 5 上那条路径会调用
+        // LocalBotsSpawnInitialization，并绕过 Fika 的主机/客机 bot
+        // 控制器，从而让原生刷怪上下文不完整，并以
+        // NullReferenceException 失败，大厅根本起不来。
+        // 改为直接派发到 Fika 的托管控制器。
         await GameController.StartBotSystemsAndCountdown(botsSettings, gameWorld);
 
         EnsurePlayerOwnerReady();
@@ -543,12 +542,12 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// (2026-10-17) Re-activates the camera manager when a raid start left it switched off. This class
-    /// switches it off itself (CameraManager.Instance.IsActive = false, in InitPlayer) and the only place
-    /// that switches it back on is the countdown teardown. A transit reload does not run that teardown when
-    /// its overlay never came up, and the machine then stayed on a black frame after the next map loaded
-    /// (reported for the host after the Shoreline -> Terminal transfer). Only an inactive manager is
-    /// touched, so a normal raid start - which already has it active - is left exactly as it was.
+    /// （2026-10-17）当一次 raid 启动把相机管理器关掉时，重新激活它。本类
+    /// 自己会把它关掉（InitPlayer 中的 CameraManager.Instance.IsActive = false），而唯一
+    /// 把它重新打开的地方是倒计时拆除流程。当转图重载的覆盖层从未出现时，那次拆除
+    /// 不会运行，于是下一张地图加载后机器就停在黑帧上
+    /// （Shoreline -> Terminal 转图后主机侧的已报告现象）。只有非激活的管理器
+    /// 会被碰，所以正常的 raid 启动——它本来就已经是激活的——完全保持原样。
     /// </summary>
     private static void EnsureRaidCameraActive()
     {
@@ -585,9 +584,9 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Re-enters the stock first-item selection after deployment.  SPT 5's
-    /// IL2CPP LocalGame normally performs this after PlayerOwner.Run(); the
-    /// managed Fika startup path can reach the raid without that callback.
+    /// 部署之后重新进入原版的首件物品选择。SPT 5 的
+    /// IL2CPP LocalGame 通常在 PlayerOwner.Run() 之后执行它；而 Fika 的
+    /// 托管启动路径可能在没有那次回调的情况下就到达 raid。
     /// </summary>
     public void RepairLocalHands(bool force = false)
     {
@@ -596,17 +595,17 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         if (_localPlayer.Downed || !_localPlayer.HealthController.IsAlive)
             return;
 
-        // The native selection this repair duplicates runs from
-        // PlayerOwner.Run(): its vmethod_0 calls Player.SetFirstAvailableItem
-        // while the hands controller is an EmptyHandsController, and the
-        // equipment gate it uses (Player.IsItemCanBeEquipped = reachable place
-        // + CheckAction) cannot be satisfied before the owner is running. In
-        // the 2026-10-10 host raid every early probe still consumed one of the
-        // eight attempts (LogOutput.log 7481..7496 = attempts 1..8 during the
-        // countdown), so the two forced repairs after "Raid has been started"
-        // were dropped by the attempt budget and the raid started with empty
-        // hands. Wait for the owner instead of counting probes that cannot
-        // succeed; the budget stays for the retries that can.
+        // 本次修复所复刻的那次原生选择由 PlayerOwner.Run() 运行：
+        // 它的 vmethod_0 会在手上控制器是 EmptyHandsController 时调用
+        // Player.SetFirstAvailableItem，而它所用的装备闸门
+        // （Player.IsItemCanBeEquipped = 可及位置 + CheckAction）
+        // 在 owner 运行起来之前无法满足。在
+        // 2026-10-10 的主机 raid 中，每一个早期探测仍然消耗了八次尝试中的一次
+        // （LogOutput.log 7481..7496 = 倒计时期间的第 1..8 次尝试），
+        // 所以 "Raid has been started" 之后的那两次强制修复被
+        // 尝试预算丢掉，raid 于是空手开局。改为等待 owner，
+        // 而不是去数那些不可能成功的探测；预算留给
+        // 那些能成功的重试。
         if (_playerOwner.State != EFT.PlayerOwner.EState.Started)
         {
             return;
@@ -632,12 +631,12 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// One line per raid once the local player owns something other than the
-    /// startup EmptyHandsController. The stock startup path is
-    /// <c>PlayerOwner.Run()</c> -&gt; <c>Player.SetFirstAvailableItem</c>, so this
-    /// line proves the native selection reached the weapon: the next log either
-    /// carries it (native path completed) or carries the RepairLocalHands
-    /// warnings instead (the safety net had to run).
+    /// 每次 raid 一行：本地玩家拥有的不再是启动时的那个
+    /// EmptyHandsController 之后打印。原版启动路径是
+    /// <c>PlayerOwner.Run()</c> -&gt; <c>Player.SetFirstAvailableItem</c>，所以这行
+    /// 日志证明原生选择确实到达了武器：下一条日志要么带着它（原生路径
+    /// 已完成），要么带着 RepairLocalHands 的警告（安全网
+    /// 不得不运行）。
     /// </summary>
     private void NoteNativeHandsSelection()
     {
@@ -661,10 +660,10 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// One line per raid as soon as the native hands switch is provably finished: a real controller is
-    /// in hands and the player level process gate is back to None. The 2026-10-10 09:45 raid never
-    /// reached that state - its process stayed Scheduled from the first switch until the raid ended -
-    /// so this line (next to the "stayed locked" warnings) is what proves the switch completes now.
+    /// 每次 raid 一行：一旦原生手部切换可以被证明完成——手上是真实控制器，
+    /// 且玩家层级的进程闸门回到 None。2026-10-10 09:45 那次 raid 从未到达
+    /// 该状态——它的进程从第一次切换起一直停在 Scheduled，直到 raid 结束——
+    /// 所以这行日志（连同那些 "stayed locked" 警告）才是切换现在能完成的证据。
     /// </summary>
     private void NoteNativeHandsProcessCompleted()
     {
@@ -681,13 +680,13 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// The hands operation is the exact field the native <c>ItemHandsController.ManualUpdate</c>
-    /// dereferences (<c>CurrentHandsOperation.Update(deltaTime)</c>), and it is only assigned by
-    /// <c>InitiateOperation</c> inside the controller's <c>Spawn</c>. A null operation while a real
-    /// controller is set is the state that produced the 300 k-line NullReference flood of the
-    /// 2026-10-10 09:45 raid (<c>ItemHandsController.ManualUpdate</c> &lt;-
-    /// <c>FirearmController.ManualUpdate</c> &lt;- <c>Player.ArmsUpdate</c>): the operation factory
-    /// dictionary was never built, so the spawn aborted before the first operation was set.
+    /// 手部操作正是原生 <c>ItemHandsController.ManualUpdate</c> 解引用的那个字段
+    /// （<c>CurrentHandsOperation.Update(deltaTime)</c>），而它只由控制器的 <c>Spawn</c> 中的
+    /// <c>InitiateOperation</c> 赋值。在真实控制器已设置时操作却为 null，正是
+    /// 2026-10-10 09:45 那次 raid 产生 30 万行 NullReference 洪流的那个状态
+    /// （<c>ItemHandsController.ManualUpdate</c> &lt;-
+    /// <c>FirearmController.ManualUpdate</c> &lt;- <c>Player.ArmsUpdate</c>）：操作工厂
+    /// 字典从未被构建，所以 spawn 在第一个操作被设置之前就中止了。
     /// </summary>
     private static string DescribeHandsOperation(Player.AbstractHandsController hands)
     {
@@ -703,11 +702,11 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Puts the first usable item back into the local player's hands.  Shared
-    /// by the deployment repair (empty hands) and by the hands lock watchdog
-    /// (a controller that can no longer fire or move items).  The deployment
-    /// path keeps its historic log lines so the existing diagnostics still
-    /// match.
+    /// 把第一件可用物品放回本地玩家手中。它由
+    /// 部署修复（空手）与手部锁定看门狗（控制器再也无法开火
+    /// 或移动物品）共用。部署路径
+    /// 保留它历史悠久的日志行，这样现有的诊断仍然
+    /// 能对上。
     /// </summary>
     private void RestoreFirstAvailableItem(string tag, bool includeMelee = false)
     {
@@ -719,11 +718,11 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         _handsRepairInFlight = true;
         try
         {
-            // Every hands switch is an EFT.Player.Process gated by
-            // Player.ProcessStatus: while it is not None the native scheduler
-            // skips the next Proceed (the same gate RepairHandsLock releases).
-            // A switch whose DropCurrentController never completed leaves it
-            // set, so the repair would otherwise be skipped silently.
+            // 每一次手部切换都是一个受 Player.ProcessStatus 控制的
+            // EFT.Player.Process：当它不是 None 时，原生调度器会跳过
+            // 下一次 Proceed（RepairHandsLock 释放的就是同一道闸门）。
+            // 一次其 DropCurrentController 从未完成的切换会把它留着，
+            // 于是修复会被静默跳过。
             if (_localPlayer.ProcessStatus != Player.EProcessStatus.None)
             {
                 _logger.LogWarning($"{tag} clearing the hands process status {_localPlayer.ProcessStatus} left by an unfinished switch");
@@ -734,16 +733,16 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             if (weapon != null)
             {
                 _logger.LogInfo($"{tag} selected weapon {weapon.Id} ({weapon.GetType().FullName}) from {source}");
-                // Calling FikaPlayer.Proceed directly bypasses the native
-                // TrySetLastEquippedWeapon path that can be a no-op while
-                // the managed owner is being brought up.
+                // 直接调用 FikaPlayer.Proceed 会绕过原生的
+                // TrySetLastEquippedWeapon 路径，而该路径在托管 owner 尚未
+                // 就绪时可能变成空操作。
                 _localPlayer.Proceed(weapon, null, scheduled: false);
                 return;
             }
 
-            // A knife controller still satisfies the inventory (its
-            // CanExecute returns true), so it is a better fallback than
-            // leaving the player without any hands at all.
+            // 小刀控制器仍然能满足背包需求（它的 CanExecute 返回 true），
+            // 所以它比让玩家完全没有手部要好，是一个更好的
+            // 兜底。
             if (includeMelee)
             {
                 var melee = FindEquipment(out _)?.GetSlot(EquipmentSlot.Scabbard)?.ContainedItem
@@ -756,9 +755,9 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
                 }
             }
 
-            // Keep the historic wording (existing diagnostics match on it) and
-            // append the per-slot truth: whether the slot was empty, held a
-            // non-weapon or held a weapon the native gate refused.
+            // 保留历史上的措辞（现有诊断按它匹配），并追加
+            // 逐槽位的真相：该槽位是空的、装的是非武器，还是装着一把被
+            // 原生闸门拒绝的武器。
             _logger.LogWarning($"{tag} found no weapon in FirstPrimaryWeapon/SecondPrimaryWeapon/Holster [{DescribeWeaponSlots()}]");
         }
         catch (Exception ex)
@@ -772,21 +771,21 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Ground loot pickups run inside EFT.PickUpState plus the animator's
-    /// interaction queue. When that state is left behind, the player keeps its
-    /// restrictions for the rest of the raid (no view rotation, no movement, no
-    /// crouch, no interaction prompts) even though the inventory and firing keep
-    /// working. Releasing it only from failed operations is not enough, because
-    /// the state can outlive an operation that reported success, so watch the
-    /// local player and release a pickup/loot state that persists far longer
-    /// than the native animation ever does.
+    /// 地面战利品拾取运行在 EFT.PickUpState 加上 animator 的
+    /// 交互队列之中。当这个状态被留在身后时，玩家会在整个 raid 剩下的
+    /// 时间里保留它的限制（无法转视角、无法移动、无法
+    /// 蹲下、没有交互提示），尽管背包与开火仍然
+    /// 正常。只在失败的操作里释放它并不够，因为
+    /// 该状态可以在一个报告成功的操作之后继续存在，所以要监视
+    /// 本地玩家，并释放一个持续时间远超原生动画的
+    /// 拾取/战利品状态。
     /// </summary>
     public void RepairLocalInteractionState()
     {
-        // [LootDiag] (analysis/pickup-auto-fallback, Z4): per-frame pickup-path bookkeeping only -
-        // a 60 s mode heartbeat while a raid runs, and one reset as soon as it stopped, so a switch
-        // never survives into the next raid. It must run before the null guard below: between
-        // raids the local player is already gone and the switch still has to be cleared.
+        // [LootDiag]（analysis/pickup-auto-fallback，Z4）：仅做逐帧的拾取路径记账——
+        // raid 运行期间每 60 秒一次模式心跳，一旦停止就重置一次，这样开关
+        // 绝不会活到下一次 raid。它必须在下面的 null 守卫之前运行：
+        // 两次 raid 之间本地玩家已经没了，而开关仍必须被清掉。
         GroundLootPickup.TickPickupModeWatchdog(_localPlayer,
             Status is GameStatus.Running or GameStatus.Started);
 
@@ -805,17 +804,17 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             return;
         }
 
-        // The hands lock keeps its own timers; the interaction state below
-        // only ticks once per second and must not gate it.
+        // 手部锁定有自己的计时器；下面的交互状态
+        // 只每秒 tick 一次，不得对它形成闸门。
         try
         {
             RepairHandsLock();
         }
         catch (Exception exception)
         {
-            // A disposed player or a throwing native accessor must not take
-            // the per-frame plugin hook down with it. Reuse the repair
-            // cooldown so a persistent failure does not spam the log.
+            // 一个已释放的玩家或一个抛异常的原生访问器，都不能把
+            // 逐帧的插件钩子一起带下去。复用修复的
+            // 冷却时间，这样持续失败不会刷爆日志。
             if (Time.time >= _nextHandsLockRepairTime)
             {
                 _nextHandsLockRepairTime = Time.time + 8f;
@@ -835,13 +834,20 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             return;
         }
 
-        // Only EPlayerState.Pickup: a ground item take animates for well under two
-        // seconds, while container searching (Loot), planting, door breaching and
-        // normal interactions legitimately last for seconds and must not be
-        // cancelled here. The reported freeze only ever comes from ground loot.
-        // Ground loot (Pickup) locks up after a take animation of well under two
-        // seconds; placing a quest item (Plant) legitimately takes longer, so it gets
-        // a much larger budget before the state counts as stuck.
+        // [InvDiag]（2026-10-27，T3）下面的状态切换看不到的两个交互锁定信号：
+        // MovementContext.CanInteract 被持有，以及 animator 的交互计划被拒。NativeInteractionRelease
+        // 已经把两者都当作"卡住"，但从没有人轮询过它们——过去只监视 Pickup/Plant 状态名，
+        // 于是一次丢失的地面战利品拾取让计划被拒之后，整个 raid 里之后每一次拾取都被拒绝。
+        NativeInteractionRelease.WatchLostInteractionSchedule(_localPlayer,
+            _localPlayer.InventoryController?.TryCast<BaseInventoryController>()?.PendingOperationCount ?? 0, Time.time);
+
+        // 只针对 EPlayerState.Pickup：一次地面物品拾取的动画远不到两
+        // 秒，而搜索容器（Loot）、放置、破门以及
+        // 正常交互合法地会持续数秒，绝不能在这里被
+        // 取消。所报告的冻结只来自地面战利品。
+        // 地面战利品（Pickup）在一次远不到两秒的拾取动画之后就锁定；
+        // 而放置任务物品（Plant）合法地耗时更长，所以在它算作卡住之前
+        // 会拿到大得多的预算。
         var timeout = movementContext.CurrentState.Name switch
         {
             EPlayerState.Pickup => 5f,
@@ -867,40 +873,43 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         var stuckState = movementContext.CurrentState.Name;
         var heldFor = Time.time - _stuckInteractionSince;
         _stuckInteractionSince = 0f;
-        // [LootDiag] (analysis/pickup-auto-fallback, Z4): snapshot the native pickup state machine
-        // before the release below rewrites it, then switch this machine's ground loot takes to
-        // the Fika bypass (once per raid, only for a real EPlayerState.Pickup stick - see
-        // GroundLootPickup.NoteStuckPickup). The release stays exactly as it was.
+        // [LootDiag]（analysis/pickup-auto-fallback，Z4）：在下面的释放改写原生拾取状态机
+        // 之前先给它拍个快照，然后把本机的地面战利品拾取切到
+        // Fika 的旁路（每次 raid 一次，且只针对真正的 EPlayerState.Pickup 卡住——见
+        // GroundLootPickup.NoteStuckPickup）。释放逻辑完全保持原样。
         GroundLootPickup.DiagnoseStuckState(movementContext, stuckState, heldFor);
         GroundLootPickup.NoteStuckPickup(_localPlayer, stuckState, heldFor);
+        // 当 take-item 动画事件从未触发时，原生拾取续接（MovementContext.PickupAction）就丢失了。
+        // 在释放该状态之前把它运行一次。
+        global::Fika.Core.Main.Utils.PickupContinuationRepair.TryRepair(_localPlayer, movementContext, stuckState, heldFor);
         _logger.LogWarning($"Local player stayed in {stuckState} for more than {timeout} seconds; releasing the native interaction state");
         NativeInteractionRelease.Release(_localPlayer, "stuck-pickup-state");
     }
 
     /// <summary>
-    /// The native inventory gate refuses every item action while it is closed:
-    /// the drag-and-drop views (<c>GridView</c>/<c>SlotView.CanDrag</c>) and
-    /// <c>Player.SetItemInHands</c>/<c>SetQuickSlotItem</c> all go through
-    /// <c>Item.CheckAction</c> -> <c>PlayerInventoryController.CheckItemAction</c>.
-    /// <c>ItemController.Locked</c> is only ever written by
-    /// <c>MovementContext.StateLocksInventory</c> (a movement state's Enter sets
-    /// it, its Exit clears it) and an unfinished item event keeps single items
-    /// busy, so a state whose Exit never ran leaves the inventory dead for the
-    /// rest of the raid while movement keeps working.
+    /// 原生背包闸门在关闭期间会拒绝每一个物品操作：
+    /// 拖放视图（<c>GridView</c>/<c>SlotView.CanDrag</c>）以及
+    /// <c>Player.SetItemInHands</c>/<c>SetQuickSlotItem</c> 全都经过
+    /// <c>Item.CheckAction</c> -> <c>PlayerInventoryController.CheckItemAction</c>。
+    /// <c>ItemController.Locked</c> 只由
+    /// <c>MovementContext.StateLocksInventory</c> 写入（某个移动状态的 Enter 把它置位，
+    /// 它的 Exit 把它清掉），而一个未完成的物品事件会让单个物品
+    /// 保持忙碌，所以一个 Exit 从未运行过的状态，会让背包在整个 raid
+    /// 剩下的时间里都是死的，而移动仍然正常。
     /// <para>
-    /// The watchdog is deliberately narrow: it only acts when the player is
-    /// trying to use the inventory (the inventory screen is open, or an
-    /// operation was just refused by the gate) AND the gate is still closed
-    /// while the player is idle for several seconds. A door, approach or
-    /// stationary interaction owns the lock legitimately and never leaves the
-    /// player idle, so it is never touched.
+    /// 这个看门狗被刻意做得很窄：只有当玩家正
+    /// 试图使用背包（背包界面已打开，或某个操作
+    /// 刚刚被闸门拒绝）并且玩家已空闲数秒而闸门
+    /// 仍然关闭时，它才会动手。门、接近或
+    /// 原地交互合法地持有该锁，并且绝不会让玩家
+    /// 处于空闲，所以它永远不会被碰。
     /// </para>
     /// </summary>
     public void RepairLocalInventoryState()
     {
-        // The gate has to stay closed this long before it counts as stuck: every
-        // legitimate holder (a hands switch, a door approach, a magazine load)
-        // releases it well inside this budget.
+        // 闸门必须持续关闭这么久才算卡住：每一个
+        // 合法的持有者（一次手部切换、一次接近门、一次上弹）
+        // 都在这份预算之内就释放了。
         const float GateTimeoutSeconds = 6f;
         const float RefusalWindowSeconds = 60f;
 
@@ -925,20 +934,20 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             return;
         }
 
-        // A consumable or usable item in hands legitimately holds the same gate
-        // for several seconds (meds, food, a range finder); never touch that.
+        // 手中持有消耗品或可用物品时，合法地会持有同一道闸门
+        // 数秒（药、食物、测距仪）；绝不要碰这种状态。
         if (HasConsumableInHands())
         {
             ResetInventoryGateWatch();
             return;
         }
 
-        // A server callback registration without a handler is unambiguous: a live
-        // operation always owns its registration, and both the table and the
-        // registration are only touched on this thread. FikaPlayer.WaitingForCallback
-        // counts those registrations, and the client hands controllers answer
-        // CanPressTrigger/CanStartReload with false while it is true, so one leaked
-        // registration keeps the local player from shooting for the rest of the raid.
+        // 没有处理器的服务器回调注册是明确的：一个活着的
+        // 操作总是拥有自己的注册，而注册表和
+        // 注册都只在这个线程上被碰。FikaPlayer.WaitingForCallback
+        // 会统计这些注册，而客机手部控制器在它为 true 时
+        // 对 CanPressTrigger/CanStartReload 回答 false，于是一个泄漏的
+        // 注册会让本地玩家在整个 raid 剩下的时间里无法开枪。
         var staleCallbacks = inventoryController.CountStaleServerCallbacks();
         if (staleCallbacks > 0)
         {
@@ -967,8 +976,8 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             return;
         }
 
-        // Keep the timestamp so a repair that did not help runs again after the
-        // same timeout instead of once per frame.
+        // 保留时间戳，这样没起作用的修复会在同一个
+        // 超时之后再次运行，而不是每帧一次。
         _inventoryGateBlockedSince = Time.time;
         _inventoryGateRepairRounds++;
         inventoryController.RepairBlockedInventory(
@@ -985,9 +994,9 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Whether the player is using a consumable or another usable item. Those
-    /// hands controllers hold the same process/inventory gate for seconds while
-    /// they run, so the gate watchdog must not treat them as stuck.
+    /// 玩家是否正在使用消耗品或其他可用物品。这些
+    /// 手部控制器在运行时会持有同一道进程/背包闸门数秒，
+    /// 所以闸门看门狗不得把它们当作卡住。
     /// </summary>
     private bool HasConsumableInHands()
     {
@@ -1008,7 +1017,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         }
     }
 
-    /// <summary>Whether the player has the inventory screen open right now.</summary>
+    /// <summary>玩家此刻是否打开了背包界面。</summary>
     private static bool HasInventoryScreenOpen()
     {
         try
@@ -1023,22 +1032,22 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// "Operating too fast" hands lock.  Every hands switch is a
-    /// <c>EFT.Player.Process</c> gated by <c>Player.ProcessStatus</c>: while that
-    /// status is not <c>None</c> the inventory controller reports itself locked
-    /// and the next <c>Proceed</c> is skipped by the native scheduler - including
-    /// the switch that would return from a quick knife to the previous weapon.
-    /// A double-tapped quick knife can therefore leave the transitional
-    /// controller in hands for good: it rejects every inventory operation
-    /// (<c>QuickKnifeKickController.CanExecute</c> is false) and, with no firearm,
-    /// nothing can fire.  Movement does not depend on the hands, which is exactly
-    /// what the player sees.  Watch it and release it, but only long after any
-    /// legitimate switch could still be running.
+    /// "Operating too fast" 手部锁定。每一次手部切换都是一个
+    /// 受 <c>Player.ProcessStatus</c> 控制的 <c>EFT.Player.Process</c>：当该
+    /// 状态不是 <c>None</c> 时，背包控制器会报告自己已锁定，
+    /// 下一次 <c>Proceed</c> 会被原生调度器跳过——包括那次
+    /// 本该从快速小刀切回上一把武器的切换。
+    /// 因此双击快速小刀可能把过渡
+    /// 控制器永久留在手上：它拒绝每一个背包操作
+    /// （<c>QuickKnifeKickController.CanExecute</c> 为 false），而且没有枪械时，
+    /// 什么都开不了火。移动不依赖手部，而这正是玩家
+    /// 所见到的现象。监视它并释放它，但只能在任何
+    /// 合法切换都可能已经结束后、且要很久之后。
     /// </summary>
     private void RepairHandsLock()
     {
-        // A native switch (drop, spawn and the host confirmation) finishes well
-        // inside a second, so these budgets never interrupt a legitimate one.
+        // 一次原生切换（丢弃、生成与主机确认）会远在
+        // 一秒之内完成，所以这些预算绝不会打断合法的切换。
         const float HandsLockTimeout = 4f;
         const float TransitionalHandsTimeout = 6f;
         const float ProceedCallbackTimeout = 5f;
@@ -1050,8 +1059,8 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         var handsTransitional = !handsMissing && !handsDestroyed && IsTransitionalHandsController(hands);
         var processStatus = _localPlayer.ProcessStatus;
         var gateHeld = processStatus != Player.EProcessStatus.None;
-        // A registered proceed callback is what WaitingForCallback reports,
-        // and FikaClientFirearmController refuses to fire while it is set.
+        // 一个已注册的 proceed 回调正是 WaitingForCallback 所报告的东西，
+        // 而 FikaClientFirearmController 在它被置位时拒绝开火。
         var waitingForCallback = _localPlayer.PendingProceedCallbacks > 0;
 
         float timeout;
@@ -1061,14 +1070,14 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         }
         else if (handsTransitional)
         {
-            // The quick knife, quick grenade and quick use controllers own the
-            // hands only until their animation hands the previous item back.
+            // 快速小刀、快速手雷与快速使用控制器只
+            // 在它们的动画把上一个物品交回来的那段时间里占着手。
             timeout = TransitionalHandsTimeout;
         }
         else if (waitingForCallback)
         {
-            // Healthy hands, but a hands switch the host never answered keeps
-            // CanPressTrigger/CanStartReload false on the firearm controller.
+            // 手部是好的，但一次主机从未应答的手部切换会让
+            // 枪械控制器上的 CanPressTrigger/CanStartReload 保持 false。
             timeout = ProceedCallbackTimeout;
         }
         else
@@ -1104,9 +1113,9 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             $"inventoryBlocked={inventoryController?.IsInventoryBlocked()}, " +
             $"pendingProceedCallbacks={_localPlayer.PendingProceedCallbacks}); releasing");
 
-        // 1. The player level switch gate. None is what every completed native
-        //    switch leaves behind; while it is set, the native Process.Proceed
-        //    scheduler skips every later hands switch.
+        // 1. 玩家层级的切换闸门。每一个完成的原生切换
+        //    留下的都是 None；当它被置位时，原生 Process.Proceed
+        //    调度器会跳过之后每一次手部切换。
         TryHandsRepairStep("process status", () =>
         {
             if (_localPlayer.ProcessStatus != Player.EProcessStatus.None)
@@ -1115,10 +1124,10 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             }
         });
 
-        // 2. The same gate is what refuses item actions:
-        //    PlayerInventoryController.CheckItemAction returns the "inventory
-        //    blocked" error while IsInventoryBlocked() - which forwards to
-        //    Locked - is true.  Writing the property is the native unlock.
+        // 2. 同一道闸门也是拒绝物品操作的原因：
+        //    在 IsInventoryBlocked()（它转发到
+        //    Locked）为 true 时，PlayerInventoryController.CheckItemAction
+        //    会返回 "inventory blocked" 错误。写这个属性就是原生解锁。
         TryHandsRepairStep("inventory lock", () =>
         {
             if (playerInventoryController != null && playerInventoryController.Locked)
@@ -1127,10 +1136,10 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             }
         });
 
-        // 3. An answer from the host that never arrived keeps its callback
-        //    registered and WaitingForCallback true, which
-        //    FikaClientFirearmController turns into CanPressTrigger/
-        //    CanStartReload == false.
+        // 3. 一个主机从未送达的回答会让它的回调保持
+        //    注册状态、WaitingForCallback 保持 true，
+        //    FikaClientFirearmController 会把它们变成 CanPressTrigger/
+        //    CanStartReload == false。
         TryHandsRepairStep("callback expiry", () =>
         {
             var expired = _localPlayer.ExpireStaleProceedCallbacks(ProceedCallbackTimeout);
@@ -1140,10 +1149,10 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             }
         });
 
-        // 4. Hands that are gone, destroyed or still holding a single use
-        //    controller can neither fire nor move items, so put a usable item
-        //    back. Reuse the native interaction release first: it is what clears
-        //    a held animator interaction queue, and it never touches items.
+        // 4. 已经消失、被销毁，或仍握着一个一次性使用
+        //    控制器的手，既不能开火也不能移动物品，所以把一个可用物品
+        //    放回去。先复用原生交互释放：它用于清除
+        //    一个被持有的 animator 交互队列，而且它从不碰物品。
         if (handsMissing || handsDestroyed || handsTransitional)
         {
             TryHandsRepairStep("interaction release", () => NativeInteractionRelease.Release(_localPlayer, "hands-lock"));
@@ -1152,13 +1161,13 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Controllers that exist only to hand the previous item back: the quick
-    /// knife kick, the quick grenade and the quick use item.  Holding one for
-    /// longer than its animation means the switch back was lost.
+    /// 只为了让上一个物品交回来而存在的控制器：快速
+    /// 小刀踢、快速手雷与快速使用物品。比它的动画
+    /// 持有一个更久，意味着切回去的那次切换丢失了。
     /// </summary>
     private static bool IsTransitionalHandsController(Player.AbstractHandsController hands)
     {
-        // The native class is not visible to a CLR type test; TryCast sees it.
+        // 原生类对 CLR 类型检查不可见；TryCast 能看到它。
         return hands.TryCast<Player.QuickKnifeKickController>() != null
             || hands.TryCast<Player.QuickGrenadeThrowHandsController>() != null
             || hands.TryCast<Player.QuickUseItemController>() != null;
@@ -1190,13 +1199,13 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// The equipment the engine itself reads. <c>Player.SetFirstAvailableItem</c>
-    /// walks <c>InventoryController.Inventory.Equipment</c>; on a stock player
-    /// that is the same object as <c>Player.Equipment</c>, but Fika replaces the
-    /// inventory tree over the network and only the controller is guaranteed to
-    /// point at the live one, so prefer the controller and fall back to the
-    /// player. The caller logs which face answered, because a repair that reads
-    /// the wrong tree selects nothing.
+    /// 引擎自己读取的那份装备。<c>Player.SetFirstAvailableItem</c>
+    /// 会遍历 <c>InventoryController.Inventory.Equipment</c>；在原版玩家上
+    /// 它与 <c>Player.Equipment</c> 是同一个对象，但 Fika 会通过网络替换掉
+    /// 背包树，只有控制器能保证
+    /// 指向活着的那一份，所以优先用控制器，取不到再退回
+    /// 玩家。调用方会记录是哪一面给出的答案，因为读错
+    /// 树的那次修复什么也选不出来。
     /// </summary>
     private InventoryEquipment FindEquipment(out string source)
     {
@@ -1219,10 +1228,10 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Per-slot state of the equipment the repair just read. Printed only when no
-    /// weapon was selected, so the next log distinguishes "no weapon in the slot"
-    /// from "weapon present, native gate refused it" - the historic line cannot,
-    /// and both were reported as the same warning while the raid started empty.
+    /// 修复刚刚读取的那份装备的逐槽位状态。只在没有
+    /// 选出武器时才打印，这样下一次日志就能把 "槽位里没有武器"
+    /// 与 "有武器，但原生闸门拒绝了它" 区分开——旧日志做不到，
+    /// 而在 raid 空手开局时，这两种情况被报成同一条警告。
     /// </summary>
     private string DescribeWeaponSlots()
     {
@@ -1262,9 +1271,9 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Creates the local player
+    /// 创建本地玩家
     /// </summary>
-    /// <returns>A <see cref="Player"/></returns>
+    /// <returns>一个 <see cref="Player"/></returns>
     private async Task<LocalPlayer> CreateLocalPlayer()
     {
         Status = GameStatus.Running;
@@ -1297,11 +1306,11 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
         GameController.ExfilManager = gameObject.AddComponent<FikaExfilManager>();
 
-        // SPT consumes the entry requirement while creating the initial raid
-        // request.  A transit raid already carries the authoritative
-        // profile/transition state; consuming the requirement
-        // here again removes another key charge (and, for a consumed key,
-        // makes the next map fail its access check).
+        // SPT 在创建初始 raid 请求时会消耗入场
+        // 需求。转图的 raid 已经携带了权威的
+        // profile/transition 状态；在这里再消耗一次需求
+        // 会再扣掉一次钥匙耐久（而且对于一把已消耗的钥匙，
+        // 还会让下一张地图无法通过准入检查）。
         var isTransitRaid = FikaBackendUtils.IsTransit || TransitController.IsTransit(Profile.Id, out int _);
         if (!isTransitRaid &&
             Profile.Side != EPlayerSide.Savage && Profile.Info.Level >= Location.MinPlayerLvlAccessKeys)
@@ -1311,8 +1320,8 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             var items = Profile.Inventory.GetPlayerItems(EPlayerItems.Equipment);
             if (access != null && access.Count > 0 && items != null)
             {
-                // SPT 5 supports required item counts and remaining key charges.
-                // Let the game's utility consume the selected requirement.
+                // SPT 5 支持所需物品数量与剩余钥匙耐久。
+                // 让游戏的工具类去消耗选中的需求。
                 if (!LocationAccessRequirementsUtility.TryConsumeAccessRequirement(items, access, null))
                     _logger.LogError($"Unable to consume entry requirement for {Location.Id}");
             }
@@ -1360,10 +1369,10 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             throw;
         }
 
-        // Runs while the local player is created, i.e. inside the raid start. A delegate bind that
-        // throws here aborts the join (that is exactly how the Nullable<float> matchmaker delegate
-        // killed a raid), so the subscription degrades to "the host is not told about exfiltration
-        // interactions" instead.
+        // 在创建本地玩家期间运行，也就是在 raid 启动内部。这里如果有
+        // delegate 绑定抛异常，整个加入流程就会中止（Nullable<float> 匹配器
+        // delegate 杀掉一次 raid 正是这么发生的），所以订阅退化成"主机不会被告知撤离
+        // 交互"。
         if (NativeDelegates.TryBindManaged<System.Action<ExfiltrationPoint, bool>>(this, nameof(OnEpInteraction),
                 "CoopGame.OnEpInteraction", out var onEpInteraction))
         {
@@ -1379,10 +1388,10 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Tells the host about our character. A player scav walking into a raid that
-    /// already runs can send this before its network connection is up, in which
-    /// case the host never learns about the character, has no player for it and
-    /// rejects every proceed request. Re-announcing is therefore allowed.
+    /// 把我们的角色告诉主机。一个走进已在运行的 raid 的 player scav
+    /// 可能在自己的网络连接建立之前就发这条消息，那样主机
+    /// 永远不会知道这个角色，为它找不到玩家，并
+    /// 拒绝每一个 proceed 请求。因此允许重复宣告。
     /// </summary>
     internal static void AnnounceCharacter(FikaPlayer fikaPlayer)
     {
@@ -1413,14 +1422,14 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Re-announces the local character when the host reports that it has no
-    /// player bound for us yet.
+    /// 当主机报告它还没有为我们绑定玩家时，重新宣告
+    /// 本地角色。
     /// </summary>
     internal static void ReannounceLocalCharacter()
     {
-        // Proceed responses arrive on the network thread, but the packet writer and
-        // the packet processor are shared with the main thread, so the announcement
-        // has to be built on the Unity thread.
+        // Proceed 应答在网络线程上到达，但 packet 写入器与
+        // packet 处理器是与主线程共享的，所以这条宣告
+        // 必须在 Unity 线程上构建。
         MainThreadDispatcher.Post(() =>
         {
             if (FikaSingleton<IFikaGame>.Instance is not CoopGame coopGame || coopGame._localPlayer == null) return;
@@ -1430,7 +1439,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Temporary workaround since SPT does not generate a unique ID >3.11 for the dogtag
+    /// 临时绕行方案：SPT 在 >3.11 上不会为狗牌生成唯一 ID
     /// </summary>
     private void GenerateNewDogTagId()
     {
@@ -1449,7 +1458,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Sets the status of the game on the backend
+    /// 在后端设置游戏状态
     /// </summary>
     /// <param name="myPlayer"></param>
     /// <param name="status"></param>
@@ -1462,7 +1471,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Bot System Starter -> Countdown
+    /// Bot 系统启动器 -> 倒计时
     /// </summary>
     /// <param name="controllerSettings"></param>
     /// <param name="spawnSystem"></param>
@@ -1472,44 +1481,44 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         return NativeTask.FromManaged(MainThreadDispatcher.RunAsync(() => GameController.StartBotSystemsAndCountdown(controllerSettings, GameWorld)));
     }
 
-    // The native callback is forwarded unchanged: SessionRun's interop parameter is Il2CppSystem.Action,
-    // and a managed closure cannot be marshalled into a native delegate slot.
+    // 原生回调被原样转发：SessionRun 的 interop 参数是 Il2CppSystem.Action，
+    // 而托管闭包无法被 marshal 进原生 delegate 槽位。
     //
-    // The engine calls this from the native PrepareSession (StartCoroutine(SessionRun(complete))) and drives
-    // whatever is returned through its coroutine scheduler. Returning a managed enumerator here
-    // (SessionRunManaged(...).WrapToIl2Cpp(), the 3.0.0 shape) is the hazard that faulted during the host raid
-    // start (analysis/host-raid-coroutine), so the sequence runs on the Update driven pump and the engine
-    // receives an already finished *native* enumerator instead.
+    // 引擎从原生 PrepareSession（StartCoroutine(SessionRun(complete))）调用它，并通过它的
+    // 协程调度器驱动返回的东西。在这里返回托管枚举器
+    // （SessionRunManaged(...).WrapToIl2Cpp()，3.0.0 的形态）正是主机 raid 启动期间
+    // 出故障的隐患（analysis/host-raid-coroutine），所以序列在 Update 驱动的泵上运行，而引擎
+    // 收到的是一个已经跑完的*原生*枚举器。
     public override Il2CppSystem.Collections.IEnumerator SessionRun(Il2CppSystem.Action runCallback)
     {
-        // The sequence itself is not a member of this class (see SessionPump): this injected method is
-        // called by the engine through the override's vtable slot (a native entry, which is the
-        // legitimate direction), and it must not hand any *injected* method to the native side.
+        // 序列本身不是本类的成员（见 SessionPump）：这个注入方法
+        // 由引擎通过 override 的 vtable 槽位调用（这是原生入口，属于
+        // 合法方向），而它绝不能把任何*注入*方法交给原生侧。
         SessionPump.Start(this, runCallback ?? FikaGlobals.EmptyNativeAction);
         return NativeRoutines.Completed();
     }
 
-    // The session start sequence (FinishRaidSetup -> the countdown screen -> the native session coroutine)
-    // used to be here as the private methods StartSessionPump/SessionSequence. It now lives on
-    // Fika.Core.Main.Utils.SessionPump, a plain managed static class: Il2CppInterop registers every
-    // declared method of an injected class with il2cpp - including private ones - and builds a native
-    // trampoline thunk plus a shared managed invoker for each of them. The invoker's closing calli into
-    // such a thunk is what fail-fasted the 2026-10-10 host raid, and the thunk named in that crash was
-    // exactly this class's StartSessionPump (analysis/run-2026-10-10-1553/scan-thunk-result.txt,
-    // analysis/delegate-targets/REPORT.md). The engine's own entry points stay here: the
-    // SessionRun(Il2CppSystem.Action) override above and the parameterless SessionRun()/FixedUpdate()
-    // overrides below.
+    // session 启动序列（FinishRaidSetup -> 倒计时界面 -> 原生 session 协程）
+    // 以前作为私有方法 StartSessionPump/SessionSequence 放在这里。它现在位于
+    // Fika.Core.Main.Utils.SessionPump，一个普通的托管静态类：Il2CppInterop 会把这个注入类的
+    // 每一个已声明方法（包括私有方法）注册到 il2cpp，并为其中每一个构建一个原生
+    // trampoline thunk 加一个共享的托管 invoker。invoker 收尾时 calli 进入
+    // 这样一个 thunk，正是让 2026-10-10 主机 raid 发生 fail fast 的原因，而那次崩溃里点名的 thunk
+    // 恰恰就是本类的 StartSessionPump（analysis/run-2026-10-10-1553/scan-thunk-result.txt，
+    // analysis/delegate-targets/REPORT.md）。引擎自己的入口点留在这里：
+    // 上面的 SessionRun(Il2CppSystem.Action) override，以及下面无参的 SessionRun()/FixedUpdate()
+    // override。
 
-    /// <summary>Journal labels of the three steps; constants so the journal never allocates for them.</summary>
+    /// <summary>三个步骤的 journal 标签；用常量是为了让 journal 从不为它们分配。</summary>
     internal const string BoundarySequenceStep1 = "SessionSequence step 1/3 FinishRaidSetup (pump)";
 
-    /// <summary>Journal label of the countdown step - the step the 10:37 crash died inside.</summary>
+    /// <summary>倒计时步骤的 journal 标签——10:37 那次崩溃就死在这一步里。</summary>
     internal const string BoundarySequenceStep2 = "SessionSequence step 2/3 CountdownScreen (pump)";
 
-    /// <summary>Journal label of the step that proves the countdown body returned (written immediately).</summary>
+    /// <summary>证明倒计时主体已返回的那一步的 journal 标签（立即写入）。</summary>
     internal const string BoundarySequenceStep2Done = "SessionSequence step 2/3 done CountdownScreen returned (pump)";
 
-    /// <summary>Journal label of the native-coroutine step.</summary>
+    /// <summary>原生协程步骤的 journal 标签。</summary>
     internal const string BoundarySequenceStep3 = "SessionSequence step 3/3 native session coroutine (pump)";
 
     public override void Spawn()
@@ -1529,19 +1538,18 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Sets up <see cref="OfflineHealthController"/> events and all <see cref="ExfiltrationPoint"/>s
+    /// 接好 <see cref="OfflineHealthController"/> 事件以及所有 <see cref="ExfiltrationPoint"/>
     /// </summary>
     public override void SessionRun()
     {
-        // The native session coroutine the pump starts (step 3 of SessionSequence) calls this after its
-        // InitSessionUI step; the pump watches the flag to prove the native sequence really ran.
+        // 泵启动的原生 session 协程（SessionSequence 的第 3 步）在它的
+        // InitSessionUI 步骤之后调用这里；泵通过监视该标志来证明原生序列确实跑过。
         _sessionRunReached = true;
         
 
-        // il2cpp -> managed: an exception here would unwind into the native coroutine with no managed frame
-        // above it, i.e. it would be the runtime's problem instead of a log line. It is caught, reported once
-        // and swallowed, so the native coroutine still reaches the run callback that releases PrepareSession.
-        FikaBoundaries.Enter(BoundarySessionRun);
+        // il2cpp -> 托管：这里抛异常会向上展开进原生协程，而上面没有任何托管栈帧，
+        // 也就是说它会变成运行时的问题而不是一行日志。它被捕获、只上报一次
+        // 并被吞掉，这样原生协程仍能到达释放 PrepareSession 的那个 run 回调。
         FikaBoundaries.Run("CoopGame.SessionRun -> GameController.SetupEventsAndExfils",
             () => GameController.SetupEventsAndExfils(_playerOwner.Player));
         SessionStartTime = DateTimeExtensions.Now;
@@ -1549,24 +1557,24 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
     public override void FixedUpdate()
     {
-        // Do nothing, except give the Update driven pump a second, in-scene tick: the session start and the
-        // countdown path are no longer engine coroutines, so if the plugin behaviour ever stopped ticking they
-        // would stall silently. FikaRoutinePump.Tick is frame guarded - only the first tick of a frame runs.
-        // il2cpp calls this directly, so it is a boundary of its own and is guarded like the plugin Update.
+        // 什么都不做，只是给 Update 驱动的泵一个场景内的第二次 tick：session 启动与
+        // 倒计时路径不再是引擎协程，所以如果插件行为真的停止 tick，它们
+        // 会静默卡住。FikaRoutinePump.Tick 有帧守卫——一帧中只有第一个 tick 会运行。
+        // il2cpp 直接调用它，所以它自成一个边界，并像插件 Update 那样被保护。
         FikaBoundaries.Run(BoundaryFixedUpdate, static () => FikaRoutinePump.Instance.Tick());
     }
 
-    /// <summary>Journal label of the native InitSessionUI callout.</summary>
+    /// <summary>原生 InitSessionUI callout 的 journal 标签。</summary>
     internal const string BoundaryInitSessionUI = "CoopGame.InitSessionUI (native coroutine -> managed)";
 
-    /// <summary>Journal label of the native SessionRun callout.</summary>
+    /// <summary>原生 SessionRun callout 的 journal 标签。</summary>
     internal const string BoundarySessionRun = "CoopGame.SessionRun (native coroutine -> managed)";
 
-    /// <summary>Journal label of the FixedUpdate callout.</summary>
+    /// <summary>FixedUpdate callout 的 journal 标签。</summary>
     internal const string BoundaryFixedUpdate = "CoopGame.FixedUpdate (il2cpp -> managed)";
 
     /// <summary>
-    /// Updates a <see cref="ExfiltrationPoint"/> from the server
+    /// 从服务器更新一个 <see cref="ExfiltrationPoint"/>
     /// </summary>
     /// <param name="point"></param>
     /// <param name="enable"></param>
@@ -1589,10 +1597,10 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             _sessionRoutine = null;
         }
 
-        // (analysis/transit-crash-unload) The game of one raid is being disposed: from here on the world of
-        // that raid is gone for every holder in this process. Dropping the cross-raid holders here as well
-        // (idempotent - the world component and DestroyNetManager call the same method) covers the paths
-        // that reach Dispose without a world teardown, e.g. a raid start that was cancelled.
+        // （analysis/transit-crash-unload）一次 raid 的游戏正在被释放：从这里起，那个 raid 的
+        // 世界对本进程中的每个持有者都不再存在。在这里也一并丢弃跨 raid 持有者
+        // （幂等——世界组件与 DestroyNetManager 调用的都是同一个方法），可以覆盖那些
+        // 不走世界拆除就到达 Dispose 的路径，例如被取消的 raid 启动。
         Fika.Core.Main.Utils.WorldLifecycle.MarkWorldTornDown("CoopGame.Dispose");
 
         ClientHearingTable.Instance = null;
@@ -1616,11 +1624,11 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// When the local player successfully extracts, enable freecam, notify other players about the extract
+    /// 当本地玩家成功撤离时，开启自由视角，并把撤离告诉其他玩家
     /// </summary>
-    /// <param name="player">The local player to start the Coroutine on</param>
-    /// <param name="exfiltrationPoint">The exfiltration point that was used to extract</param>
-    /// <param name="transitPoint">The transit point that was used to transit</param>
+    /// <param name="player">要在其上启动协程的本地玩家</param>
+    /// <param name="exfiltrationPoint">用于撤离的撤离点</param>
+    /// <param name="transitPoint">用于转图的转图点</param>
     /// <returns></returns>
     public void Extract(FikaPlayer player, ExfiltrationPoint exfiltrationPoint, TransitPoint transitPoint = null)
     {
@@ -1629,7 +1637,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Triggers when the main player dies
+    /// 主玩家死亡时触发
     /// </summary>
     /// <param name="damageType"></param>
     private void HealthController_DiedEvent(EDamageType damageType)
@@ -1638,11 +1646,11 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Ensures the native player owner has entered its running state after the
-    /// Fika deployment/countdown path.  SPT's normal LocalGame sequence calls
-    /// this through the base session runner; Fika's managed startup can reach
-    /// the raid with a valid player but without the owner registered in the
-    /// input tree, which breaks ESC/TAB and leaves hands/UI unbound.
+    /// 确保原生玩家 owner 在 Fika 的部署/倒计时路径之后
+    /// 已进入它的运行状态。SPT 正常的 LocalGame 序列会通过
+    /// 基础 session runner 调用这里；Fika 的托管启动路径可能在
+    /// 玩家有效、但 owner 未注册到输入树的情况下进入 raid，
+    /// 这会让 ESC/TAB 失效，并使手部/UI 未绑定。
     /// </summary>
     internal void EnsurePlayerOwnerReady()
     {
@@ -1651,18 +1659,18 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             return;
         }
 
-        // Use the exact owner created for this session. Its lifecycle state,
-        // rather than presence in the scene, determines whether Init ran.
+        // 使用为本次 session 创建的那个 owner。决定 Init 是否运行的是
+        // 它的生命周期状态，而不是它是否在场景里。
         if (_playerOwner.State == EFT.PlayerOwner.EState.None)
         {
             _playerOwner.Init();
         }
 
-        // Fika creates the local owner from the managed startup path.  SPT's
-        // native LocalGame normally registers the owner and creates both input
-        // translators as part of PlayerOwner.Run(); the managed path can reach
-        // the raid after that native step was skipped.  Restore those pieces
-        // explicitly and idempotently.
+        // Fika 从托管启动路径创建本地 owner。SPT 的
+        // 原生 LocalGame 通常在 PlayerOwner.Run() 中注册 owner 并创建两个输入
+        // 转换器；而托管路径可能在原生这一步被跳过后
+        // 才进入 raid。显式且幂等地把这些
+        // 组件恢复回来。
         if (_playerOwner.PlayerInputTranslator == null || _playerOwner.HandsInputTranslator == null)
         {
             _playerOwner.CreateInputTranslators();
@@ -1675,11 +1683,11 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
         if (_playerOwner.InputTree != null)
         {
-            // InputTree.Add gives the owner priority over UIInputRoot. While
-            // inventory/pause is open its Common gate returns BlockAll and
-            // prevents the UI from receiving the key that should close it.
-            // Keep gameplay below the UI, including owners already registered
-            // by Run, and let the native tree dispatch each command once.
+            // InputTree.Add 会让 owner 的优先级高于 UIInputRoot。当
+            // 背包/暂停界面打开时，它的 Common 闸门会返回 BlockAll，
+            // 阻止 UI 收到那个本该关闭它的按键。
+            // 让游戏层保持在 UI 之下，包括 Run 已经注册过的
+            // owner，并让原生树把每个命令只派发一次。
             if (_playerOwner.InputTree.Contains(_playerOwner))
                 _playerOwner.InputTree.Remove(_playerOwner);
             _playerOwner.InputTree.AddWithLowPriority(_playerOwner);
@@ -1695,9 +1703,9 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             _playerOwner.ShowBattleUIScreen();
         }
 
-        // Do this after ShowBattleUIScreen: screen transitions own the Common
-        // input gate and can overwrite an earlier reset. This is a startup
-        // handoff only; native input handles all subsequent menu transitions.
+        // 这一步要在 ShowBattleUIScreen 之后做：界面切换拥有 Common
+        // 输入闸门，可能覆盖掉更早的一次重置。这只是启动期的
+        // 交接；之后所有的菜单切换都由原生输入处理。
         if (EftScreenManager.Instance?.CheckCurrentScreen(EEftScreenType.BattleUI) == true &&
             (!FikaSingleton<FreeCamera.FreeCameraController>.Instantiated ||
              !FikaSingleton<FreeCamera.FreeCameraController>.Instance.IsScriptActive))
@@ -1715,10 +1723,10 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
         try
         {
-            // RegisterGameOwner does more than assign MainPlayer: the native
-            // ClientLocalGameWorld override also binds the local owner/input
-            // hooks. MainPlayer may already be populated by PlayerFactory, so
-            // do not use it as a proxy for whether this registration ran.
+            // RegisterGameOwner 做的事不止是赋值 MainPlayer：原生
+            // ClientLocalGameWorld 的 override 还会绑定本地 owner/输入
+            // 钩子。MainPlayer 可能已经被 PlayerFactory 填好了，所以
+            // 不要把它当作这次注册是否运行过的代理指标。
             gameWorld.RegisterGameOwner(player);
         }
         catch (Exception ex)
@@ -1769,7 +1777,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
             GameUi.TimerPanel.Close();
         }
 
-        // Spawn is replaced above; only our death callback was registered.
+        // Spawn 已在上面被替换；我们只注册了自己的死亡回调。
         player.HealthController.remove_DiedEvent(_onLocalPlayerDied);
 
         PlayerOwner.Stop();
@@ -1784,22 +1792,22 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Stops the local <see cref="CoopGame"/>
+    /// 停止本地的 <see cref="CoopGame"/>
     /// </summary>
     public override void Stop(string profileId, ExitStatus exitStatus, string exitName, float delay = 0f)
     {
         if (FikaFinalMissionDirector.DeferStop) return;
         if (Status == GameStatus.Stopping || Status == GameStatus.Stopped) return;
         var localPlayer = Singleton<GameWorld>.Instance?.MainPlayer?.TryCast<FikaPlayer>();
-        // A client inventory resync can replace the controller's inventory
-        // without updating the profile serialized by SPT's raid-end flow.
-        // Keep the Scav transfer screen and the natural raid save on the same
-        // inventory tree before taking the result-screen descriptor snapshot.
+        // 一次客机背包重新同步可能会替换掉控制器的背包，
+        // 却不更新 SPT 的 raid 结束流程所序列化的 profile。
+        // 在拍取结果界面描述符快照之前，把 Scav 转移界面与自然的 raid 存档
+        // 保持在同一个背包树上。
         if (localPlayer?.InventoryController?.TryCast<ClientInventoryController>() is { } clientInventoryController)
             clientInventoryController.SyncInventoryToProfile();
 
-        // Capture directly so native injected-vtable calls and managed calls
-        // both run this step before any raid-end handlers change the profile.
+        // 直接捕获，这样原生的注入 vtable 调用与托管调用
+        // 都会在任何 raid 结束处理器改动 profile 之前运行这一步。
         Main.Patches.Overrides.RaidEndProfile.Capture(Profile);
         FikaEventDispatcher.DispatchEvent(new FikaGameEndedEvent(GameController.IsServer, exitStatus, exitName));
 
@@ -1864,7 +1872,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
         if (GameController.CoopHandler != null)
         {
-            // Create a copy to prevent errors when the dictionary is being modified (which happens when using spawn mods)
+            // 先建副本，避免字典正在被修改时出错（使用刷怪 mod 时会发生这种情况）
             foreach (var player in (FikaPlayer[])[.. GameController.CoopHandler.Players.Values])
             {
                 if (player == null || player.IsYourPlayer)
@@ -1928,19 +1936,19 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Saves your own <see cref="FikaPlayer"/> to the server
+    /// 把你自己的 <see cref="FikaPlayer"/> 保存到服务器
     /// </summary>
     private async Task SavePlayer(FikaPlayer player, ExitStatus exitStatus, string exitName, bool fromDeath)
     {
-        // SPT 5's native GameEnd resets this before saving and sets it after
-        // LocalRaidEnded completes. Early saving bypasses that method, but
-        // SessionResultShowOperation still waits for its completion flag.
+        // SPT 5 的原生 GameEnd 在保存前重置它，并在
+        // LocalRaidEnded 完成后把它置位。提前保存会绕过那个方法，但
+        // SessionResultShowOperation 仍会等它的完成标志。
         TarkovApplication.Exist(out var application);
         application?.ResetGameOverSaveStatus();
 
         if (fromDeath)
         {
-            //Since we're bypassing saving on exiting, run this now.
+            //因为退出时我们绕过了保存，就在这里现在跑一次。
             player.Profile.EftStats.LastPlayerState = null;
             player.StatisticsManager.EndStatisticsSession(exitStatus, PastTime);
             player.CheckAndResetControllers(exitStatus, PastTime, Location.Id, exitName);
@@ -1977,12 +1985,12 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Retrieves the sent item containers associated with the specified profile from the player's own stash and transit
-    /// stash, if available.
+    /// 从玩家自己的仓库与转图仓库中取出与指定 profile 关联的已发送物品容器
+    /// （如果存在）。
     /// </summary>
-    /// <param name="profileId">The profile id to get the items from.</param>
-    /// <returns>A dictionary mapping stash names to arrays of flat item data for each matching sent item container. The
-    /// dictionary is empty if no matching containers are found.</returns>
+    /// <param name="profileId">要从中取物品的 profile id。</param>
+    /// <returns>把仓库名映射到每个匹配的已发送物品容器的扁平物品数据数组的字典。
+    /// 没有匹配的容器时该字典为空。</returns>
     public Dictionary<string, FlatItem[]> GetOwnSentItems(string profileId)
     {
         var instance = Singleton<GameWorld>.Instance;
@@ -2034,7 +2042,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Stops the local <see cref="CoopGame"/> when waiting for other players
+    /// 在等待其他玩家时停止本地的 <see cref="CoopGame"/>
     /// </summary>
     public void StopFromCancel(string profileId, ExitStatus exitStatus)
     {
@@ -2136,7 +2144,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Toggles the <see cref="DebugUI"/> menu
+    /// 切换 <see cref="DebugUI"/> 菜单
     /// </summary>
     public void ToggleDebug(bool enabled)
     {
@@ -2144,7 +2152,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Tells the server that we have left the raid
+    /// 告诉服务器我们已经离开 raid
     /// </summary>
     public override ClientMetrics CollectMetrics()
     {
@@ -2165,7 +2173,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Cleans up after the <see cref="CoopGame"/> stops
+    /// <see cref="CoopGame"/> 停止之后做清理
     /// </summary>
     public override void CleanUp()
     {
@@ -2186,12 +2194,14 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
         }
         _players.Clear();
         GameController.CleanUp();
-        // AP (analysis/nonfika-raid-inertness): the raid of ours is over here, so the raid-kind gate is
-        // closed before the next raid - whoever starts it - is prepared.
+        // AP（analysis/nonfika-raid-inertness）：我们的 raid 到这里就结束了，所以在下一次 raid
+        // （无论由谁启动）被准备之前，raid 类型闸门先关上。
         Fika.Core.Main.Utils.FikaRaidGate.Disarm("CoopGame.CleanUp");
         FikaBackendUtils.CleanUpVariables();
         BTRSide_Patches.Passengers.Clear();
-        // (analysis/transit-crash-unload) Last stop of a raid: nothing of this world may stay reachable.
+        // 池化的主机端操作不得存活到下一场 raid 里在那里超时。
+        global::Fika.Core.Main.HostClasses.HostOperationWatchdog.Reset();
+        // （analysis/transit-crash-unload）raid 的最后一站：这个世界的任何东西都不许再可达。
         Fika.Core.Main.Utils.WorldLifecycle.MarkWorldTornDown("CoopGame.CleanUp");
     }
 
@@ -2231,7 +2241,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
 
             EftScreenManager.Instance.CloseAllScreensForced();
 
-            //If we haven't saved, run the original method and stop running here.
+            //如果我们还没保存，就运行原方法并在此停止。
             if (!baseLocalGame_0._deathSave.HasSaved)
             {
                 baseLocalGame_0._playerOwner.Player.TriggerZones.Clear();
@@ -2240,7 +2250,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
                 return;
             }
 
-            //Most of this is from method_14, minus the saving player part.
+            //这里大部分来自 method_14，除去保存玩家的那部分。
             await baseLocalGame_0._playerOwner.Player.OnGameSessionEnd(exitStatus, baseLocalGame_0.PastTime, baseLocalGame_0.Location.Id, exitName).AsManaged();
             baseLocalGame_0.CleanUp();
             MonoBehaviourSingleton<BetterAudio>.Instance?.FadeOutVolumeAfterRaid();
@@ -2255,7 +2265,7 @@ public sealed class CoopGame : BaseLocalGame<EftGamePlayerOwner>, IFikaGame, ICl
     }
 
     /// <summary>
-    /// Used to manage the stopping of the <see cref="CoopGame"/> gracefully when cancelling
+    /// 用于在取消时优雅地管理 <see cref="CoopGame"/> 的停止
     /// </summary>
     private class CancelExitManager
     {

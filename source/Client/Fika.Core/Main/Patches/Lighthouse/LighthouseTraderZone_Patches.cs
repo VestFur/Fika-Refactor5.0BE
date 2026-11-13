@@ -46,7 +46,7 @@ public static class LighthouseTraderZone_Patches
 
                 if (coopHandler.MyPlayer == player)
                 {
-                    //Todo: Might have to patch SetAgressor as the host and other clients might need to know IsAgressorInLighthouseTraderZone
+                    //Todo: 可能需要 patch SetAgressor，因为主机与其他客户端可能需要知道 IsAgressorInLighthouseTraderZone
                     if (NativeDelegates.TryBindManaged<System.Action<Player, IPlayer>>(
                         __instance, nameof(LighthouseTraderZone.SetAgressor), "LighthouseTraderZone.SetAgressor", out var agressor))
                     {
@@ -65,8 +65,8 @@ public static class LighthouseTraderZone_Patches
             if (!__instance.IsValidPlayer(radioTransmitterRecodableComponent.Handler))
             {
                 unallowedPlayers.Add(player);
-                // 47888 exposes LighthouseTraderZone.OnPlayerAllowStatusChanged as an event, which cannot be
-                // raised from outside. Notify our own subscribers instead of the zone event.
+                // 47888 把 LighthouseTraderZone.OnPlayerAllowStatusChanged 暴露为事件，而该事件无法
+                // 从外部触发。改为通知我们自己的订阅者，而不走该区域事件。
                 FikaGlobals.LogInfo($"[Lighthouse] player {player.RaidId} is no longer allowed in the trader zone (the 47888 event cannot be raised from outside)");
             }
             else
@@ -76,7 +76,7 @@ public static class LighthouseTraderZone_Patches
 
                 if (coopHandler.MyPlayer == player)
                 {
-                    //Todo: Might have to patch SetAgressor as the host and other clients might need to know IsAgressorInLighthouseTraderZone
+                    //Todo: 可能需要 patch SetAgressor，因为主机与其他客户端可能需要知道 IsAgressorInLighthouseTraderZone
                     if (NativeDelegates.TryBindManaged<System.Action<Player, IPlayer>>(
                         __instance, nameof(LighthouseTraderZone.SetAgressor), "LighthouseTraderZone.SetAgressor", out var agressor))
                     {
@@ -84,14 +84,14 @@ public static class LighthouseTraderZone_Patches
                     }
                 }
 
-                // 47888 exposes LighthouseTraderZone.OnPlayerAllowStatusChanged as an event, which cannot be
-                // raised from outside. Notify our own subscribers instead of the zone event.
+                // 47888 把 LighthouseTraderZone.OnPlayerAllowStatusChanged 暴露为事件，而该事件无法
+                // 从外部触发。改为通知我们自己的订阅者，而不走该区域事件。
                 FikaGlobals.LogInfo($"[Lighthouse] player {player.RaidId} is allowed in the trader zone again (the 47888 event cannot be raised from outside)");
             }
 
             allPlayers.Add(player);
 
-            // Skip original method
+            // 跳过原始方法
             return false;
         }
     }

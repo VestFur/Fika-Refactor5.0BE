@@ -1,4 +1,4 @@
-﻿using SPTushonka.Reflection.Patching;
+﻿﻿using SPTushonka.Reflection.Patching;
 using System.Reflection;
 
 namespace Fika.Headless.Patches.DestroyGraphics;
@@ -14,7 +14,7 @@ public class StaticDeferredDecal_OnEnable_Patch : ModulePatch
     [PatchPrefix]
     public static bool Prefix(StaticDeferredDecal __instance)
     {
-        // Other scripts and colliders can share this object; remove only the visual component.
+        // 其他脚本和碰撞体可能共用此对象；只移除可视组件。
         Object.Destroy(__instance);
         return false;
     }

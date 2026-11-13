@@ -1,4 +1,4 @@
-﻿using SPTushonka.Reflection.Patching;
+﻿﻿using SPTushonka.Reflection.Patching;
 using HarmonyLib;
 using System.Collections.Generic;
 using System.Reflection;
@@ -9,7 +9,7 @@ namespace Fika.Headless.Patches;
 public class LevelSettings_ApplyTreeWindSettings_Transpiler : ModulePatch
 {
     /// <summary>
-    /// Prevents unneccesary code from running
+    /// 阻止不必要的代码运行
     /// </summary>
     protected override MethodBase GetTargetMethod()
     {

@@ -4,7 +4,7 @@ using EFT.Quests;
 
 namespace Fika.Core.Networking.Packets.World;
 
-/// <summary>Only the sender's live final-mission quest statuses, never inventory/seat claims.</summary>
+/// <summary>只包含发送方实时的最终任务状态，绝不包含物品栏/席位声明。</summary>
 public struct FinalMissionQuestPacket : INetSerializable
 {
     public int NetId;

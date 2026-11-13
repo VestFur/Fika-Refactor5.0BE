@@ -8,8 +8,8 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.Bugfixes;
 
 /// <summary>
-/// Borrowed from Tyfon's UI Fixes with permission, a patch that fixes a bug if you inspect a player during loading when the controller is instantiated <br/><br/>
-/// Source code here: <see href="https://github.com/tyfon7/UIFixes/blob/main/src/Patches/FixPlayerInspectPatch.cs"/>
+/// 经授权借自 Tyfon 的 UI Fixes，用于修复在加载期间控制器刚被实例化时查看玩家所引发的 bug <br/><br/>
+/// 源码地址：<see href="https://github.com/tyfon7/UIFixes/blob/main/src/Patches/FixPlayerInspectPatch.cs"/>
 /// </summary>
 [IgnoreAutoPatch]
 public class PartyInfoPanel_CG_method_3_Patch : ModulePatch
@@ -26,8 +26,8 @@ public class PartyInfoPanel_CG_method_3_Patch : ModulePatch
         var owner = equipment?.CurrentAddress?.GetOwnerOrNull();
         if (owner?.TryCast<Player.PlayerOwnerInventoryController>() != null)
         {
-            // The live raid inventory already owns this equipment. Creating a
-            // second inspection controller would detach it from that owner.
+            // 战局中正在使用的背包已经持有这套装备。再创建一个
+            // 检视控制器会让它从该持有者身上脱钩。
             __result = null;
             return false;
         }

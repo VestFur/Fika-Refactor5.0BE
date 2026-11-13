@@ -20,17 +20,17 @@ using static Fika.Core.UI.FikaUIGlobals;
 namespace Fika.Core.UI.Patches;
 
 /// <summary>
-/// Used to send items to other players.
+/// 用于把物品发送给其他玩家。
 ///
-/// SPT 5 compiles one native body per generic method and hands the instantiation
-/// over in a hidden argument. The IL2CPP Harmony detour replays that body with
-/// the context of the instantiation it was installed for, so patching
-/// <c>SimpleContextMenu.ShowMenu&lt;EItemInfoButton&gt;</c> made every other
-/// <c>ShowMenu&lt;T&gt;</c> run as if T were EItemInfoButton. The magazine,
-/// magazine preset and wishlist menus then threw
-/// MethodAccessException: ... IEnumerable&lt;EItemInfoButton&gt;.GetEnumerator ...
-/// on ReadOnlyCollection&lt;EMagInteraction&gt;. Hook the non-generic seam that
-/// hands the item interactions out instead.
+/// SPT 5 为每个泛型方法只编译一份原生方法体，并通过一个隐藏参数把实例化
+/// 信息传进来。IL2CPP Harmony detour 会用当初安装时所用的实例化上下文
+/// 重放那份方法体，因此补丁
+/// <c>SimpleContextMenu.ShowMenu&lt;EItemInfoButton&gt;</c> 会让所有其他的
+/// <c>ShowMenu&lt;T&gt;</c> 都像 T 是 EItemInfoButton 那样运行。杂志、
+/// 杂志预设与愿望单菜单随后抛出了下面的异常：
+/// 异常消息：MethodAccessException: ... IEnumerable&lt;EItemInfoButton&gt;.GetEnumerator ...
+/// 发生在 ReadOnlyCollection&lt;EMagInteraction&gt; 上。改为挂钩那个把物品交互
+/// 分发出来的非泛型接缝。
 /// </summary>
 [IgnoreAutoPatch]
 public sealed class ItemContext_Patch : ModulePatch
@@ -59,7 +59,7 @@ public sealed class ItemContext_Patch : ModulePatch
                 return;
             }
 
-            // Save as variable in case we need to add more checks later...
+            // 先存为变量，以便之后需要时添加更多检查...
             var menuUI = Singleton<MenuUI>.Instance;
 
             if (menuUI.HideoutAreaTransferItemsScreen.isActiveAndEnabled
@@ -75,17 +75,17 @@ public sealed class ItemContext_Patch : ModulePatch
                 return;
             }
 
-            if (item.Parent?.Container?.ParentItem?.TemplateId == _uiFixesParent) // Fix for UI Fixes
+            if (item.Parent?.Container?.ParentItem?.TemplateId == _uiFixesParent) // UI Fixes 的修复
             {
                 return;
             }
 
-            if (item.PinLockState is EItemPinLockState.Pinned or EItemPinLockState.Locked) // Don't send pinned or locked items (who even does this?)
+            if (item.PinLockState is EItemPinLockState.Pinned or EItemPinLockState.Locked) // 不发送已固定或已锁定的物品（谁会这么干？）
             {
                 return;
             }
 
-            // Check for GClass increments
+            // 检查 GClass 的增量
             var dynamicInteractions = itemContextInteractions._dynamicInteractions;
             if (dynamicInteractions == null)
             {
@@ -139,10 +139,10 @@ public sealed class ItemContext_Patch : ModulePatch
                 FikaGlobals.LogInfo($"{items.Length} items are selected");
 #endif
 
-                // The Fika server answers with nickname -> profile id. The dropdown
-                // only shows the nickname, but the payload has to carry the profile
-                // id: sending the nickname makes the server fail with
-                // "Target profile not found" because it looks the target up by id.
+                // Fika 服务器以 nickname -> profile id 的形式作答。下拉框
+                // 只显示昵称，但载荷必须携带 profile
+                // id：发送昵称会让服务器以
+                // "Target profile not found" 失败，因为它是按 id 查找目标的。
                 List<TMP_Dropdown.OptionData> optionDatas = [];
                 var profileIdByNickname = new Dictionary<string, string>(System.StringComparer.Ordinal);
                 foreach (var user in availableUsers)
@@ -154,14 +154,14 @@ public sealed class ItemContext_Patch : ModulePatch
                     profileIdByNickname[user.Key] = user.Value;
                 }
 
-                // Get menu item
+                // 获取菜单项
                 var currentUI = GameObject.Find("SendItemMenu(Clone)");
                 if (currentUI != null)
                 {
                     GameObject.Destroy(currentUI);
                 }
 
-                // Create the window
+                // 创建窗口
                 var matchMakerUiPrefab = InternalBundleLoader.Instance.GetFikaAsset(InternalBundleLoader.EFikaAsset.SendItemMenu);
                 var uiGameObj = Object.Instantiate(matchMakerUiPrefab);
                 uiGameObj.transform.SetParent(GameObject.Find("Preloader UI/Preloader UI/UIContext/").transform);
@@ -214,11 +214,11 @@ public sealed class ItemContext_Patch : ModulePatch
                         {
                             Singleton<GUISounds>.Instance.PlayUISound(EUISoundType.TradeOperationComplete);
 
-                            // Build the payload as JSON text. A managed
-                            // Newtonsoft.Json in BepInEx/plugins shadows the IL2CPP
-                            // proxy, so new JObject() would produce an object the
-                            // native backend call cannot accept; the game's own
-                            // parser turns the text into a native JObject instead.
+                            // 把载荷构造成 JSON 文本。BepInEx/plugins 下的托管
+                            // Newtonsoft.Json 会遮蔽 IL2CPP 的代理，因此 new JObject()
+                            // 会产生一个原生后端调用无法接受的对象；
+                            // 改为由游戏自身的解析器把这段文本
+                            // 转换成一个原生 JObject。
                             var builder = new System.Text.StringBuilder("{\"Action\":\"SendToPlayer\",\"itemIds\":[");
                             var first = true;
                             foreach (var id in items)
@@ -228,8 +228,8 @@ public sealed class ItemContext_Patch : ModulePatch
                                 builder.Append('"').Append(id).Append('"');
                             }
 
-                            // Older servers answered with ids already; keep that
-                            // working while preferring the id for the nickname.
+                            // 较旧的服务器本来就以 id 作答；在优先为昵称解析 id 的同时，
+                            // 保持那条路径仍可用。
                             var target = profileIdByNickname.TryGetValue(player, out var targetId) && !string.IsNullOrWhiteSpace(targetId)
                                 ? targetId
                                 : player;
@@ -259,10 +259,10 @@ public sealed class ItemContext_Patch : ModulePatch
     }
 
     /// <summary>
-    /// Posts the operation through the game's backend session. The payload is
-    /// handed over as JSON text because the native call takes a Newtonsoft
-    /// JObject that managed code cannot construct while a managed
-    /// Newtonsoft.Json shadows the IL2CPP interop proxy.
+    /// 通过游戏的后端会话提交该操作。载荷以 JSON 文本
+    /// 的形式交出，因为原生调用接收的是一个 Newtonsoft
+    /// JObject，而当托管的 Newtonsoft.Json 遮蔽了 IL2CPP interop
+    /// 代理时，托管代码无法构造这种对象。
     /// </summary>
     private static void SendOperation(string payloadJson, Callback callback)
     {
@@ -279,9 +279,9 @@ public sealed class ItemContext_Patch : ModulePatch
             .TryCast<EFT.ClientBackendSession>();
 
     /// <summary>
-    /// Kept in its own non-inlined method: with a shadowing assembly the linkage
-    /// failure surfaces while this method is compiled, so the caller has to be a
-    /// different frame to observe it.
+    /// 刻意放在自己的非内联方法里：当存在遮蔽程序集时，链接失败会在
+    /// 此方法被编译时暴露出来，因此调用方必须处于
+    /// 另一个栈帧才能观察到它。
     /// </summary>
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
     private static void SendOperationThroughInterop(string payloadJson, Callback callback)

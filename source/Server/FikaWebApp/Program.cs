@@ -33,18 +33,18 @@ public static class Program
 
         builder.Host.UseSerilog();
 
-        // Add MudBlazor services
+        // 添加 MudBlazor 服务
         builder.Services.AddMudServices();
         builder.Services.AddMudExtensions();
 
-        // Add Brism
+        // 添加 Brism
         builder.Services.AddBrism();
 
-        // Add services to the container.
+        // 向容器添加服务。
         builder.Services.AddRazorComponents()
             .AddInteractiveServerComponents();
 
-        // Add Controllers
+        // 添加 Controllers
         builder.Services.AddControllers();
 
         builder.WebHost.UseStaticWebAssets();
@@ -183,7 +183,7 @@ public static class Program
 
         var app = builder.Build();
 
-        // Configure the HTTP request pipeline.
+        // 配置 HTTP 请求管道。
         if (app.Environment.IsDevelopment())
         {
             app.UseMigrationsEndPoint();
@@ -203,7 +203,7 @@ public static class Program
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode();
 
-        // Add additional endpoints required by the Identity /Account Razor components.
+        // 添加 Identity /Account Razor 组件所需的额外端点。
         app.MapAdditionalIdentityEndpoints();
 
         using (var scope = app.Services.CreateScope())
@@ -287,7 +287,7 @@ public static class Program
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
 
-        await dbContext.Database.MigrateAsync(); // ensure DB and tables exist
+        await dbContext.Database.MigrateAsync(); // 确保数据库与表存在
         await dbContext.Database.EnsureCreatedAsync();
 
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();

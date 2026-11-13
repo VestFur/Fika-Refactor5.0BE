@@ -10,35 +10,35 @@ using Fika.Core.Networking.Serialization;
 namespace Fika.Headless.Classes;
 
 /// <summary>
-/// Reports the assemblies that a plugin copy can shadow in this install, so a
-/// whole class of "the host hangs instead of creating the raid" failures is
-/// visible from the start path instead of from whichever line dies first.
+/// 报告本次安装中可能被插件副本遮蔽的程序集，使一类
+/// 「主机卡住而不是创建战局」的故障
+/// 可以从启动路径直接看到，而不必看最先挂掉的是哪一行。
 /// <para>
-/// BepInEx resolves a plugin's references by simple assembly name. When the
-/// same name also exists under BepInEx/plugins, the plugin copy can win over
-/// the BepInEx/interop proxy the port is compiled against; every call site that
-/// needs one of the proxy's IL2CPP overloads then fails with
-/// <see cref="MissingMethodException"/>, raised while the *calling* method is
-/// compiled. That happened to the headless start path through
-/// <c>Newtonsoft.Json</c>.
+/// BepInEx 按简单程序集名解析插件的引用。当同一个名字
+/// 也出现在 BepInEx/plugins 下时，插件副本可能压过
+/// 本移植版本编译时针对的 BepInEx/interop 代理；此后每个
+/// 需要该代理某个 IL2CPP 重载的调用点都会以
+/// <see cref="MissingMethodException"/> 失败——该异常是在编译*调用*方法时抛出的。
+/// 无头模式启动路径就曾通过
+/// <c>Newtonsoft.Json</c> 遇到过这个问题。
 /// </para>
 /// <para>
-/// Only assemblies that Fika.Headless and Fika.Core actually reference are
-/// checked, so an unrelated plugin shipping its own JSON library is not
-/// reported. The scan reads assembly metadata - nothing is loaded.
+/// 只检查 Fika.Headless 与 Fika.Core 实际引用的程序集，
+/// 因此携带自有 JSON 库的无关插件不会被报告。
+/// 扫描只读取程序集元数据——不加载任何东西。
 /// </para>
 /// </summary>
 internal static class HeadlessAssemblies
 {
     /// <summary>
-    /// Folders that provide the assemblies Fika is compiled against. A name that
-    /// also exists under <c>plugins</c> is the shadowing case.
+    /// 提供 Fika 编译时所用程序集的文件夹。同名程序集
+    /// 也存在于 <c>plugins</c> 下即为遮蔽情形。
     /// </summary>
     private static readonly string[] ProxyFolders = ["core", "interop"];
 
     /// <summary>
-    /// Logs the full inventory once per armed host. Never throws: the caller
-    /// wraps it, but a diagnostic must not be able to stop the payload.
+    /// 每个已武装的主机记录一次完整清单。永不抛异常：调用方
+    /// 已包裹了它，但诊断代码不得有能力中断载荷。
     /// </summary>
     internal static void Report(ManualLogSource log)
     {
@@ -90,8 +90,8 @@ internal static class HeadlessAssemblies
     }
 
     /// <summary>
-    /// The warning-only form, for a start path that just failed on a shadowed
-    /// lookup. Reports once per process.
+    /// 仅告警的形式，用于刚因被遮蔽的查找而失败的启动路径。
+    /// 每个进程只报告一次。
     /// </summary>
     internal static void ReportIfShadowed(ManualLogSource log)
     {
@@ -114,10 +114,10 @@ internal static class HeadlessAssemblies
     }
 
     /// <summary>
-    /// The BepInEx root this plugin was loaded from, derived from the plugin's own
-    /// location (…/BepInEx/plugins/fika/Fika.Headless.dll). Derived rather than
-    /// read from a BepInEx API so no install path is stored and no API version
-    /// matters.
+    /// 本插件被加载时所在的 BepInEx 根目录，由插件自身位置推导
+    /// （…/BepInEx/plugins/fika/Fika.Headless.dll）。采用推导而非
+    /// 读取 BepInEx API，因此不存储安装路径，也不受 API 版本
+    /// 影响。
     /// </summary>
     private static string BepInExRoot()
     {
@@ -136,13 +136,13 @@ internal static class HeadlessAssemblies
         }
         catch (Exception)
         {
-            // Fall through to null: the caller degrades to the Newtonsoft report.
+            // 落到 null：调用方会退化为 Newtonsoft 报告。
         }
 
         return null;
     }
 
-    /// <summary>Assembly names this process resolves at runtime.</summary>
+    /// <summary>本进程在运行时解析的程序集名称。</summary>
     private static List<string> ReferencedAssemblyNames()
     {
         HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
@@ -163,8 +163,8 @@ internal static class HeadlessAssemblies
     }
 
     /// <summary>
-    /// Maps assembly simple name to its path relative to <paramref name="folder"/>.
-    /// Files that are not managed assemblies are skipped.
+    /// 将程序集简单名映射为它相对 <paramref name="folder"/> 的路径。
+    /// 非托管程序集的文件会被跳过。
     /// </summary>
     private static Dictionary<string, string> ScanManagedAssemblies(string folder)
     {
@@ -183,7 +183,7 @@ internal static class HeadlessAssemblies
             }
             catch (Exception)
             {
-                // Native DLL or unreadable file: not an assembly that can shadow.
+                // 原生 DLL 或不可读的文件：不是能造成遮蔽的程序集。
                 continue;
             }
 

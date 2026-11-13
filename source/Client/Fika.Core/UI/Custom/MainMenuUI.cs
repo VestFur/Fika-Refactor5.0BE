@@ -19,11 +19,11 @@ public class MainMenuUI : MonoBehaviour
     public Il2CppInterop.Runtime.InteropTypes.Fields.Il2CppReferenceField<GameObject> PlayerTemplate;
 
     /// <summary>
-    /// Engine callbacks on a component the engine created from the bundle. They are written to
-    /// the stable diagnostics file so the order in which the engine starts and destroys these
-    /// injected instances survives the run: the crash this build chases happens while the
-    /// engine releases a scripting object, so "engine called OnDestroy" being the last line is
-    /// what identifies that object as the one under release.
+    /// 引擎在它从 bundle 创建的组件上触发的回调。它们会写入稳定的
+    /// 诊断文件，使引擎启动和销毁这些注入实例的顺序在运行结束后
+    /// 仍然可用：本构建要追查的崩溃发生在引擎释放脚本对象的时候，
+    /// 因此「引擎调用了 OnDestroy」成为最后一行，正是把那
+    /// 对象识别为正在被释放的那一个的依据。
     /// </summary>
     private void Awake()
     {
@@ -38,13 +38,13 @@ public class MainMenuUI : MonoBehaviour
     private bool _labelReported;
 
     /// <summary>
-    /// Writes the online player count into the label the prefab serialized.
+    /// 把在线玩家数写入 prefab 序列化出的那个标签。
     ///
-    /// This overload takes the label the caller already cached and proved, so the panel does
-    /// not have to re-read the serialized reference field (and allocate a wrapper for it) on
-    /// every refresh tick.
+    /// 这个重载接收调用方已经缓存并验证过的标签，因此面板不必在
+    /// 每个刷新 tick 上重新读取序列化引用字段（并为其分配
+    /// 一个包装器）。
     ///
-    /// Returns false when the write was skipped.
+    /// 写入被跳过时返回 false。
     /// </summary>
     public bool UpdateLabel(TextMeshProUGUI label, int amount)
     {
@@ -64,17 +64,17 @@ public class MainMenuUI : MonoBehaviour
     }
 
     /// <summary>
-    /// Reads the serialized label reference and writes into it.
+    /// 读取序列化的标签引用并向其中写入。
     ///
-    /// This is the only native write the panel performs on an object it did not create
-    /// itself, so the reference is proven before it is used: the pointer has to point into a
-    /// committed readable page, the object has to carry a readable il2cpp class name and that
-    /// class has to be (or derive from) TextMeshProUGUI. The 47888 dumps fault on 0xA inside
-    /// GameAssembly while such a write is handed a value that is not an object at all, and a
-    /// value that merely *looks* like a pointer is not good enough - writing into the wrong
-    /// object corrupts whatever really lives there.
+    /// 这是面板对它没有自己创建的对象所执行的唯一一次原生写入，
+    /// 因此引用在使用之前会被证明：指针必须指向一个已提交的可读页，
+    /// 对象必须携带可读的 il2cpp 类名，并且该类必须是（或派生自）
+    /// TextMeshProUGUI。47888 的转储中出现过在 GameAssembly 内部对 0xA 的故障，
+    /// 当时这样的写入被传入了一个根本不是对象的值，而一个仅仅
+    /// *看起来*像指针的值并不够用——写入错误的对象
+    /// 会破坏真正存在于那里的内容。
     ///
-    /// Returns false when the write was skipped, so the caller can log the raw pointer.
+    /// 写入被跳过时返回 false，以便调用方记录裸指针。
     /// </summary>
     public bool UpdateLabel(int amount)
     {

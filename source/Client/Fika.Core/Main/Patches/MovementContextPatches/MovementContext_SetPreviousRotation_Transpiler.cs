@@ -5,8 +5,8 @@ using SPTushonka.Reflection.Patching;
 
 namespace Fika.Core.Main.Patches.MovementContextPatches;
 
-// Preserve Fika's local rotation path without the vanilla online-controller
-// lookup. The SPT 5 native setters also refresh cached movement directions.
+// 保留 Fika 的本地旋转路径，不再走原版的在线控制器查找。
+// SPT 5 的原生 setter 还会刷新缓存的移动方向。
 internal class MovementContext_SetPreviousRotation_Transpiler : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.Method(typeof(MovementContext), "SetPreviousRotation");

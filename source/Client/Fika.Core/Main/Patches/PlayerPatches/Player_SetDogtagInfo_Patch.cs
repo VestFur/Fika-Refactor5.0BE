@@ -7,7 +7,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.PlayerPatches;
 
 /// <summary>
-/// This patch stops BSGs dogtag handling as it is poorly executed
+/// 本补丁会阻止 BSG 的狗牌处理，因为它的实现很糟糕
 /// </summary>
 public class Player_SetDogtagInfo_Patch : ModulePatch
 {
@@ -16,8 +16,8 @@ public class Player_SetDogtagInfo_Patch : ModulePatch
         return typeof(Player).GetMethod(nameof(Player.SetDogtagInfo));
     }
 
-    // Preserve Fika's replicated dogtag details instead of replacing them with
-    // the vanilla death packet (the original Mono patch returned immediately).
+    // 保留 Fika 复制的狗牌细节，而不是用
+    // 原版死亡数据包替换它们（原来的 Mono 补丁是直接返回的）。
     [PatchPrefix]
     public static bool Prefix() => FikaBackendUtils.ClientType == EClientType.None;
 }

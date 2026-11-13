@@ -9,40 +9,40 @@ using Il2CppInterop.Runtime.InteropTypes.Arrays;
 namespace Fika.Core.Main.Components;
 
 /// <summary>
-/// BU (analysis/icebreaker-keypad-3): the raid's passcode set, made by the game and checked by the game.
+/// BU（analysis/icebreaker-keypad-3）：突袭的通行码集合，由游戏生成，也由游戏校验。
 ///
-/// The third round of the keypad repair. The first two rounds left the decision on the HOST (the client's
-/// code was handed to the host and the host answered) and the client's world carried a controller with no
-/// code table at all, so the two machines of one raid never held the same set: the client typed what its own
-/// wall hints showed while the host compared against its own, and every attempt came back as 'wrong'
-/// (r33: stage=result success=no x2, live diagnostics log 27220/27221).
+/// 键盘锁修复的第三轮。前两轮把判定权留在了主机侧（客户端的
+/// 密码被交给主机、由主机作答），而客户端的世界里带的却是一个完全没有
+/// 密码表的控制器，因此同一场突袭的两台机器从未持有同一套码：客户端输入的是它自己
+/// 墙面提示所显示的内容，主机却拿自己的码去比对，于是每次尝试都返回 'wrong'
+/// （r33: stage=result success=no x2，实时诊断日志 27220/27221）。
 ///
-/// The native chain of one raid is this (members from the 47888 interop, file:line in the report):
-///   * the DATA is the location's <c>PasscodeLocationSettings.Entries</c> (id -> passcode list id);
-///   * the CODES are drawn once per raid by <c>PasscodeGenerator.GeneratePasscodes(entries)</c>, which
-///     resolves every list id against <c>GlobalConfiguration.PasscodeSettings</c> and takes one random
-///     entry of that list (the optional icebreaker keypads draw out of a 60000 entry list, the quest one
-///     has a single code) - this is what the user calls 'the code is generated inside the raid';
-///   * the HINTS are <c>PasscodeController.GenerateHints(codes)</c>, applied to the scene's hint objects
-///     by <c>ClientPasscodeController.SetupHints(hints)</c>;
-///   * the CHECK happens inside <c>ClientLocalPasscodeController.HandleSubmitPasscode</c> against that
-///     machine's own <c>_generatedPasscodes</c>, and it is the call that unlocks the door.
+/// 一场突袭的原生调用链如下（成员来自 47888 的 interop，file:line 见报告）：
+///   * DATA 是该地点的 <c>PasscodeLocationSettings.Entries</c>（id -> 密码列表 id）；
+///   * CODES 由 <c>PasscodeGenerator.GeneratePasscodes(entries)</c> 每场突袭抽取一次，它
+///     会把每个列表 id 解析到 <c>GlobalConfiguration.PasscodeSettings</c>，并取该列表中的一个随机
+///     条目（可选的破冰船键盘锁从一个 60000 条的列表里抽取，任务用的那个
+///     只有一个码）——这就是用户所说的『码是在突袭内部生成的』；
+///   * HINTS 由 <c>PasscodeController.GenerateHints(codes)</c> 生成，再由
+///     <c>ClientPasscodeController.SetupHints(hints)</c> 应用到场景的提示对象上；
+///   * CHECK 在 <c>ClientLocalPasscodeController.HandleSubmitPasscode</c> 内部、针对该
+///     机器自己的 <c>_generatedPasscodes</c> 进行，而正是这次调用把门打开。
 ///
-/// So a machine can only be right about a code if it holds the very same table. This class gives the raid
-/// exactly one table: the HOST generates it with the game's own generator (or keeps the one the native
-/// pipeline already made) and Fika carries that table to the clients - it never decides about a code.
-/// A client builds the native LOCAL controller around the received table, so from then on the whole
-/// submit -> check -> unlock -> panel path of that client is the single player one, with no network round
-/// trip and no use of the relay (which stays as the fallback for the window in which no table arrived).
-/// The host builds the same controller when the native pipeline of this build left its world without one,
-/// which is what made the host's own keypad answer 'Tried to enter code on location without passcodes'.
+/// 因此一台机器只有持有完全相同的那张表，才可能对某个码判断正确。这个类给整场突袭
+/// 只提供一张表：由主机用游戏自己的生成器生成（或保留原生
+/// 流水线已经做好的那张），再由 Fika 把这张表送到各个客户端——它从不判定任何码。
+/// 客户端围绕收到的表构建原生的 LOCAL 控制器，于是此后该客户端整条
+/// 提交 -> 校验 -> 开锁 -> 面板 的路径就是单人模式的那一条，没有任何网络往返，
+/// 也不使用中继（中继仅作为「尚未收到表」那段时间的兜底而保留）。
+/// 当这个构建的原生流水线让它自己的世界里没有控制器时，主机也会构建同一个控制器，
+/// 这正是主机自己的键盘锁会回答 'Tried to enter code on location without passcodes' 的原因。
 /// </summary>
 internal static class KeypadCodeSync
 {
-    /// <summary>Seconds between two attempts to build a controller (the location/scene may not be up yet).</summary>
+    /// <summary>两次尝试构建控制器之间的秒数（地点/场景可能还没就绪）。</summary>
     private const float RetrySeconds = 2f;
 
-    /// <summary>How often the failure line repeats while the state stays broken.</summary>
+    /// <summary>状态一直异常期间，失败日志行的重复频率。</summary>
     private const float FailureLineSeconds = 10f;
 
     private static bool _hostCodesReady;
@@ -59,17 +59,17 @@ internal static class KeypadCodeSync
     private static Dictionary<string, string> _hostCodes;
     private static Dictionary<string, string[]> _hostHints;
 
-    /// <summary>The local controller this port installed on a client, so RaidInteractionSync can tell it from
-    /// a native one it has to swap to the network shape.</summary>
+    /// <summary>这个移植版本安装在客户端上的本地控制器，好让 RaidInteractionSync 能把它与
+    /// 需要切换成网络形态的原生控制器区分开。</summary>
     private static IntPtr _clientLocalController;
 
-    /// <summary>This machine holds the raid's code table (host: its own, client: the host's).</summary>
+    /// <summary>本机持有本场突袭的密码表（主机：自己的；客户端：主机的）。</summary>
     internal static bool Ready => FikaBackendUtils.IsServer ? _hostCodesReady : _clientApplied;
 
-    /// <summary>A client that has not received the host's table yet keeps asking for the snapshot.</summary>
+    /// <summary>尚未收到主机密码表的客户端会持续索取快照。</summary>
     internal static bool NeedsHostCodes => FikaBackendUtils.IsClient && !_clientHasHostCodes;
 
-    /// <summary>The host's table as the wire payload, or null while it does not exist yet.</summary>
+    /// <summary>主机的表作为线上载荷，尚未存在时为 null。</summary>
     internal static Dictionary<string, string> HostCodes() => _hostCodesReady ? _hostCodes : null;
 
     internal static void Reset()
@@ -89,7 +89,7 @@ internal static class KeypadCodeSync
         _clientLocalController = IntPtr.Zero;
     }
 
-    /// <summary>True when this client's world holds the local controller built around the host's table.</summary>
+    /// <summary>当该客户端的世界持有围绕主机密码表构建的本地控制器时为 true。</summary>
     internal static bool OwnsLocalController(ClientLocalPasscodeController controller)
     {
         try
@@ -104,8 +104,8 @@ internal static class KeypadCodeSync
     }
 
     /// <summary>
-    /// The host's answer reached this machine. Its code table is the raid's table; the entry ids and the
-    /// hint set travel with it so a client needs nothing of its own to build the native controller.
+    /// 主机的答复已到达本机。它的密码表就是本场突袭的表；条目 id 与
+    /// 提示集合随之一同传输，因此客户端无需自有数据即可构建原生控制器。
     /// </summary>
     internal static void NoteHostSnapshot(Dictionary<string, string> codes, Dictionary<string, string> entries,
         Dictionary<string, string[]> hints)
@@ -115,8 +115,8 @@ internal static class KeypadCodeSync
         if (hints != null && hints.Count > 0) _hostHints = hints;
         if (codes == null || codes.Count == 0)
         {
-            // An empty snapshot is legal while the host has not drawn its codes yet; the request loop of
-            // RaidInteractionSync keeps asking and the wait is written down once.
+            // 在主机尚未抽取密码之前，空快照是合法的；RaidInteractionSync 的请求循环
+            // 会继续索取，而这次等待只被记录一次。
             if (!_loggedWaiting && !_clientApplied)
             {
                 _loggedWaiting = true;
@@ -136,8 +136,8 @@ internal static class KeypadCodeSync
     }
 
     /// <summary>
-    /// One step of the per-frame convergence of this raid's keypad state. Runs on the host and on every
-    /// client, inside the raid only (the gate of RaidInteractionSync already keeps us out of foreign raids).
+    /// 本场突袭键盘锁状态每帧收敛的一步。在主机和每个客户端上都会运行，
+    /// 且只在突袭内部运行（RaidInteractionSync 的闸门已使我们不会进入别人的突袭）。
     /// </summary>
     internal static void Tick(GameWorld world)
     {
@@ -153,13 +153,13 @@ internal static class KeypadCodeSync
         }
     }
 
-    // ---- host: the raid's table is drawn here ----------------------------------------------------------
+    // ---- 主机：本场突袭的密码表在此处抽取 ----------------------------------------------------------
 
     private static void EnsureHostTable(GameWorld world)
     {
-        // The native pipeline may already have made the controller (it is the single player path of a
-        // host's offline raid). Its table is the raid's table and is never redrawn - a redraw would move
-        // the code under the players' feet.
+        // 原生流水线可能已经把控制器做好了（那是主机离线突袭的单人
+        // 路径）。它的表就是本场突袭的表，绝不会被重新抽取——重新抽取会让
+        // 码在玩家脚下发生变化。
         if (world.PasscodeController?.TryCast<ClientLocalPasscodeController>() is { } native)
         {
             Populate(native);
@@ -179,8 +179,8 @@ internal static class KeypadCodeSync
                 return;
             }
 
-            // A native controller without a table (the state the r33 host log shows as
-            // 'Tried to enter code on location without passcodes'): draw it with the game's own generator.
+            // 一个没有表的原生控制器（r33 主机日志里显示为
+            // 'Tried to enter code on location without passcodes' 的那种状态）：用游戏自己的生成器抽取。
             if (TryGenerate(native, world, "host-native-repaired")) return;
             return;
         }
@@ -194,9 +194,9 @@ internal static class KeypadCodeSync
         var listIds = ListIds(entries);
         if (entries == null || entries.Length == 0)
         {
-            // The location of this machine carries no entries: fall back to the keypads of this scene with
-            // an empty list id (the generator then has no list to draw from and the doors keep their old
-            // behaviour). The line names it so the next round can judge it from the log.
+            // 本机的地点不携带任何条目：退回使用本场景的键盘锁，并给一个
+            // 空的列表 id（此时生成器没有列表可抽，门保持原有
+            // 的行为）。日志行会点明这一点，以便下一轮能从日志判断。
             var scene = new PasscodeLocationSettings { Entries = FromSceneIds() };
             settings = scene;
             entries = scene.Entries;
@@ -208,8 +208,8 @@ internal static class KeypadCodeSync
         Populate(controller);
         if (!TryGenerate(controller, world, "host-created"))
         {
-            // No table could be drawn (this machine's location carries no entry at all). The world keeps
-            // whichever controller it had, so the state of the host stays readable in the log.
+            // 无法抽出任何表（本机的地点根本不携带条目）。世界保持
+            // 它原有的那个控制器，因此主机的状态在日志里仍然可读。
             world.PasscodeController = previous;
             controller.Dispose();
             return;
@@ -219,7 +219,7 @@ internal static class KeypadCodeSync
         
     }
 
-    /// <summary>Draws the table with the game's own generator and applies the game's own hints.</summary>
+    /// <summary>用游戏自己的生成器抽取密码表，并应用游戏自己的提示。</summary>
     private static bool TryGenerate(ClientLocalPasscodeController controller, GameWorld world, string source)
     {
         var settings = controller._passcodeLocationSettings;
@@ -251,18 +251,18 @@ internal static class KeypadCodeSync
         Report(source, entries.Length, controller._passcodeTerminals?.Count ?? 0, "generated",
             "this host drew the raid's codes with the game's own PasscodeGenerator and applied the game's own hints"
             + " (hints=" + NativeCount(hints) + ")");
-        // The table of this raid exists now: every peer is handed it without waiting for its next retry.
+        // 本场突袭的表现在已存在：每个对等端都会立刻拿到它，而不必等到下一次重试。
         RaidInteractionSync.PushPasscodeSnapshot();
         return true;
     }
 
-    // ---- client: the native local controller around the host's table ------------------------------------
+    // ---- 客户端：围绕主机密码表的原生本地控制器 ------------------------------------
 
     private static void EnsureClientTable(GameWorld world)
     {
         if (_clientApplied)
         {
-            // The scene of a client loads after its world: the keypads and hint groups are bound late.
+            // 客户端的场景在其世界之后加载：键盘锁与提示组都是延迟绑定的。
             if (world.PasscodeController is { } applied) Populate(applied);
             return;
         }
@@ -303,8 +303,8 @@ internal static class KeypadCodeSync
     }
 
     /// <summary>
-    /// The entries a client builds its controller from: its own location data first (the same file the
-    /// host reads), the host's snapshot second, the keypads of this scene last.
+    /// 客户端用来构建其控制器的条目来源：首先是它自己的地点数据（与主机
+    /// 读取的是同一个文件），其次是主机的快照，最后是本场景的键盘锁。
     /// </summary>
     private static PasscodeLocationSettings ClientSettings()
     {
@@ -314,12 +314,12 @@ internal static class KeypadCodeSync
         return new PasscodeLocationSettings { Entries = FromSceneIds() };
     }
 
-    // ---- the native pieces shared by both roles ---------------------------------------------------------
+    // ---- 两种角色共用的原生部件 ---------------------------------------------------------
 
     /// <summary>
-    /// The keypads and hint groups of this machine's scene, through the native population call of the
-    /// controller. A client's scene loads after its world, so this is retried until the map really has
-    /// them - the r33 log's 'terminals=0' is exactly a controller that was never bound to its scene.
+    /// 本机场景中的键盘锁与提示组，通过控制器的原生填充调用取得。
+    /// 客户端的场景在其世界之后加载，因此这里会一直重试，直到地图真正拥有了
+    /// 它们——r33 日志里的 'terminals=0' 正是一个从未绑定到其场景的控制器。
     /// </summary>
     private static void Populate(PasscodeController controller)
     {
@@ -378,10 +378,10 @@ internal static class KeypadCodeSync
     }
 
     /// <summary>
-    /// The native verdict of a submit this machine handled itself: whether the table of this raid holds this
-    /// very code for the keypad. It is read (not decided) and only decides whether the host has to be told
-    /// about the attempt - the door of this machine was opened by the game's own controller, and the host
-    /// runs the same check on its own copy before anything changes there.
+    /// 本机自行处理的某次提交所得到的原生判定：本场突袭的表是否为这个
+    /// 键盘锁保留了正是这个码。它只是被读取（而不是被判定），并只决定是否需要把这次
+    /// 尝试告知主机——本机的门是由游戏自己的控制器打开的，而主机会
+    /// 在改动任何东西之前用自己那份表执行同样的检查。
     /// </summary>
     internal static bool MatchesLocal(ClientPasscodeController controller, string passcodeId, string input)
     {
@@ -399,7 +399,7 @@ internal static class KeypadCodeSync
         }
     }
 
-    /// <summary>True when this machine's world checks codes itself instead of asking the host (the wanted end state).</summary>
+    /// <summary>当本机的世界自行校验密码、而不是去问主机时为 true（这是期望的最终状态）。</summary>
     internal static bool IsLocal(ClientPasscodeController controller)
     {
         try
@@ -412,7 +412,7 @@ internal static class KeypadCodeSync
         }
     }
 
-    /// <summary>The raid model of this machine, the one the game built the world from.</summary>
+    /// <summary>本机的突袭模型，也就是游戏用来构建世界的那个。</summary>
     private static PasscodeLocationSettings LocationSettings()
     {
         try
@@ -502,7 +502,7 @@ internal static class KeypadCodeSync
 
     private static int Count<TValue>(Dictionary<string, TValue> map) => map?.Count ?? 0;
 
-    /// <summary>The count of an Il2Cpp dictionary (the shape the native hints and codes use).</summary>
+    /// <summary>Il2Cpp 字典的元素个数（原生提示与密码所用的形态）。</summary>
     private static int NativeCount<TValue>(Il2CppSystem.Collections.Generic.Dictionary<string, TValue> map)
         => map?.Count ?? 0;
 
@@ -553,7 +553,7 @@ internal static class KeypadCodeSync
         return native;
     }
 
-    /// <summary>One line per distinct state of the keypad code layer, never more than one per 10 s.</summary>
+    /// <summary>键盘锁密码层每个不同状态各一行，且 10 秒内绝不超过一行。</summary>
     private static void Report(string source, int entries, int terminals, string result, string reason)
     {
         var now = UnityEngine.Time.unscaledTime;

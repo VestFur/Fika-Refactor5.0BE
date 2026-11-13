@@ -18,7 +18,7 @@ public class PlayUISound_Patch : ModulePatch
     {
         if (soundType == EUISoundType.PlayerIsDead)
         {
-            // Don't play player dead sound if spectator mode
+            // 观众模式下不要播放玩家死亡音效
             if (FikaBackendUtils.IsSpectator)
             {
                 return false;

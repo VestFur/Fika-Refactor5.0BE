@@ -39,9 +39,9 @@ public class NotificationWebSocket(JsonUtil jsonUtil, ISptLogger<NotificationWeb
         WebSocket? previousSocket = null;
         if (!clientWebSockets.TryAdd(userSessionID, ws))
         {
-            // A reconnect can arrive before the previous socket's close
-            // callback. Replace only that previous connection; its eventual
-            // OnCloseAsync must not remove the new socket or presence.
+            // 重连可能在上一个 socket 的关闭
+            // 回调之前到达。只替换那一个旧连接；它最终
+            // 的 OnCloseAsync 不得移除新 socket 或在线状态。
             if (clientWebSockets.TryGetValue(userSessionID, out previousSocket) &&
                 !clientWebSockets.TryUpdate(userSessionID, ws, previousSocket))
             {
@@ -49,9 +49,9 @@ public class NotificationWebSocket(JsonUtil jsonUtil, ISptLogger<NotificationWeb
             }
         }
 
-        // Do not leave the superseded connection alive after a reconnect. Its
-        // close callback is identity-guarded and therefore cannot remove the
-        // newly installed socket or presence entry.
+        // 重连之后不要留下被取代的连接继续存活。其
+        // 关闭回调做了身份保护，因此无法移除
+        // 新安装的 socket 或在线状态条目。
         if (previousSocket != null && !ReferenceEquals(previousSocket, ws))
         {
             try { previousSocket.Abort(); }
@@ -63,7 +63,7 @@ public class NotificationWebSocket(JsonUtil jsonUtil, ISptLogger<NotificationWeb
 
     public Task OnMessageAsync(byte[] rawData, WebSocketMessageType messageType, WebSocket ws, HttpContext context)
     {
-        // Do nothing
+        // 不做任何事
         return Task.CompletedTask;
     }
 
@@ -86,16 +86,16 @@ public class NotificationWebSocket(JsonUtil jsonUtil, ISptLogger<NotificationWeb
 
     public async Task SendAsync<T>(MongoId sessionID, T message) where T : IFikaNotification
     {
-        // Client is not online or not currently connected to the websocket.
+        // 客户端不在线，或当前未连接到 websocket。
         if (!clientWebSockets.TryGetValue(sessionID, out var ws))
         {
             return;
         }
 
-        // Client was formerly connected to the websocket, but may have
-        // connection issues as it didn't run OnCloseAsync.  SendAsync throws
-        // for CloseReceived/CloseSent/Aborted as well, so only an open socket
-        // is eligible for a notification.
+        // 客户端此前连接过 websocket，但可能存在
+        // 连接问题，因为它没有执行 OnCloseAsync。SendAsync 对
+        // CloseReceived/CloseSent/Aborted 也会抛异常，因此只有打开的 socket
+        // 才有资格接收通知。
         if (ws.State != WebSocketState.Open)
         {
             if (clientWebSockets.TryRemove(new KeyValuePair<string, WebSocket>(sessionID, ws)))
@@ -120,9 +120,9 @@ public class NotificationWebSocket(JsonUtil jsonUtil, ISptLogger<NotificationWeb
         catch (Exception exception) when (exception is WebSocketException or ObjectDisposedException or
             InvalidOperationException or OperationCanceledException)
         {
-            // A stale socket must not abort a broadcast to every other
-            // player. Remove only this exact connection; a reconnect may have
-            // already installed a newer socket for the same session.
+            // 过期的 socket 不得中断向其他所有
+            // 玩家的广播。只移除这一个确切的连接；可能已有重连
+            // 为同一会话安装了更新的 socket。
             if (clientWebSockets.TryRemove(new KeyValuePair<string, WebSocket>(sessionID, ws)))
             {
                 fikaPresenceService.RemovePlayerPresence(sessionID);

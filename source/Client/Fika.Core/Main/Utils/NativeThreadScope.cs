@@ -4,9 +4,9 @@ using Il2CppInterop.Runtime;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Native serialization may run in a CLR HTTP continuation. Register that
-/// thread with IL2CPP for the synchronous native operation and its GC roots.
-/// This does not permit Unity scene APIs on worker threads or span awaits.
+/// 原生序列化可能运行在 CLR HTTP 延续中。请把该
+/// 线程连同其 GC 根注册给 IL2CPP，以执行这次同步的原生操作。
+/// 这并不允许在工作线程上使用 Unity 场景 API，也不允许跨越 await。
 /// </summary>
 internal readonly struct NativeThreadScope : IDisposable
 {

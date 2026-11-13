@@ -28,7 +28,7 @@ internal sealed class ReviveInteractable : InteractableObject
     private static readonly int _bodyPartHitLayer = LayerMask.NameToLayer("HitCollider");
 
     /// <summary>
-    /// If the player is currently being revived
+    /// 玩家当前是否正在被复活
     /// </summary>
     public bool BeingRevived { get; internal set; }
 
@@ -57,8 +57,8 @@ internal sealed class ReviveInteractable : InteractableObject
         component._revivePlayerDelegate = component.RevivePlayer;
         component._startSearchingDelegate = component.StartSearching;
         component._finishLootingDelegate = (Callback)component.FinishLooting;
-        // These handlers were installed by Player.Init in native code. Managed
-        // trampolines have different identities and cannot remove those handlers.
+        // 这些处理器由原生代码中的 Player.Init 安装。托管
+        // trampoline 具有不同的标识，无法移除那些处理器。
         component._stateChangedHandler = NativeDelegates.BindManaged<System.Action<EPlayerState, EPlayerState>>(
             observedPlayer, nameof(Player.MovementContextOnStateChanged));
         component._physicalConditionHandler = NativeDelegates.BindManaged<System.Action<EPhysicalCondition, EPhysicalCondition>>(

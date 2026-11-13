@@ -3,12 +3,12 @@
 namespace Fika.Core.Networking.Snapshotting;
 
 /// <summary>
-/// Used to sync snapshots for replication
+/// 用于为复制同步快照
 /// </summary>
 public static class NetworkTimeSync
 {
     /// <summary>
-    /// Gets the current time in the game since start as a <see cref="double"/>
+    /// 以 <see cref="double"/> 返回游戏自启动以来的当前时间
     /// </summary>
     public static double NetworkTime
     {

@@ -23,7 +23,7 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
     private readonly HashSet<(string ItemId, string ZoneId)> _pendingDrops = [];
 
     private bool _isItemBeingDropped;
-    // Profile.OnItemZoneDropped is a managed event in 47888.
+    // Profile.OnItemZoneDropped 在 47888 中是一个托管事件。
     private System.Action<string, string> _sharedItemZoneDropped;
 
     public override void Init()
@@ -63,7 +63,7 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
     }
 
     /// <summary>
-    /// Used to prevent errors when subscribing to the event
+    /// 用于在订阅该事件时避免报错
     /// </summary>
     public override void LateInit()
     {
@@ -92,8 +92,8 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
 
     private void Shared_Profile_OnItemZoneDropped(string itemId, string zoneId)
     {
-        // A planted raid quest item can be collected again later. Keep the
-        // pickup deduplication scoped to the time it is actually carried.
+        // 已放置的战局任务物品之后仍可能被再次拾取。拾取去重必须
+        // 限定在物品实际被携带的那段时间内。
         if (!string.IsNullOrWhiteSpace(itemId)) _lootedTemplateIds.Remove(itemId);
 
         if (!_canSendAndReceive)
@@ -138,8 +138,8 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
         if (!_canSendAndReceive || !_acceptedTypes.Contains("FindItem") ||
             _pendingSharedItems.Contains(item.TemplateId) || !_lootedTemplateIds.Add(item.TemplateId)) return;
 
-        // AddItemEvent(Succeed) is shared by both host and client. Failed local
-        // operations must never grant the item to teammates or consume dedup state.
+        // AddItemEvent(Succeed) 由主机与客户端共享。失败的本地操作
+        // 绝不应把物品结算给队友，也不应消耗去重状态。
         var packet = new QuestItemPacket
         {
             NetId = _player.NetId,
@@ -196,7 +196,7 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
         for (var i = 0; i < Quests.Count; i++)
         {
             var quest = Quests[i];
-            // Extra check to prevent redundant notifications
+            // 额外校验，用于避免重复通知
             if (!IsQuestActive(quest))
             {
                 continue;
@@ -218,8 +218,8 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
                         return;
                     }
 
-                    // Suppress only the notification raised by this update.
-                    // An inactive/missing quest must not suppress a future local kill.
+                    // 只抑制本次更新产生的通知。
+                    // 未激活或不存在的任务不得抑制之后的本地击杀。
                     var added = _lastFromNetwork.Add(packet.Id);
                     try { counter.Value++; }
                     finally { if (added) _lastFromNetwork.Remove(packet.Id); }
@@ -244,8 +244,8 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
         if (packet.ItemId is not null && !_lootedTemplateIds.Contains(packet.ItemId) &&
             !_pendingSharedItems.Contains(packet.ItemId))
         {
-            // Reconnect restores the inventory but recreates this controller's
-            // in-memory deduplication set. Do not grant a second copy.
+            // 重连会恢复库存，但会重建本控制器的
+            // 内存去重集合。不要重复结算第二份。
             foreach (var carried in _player.Inventory.QuestRaidItems.GetAllItems())
             {
                 if (!carried.QuestItem || carried.TemplateId != packet.ItemId) continue;
@@ -301,8 +301,8 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
         var key = (itemId, zoneId);
         if (!_pendingDrops.Add(key)) return;
 
-        // Snapshot before executing removals: successful operations mutate the
-        // native inventory collection synchronously.
+        // 执行移除前先做快照：成功的操作会同步修改
+        // 原生库存集合。
         var items = new List<Item>();
         try
         {
@@ -348,9 +348,9 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
         }
     }
 
-    // (2026-10-17) A quest whose objectives are complete but which has not been handed in yet sits in
-    // AvailableForFinish and still receives shared progress (the last kill of a quest frequently arrives
-    // in exactly that state - the shared counter was thrown away before).
+    // (2026-10-17) 目标已完成但尚未交付的任务会停留在 AvailableForFinish 中，
+    // 并且仍然接收共享进度（任务的最后一次击杀经常正好出现在这一状态——
+    // 此前共享计数器被直接丢弃了）。
     private bool IsQuestActive(Quest quest) =>
         quest.QuestStatus == EQuestStatus.Started || quest.QuestStatus == EQuestStatus.AvailableForFinish;
 
@@ -362,8 +362,8 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
             if (!IsQuestActive(quest) ||
                 !quest.Conditions.TryGetValue(EQuestStatus.AvailableForFinish, out var conditions)) continue;
 
-            // Use the native condition collection instead of constructing new
-            // IL2CPP GetConditions<T> generic closures for every quest subtype.
+            // 使用原生条件集合，避免为每个任务子类型新建
+            // IL2CPP 的 GetConditions<T> 泛型闭包。
             for (var j = 0; j < conditions.Count; j++)
             {
                 var condition = conditions[j];
@@ -383,10 +383,10 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
     }
 
     /// <summary>
-    /// Validates quest typing, some quests use CounterCreator which we also need to validate.
+    /// 校验任务类型，部分任务使用 CounterCreator，这种类型同样需要校验。
     /// </summary>
-    /// <param name="counter">The counter to validate</param>
-    /// <returns>Returns true if the quest type is valid, returns false if not</returns>
+    /// <param name="counter">待校验的计数器</param>
+    /// <returns>任务类型合法时返回 true，否则返回 false</returns>
     private bool ValidateQuestType(TaskConditionCounter counter)
     {
 #if DEBUG
@@ -411,11 +411,11 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
                 return true;
             }
 
-            // (2026-10-17) Kill objectives are not always wrapped in an "Elimination" counter: 8 of the 204
-            // kill conditions of the live database sit inside a "Completion" (and a few inside "Multi")
-            // counter, which the whitelist above never matched - those kills were shared nowhere and the
-            // failure was silent. The composite is accepted only when it really carries a kill condition and
-            // kill sharing is enabled, so no other composite type changes behaviour.
+            // (2026-10-17) 击杀目标并非总被包在 "Elimination" 计数器中：线上数据库的 204 个
+            // 击杀条件里有 8 个位于 "Completion"（少数位于 "Multi"）计数器内，
+            // 上面的白名单从未匹配到它们——这些击杀完全没有被共享，而且
+            // 失败是静默的。只有确实带有击杀条件且启用了击杀共享时才会接受该复合类型，
+            // 因此其他复合类型的行为不受影响。
             if (_acceptedTypes.Contains("Elimination")
                 && (creatorType is "Completion" || creatorType is "Multi")
                 && HasKillCondition(CounterCreator))
@@ -428,7 +428,7 @@ public sealed class ClientSharedQuestController(Profile profile, InventoryContro
     }
 
     /// <summary>
-    /// True when the composite counter carries a kill condition among its sub-conditions.
+    /// 当复合计数器的子条件中包含击杀条件时为 true。
     /// </summary>
     private static bool HasKillCondition(ConditionCounterCreator counterCreator)
     {

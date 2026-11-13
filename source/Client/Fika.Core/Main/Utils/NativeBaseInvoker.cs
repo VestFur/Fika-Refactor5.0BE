@@ -11,23 +11,23 @@ using MonoMod.Utils;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Copies the generated CLR marshalling wrapper while selecting its declared
-/// native implementation. Keeps ref/out, value types and return conversions
-/// identical to the installed interop assembly, without virtual redispatch.
+/// 复制生成的 CLR 封送包装器，同时选择其声明的
+/// 原生实现。使 ref/out、值类型和返回转换与
+/// 已安装的 interop 程序集保持一致，而不进行虚重新分派。
 ///
-/// The dispatch count is *not* assumed. Measured on this install with
-/// "tools/FindCalls ... il2cpp_object_get_virtual_method BepInEx/interop/Assembly-CSharp.dll":
-/// the generated wrappers of this Il2CppInterop build never call
-/// il2cpp_object_get_virtual_method (0 hits over the whole 306120-method assembly), while the
-/// same bodies call il2cpp_runtime_invoke 102645 times - ClientLocalGameWorld::InitLevel
-/// included. A wrapper therefore always invokes the NativeMethodInfoPtr_... of the type that
-/// declares it, which *is* the base implementation this helper asks for.
+/// 分派次数*并非*假设而来。在本安装上用
+/// "tools/FindCalls ... il2cpp_object_get_virtual_method BepInEx/interop/Assembly-CSharp.dll" 实测：
+/// 此 Il2CppInterop 构建生成的包装器从不调用
+/// il2cpp_object_get_virtual_method（整个 306120 个方法的程序集中命中 0 次），而
+/// 相同的方法体调用 il2cpp_runtime_invoke 达 102645 次——其中
+/// 包括 ClientLocalGameWorld::InitLevel。因此包装器总是调用声明它的那个类型的
+/// NativeMethodInfoPtr_...，而这*正是*本辅助程序所要求的基实现。
 ///
-/// The previous version required exactly one dispatch call and threw for every method of this
-/// install. The first native base call of a raid is InitLevel (FikaHostGameWorld), so the level
-/// initialisation faulted before LocalGameCreate: the loading screen stayed at 0 % and the
-/// client dropped back to the main menu (2026-10-09 22:58:53.574, log line
-/// "NotSupportedException: Expected one virtual dispatch ... found 0").
+/// 之前的版本要求恰好一次分派调用，并对本安装的每个方法都抛出异常。
+/// 一次 raid 的第一次原生基调用是 InitLevel（FikaHostGameWorld），因此关卡
+/// 初始化在 LocalGameCreate 之前就出错了：加载界面停留在 0 %，
+/// 客户端退回了主菜单（2026-10-09 22:58:53.574，日志行
+/// "NotSupportedException: Expected one virtual dispatch ... found 0"）。
 /// </summary>
 internal static class NativeBaseInvoker
 {
@@ -49,8 +49,8 @@ internal static class NativeBaseInvoker
         return (T)Cache.GetOrAdd((method, typeof(T)), key => Create<T>(key.Item1));
     }
 
-    // True when the field reference names the declaring type itself, whatever shape the metadata
-    // and the CLR use for it (nested separator, generic instantiation).
+    // 当字段引用指向声明类型本身时为 true，无论元数据和
+    // CLR 对它使用何种形态（嵌套分隔符、泛型实例化）。
     private static bool DeclaresField(TypeReference fieldDeclaringType, Type declaringType)
     {
         if (declaringType == null)
@@ -90,9 +90,9 @@ internal static class NativeBaseInvoker
 
             if (string.Equals(called.Name, VirtualDispatchHelper, StringComparison.Ordinal))
             {
-                // The helper is always called as (instance, declaredMethodInfo) and is replaced
-                // with a constant selector: the copied body then invokes the method this wrapper
-                // declares instead of redispatching virtually into the override that is running.
+                // 该辅助程序总是以 (instance, declaredMethodInfo) 形式调用，并被替换为
+                // 一个常量选择器：随后被复制的方法体会调用本包装器
+                // 所声明的方法，而不是虚重新分派到正在运行的覆盖实现中。
                 instruction.Operand = definition.Module.ImportReference(SelectDeclared);
                 dispatches++;
                 continue;
@@ -104,16 +104,16 @@ internal static class NativeBaseInvoker
             }
         }
 
-        // A wrapper may only be accepted when it provably loads the method info of the method it
-        // declares. That field is named after the declaring type, so the two names have to be
-        // compared in a shape the metadata and the CLR agree on: a nested type is
-        // "Outer/Inner" in metadata and "Outer+Inner" to the CLR, and a generic declaring type
-        // reaches the CLR as a constructed type whose FullName also carries the assembly-qualified
-        // arguments. Comparing the raw strings missed the load for every wrapper declared on a
-        // nested or generic type - 73 of the 124 entries of NativeBaseCalls - which is how
-        // EFT.Player.KnifeController.MakeKnifeKick got rejected 54 times in one raid although its
-        // body has exactly the same shape as ClientLocalGameWorld.InitLevel's. The comparison is
-        // only made shape-neutral; nothing is accepted that does not load its own method info.
+        // 只有当包装器可证明地加载了它所声明方法的 method info 时才可能被接受。
+        // 该字段以声明类型命名，因此这两个名称必须按
+        // 元数据与 CLR 都认可的形态来比较：嵌套类型在元数据中是
+        // "Outer/Inner"，对 CLR 则是 "Outer+Inner"，而泛型声明类型
+        // 到达 CLR 时是一个构造类型，其 FullName 还携带程序集限定形式的
+        // 类型实参。比较原始字符串会让声明在嵌套类型或泛型类型上的每个包装器
+        // 都匹配不上——NativeBaseCalls 的 124 个条目中有 73 个如此——这就是
+        // 为什么 EFT.Player.KnifeController.MakeKnifeKick 在一次 raid 中被拒绝 54 次，尽管其
+        // 方法体与 ClientLocalGameWorld.InitLevel 的形态完全相同。此次比较
+        // 只做到形态中立；任何不加载自身 method info 的东西都不会被接受。
         foreach (var instruction in definition.Definition.Body.Instructions)
         {
             if (instruction.Operand is FieldReference field &&
@@ -129,10 +129,10 @@ internal static class NativeBaseInvoker
             return Degrade<T>(method, $"expected at most one virtual dispatch, found {dispatches}");
         }
 
-        // Zero dispatches is the normal shape of this install, but it is only accepted when the
-        // body provably calls the native method it declares: a body that neither dispatches nor
-        // loads its own method info could redispatch virtually and re-enter the override that
-        // called it, which would loop instead of failing.
+        // 零次分派是本安装的正常形态，但只有在
+        // 方法体可证明地调用了它所声明的原生方法时才被接受：既不分派也不
+        // 加载自身 method info 的方法体可能进行虚重新分派并重入
+        // 调用它的覆盖实现，从而形成循环而不是失败。
         if (dispatches == 0 && (runtimeInvokes == 0 || ownMethodInfoLoads == 0))
         {
             return Degrade<T>(method, "the generated wrapper neither dispatches virtually nor invokes its own native "
@@ -146,14 +146,14 @@ internal static class NativeBaseInvoker
     }
 
     /// <summary>
-    /// A wrapper the guard rejected. Throwing here is what turned a shape mismatch into a process-wide
-    /// failure: the table wraps every entry in <c>System.Lazy</c>, which re-throws the factory's exception
-    /// on *every* later <c>.Value</c> access, so one rejected wrapper produced one exception per use and, on
-    /// a hot path, an exception per frame (analysis/hands-nre). The guard itself is unchanged and still
-    /// decides - it only degrades instead of throwing now: the rejection is reported once per method and the
-    /// caller gets a neutral delegate whose return value is the default of the signature, which is exactly
-    /// what the interop delivers when a native call throws. The native work the caller wanted is skipped, and
-    /// the call site stays alive instead of taking the raid down.
+    /// 被守卫拒绝的包装器。在这里抛异常会把一次形态不匹配变成一个
+    /// 进程级故障：该表用 <c>System.Lazy</c> 包装每个条目，而它会在此后*每一次*
+    /// 访问 <c>.Value</c> 时重新抛出工厂的异常，因此一个被拒绝的包装器会在每次使用时产生一个异常，而在
+    /// 热路径上则是每帧一个异常（analysis/hands-nre）。守卫本身没有变化，仍然
+    /// 负责判定——只是现在它退化为降级而非抛异常：拒绝每个方法只报告一次，而
+    /// 调用方得到一个中性委托，其返回值是签名的默认值，这恰好
+    /// 就是 interop 在原生调用抛异常时所交付的东西。调用方想做的原生工作被跳过，而
+    /// 调用点保持存活，而不是把 raid 弄崩。
     /// </summary>
     private static T Degrade<T>(MethodInfo method, string reason) where T : Delegate
     {
@@ -165,7 +165,7 @@ internal static class NativeBaseInvoker
         return Neutral<T>();
     }
 
-    /// <summary>A delegate of the requested shape that does nothing and returns the default of its signature.</summary>
+    /// <summary>一个所求形态的委托，它不做任何事并返回其签名的默认值。</summary>
     private static T Neutral<T>() where T : Delegate
     {
         var invoke = typeof(T).GetMethod("Invoke");

@@ -69,9 +69,9 @@ public sealed class HeadlessWebSocket
 
     public void Reconnect()
     {
-        // A rejected reservation may have no match to end. Replace this
-        // socket so the server discards the old reservation before offering
-        // the headless to another requester.
+        // 被拒绝的预留可能没有 match 可结束。替换这个
+        // socket，使服务器在把 headless 提供给其他请求者之前
+        // 丢弃旧预留。
         lock (_sync)
         {
             if (!_closing)
@@ -87,8 +87,8 @@ public sealed class HeadlessWebSocket
         lock (_sync) socket = _webSocket;
         if (socket?.State != WebSocketState.Open)
         {
-            // Silent here means the server never learns the host is usable
-            // again after a raid. Always say why readiness was not reported.
+            // 在这里静默意味着服务器永远不知道主机在一场战局之后
+            // 又可以用了。始终说明为何未上报就绪状态。
             _logger.LogWarning($"[Headless] Server registration: readiness was NOT reported, websocket state is " +
                 $"{(socket == null ? "null" : socket.State.ToString())}");
             return;

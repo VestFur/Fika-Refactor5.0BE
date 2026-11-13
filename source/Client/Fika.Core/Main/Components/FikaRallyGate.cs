@@ -11,76 +11,76 @@ namespace Fika.Core.Main.Components;
 /// <summary>
 /// ICEBREAKER-RALLY-GATE (analysis/rally-gate-deadlock).
 ///
-/// The rally trigger of Icebreaker ("wait until every player is here") asks the native
-/// <c>TriggerRallyZone.GetAliveHumanPlayerCount()</c> how many players this machine has to wait for, and the
-/// answer it produces on a Fika raid is not the number of players in the raid: the native counting runs over
-/// the world's own bookkeeping, which on a modded IL2CPP raid is not the list the game hands the host. The
-/// zone then waits for a number nobody can reach - the client reads the same number from the
-/// <c>RallyZoneUpdateEvent</c> the host broadcasts and shows "waiting for players N/M" forever.
+/// Icebreaker 的集合触发器（“等到所有玩家都到达”）会向原生
+/// <c>TriggerRallyZone.GetAliveHumanPlayerCount()</c> 询问本机需要等待多少名玩家，而它在一场 Fika 战局中
+/// 给出的答案并不是该战局的玩家数：原生统计遍历的是世界自身的记账数据，而在一个装了 mod 的 IL2CPP 战局里，
+/// 那并不是游戏交给主机的那份列表。于是该区域等待一个无人能够达到的数字——客户端从主机广播的
+/// 于是该区域等待一个无人能够达到的数字——客户端从主机广播的
+/// <c>RallyZoneUpdateEvent</c> 中读到同一个数字，并永远显示“正在等待玩家 N/M”。
 ///
-/// This class owns the one number that decides the gate. It answers with the players this raid really has
-/// (<c>CoopHandler.HumanPlayers</c>, alive, headless applied), never with zero, and the same answer is used on
-/// both sides of the link:
+/// 这个类掌管决定该闸门的那一个数字。它给出的答案取自本场战局真正拥有的玩家
+/// （<c>CoopHandler.HumanPlayers</c>，存活且已应用 headless），绝不为零，并且该答案在链路的
+/// 两端保持一致：
 /// <list type="number">
-/// <item><see cref="ExpectedParticipants"/> replaces the native count on the host and on every peer
-/// (patch: <c>RallyZonePlayerCountPatch</c>), so both machines wait for the same players;</item>
-/// <item><see cref="CorrectTotalAlive"/> replaces the <c>TotalAlive</c> field of the broadcast
-/// <c>RallyZoneUpdateEvent</c>, so the "waiting for players" text a client shows is the same count;</item>
-/// <item><see cref="EnsureRallyViewers"/> makes sure a cutscene the rally trigger started on the host is
-/// handed to every participant, so a peer cannot be left outside a scene the host is already inside.</item>
+/// <item><see cref="ExpectedParticipants"/> 替换主机以及每个对等端上的原生计数
+/// （补丁：<c>RallyZonePlayerCountPatch</c>），因此两台机器等待的是同一批玩家；</item>
+/// <item><see cref="CorrectTotalAlive"/> 替换广播事件 <c>TotalAlive</c> 字段（该字段位于
+/// <c>RallyZoneUpdateEvent</c> 中），因此客户端显示的“正在等待玩家”文本也是同一个计数；</item>
+/// <item><see cref="EnsureRallyViewers"/> 确保集合触发器在主机上启动的过场动画
+/// 被交付给每一位参与者，这样对等端就不会被留在主机已经进入的场景之外。</item>
 /// </list>
 ///
-/// Everything else here is the diagnosis the next session needs: one line for the gate (zone, players
-/// inside, the count that was asked for, where that count came from and the verdict), one for the broadcast
-/// event, one for the skip vote of every process and one for the skip signals a peer sends. Every line starts
-/// with <c>phase=</c> and is prefixed <c>[RallyDiag]</c> in the log, so a single grep works:
+/// 这里的其余内容都是下一轮排查所需要的诊断：闸门一行（区域、场内人数、
+/// 被请求的计数、该计数的来源以及判定结论），广播事件一行，
+/// 每个进程的跳过投票一行，对等端发出的跳过信号一行。每一行都以
+/// <c>phase=</c> 开头，并在日志中带 <c>[RallyDiag]</c> 前缀，因此单次 grep 即可筛出：
 /// <code>
 /// [RallyDiag]: phase=gate zone=rally_point playersHere=2 expected=2 source=fika side=client -> gate=pass
 /// [RallyDiag]: phase=skip:vote process=1 voteYes=1 voteNo=1 viewersInState=2 side=host result=waiting
 /// </code>
 ///
-/// One switch reverts the behaviour of every piece at once (see REPORT, section "一键回退").
+/// 一个开关即可一次性回退所有这些部件的行为（见 REPORT 的“一键回退”一节）。
 /// </summary>
 internal static class FikaRallyGate
 {
     /// <summary>
-    /// Master switch of the whole repair: on (default) the rally gate waits for the players of this raid,
-    /// off returns every count to the native one (the patches stay installed but pass the native value
-    /// through, and only the diagnosis lines remain).
+    /// 整个修复的总开关：开启（默认）时集合闸门等待本场战局的玩家，
+    /// 关闭时把所有计数都交还给原生值（补丁仍然安装，但把原生值原样透传，
+    /// 只保留诊断输出行）。
     /// </summary>
     internal static bool UseFikaPlayerCount = true;
 
     /// <summary>
-    /// The deadlock half: a viewer that never sent a single cutscene signal within
-    /// <see cref="SkipVoteTimeoutSeconds"/> is treated as "not in the cutscene" - the skip vote and the
-    /// completion bookkeeping stop waiting for it. Off = the vote waits for every viewer for ever (the
-    /// pre-fix behaviour).
+    /// 死锁的另一半：观看者若在
+    /// <see cref="SkipVoteTimeoutSeconds"/> 秒内一次过场动画信号都没有发出，就视为“不在过场动画中”——跳过投票与
+    /// 完成度记账都不再等它。关闭 = 投票永远等待每一个观看者（
+    /// 即修复前的行为）。
     /// </summary>
     internal static bool AllowSkipWithoutAllViewers = true;
 
-    /// <summary>Seconds a process may run before a silent viewer stops being waited for.</summary>
+    /// <summary>进程可以运行多久之后不再等待沉默的观看者（单位：秒）。</summary>
     internal static int SkipVoteTimeoutSeconds = 30;
 
     /// <summary>
-    /// (analysis/cutscene-client-dispatch) The seat repair of the dispatch chain: on (default) every participant
-    /// of this raid is a viewer of every cutscene process the host creates, not only of a process that appeared
-    /// inside the rally window (<see cref="EnsureRallyViewers"/>). Off: only the rally window completes the
-    /// table, which is the behaviour before this build.
+    /// （analysis/cutscene-client-dispatch）派发链的席位修复：开启（默认）时，
+    /// 本场战局的每一位参与者都是主机创建的每个过场动画进程的观看者，而不只是
+    /// 出现在集合窗口内的进程（<see cref="EnsureRallyViewers"/>）。关闭：只有集合窗口
+    /// 会补全该表，也就是本次构建之前的行为。
     ///
-    /// Why the window is not enough: the window is armed by <c>TriggerRallyZone.EmitTrigger</c>, while the
-    /// Icebreaker trigger really emits through SPTushonka's rally watcher
-    /// (<c>TriggersEmitter.Emit</c>, SPTSinglePlayer decompile line 1795) - a different call on a different
-    /// path. When the cutscene is started by that path the window is not armed, the table stays whatever the
-    /// local player list held at that instant, and the native client controller of a peer that is not in it
-    /// never enters the scene (nothing else the host sends can make it play). Written by the config key
-    /// 'Coop / Cutscene: Every Participant Joins The Cutscene'.
+    /// 为什么只有窗口还不够：窗口由 <c>TriggerRallyZone.EmitTrigger</c> 布防，而
+    /// Icebreaker 的触发器实际上是通过 SPTushonka 的集合监视器发出的
+    /// （<c>TriggersEmitter.Emit</c>，SPTSinglePlayer 反编译第 1795 行）——这是另一条路径上的
+    /// 另一个调用。当过场动画由该路径启动时，窗口并未布防，表里仍然只是
+    /// 那一刻本地玩家列表所持有的内容，而不在其中的对等端，其原生客户端控制器
+    /// 永远不会进入该场景（主机发送的其它任何东西都无法让它播放）。由配置键
+    /// 'Coop / Cutscene: Every Participant Joins The Cutscene' 写入。
     /// </summary>
     internal static bool IncludeEveryParticipant = true;
 
-    /// <summary>How often a state line is repeated although nothing changed.</summary>
+    /// <summary>在没有任何变化的情况下，状态行重复输出的间隔。</summary>
     private const float RefreshSeconds = 60f;
 
-    /// <summary>How long a rally emission may lie back before a new process is no longer attributed to it.</summary>
+    /// <summary>集合触发事件可以回溯多久，超过该时间后新进程不再归因于它。</summary>
     private const float RallyWindowSeconds = 3f;
 
     private static readonly Dictionary<string, string> Lines = new(StringComparer.Ordinal);
@@ -97,16 +97,16 @@ internal static class FikaRallyGate
         : FikaBackendUtils.IsServer ? "host"
         : FikaBackendUtils.IsClient ? "client" : "single";
 
-    /// <summary>Where the count the gate uses comes from - the line has to name it.</summary>
+    /// <summary>闸门所用计数来自何处——该行必须写明它。</summary>
     internal static string Source => UseFikaPlayerCount && InFika ? "fika" : "native";
 
     private static CoopHandler Handler => FikaSingleton<IFikaNetworkManager>.Instance?.CoopHandler;
 
     /// <summary>
-    /// The players this raid really has: every human player Fika knows, that is still alive. This is the
-    /// number the rally gate waits for on every machine, which is what makes both sides agree. The result is
-    /// never below 1 - the native gate compares "players inside" against it, and a zero would be a gate that
-    /// can never open (the single-player author of SPTushonka's rally watcher guards against the same thing).
+    /// 本场战局真正拥有的玩家：Fika 所知的、且仍然存活的每一位真人玩家。这就是
+    /// 每台机器上集合闸门所等待的数字，也正是两端能够达成一致的原因。结果
+    /// 从不小于 1——原生闸门会把“场内人数”与它比较，而零将成为一个
+    /// 永远无法开启的闸门（SPTushonka 集合监视器的单人作者对同一问题也做了防护）。
     /// </summary>
     internal static int ExpectedParticipants()
     {
@@ -125,7 +125,7 @@ internal static class FikaRallyGate
             }
             catch (Exception)
             {
-                // A half-spawned player carries no health controller yet; it is not a participant right now.
+                // 只生成了一半的玩家还没有健康控制器，此刻不是参与者。
             }
         }
         return alive < 1 ? 1 : alive;
@@ -143,13 +143,13 @@ internal static class FikaRallyGate
     }
 
     /// <summary>
-    /// (perf 2026-10-14, functional fix) Used to sample every rally zone once per interval to write the
-    /// diagnostic state line. That sampling is a whole-scene FindObjectsOfType (measured 154 ms on Streets;
-    /// 35 times per raid before throttling, once per 300 s after it) and the gate logic
-    /// (GetAliveHumanPlayerCount / CheckAllPlayersInZone / EmitTrigger) never reads its result - the gate's
-    /// state comes from the zone's own native events. So the periodic scan is removed instead of stretched:
-    /// the state line is still written from the trigger path via ZoneLine().
-    /// Tick() remains as the tick entry point so no call site changes.
+    /// （perf 2026-10-14，功能性修复）以前每个间隔会对所有集合区域采样一次，用于写入
+    /// 诊断状态行。该采样是一次全场景的 FindObjectsOfType（在 Streets 实测 154 ms；
+    /// 限流前每场战局 35 次，限流后每 300 秒一次），而闸门逻辑
+    /// （GetAliveHumanPlayerCount / CheckAllPlayersInZone / EmitTrigger）从不读取它的结果——闸门的
+    /// 状态来自区域自身的原生事件。因此这里直接移除周期性扫描，而不是把它拉长：
+    /// 状态行仍由触发路径通过 ZoneLine() 写入。
+    /// Tick() 保留为 tick 入口，这样无需改动任何调用点。
     /// </summary>
     internal static void Tick()
     {
@@ -158,8 +158,8 @@ internal static class FikaRallyGate
 
 
     /// <summary>
-    /// The gate line: who is inside, what the gate waits for, where that number comes from and the verdict.
-    /// Written whenever one of those changes, and once a minute otherwise.
+    /// 闸门行：谁在场内、闸门等待什么、该数字来自何处以及判定结论。
+    /// 其中任一项发生变化时写入，其余情况每分钟写一次。
     /// </summary>
     internal static void ZoneLine(TriggerRallyZone zone, string source)
     {
@@ -180,9 +180,9 @@ internal static class FikaRallyGate
     }
 
     /// <summary>
-    /// The line of the count patch: it carries what the native method answered (<c>native=</c>) next to the
-    /// number the gate now uses (<c>expected=</c>). This is the line that names the "waiting for players N/M"
-    /// source of a raid: a <c>native=</c> far above the raid's own player count is the broken number.
+    /// 计数补丁的行：它在原生方法给出的结果（<c>native=</c>）旁边，
+    /// 记下闸门现在使用的数字（<c>expected=</c>）。正是这一行点明了某场战局
+    /// “正在等待玩家 N/M”的来源：远高于战局自身玩家数的 <c>native=</c> 就是那个坏掉的数字。
     /// </summary>
     internal static void CountLine(TriggerRallyZone zone, int native, int applied)
     {
@@ -198,9 +198,9 @@ internal static class FikaRallyGate
     }
 
     /// <summary>
-    /// The <c>RallyZoneUpdateEvent</c> line, and the correction of its <c>TotalAlive</c> field. The event is
-    /// what a client shows as "waiting for players PlayersInZone/TotalAlive", so this is the line that proves
-    /// which side produced the number a client displays.
+    /// <c>RallyZoneUpdateEvent</c> 的行，以及对其 <c>TotalAlive</c> 字段的修正。客户端显示的
+    /// “正在等待玩家 PlayersInZone/TotalAlive”正是该事件，因此这一行可以证明
+    /// 客户端显示的数字是由哪一端产生的。
     /// </summary>
     internal static byte CorrectTotalAlive(int zoneId, int playersInZone, int totalAlive)
     {
@@ -210,7 +210,7 @@ internal static class FikaRallyGate
         return (byte)Mathf.Clamp(expected, 1, 255);
     }
 
-    /// <summary>The rally trigger fired on this machine (<c>EmitTrigger</c>).</summary>
+    /// <summary>本机上的集合触发器已触发（<c>EmitTrigger</c>）。</summary>
     internal static void NoteEmit(string zone, int count)
     {
         _lastEmit = Time.unscaledTime;
@@ -220,13 +220,13 @@ internal static class FikaRallyGate
     private static bool InRallyWindow => _lastEmit >= 0f && Time.unscaledTime - _lastEmit <= RallyWindowSeconds;
 
     /// <summary>
-    /// Hand a process the rally trigger started to every participant of this raid.
+    /// 把由集合触发器启动的进程交给本场战局的每一位参与者。
     ///
-    /// The process is created by whichever handler the trigger reached, and its viewer list is built from the
-    /// world's player list at that moment - a player the host had not spawned yet (or a peer the counting
-    /// skipped) is then left outside a cutscene everyone else is inside, which is exactly the state where the
-    /// "skip" vote can never complete. Only a process that appeared inside the rally window is touched, and
-    /// only on the host; a process nobody added a viewer to is unchanged.
+    /// 该进程由触发器所到达的那个 handler 创建，其观看者列表由
+    /// 那一刻世界的玩家列表构成——主机尚未生成的玩家（或计数时被
+    /// 跳过的对等端）于是被留在了一个其他人都已进入的过场动画之外，而这恰恰是
+    /// “跳过”投票永远无法完成的状态。只有出现在集合窗口内的进程会被处理，
+    /// 并且只在主机上处理；没有任何人添加观看者的进程保持不变。
     /// </summary>
     internal static void EnsureRallyViewers(CutsceneProcess process)
     {
@@ -235,12 +235,12 @@ internal static class FikaRallyGate
     }
 
     /// <summary>
-    /// (analysis/cutscene-client-dispatch) The window-free half of the seat repair: called by the host's dispatch
-    /// (<see cref="RaidInteractionSync.StartCutscene"/>) for every process it is about to broadcast, so a peer is
-    /// in the viewer table of a cutscene this raid plays even when the rally window was never armed. The viewer
-    /// table is the native <c>CutsceneProcess.playersInCurrentView</c> list and it is what the broadcast carries
-    /// (and what the native client controller of a peer filters against), so this is the one place that decides
-    /// whether a peer can enter the scene at all.
+    /// （analysis/cutscene-client-dispatch）席位修复中与窗口无关的那一半：由主机的派发
+    /// （<see cref="RaidInteractionSync.StartCutscene"/>）为它即将广播的每个进程调用，这样即使集合窗口
+    /// 从未布防，对等端也处于本场战局所播放的过场动画的观看者表之中。观看者
+    /// 表就是原生的 <c>CutsceneProcess.playersInCurrentView</c> 列表，它正是广播所携带的内容
+    /// （也是对等端原生客户端控制器过滤的依据），因此这是唯一决定
+    /// 对等端究竟能否进入该场景的地方。
     /// </summary>
     internal static void IncludeAllParticipants(CutsceneProcess process)
     {
@@ -248,7 +248,7 @@ internal static class FikaRallyGate
         AddMissingViewers(process, "dispatch");
     }
 
-    /// <summary>The one implementation of both entry points: append every participant the table does not hold.</summary>
+    /// <summary>两个入口的唯一实现：把表中缺失的每一位参与者追加进去。</summary>
     private static void AddMissingViewers(CutsceneProcess process, string source)
     {
         try
@@ -274,7 +274,7 @@ internal static class FikaRallyGate
         }
     }
 
-    /// <summary>A process was broadcast by the host: the clock of the silent-viewer rule starts here.</summary>
+    /// <summary>主机已广播某个进程：沉默观看者规则的计时从这里开始。</summary>
     internal static void NoteProcessStart(int processId)
     {
         if (processId == 0) return;
@@ -288,9 +288,9 @@ internal static class FikaRallyGate
     }
 
     /// <summary>
-    /// One cutscene signal of a viewer. Only three things a viewer sends carry the proof that it is really
-    /// inside the cutscene - its skip vote, its "watched" acknowledgement and its timer correction - and they
-    /// are what tells "this peer is in the scene and quiet" from "this peer never entered it".
+    /// 观看者的一个过场动画信号。观看者发送的内容中只有三样能证明它确实
+    /// 在该过场动画内部——它的跳过投票、它的“已观看”确认以及它的计时校正——
+    /// 正是它们把“这个对等端在场景内且安静”与“这个对等端从未进入过”区分开来。
     /// </summary>
     internal static void NoteSignal(int processId, int netId, string kind)
     {
@@ -306,13 +306,13 @@ internal static class FikaRallyGate
     internal static bool HasSignal(int processId, int netId) =>
         Signals.TryGetValue(processId, out var viewers) && viewers.ContainsKey(netId);
 
-    /// <summary>How long ago the host broadcast this process (0 when it was never seen).</summary>
+    /// <summary>主机广播该进程距今多久（从未见过时为 0）。</summary>
     internal static float ProcessAge(int processId) =>
         ProcessSeen.TryGetValue(processId, out var seen) ? Time.unscaledTime - seen : 0f;
 
     /// <summary>
-    /// True once a process ran long enough that a viewer which still has not sent a single signal is not
-    /// going to join. Off (or a zero timeout) keeps the vote waiting for every viewer, exactly as before.
+    /// 当某个进程运行足够久之后，仍未发出任何信号的观看者不会再加入时返回 true。
+    /// 关闭（或超时为零）时投票依旧等待每一个观看者，与之前完全一致。
     /// </summary>
     internal static bool SilentViewerTimeoutReached(int processId)
     {
@@ -320,12 +320,12 @@ internal static class FikaRallyGate
         return ProcessAge(processId) >= SkipVoteTimeoutSeconds;
     }
 
-    /// <summary>Writes the skip line of a process (host: after it counted, client: after it received).</summary>
+    /// <summary>写入某个进程的跳过行（主机：统计之后；客户端：收到之后）。</summary>
     internal static void SkipLine(string key, int processId, int voteYes, int voteNo, int viewers, string result, string detail)
     {
     }
 
-    /// <summary>The client half of the skip line: what this machine was told and what it answered.</summary>
+    /// <summary>跳过行的客户端那一半：本机被告知了什么，又回答了什么。</summary>
     internal static void SkipReceived(CutsceneSkipIntentionEventFromServer intention)
     {
         if (intention == null) return;
@@ -339,7 +339,7 @@ internal static class FikaRallyGate
             players, "received", "the host broadcast a skip vote and this machine is expected to vote too");
     }
 
-    /// <summary>The skip line of a local hold: this machine is about to send its vote.</summary>
+    /// <summary>本地长按（hold）的跳过行：本机即将发送自己的投票。</summary>
     internal static void SkipSent(CutscenesClientController controller, bool wantsToSkip)
     {
         if (controller == null) return;
@@ -355,7 +355,7 @@ internal static class FikaRallyGate
         catch (Exception) { return; }
     }
 
-    /// <summary>The host told this machine to skip: written on every peer.</summary>
+    /// <summary>主机通知本机执行跳过：在每个对等端上都会写入。</summary>
     internal static void SkipApplied(CutsceneSkipEventFromServer skip)
     {
         if (skip == null) return;

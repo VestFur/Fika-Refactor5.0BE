@@ -22,15 +22,15 @@ using static Fika.Core.Networking.Packets.World.RequestSubPackets;
 namespace Fika.Core.Networking;
 
 /// <summary>
-/// Serialization extensions for Unity/EFT classes to ease writing of packets in Fika
+/// Unity/EFT 类的序列化扩展，用于简化 Fika 中的封包写入
 /// </summary>
 public static class FikaSerializationExtensions
 {
     /// <summary>
-    /// Serializes a <see cref="PhysicalBase.StaminaStruct"/> struct to the <paramref name="writer"/>
+    /// 将 <see cref="PhysicalBase.StaminaStruct"/> 结构体序列化到 <paramref name="writer"/>
     /// </summary>
-    /// <param name="writer">The <see cref="NetDataWriter"/> to write data to</param>
-    /// <param name="physical">The <see cref="PhysicalBase.StaminaStruct"/> to serialize</param>
+    /// <param name="writer">用于写入数据的 <see cref="NetDataWriter"/></param>
+    /// <param name="physical">要序列化的 <see cref="PhysicalBase.StaminaStruct"/></param>
     public static void PutPhysical(this NetDataWriter writer, PhysicalBase.StaminaStruct physical)
     {
         byte flags = 0;
@@ -54,10 +54,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="PhysicalBase.StaminaStruct"/> struct from the <paramref name="reader"/>
+    /// 从 <paramref name="reader"/> 反序列化 <see cref="PhysicalBase.StaminaStruct"/> 结构体
     /// </summary>
-    /// <param name="reader">The <see cref="NetDataReader"/> to read data from</param>
-    /// <returns>The deserialized <see cref="PhysicalBase.StaminaStruct"/></returns>
+    /// <param name="reader">用于读取数据的 <see cref="NetDataReader"/></param>
+    /// <returns>反序列化后的 <see cref="PhysicalBase.StaminaStruct"/></returns>
     public static PhysicalBase.StaminaStruct GetPhysical(this NetDataReader reader)
     {
         var flags = reader.GetByte();
@@ -70,7 +70,7 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serialize a <see cref="byte"/> array
+    /// 序列化 <see cref="byte"/> 数组
     /// </summary>
     /// <param name="writer"></param>
     /// <param name="bytes"></param>
@@ -85,7 +85,7 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serialize a <see cref="ReadOnlySpan{T}"/> array of <see cref="byte"/>
+    /// 序列化由 <see cref="byte"/> 组成的 <see cref="ReadOnlySpan{T}"/> 数组
     /// </summary>
     /// <param name="writer"></param>
     /// <param name="bytes"></param>
@@ -100,10 +100,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="byte"/> array
+    /// 反序列化 <see cref="byte"/> 数组
     /// </summary>
     /// <param name="reader"></param>
-    /// <returns>A <see cref="byte"/> array</returns>
+    /// <returns>一个 <see cref="byte"/> 数组</returns>
     public static byte[] GetByteArray(this NetDataReader reader)
     {
         var length = reader.GetInt();
@@ -118,10 +118,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Compresses the provided byte array and writes it to the writer with its original length prefixed
+    /// 压缩给定的字节数组，并把原始长度作为前缀写入 writer
     /// </summary>
-    /// <param name="writer">The <see cref="NetDataWriter"/> to write the compressed data to</param>
-    /// <param name="bytes">The byte array to compress and write</param>
+    /// <param name="writer">用于写入压缩数据的 <see cref="NetDataWriter"/></param>
+    /// <param name="bytes">要压缩并写入的字节数组</param>
     public static void CompressAndPutByteArray(this NetDataWriter writer, byte[] bytes)
     {
         writer.Put(bytes.Length);
@@ -133,10 +133,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Reads a compressed byte array from the reader, decompresses it and returns the original byte array
+    /// 从 reader 读取压缩的字节数组，解压后返回原始字节数组
     /// </summary>
-    /// <param name="reader">The <see cref="NetDataReader"/> to read the compressed data from</param>
-    /// <returns>The decompressed original byte array or an empty array if length is zero</returns>
+    /// <param name="reader">用于读取压缩数据的 <see cref="NetDataReader"/></param>
+    /// <returns>解压后的原始字节数组；若长度为零则返回空数组</returns>
     public static byte[] DecompressAndGetByteArray(this NetDataReader reader)
     {
         var originalLength = reader.GetInt();
@@ -148,11 +148,11 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes an <see cref="Item"/> to the <paramref name="writer"/>. <br/>
-    /// Casting to inherited types should be handled inside the packet for consistency.
+    /// 将 <see cref="Item"/> 序列化到 <paramref name="writer"/>。<br/>
+    /// 为保持一致，转换到继承类型的操作应在封包内部处理。
     /// </summary>
-    /// <param name="writer">The <see cref="NetDataWriter"/> to write data to</param>
-    /// <param name="item">The <see cref="Item"/> to serialize</param>
+    /// <param name="writer">用于写入数据的 <see cref="NetDataWriter"/></param>
+    /// <param name="item">要序列化的 <see cref="Item"/></param>
     public static void PutItem(this NetDataWriter writer, Item item)
     {
         var descriptor = ItemBinarySerializer.SerializeItem(item, FikaGlobals.SearchControllerSerializer);
@@ -160,11 +160,11 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes an <see cref="Item"/> from the <paramref name="reader"/>. <br/>
-    /// The returned <see cref="Item"/> is cast to the appropriate type inside the packet.
+    /// 从 <paramref name="reader"/> 反序列化 <see cref="Item"/>。<br/>
+    /// 返回的 <see cref="Item"/> 会在封包内部转换为合适的类型。
     /// </summary>
-    /// <param name="reader">The <see cref="NetDataReader"/> to read data from</param>
-    /// <returns>The deserialized <see cref="Item"/></returns>
+    /// <param name="reader">用于读取数据的 <see cref="NetDataReader"/></param>
+    /// <returns>反序列化后的 <see cref="Item"/></returns>
     public static Item GetItem(this NetDataReader reader)
     {
         return ItemBinarySerializer.DeserializeItem(reader.GetEFTItemDescriptor(), Singleton<ItemFactory>.Instance,
@@ -173,9 +173,9 @@ public static class FikaSerializationExtensions
 
 
     /// <summary>
-    /// Reads an <see cref="InventoryEquipment"/> serialized from <see cref="PutItem(NetDataWriter, Item)"/> and converts it into an <see cref="Inventory"/>
+    /// 读取由 <see cref="PutItem(NetDataWriter, Item)"/> 序列化的 <see cref="InventoryEquipment"/>，并将其转换为 <see cref="Inventory"/>
     /// </summary>
-    /// <returns>An <see cref="Inventory"/></returns>
+    /// <returns>一个 <see cref="Inventory"/></returns>
     public static Inventory GetInventoryFromEquipment(this NetDataReader reader)
     {
         return new InventoryDescriptor()
@@ -185,10 +185,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Writes an <see cref="ItemDescriptor"/>
+    /// 写入 <see cref="ItemDescriptor"/>
     /// </summary>
-    /// <param name="writer">The writer to write data to</param>
-    /// <param name="descriptor">The <see cref="ItemDescriptor"/> instance to serialize</param>
+    /// <param name="writer">用于写入数据的 writer</param>
+    /// <param name="descriptor">要序列化的 <see cref="ItemDescriptor"/> 实例</param>
     public static void PutItemDescriptor(this NetDataWriter writer, ItemDescriptor descriptor)
     {
         var buffer = new NetDataWriter(true, 1024);
@@ -197,10 +197,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Reads and returns an <see cref="ItemDescriptor"/>
+    /// 读取并返回 <see cref="ItemDescriptor"/>
     /// </summary>
-    /// <param name="reader">The reader to read the serialized inventory descriptor data from</param>
-    /// <returns>The deserialized <see cref="ItemDescriptor"/> instance</returns>
+    /// <param name="reader">用于读取序列化物品描述符数据的 reader</param>
+    /// <returns>反序列化后的 <see cref="ItemDescriptor"/> 实例</returns>
     public static ItemDescriptor GetItemDescriptor(this NetDataReader reader)
     {
         var buffer = new NetDataReader(reader.DecompressAndGetByteArray());
@@ -208,10 +208,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes and retrieves an <see cref="Item"/>
+    /// 反序列化并获取 <see cref="Item"/>
     /// </summary>
-    /// <param name="reader">The reader to read the serialized item data from</param>
-    /// <returns>The deserialized <see cref="Item"/> instance representing the airdrop item</returns>
+    /// <param name="reader">用于读取序列化物品数据的 reader</param>
+    /// <returns>表示空投物品的反序列化 <see cref="Item"/> 实例</returns>
     public static Item GetAirdropItem(this NetDataReader reader)
     {
         var item = ItemBinarySerializer.DeserializeItem(reader.GetEFTItemDescriptor(), Singleton<ItemFactory>.Instance,
@@ -235,10 +235,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="List{T}"/> of <see cref="SmokeGrenadeNetworkData"/>
+    /// 序列化 <see cref="SmokeGrenadeNetworkData"/> 的 <see cref="List{T}"/>
     /// </summary>
-    /// <param name="writer">The <see cref="NetDataWriter"/> to write data to</param>
-    /// <param name="throwables">The list of <see cref="SmokeGrenadeNetworkData"/> to serialize</param>
+    /// <param name="writer">用于写入数据的 <see cref="NetDataWriter"/></param>
+    /// <param name="throwables">要序列化的 <see cref="SmokeGrenadeNetworkData"/> 列表</param>
     public static void PutThrowableData(this NetDataWriter writer, List<SmokeGrenadeNetworkData> throwables)
     {
         writer.Put(throwables.Count);
@@ -254,10 +254,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="List{T}"/> of <see cref="SmokeGrenadeNetworkData"/>
+    /// 反序列化 <see cref="SmokeGrenadeNetworkData"/> 的 <see cref="List{T}"/>
     /// </summary>
-    /// <param name="reader">The <see cref="NetDataReader"/> to read data from</param>
-    /// <returns>A <see cref="List{T}"/> of <see cref="SmokeGrenadeNetworkData"/></returns>
+    /// <param name="reader">用于读取数据的 <see cref="NetDataReader"/></param>
+    /// <returns>一个 <see cref="SmokeGrenadeNetworkData"/> 的 <see cref="List{T}"/></returns>
     public static List<SmokeGrenadeNetworkData> GetThrowableData(this NetDataReader reader)
     {
         var amount = reader.GetInt();
@@ -280,35 +280,35 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="Profile"/>
+    /// 序列化 <see cref="Profile"/>
     /// </summary>
-    /// <param name="writer">The <see cref="NetDataWriter"/> to write data to</param>
-    /// <param name="profile">The <see cref="Profile"/> to serialize</param>
+    /// <param name="writer">用于写入数据的 <see cref="NetDataWriter"/></param>
+    /// <param name="profile">要序列化的 <see cref="Profile"/></param>
     public static void PutProfile(this NetDataWriter writer, Profile profile)
     {
         var buffer = new NetDataWriter(true, 1024);
-        // The session's humans share Fika's "Fika" group sentinel (see
-        // FikaPlayer.SetupMainPlayer for the local player and
-        // ObservedPlayer.InitObservedPlayer for everybody else): that shared group is the only
-        // "this is one of ours" signal third-party consumers have (e.g. "SPT Dynamic Maps"
-        // marks a player as "Friendly Player" when Player.GroupId equals the main player's), and
-        // it is also what the game treats a group member by. It must therefore travel with the
-        // announced profile; only the raid-end scav save strips it again (see
-        // FixSavageInventoryScreenPatch_Override.RaidEndProfile).
+        // 本战局中的真人玩家共享 Fika 的 "Fika" 分组哨兵值（参见
+        // 本地玩家的 FikaPlayer.SetupMainPlayer，以及
+        // 其他所有人的 ObservedPlayer.InitObservedPlayer）：该共享分组是
+        // 第三方使用方唯一能获得的「这是自己人」信号（例如 "SPT Dynamic Maps"
+        // 在 Player.GroupId 等于主玩家时会把该玩家标记为 "Friendly Player"），并且
+        // 它也是游戏判定某个玩家为队伍成员的依据。因此它必须随
+        // 广播的存档一同传输；只有战局结束时的 scav 存档会再次将它剥离（参见
+        // FixSavageInventoryScreenPatch_Override.RaidEndProfile）。
         var descriptor = new ProfileDescriptor(profile, FikaGlobals.SearchControllerSerializer);
-        // The observing side builds a player from this descriptor only: its nameplate reads
-        // Info.MainProfileNickname and map mods read Info.Nickname, so never announce a profile
-        // with an empty name.
+        // 观察方仅依据该描述符构建玩家：其名牌读取
+        // Info.MainProfileNickname，地图类 mod 读取 Info.Nickname，因此绝不要广播一个
+        // 名字为空的存档。
         FikaGlobals.EnsureProfileNames(descriptor);
         buffer.PutEFTProfileDescriptor(descriptor);
         writer.CompressAndPutByteArray(buffer.CopyData());
     }
 
     /// <summary>
-    /// Deserializes a <see cref="Profile"/>
+    /// 反序列化 <see cref="Profile"/>
     /// </summary>
-    /// <param name="reader">The <see cref="NetDataReader"/> to read data from</param>
-    /// <returns>The deserialized <see cref="Profile"/></returns>
+    /// <param name="reader">用于读取数据的 <see cref="NetDataReader"/></param>
+    /// <returns>反序列化后的 <see cref="Profile"/></returns>
     public static Profile GetProfile(this NetDataReader reader)
     {
         var buffer = new NetDataReader(reader.DecompressAndGetByteArray());
@@ -316,9 +316,9 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="List{WorldInteractiveObject.InteractiveObjectStatusInfo}"/> of <see cref="WorldInteractiveObject"/> data
+    /// 序列化 <see cref="WorldInteractiveObject"/> 数据的 <see cref="List{WorldInteractiveObject.InteractiveObjectStatusInfo}"/>
     /// </summary>
-    /// <param name="interactiveObjectsData">The interactive states to serialize</param>
+    /// <param name="interactiveObjectsData">要序列化的交互状态</param>
     public static void PutInteractivesStates(this NetDataWriter writer, List<WorldInteractiveObject.InteractiveObjectStatusInfo> interactiveObjectsData)
     {
         writer.Put(interactiveObjectsData.Count);
@@ -331,9 +331,9 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="List{WorldInteractiveObject.InteractiveObjectStatusInfo}"/> of <see cref="WorldInteractiveObject"/> data
+    /// 反序列化 <see cref="WorldInteractiveObject"/> 数据的 <see cref="List{WorldInteractiveObject.InteractiveObjectStatusInfo}"/>
     /// </summary>
-    /// <returns>A <see cref="List{T}"/> of <see cref="WorldInteractiveObject.InteractiveObjectStatusInfo"/></returns>
+    /// <returns>一个 <see cref="WorldInteractiveObject.InteractiveObjectStatusInfo"/> 的 <see cref="List{T}"/></returns>
     public static List<WorldInteractiveObject.InteractiveObjectStatusInfo> GetInteractivesStates(this NetDataReader reader)
     {
         var amount = reader.GetInt();
@@ -353,9 +353,9 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="Dictionary{int, byte}"/> of <see cref="LampController"/> information
+    /// 序列化 <see cref="LampController"/> 信息的 <see cref="Dictionary{int, byte}"/>
     /// </summary>
-    /// <param name="lampStates">The lamp states to serialize</param>
+    /// <param name="lampStates">要序列化的灯光状态</param>
     public static void PutLampStates(this NetDataWriter writer, Dictionary<int, byte> lampStates)
     {
         var amount = lampStates.Count;
@@ -368,9 +368,9 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="Dictionary{int, byte}"/> of <see cref="LampController"/> information
+    /// 反序列化 <see cref="LampController"/> 信息的 <see cref="Dictionary{int, byte}"/>
     /// </summary>
-    /// <returns>A <see cref="Dictionary{TKey, TValue}"/> of information for <see cref="LampController"/>s</returns>
+    /// <returns>包含 <see cref="LampController"/> 信息的 <see cref="Dictionary{TKey, TValue}"/></returns>
     public static Dictionary<int, byte> GetLampStates(this NetDataReader reader)
     {
         var amount = reader.GetInt();
@@ -384,9 +384,9 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="Dictionary{int, Vector3}"/> of <see cref="WindowBreaker"/> information
+    /// 序列化 <see cref="WindowBreaker"/> 信息的 <see cref="Dictionary{int, Vector3}"/>
     /// </summary>
-    /// <param name="windowBreakerStates">The window breaker states to serialize</param>
+    /// <param name="windowBreakerStates">要序列化的窗户破碎状态</param>
     public static void PutWindowBreakerStates(this NetDataWriter writer, Dictionary<int, Vector3> windowBreakerStates)
     {
         var amount = windowBreakerStates.Count;
@@ -399,9 +399,9 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="Dictionary{int, Vector3}"/> of <see cref="WindowBreaker"/> information
+    /// 反序列化 <see cref="WindowBreaker"/> 信息的 <see cref="Dictionary{int, Vector3}"/>
     /// </summary>
-    /// <returns>A <see cref="Dictionary{TKey, TValue}"/> of information for <see cref="WindowBreaker"/>s</returns>
+    /// <returns>包含 <see cref="WindowBreaker"/> 信息的 <see cref="Dictionary{TKey, TValue}"/></returns>
     public static Dictionary<int, Vector3> GetWindowBreakerStates(this NetDataReader reader)
     {
         var amount = reader.GetInt();
@@ -415,9 +415,9 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="MongoID"/>
+    /// 序列化 <see cref="MongoID"/>
     /// </summary>
-    /// <param name="mongoId">The <see cref="MongoID"/> to serialize</param>
+    /// <param name="mongoId">要序列化的 <see cref="MongoID"/></param>
     public static void PutMongoID(this NetDataWriter writer, MongoID mongoId)
     {
         writer.Put(mongoId._timeStamp);
@@ -425,9 +425,9 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="MongoID"/>
+    /// 反序列化 <see cref="MongoID"/>
     /// </summary>
-    /// <returns>A new <see cref="MongoID"/></returns>
+    /// <returns>一个新的 <see cref="MongoID"/></returns>
     public static MongoID GetMongoID(this NetDataReader reader)
     {
         MongoID id = new()
@@ -443,9 +443,9 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="MongoID"/>? (nullable)
+    /// 序列化 <see cref="MongoID"/>?（可空）
     /// </summary>
-    /// <param name="mongoId">The nullable <see cref="MongoID"/> to serialize</param>
+    /// <param name="mongoId">要序列化的可空 <see cref="MongoID"/></param>
     public static void PutNullableMongoID(this NetDataWriter writer, MongoID? mongoId)
     {
         writer.Put(mongoId is not null);
@@ -456,9 +456,9 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="MongoID"/>? (nullable)
+    /// 反序列化 <see cref="MongoID"/>?（可空）
     /// </summary>
-    /// <returns>A new <see cref="MongoID"/>? (nullable)</returns>
+    /// <returns>一个新的 <see cref="MongoID"/>?（可空）</returns>
     public static MongoID? GetNullableMongoID(this NetDataReader reader)
     {
         if (!reader.GetBool())
@@ -470,15 +470,15 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Tries to read a nullable <see cref="MongoID"/> from the stream.
+    /// 尝试从流中读取可空的 <see cref="MongoID"/>。
     /// </summary>
-    /// <param name="reader">The <see cref="NetDataReader"/> instance reading the data.</param>
+    /// <param name="reader">正在读取数据的 <see cref="NetDataReader"/> 实例。</param>
     /// <param name="mongoId">
-    /// When this method returns, contains the <see cref="MongoID"/> read from the stream if it exists;
-    /// otherwise, <see langword="null"/>. This parameter is passed uninitialized.
+    /// 当此方法返回时，若存在，则包含从流中读取的 <see cref="MongoID"/>；
+    /// 否则为 <see langword="null"/>。此参数传入时未初始化。
     /// </param>
     /// <returns>
-    /// <see langword="true"/> if a <see cref="MongoID"/> was successfully read; otherwise, <see langword="false"/>.
+    /// <see langword="true"/> 表示成功读取到 <see cref="MongoID"/>；否则为 <see langword="false"/>。
     /// </returns>
     public static bool TryGetNullableMongoId(this NetDataReader reader, out MongoID? mongoId)
     {
@@ -493,9 +493,9 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="TraderServiceAvailabilityData"/>
+    /// 序列化 <see cref="TraderServiceAvailabilityData"/>
     /// </summary>
-    /// <param name="traderService">The trader service to serialize</param>
+    /// <param name="traderService">要序列化的交易商服务数据</param>
     public static void PutTraderService(this NetDataWriter writer, TraderServiceAvailabilityData traderService)
     {
         writer.PutMongoID(traderService.TraderId);
@@ -523,9 +523,9 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="TraderServiceAvailabilityData"/>
+    /// 反序列化 <see cref="TraderServiceAvailabilityData"/>
     /// </summary>
-    /// <returns>A <see cref="TraderServiceAvailabilityData"/></returns>
+    /// <returns>一个 <see cref="TraderServiceAvailabilityData"/></returns>
     public static TraderServiceAvailabilityData GetTraderService(this NetDataReader reader)
     {
         TraderServiceAvailabilityData traderService = new()
@@ -557,9 +557,9 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Writes a <see cref="Profile.HealthInfo"/> into a raw <see cref="byte"/>[]
+    /// 将 <see cref="Profile.HealthInfo"/> 写入原始 <see cref="byte"/>[]
     /// </summary>
-    /// <param name="health">The health info to serialize</param>
+    /// <param name="health">要序列化的健康信息</param>
     /// <returns><see cref="byte"/>[]</returns>
     public static byte[] SerializeHealthInfo(this Profile.HealthInfo health)
     {
@@ -571,21 +571,21 @@ public static class FikaSerializationExtensions
         writer.WriteValueInfo(health.Temperature);
         writer.WriteValueInfo(health.Poison);
         const float standard = 1f;
-        // Heal Rate
+        // 治疗速率
         writer.Write(standard);
-        // Damage Rate
+        // 伤害速率
         writer.Write(standard);
-        // Damage Multiplier
+        // 伤害倍率
         writer.Write(standard);
-        // Energy Rate
+        // 能量速率
         writer.Write(standard);
-        // Hydration Rate
+        // 水分速率
         writer.Write(standard);
-        // Temperate Rate
+        // 温度速率
         writer.Write(standard);
-        // Damage Coeff
+        // 伤害系数
         writer.Write(standard);
-        // Stamina Coeff
+        // 耐力系数
         writer.Write(standard);
 
         foreach ((var part, var healthClass) in health.BodyParts)
@@ -596,7 +596,7 @@ public static class FikaSerializationExtensions
             writer.Write(bodyPartInfo.Maximum);
         }
 
-        // Effect Amount - Set to 0 as it's a fresh profile
+        // 效果量 - 设为 0，因为这是全新存档
         const short effectAmount = 0;
         writer.Write(effectAmount);
         const byte end = 42;
@@ -606,7 +606,7 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Writes a <see cref="Profile.HealthInfo.ValueInfo"/> into <see cref="byte"/>s
+    /// 将 <see cref="Profile.HealthInfo.ValueInfo"/> 写入 <see cref="byte"/> 序列
     /// </summary>
     /// <param name="writer"></param>
     /// <param name="valueInfo"></param>
@@ -618,7 +618,7 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="ArtilleryProjectileSyncPacket"/>
+    /// 序列化 <see cref="ArtilleryProjectileSyncPacket"/>
     /// </summary>
     /// <param name="writer"></param>
     /// <param name="artilleryStruct"></param>
@@ -630,10 +630,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="ArtilleryProjectileSyncPacket"/>
+    /// 反序列化 <see cref="ArtilleryProjectileSyncPacket"/>
     /// </summary>
     /// <param name="reader"></param>
-    /// <returns>A <see cref="ArtilleryProjectileSyncPacket"/> with data</returns>
+    /// <returns>带数据的 <see cref="ArtilleryProjectileSyncPacket"/></returns>
     public static ArtilleryProjectileSyncPacket GetArtilleryStruct(this NetDataReader reader)
     {
         return new()
@@ -645,7 +645,7 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="GrenadeSyncPacket"/>
+    /// 序列化 <see cref="GrenadeSyncPacket"/>
     /// </summary>
     /// <param name="writer"></param>
     /// <param name="grenadeStruct"></param>
@@ -664,10 +664,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="GrenadeSyncPacket"/>
+    /// 反序列化 <see cref="GrenadeSyncPacket"/>
     /// </summary>
     /// <param name="reader"></param>
-    /// <returns>A <see cref="GrenadeSyncPacket"/> with data</returns>
+    /// <returns>带数据的 <see cref="GrenadeSyncPacket"/></returns>
     public static GrenadeSyncPacket GetGrenadeStruct(this NetDataReader reader)
     {
         GrenadeSyncPacket grenadeStruct = new()
@@ -690,7 +690,7 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="SynchronizableObjectPacket"/>
+    /// 序列化 <see cref="SynchronizableObjectPacket"/>
     /// </summary>
     /// <param name="writer"></param>
     /// <param name="airplaneDataPacketStruct"></param>
@@ -728,7 +728,7 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="SynchronizableObjectPacket"/>
+    /// 反序列化 <see cref="SynchronizableObjectPacket"/>
     /// </summary>
     /// <param name="reader"></param>
     /// <returns></returns>
@@ -783,7 +783,7 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="PlayerInfoPacket"/>
+    /// 序列化 <see cref="PlayerInfoPacket"/>
     /// </summary>
     /// <param name="writer"></param>
     /// <param name="packet"></param>
@@ -812,10 +812,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="PlayerInfoPacket"/>
+    /// 反序列化 <see cref="PlayerInfoPacket"/>
     /// </summary>
     /// <param name="reader"></param>
-    /// <returns>A <see cref="PlayerInfoPacket"/> with data</returns>
+    /// <returns>带数据的 <see cref="PlayerInfoPacket"/></returns>
     public static PlayerInfoPacket GetPlayerInfoPacket(this NetDataReader reader)
     {
         PlayerInfoPacket packet = new()
@@ -837,7 +837,7 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="WeatherNode"/>
+    /// 序列化 <see cref="WeatherNode"/>
     /// </summary>
     /// <param name="writer"></param>
     /// <param name="weatherClass"></param>
@@ -867,10 +867,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="WeatherNode"/>
+    /// 反序列化 <see cref="WeatherNode"/>
     /// </summary>
     /// <param name="reader"></param>
-    /// <returns>A <see cref="WeatherNode"/> with data</returns>
+    /// <returns>带数据的 <see cref="WeatherNode"/></returns>
     public static WeatherNode GetWeatherClass(this NetDataReader reader)
     {
         return new WeatherNode()
@@ -900,7 +900,7 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="CorpseSyncPackets"/>
+    /// 序列化 <see cref="CorpseSyncPackets"/>
     /// </summary>
     /// <param name="writer"></param>
     /// <param name="packet"></param>
@@ -917,10 +917,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="CorpseSyncPackets"/>
+    /// 反序列化 <see cref="CorpseSyncPackets"/>
     /// </summary>
     /// <param name="reader"></param>
-    /// <returns>A <see cref="CorpseSyncPackets"/> with data</returns>
+    /// <returns>带数据的 <see cref="CorpseSyncPackets"/></returns>
     public static CorpseSyncPackets GetCorpseSyncPacket(this NetDataReader reader)
     {
         return new CorpseSyncPackets()
@@ -937,10 +937,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Writes a <see cref="CorpseSyncPacket"/>
+    /// 写入 <see cref="CorpseSyncPacket"/>
     /// </summary>
-    /// <param name="writer">The writer to write data to</param>
-    /// <param name="packet">The <see cref="CorpseSyncPacket"/> instance to serialize</param>
+    /// <param name="writer">用于写入数据的 writer</param>
+    /// <param name="packet">要序列化的 <see cref="CorpseSyncPacket"/> 实例</param>
     public static void PutRagdollStruct(this NetDataWriter writer, CorpseSyncPacket packet)
     {
         writer.Put(packet.Id);
@@ -959,10 +959,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Reads a <see cref="CorpseSyncPacket"/>
+    /// 读取 <see cref="CorpseSyncPacket"/>
     /// </summary>
-    /// <param name="reader">The reader to read data from.</param>
-    /// <returns>The deserialized <see cref="CorpseSyncPacket"/></returns>
+    /// <param name="reader">用于读取数据的 reader。</param>
+    /// <returns>反序列化后的 <see cref="CorpseSyncPacket"/></returns>
     public static CorpseSyncPacket GetRagdollStruct(this NetDataReader reader)
     {
         CorpseSyncPacket packet = new()
@@ -989,10 +989,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Writes a <see cref="EFT.LootSyncPacket"/>
+    /// 写入 <see cref="EFT.LootSyncPacket"/>
     /// </summary>
-    /// <param name="writer">The writer to write data to</param>
-    /// <param name="packet">The <see cref="EFT.LootSyncPacket"/> to serialize</param>
+    /// <param name="writer">用于写入数据的 writer</param>
+    /// <param name="packet">要序列化的 <see cref="EFT.LootSyncPacket"/></param>
     public static void PutLootSyncStruct(this NetDataWriter writer, EFT.LootSyncPacket packet)
     {
         writer.Put(packet.Id);
@@ -1008,10 +1008,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Reads a <see cref="EFT.LootSyncPacket"/>
+    /// 读取 <see cref="EFT.LootSyncPacket"/>
     /// </summary>
-    /// <param name="reader">The reader to read data from</param>
-    /// <returns>The deserialized <see cref="EFT.LootSyncPacket"/></returns>
+    /// <param name="reader">用于读取数据的 reader</param>
+    /// <returns>反序列化后的 <see cref="EFT.LootSyncPacket"/></returns>
     public static EFT.LootSyncPacket GetLootSyncStruct(this NetDataReader reader)
     {
         EFT.LootSyncPacket data = new()
@@ -1032,23 +1032,23 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Compresses a float value into a fixed bit-width integer and writes it to the NetDataWriter. <br/>
-    /// Supports 8 or 16 bit compression for network efficiency.
+    /// 将一个 float 值压缩为固定位宽的整数并写入 NetDataWriter。<br/>
+    /// 为提升网络效率支持 8 位或 16 位压缩。
     /// </summary>
-    /// <param name="writer">The network data writer</param>
-    /// <param name="value">The float value to compress</param>
-    /// <param name="min">Minimum expected float value (clamping lower bound)</param>
-    /// <param name="max">Maximum expected float value (clamping upper bound)</param>
-    /// <param name="compression">Number of bits to use for compression (8 or 16)</param>
+    /// <param name="writer">网络数据 writer</param>
+    /// <param name="value">要压缩的 float 值</param>
+    /// <param name="min">预期的 float 最小值（钳制下界）</param>
+    /// <param name="max">预期的 float 最大值（钳制上界）</param>
+    /// <param name="compression">用于压缩的位数（8 或 16）</param>
     public static void PutPackedFloat(this NetDataWriter writer, float value, float min, float max, EFloatCompression compression = EFloatCompression.Low)
     {
-        // Clamp input value to expected range
+        // 将输入值钳制到预期范围内
         var clamped = Mathf.Clamp(value, min, max);
 
-        // Calculate max integer value for the bit width (e.g., 255 for 8 bits, 65535 for 16 bits)
+        // 计算该位宽下的最大整数值（例如 8 位为 255，16 位为 65535）
         var maxInt = (1 << (int)compression) - 1;
 
-        // Normalize and quantize using rounding for better precision
+        // 归一化后用四舍五入量化，以获得更好的精度
         var quantized = Mathf.RoundToInt((clamped - min) / (max - min) * maxInt);
 
         if (compression is EFloatCompression.High)
@@ -1062,14 +1062,14 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Reads a compressed float value from the NetDataReader that was packed with a fixed bit-width integer. <br/>
-    /// Supports 8 or 16 bit decompression.
+    /// 从 NetDataReader 读取由固定位宽整数打包的压缩 float 值。<br/>
+    /// 支持 8 位或 16 位解压。
     /// </summary>
-    /// <param name="reader">The network data reader</param>
-    /// <param name="min">Minimum expected float value (used for decompression range)</param>
-    /// <param name="max">Maximum expected float value (used for decompression range)</param>
-    /// <param name="compression">Number of bits used during compression (8 or 16)</param>
-    /// <returns>The decompressed float value.</returns>
+    /// <param name="reader">网络数据 reader</param>
+    /// <param name="min">预期的 float 最小值（用于确定解压区间）</param>
+    /// <param name="max">预期的 float 最大值（用于确定解压区间）</param>
+    /// <param name="compression">压缩时使用的位数（8 或 16）</param>
+    /// <returns>解压后的 float 值。</returns>
     public static float GetPackedFloat(this NetDataReader reader, float min, float max, EFloatCompression compression = EFloatCompression.Low)
     {
         var maxInt = (1 << (int)compression) - 1;
@@ -1089,12 +1089,12 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Scales an integer value from a specified input range to a target byte range and writes it
+    /// 将整数值从指定的输入区间缩放至目标字节区间并写入
     /// </summary>
-    /// <param name="writer">The NetDataWriter to write to</param>
-    /// <param name="value">The integer value to scale</param>
-    /// <param name="minValue">The minimum value of the input integer range</param>
-    /// <param name="maxValue">The maximum value of the input integer range</param>
+    /// <param name="writer">要写入的 NetDataWriter</param>
+    /// <param name="value">要缩放的整数值</param>
+    /// <param name="minValue">输入整数区间的最小值</param>
+    /// <param name="maxValue">输入整数区间的最大值</param>
     public static void PutPackedInt(this NetDataWriter writer, int value, int minValue, int maxValue)
     {
         const int minTarget = 0;
@@ -1112,12 +1112,12 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Scales a byte value from a specified input range to a target integer range
+    /// 将字节值从指定的输入区间缩放至目标整数区间
     /// </summary>
-    /// <param name="reader">The NetDataReader to read from</param>
-    /// <param name="minTarget">The minimum value of the target integer range</param>
-    /// <param name="maxTarget">The maximum value of the target integer range</param>
-    /// <returns>The scaled integer value within the target range</returns>
+    /// <param name="reader">要从中读取的 NetDataReader</param>
+    /// <param name="minTarget">目标整数区间的最小值</param>
+    /// <param name="maxTarget">目标整数区间的最大值</param>
+    /// <returns>目标区间内缩放后的整数值</returns>
     public static int GetPackedInt(this NetDataReader reader, int minTarget, int maxTarget)
     {
         const int minValue = 0;
@@ -1134,10 +1134,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Writes the head rotation angles, compressing each <see cref="float"/> using high compression.
+    /// 写入头部旋转角度，使用高压缩率压缩每个 <see cref="float"/>。
     /// </summary>
-    /// <param name="writer">The network data writer to write to</param>
-    /// <param name="rotation">The head rotation</param>
+    /// <param name="writer">要写入的网络数据 writer</param>
+    /// <param name="rotation">头部旋转</param>
     public static void PutHeadRotation(this NetDataWriter writer, Vector2 rotation)
     {
         writer.PutPackedFloat(rotation.x, -50f, 20f, EFloatCompression.High);
@@ -1145,10 +1145,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Reads the head rotation angles, decompressing each <see cref="float"/> using high compression.
+    /// 读取头部旋转角度，使用高压缩率解压每个 <see cref="float"/>。
     /// </summary>
-    /// <param name="reader">The network data reader to read from</param>
-    /// <returns>A <see cref="Vector2"/> representing the head rotation</returns>
+    /// <param name="reader">要从中读取的网络数据 reader</param>
+    /// <returns>表示头部旋转的 <see cref="Vector2"/></returns>
     public static Vector2 GetHeadRotation(this NetDataReader reader)
     {
         return new()
@@ -1159,10 +1159,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Writes the movement direction <see cref="Vector2"/>, compressing each <see cref="float"/> using high compression.
+    /// 写入移动方向 <see cref="Vector2"/>，使用高压缩率压缩每个 <see cref="float"/>。
     /// </summary>
-    /// <param name="writer">The network data writer to write to</param>
-    /// <param name="movementDirection">The movement direction</param>
+    /// <param name="writer">要写入的网络数据 writer</param>
+    /// <param name="movementDirection">移动方向</param>
     public static void PutMovementDirection(this NetDataWriter writer, Vector2 movementDirection)
     {
         writer.PutPackedFloat(movementDirection.x, -1f, 1f, EFloatCompression.High);
@@ -1170,10 +1170,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Reads the movement direction <see cref="Vector2"/>, decompressing each <see cref="float"/> using high compression.
+    /// 读取移动方向 <see cref="Vector2"/>，使用高压缩率解压每个 <see cref="float"/>。
     /// </summary>
-    /// <param name="reader">The network data reader to read from</param>
-    /// <returns>A <see cref="Vector2"/> representing movement direction</returns>
+    /// <param name="reader">要从中读取的网络数据 reader</param>
+    /// <returns>表示移动方向的 <see cref="Vector2"/></returns>
     public static Vector2 GetMovementDirection(this NetDataReader reader)
     {
         return new()
@@ -1184,14 +1184,14 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Writes a <see cref="Vector2"/> of the players rotation
+    /// 写入玩家旋转的 <see cref="Vector2"/>
     /// </summary>
-    /// <param name="writer">The <see cref="NetDataWriter"/> instance to write to</param>
+    /// <param name="writer">要写入的 <see cref="NetDataWriter"/> 实例</param>
     /// <param name="rotation">
-    /// The <see cref="Vector2"/> representing the rotation, where:
+    /// 表示旋转的 <see cref="Vector2"/>，其中：
     /// <list type="bullet">
-    /// <item><description><c>x</c> is stored as a raw float</description></item>
-    /// <item><description><c>y</c> is stored as a compressed float in the range [-90, 90] using <see cref="EFloatCompression.High"/></description></item>
+    /// <item><description><c>x</c> 以原始 float 存储</description></item>
+    /// <item><description><c>y</c> 使用 <see cref="EFloatCompression.High"/> 以 [-90, 90] 范围内的压缩 float 存储</description></item>
     /// </list>
     /// </param>
     public static void PutRotation(this NetDataWriter writer, Vector2 rotation)
@@ -1201,10 +1201,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a <see cref="GameDateTime"/>
+    /// 序列化 <see cref="GameDateTime"/>
     /// </summary>
-    /// <param name="writer">The writer to write with</param>
-    /// <param name="gameDateTime">The <see cref="GameDateTime"/> to serialize</param>
+    /// <param name="writer">用于写入的 writer</param>
+    /// <param name="gameDateTime">要序列化的 <see cref="GameDateTime"/></param>
     public static void PutGameDateTime(this NetDataWriter writer, GameDateTime gameDateTime)
     {
         writer.Put(gameDateTime.StatedRealDateTime.ToBinary());
@@ -1214,10 +1214,10 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a <see cref="GameDateTime"/>
+    /// 反序列化 <see cref="GameDateTime"/>
     /// </summary>
-    /// <param name="reader">The reader to read with</param>
-    /// <returns>A new <see cref="GameDateTime"/> with data</returns>
+    /// <param name="reader">用于读取的 reader</param>
+    /// <returns>带数据的新 <see cref="GameDateTime"/></returns>
     public static GameDateTime GetGameDateTime(this NetDataReader reader)
     {
         return new GameDateTime(new Il2CppSystem.DateTime(DateTime.FromBinary(reader.GetLong()).Ticks), new Il2CppSystem.DateTime(DateTime.FromBinary(reader.GetLong()).Ticks), reader.GetFloat())
@@ -1227,14 +1227,14 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Reads a <see cref="Vector2"/> of the players rotation
+    /// 读取玩家旋转的 <see cref="Vector2"/>
     /// </summary>
-    /// <param name="reader">The <see cref="NetDataReader"/> instance to read from</param>
+    /// <param name="reader">要从中读取的 <see cref="NetDataReader"/> 实例</param>
     /// <returns>
-    /// A <see cref="Vector2"/> where:
+    /// 一个 <see cref="Vector2"/>，其中：
     /// <list type="bullet">
-    /// <item><description><c>x</c> is read as a raw float.</description></item>
-    /// <item><description><c>y</c> is read as a compressed float in the range [-90, 90] using <see cref="EFloatCompression.High"/>.</description></item>
+    /// <item><description><c>x</c> 以原始 float 读取。</description></item>
+    /// <item><description><c>y</c> 使用 <see cref="EFloatCompression.High"/> 以 [-90, 90] 范围内的压缩 float 读取。</description></item>
     /// </list>
     /// </returns>
     public static Vector2 GetRotation(this NetDataReader reader)
@@ -1247,7 +1247,7 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Serializes a TimeSpan structure as a 64-bit integer tick count into the writer stream.
+    /// 将 TimeSpan 结构序列化为 64 位整数 tick 计数写入 writer 流。
     /// </summary>
     public static void PutTimeSpan(this NetDataWriter writer, TimeSpan target)
     {
@@ -1255,7 +1255,7 @@ public static class FikaSerializationExtensions
     }
 
     /// <summary>
-    /// Deserializes a 64-bit integer tick count from the reader stream and reconstructs a TimeSpan structure.
+    /// 从 reader 流反序列化 64 位整数 tick 计数并重建 TimeSpan 结构。
     /// </summary>
     public static TimeSpan GetTimeSpan(this NetDataReader reader)
     {
@@ -1328,23 +1328,23 @@ public static class FikaSerializationExtensions
 }
 
 /// <summary>
-/// Specifies the number of bits used for packing a floating-point value.
+/// 指定打包浮点值时使用的位数。
 /// </summary>
 /// <remarks>
-/// This enum is used to define the precision of the bit-packed float representation. <br/>
-/// Higher bit counts provide greater precision but use more bandwidth.
+/// 此枚举用于定义位打包 float 表示的精度。<br/>
+/// 位数越高精度越高，但占用更多带宽。
 /// </remarks>
 public enum EFloatCompression : byte
 {
     /// <summary>
-    /// Pack the float using 8 bits (1 byte). <br/>
-    /// Provides lower precision but reduces bandwidth usage.
+    /// 使用 8 位（1 字节）打包该 float。<br/>
+    /// 精度较低，但可减少带宽占用。
     /// </summary>
     High = 8,
 
     /// <summary>
-    /// Pack the float using 16 bits (2 bytes). <br/>
-    /// Provides higher precision than 8 bits but uses more bandwidth.
+    /// 使用 16 位（2 字节）打包该 float。<br/>
+    /// 精度高于 8 位，但占用更多带宽。
     /// </summary>
     Low = 16
 }

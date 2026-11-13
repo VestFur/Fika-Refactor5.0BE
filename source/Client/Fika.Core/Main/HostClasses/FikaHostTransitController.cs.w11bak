@@ -1,0 +1,3419 @@
+using Fika.Core.Main.BaseClasses;
+using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using CommonAssets.Scripts.Game;
+using JsonType;
+using System.Collections.Generic;
+using Comfort.Common;
+using EFT;
+using EFT.Communications;
+using EFT.GlobalEvents;
+using EFT.Interactive;
+using EFT.UI;
+using Fika.Core.Main.GameMode;
+using Fika.Core.Main.Players;
+using Fika.Core.Main.Utils;
+using Fika.Core.Networking;
+using Fika.Core.Networking.Packets.Communication;
+
+namespace Fika.Core.Main.HostClasses;
+
+/// <summary>
+/// The start rule the user asked for, shared by the playable host (<see cref="FikaHostTransitController"/>)
+/// and the dedicated host (Fika.Headless.Classes.FikaHeadlessTransitController): the transit countdown
+/// only starts once <b>every</b> teammate that can still transfer has completed the interaction at the
+/// point <b>and</b> stands inside it. Until then an accepted interaction is only recorded.
+/// <para>
+/// The two switches are public so a config entry can be bound to them without another edit here:
+/// <see cref="RequireAllTeammatesInteracted"/> is true by default (the requested behaviour, matching the
+/// point's own <c>waitForAllParty</c> idea) and <see cref="CountdownFallbackSeconds"/> is only used for a
+/// point whose own <c>TransitParameters.time</c> is zero.
+/// </para>
+/// <para>
+/// Native facts this file leans on (evidence: analysis/transit-countdown-transfer/REPORT.md section 1):
+/// <c>TransitController.Timers(int, Dictionary&lt;int, ushort&gt;)</c> and <c>Sizes(int, Dictionary&lt;int, byte&gt;)</c>
+/// are the abstract half of the two global events the native controller publishes, both dictionaries are
+/// keyed by <b>raid id</b>, and <c>TransitParameters.time</c> is the point's countdown length in seconds.
+/// </para>
+/// </summary>
+public static class TransitStartGate
+{
+    /// <summary>Strict gate (default true): everybody interacted and everybody is in the point.</summary>
+    public static bool RequireAllTeammatesInteracted = true;
+
+    /// <summary>Countdown length for a point whose own <c>TransitParameters.time</c> is zero.</summary>
+    public static int CountdownFallbackSeconds = 30;
+
+    /// <summary>
+    /// Compact "who is not ready" text for the gate, or null when the countdown may start.
+    /// <paramref name="ready"/> counts the teammates that satisfy both halves of the rule.
+    /// </summary>
+    public static string DescribeNotReady(List<Player> members, Dictionary<string, int> zoneByProfile,
+        Dictionary<string, int> interactedByProfile, int pointId, out int ready)
+    {
+        ready = 0;
+        if (members == null || members.Count == 0)
+        {
+            return "no eligible teammate";
+        }
+
+        var missingInteraction = new System.Text.StringBuilder();
+        var missingZone = new System.Text.StringBuilder();
+        foreach (var member in members)
+        {
+            if (member == null) continue;
+            var profileId = member.ProfileId;
+            var inZone = zoneByProfile != null && zoneByProfile.TryGetValue(profileId, out var zone) && zone == pointId;
+            var interacted = interactedByProfile != null && interactedByProfile.TryGetValue(profileId, out var point) && point == pointId;
+            if (inZone && interacted)
+            {
+                ready++;
+                continue;
+            }
+
+            if (!interacted)
+            {
+                if (missingInteraction.Length > 0) missingInteraction.Append(',');
+                missingInteraction.Append(profileId);
+            }
+
+            if (!inZone)
+            {
+                if (missingZone.Length > 0) missingZone.Append(',');
+                missingZone.Append(profileId);
+            }
+        }
+
+        if (missingInteraction.Length == 0 && missingZone.Length == 0) return null;
+        return "notInteracted=[" + missingInteraction + "] notInZone=[" + missingZone + "]";
+    }
+
+    /// <summary>The countdown length of a point: its own time, or the fallback when it carries none.</summary>
+    public static int CountdownSeconds(TransitPoint point)
+    {
+        try
+        {
+            var seconds = point?.parameters?.time ?? 0;
+            return seconds > 0 ? seconds : CountdownFallbackSeconds;
+        }
+        catch (System.Exception)
+        {
+            return CountdownFallbackSeconds;
+        }
+    }
+
+    /// <summary>
+    /// Builds the timer dictionary of one point: the native entries are kept, and every teammate the
+    /// native dictionary does not carry gets an entry as well, keyed by his raid id.
+    /// <para>
+    /// Why this exists: both timer panels are driven from a dictionary keyed by raid id, and the native
+    /// bookkeeping of a local raid describes the local group only. On a Fika host the client therefore
+    /// never found its own raid id in the dictionary the host forwarded - the client showed the group
+    /// size (that dictionary is rebuilt the same way, see <c>BuildZoneSizes</c>) but never a countdown.
+    /// </para>
+    /// <paramref name="fikaSeconds"/> is the running Fika countdown, or 0 to keep the native value (the
+    /// smallest native entry is then used for the players the native dictionary does not know).
+    /// </summary>
+    public static Il2CppSystem.Collections.Generic.Dictionary<int, ushort> BuildTimers(List<Player> members,
+        int fikaSeconds, Il2CppSystem.Collections.Generic.Dictionary<int, ushort> nativeTimers)
+    {
+        var result = new Il2CppSystem.Collections.Generic.Dictionary<int, ushort>();
+        var nativeCount = 0;
+        if (nativeTimers != null)
+        {
+            foreach (var entry in nativeTimers)
+            {
+                if (result.ContainsKey(entry.Key)) continue;
+                result.Add(entry.Key, entry.Value);
+                nativeCount++;
+            }
+        }
+
+        if (members == null || members.Count == 0) return result;
+
+        var fallback = fikaSeconds;
+        if (fallback <= 0 && nativeCount > 0)
+        {
+            fallback = ushort.MaxValue;
+            foreach (var entry in result)
+            {
+                if (entry.Value < fallback) fallback = entry.Value;
+            }
+        }
+
+        if (fallback < 0) fallback = 0;
+        var value = (ushort)System.Math.Clamp(fallback, 0, ushort.MaxValue);
+        foreach (var member in members)
+        {
+            if (member == null || result.ContainsKey(member.RaidId)) continue;
+            result.Add(member.RaidId, value);
+        }
+
+        return result;
+    }
+
+    /// <summary>Compact view of a raid-id to seconds dictionary for the diagnostics.</summary>
+    public static string DescribeTimers(Il2CppSystem.Collections.Generic.Dictionary<int, ushort> timers)
+    {
+        if (timers == null) return "null";
+        var builder = new System.Text.StringBuilder();
+        foreach (var entry in timers)
+        {
+            if (builder.Length > 0) builder.Append(' ');
+            builder.Append(entry.Key).Append('=').Append(entry.Value);
+        }
+        return builder.Length == 0 ? "empty" : builder.ToString();
+    }
+
+    /// <summary>
+    /// How many seconds the announced value of a countdown may differ from the value a running timer
+    /// surface shows before that surface is started again. The announced value is a whole second
+    /// (<c>Math.Ceiling</c>) and the panel counts in real time, so up to one second of difference is by
+    /// design; the tolerance only lets a surface that really fell behind (lost packets) be re-announced.
+    /// </summary>
+    public const float PanelToleranceSeconds = 2f;
+
+    /// <summary>
+    /// Seconds a timer surface that was started with <paramref name="surfaceSeconds"/> at
+    /// <paramref name="startedAt"/> still has left for <paramref name="pointId"/>, or -1 when no surface
+    /// runs for that point. <c>LocationTransitTimerPanel.Show(seconds)</c> starts a countdown that counts
+    /// the seconds down by itself (4.0 IL of the coroutine it starts: <c>time -= Time.deltaTime</c> per
+    /// frame, the label is formatted from it and the panel closes itself at zero), so the value a surface
+    /// was started with is the one it walks down from - and a second start replays it.
+    /// </summary>
+    public static float SurfacedSecondsLeft(int pointId, int surfacePointId, float surfaceSeconds, float startedAt)
+    {
+        if (surfacePointId != pointId || surfaceSeconds < 0f) return -1f;
+        return surfaceSeconds - (Time.unscaledTime - startedAt);
+    }
+
+    /// <summary>
+    /// Whether two timer dictionaries describe the same announcement. The comparison is keyed by raid id,
+    /// so the enumeration order of the two dictionaries can differ freely: the two sources of one value
+    /// build it in different orders - <see cref="BuildTimers"/> takes the native order when it is given a
+    /// native dictionary (the native tick), and the member order of <c>CollectZonePlayers</c> when it is
+    /// not (Fika's own start line) - and round 8 shows exactly that in one frame:
+    /// <c>LogOutput.log:2637 timers=1=20 2=20</c> next to <c>2639 timers=2=20 1=20</c>, the same countdown
+    /// from two orders. A comparison over the printed text or over the enumeration order would call those
+    /// two different and apply one and the same countdown twice - which is the flicker this round removes.
+    /// </summary>
+    public static bool SameTimers(Il2CppSystem.Collections.Generic.Dictionary<int, ushort> left,
+        Il2CppSystem.Collections.Generic.Dictionary<int, ushort> right)
+    {
+        if (left == null || right == null) return false;
+        if (left.Count != right.Count) return false;
+        foreach (var entry in left)
+        {
+            if (!right.TryGetValue(entry.Key, out var value) || value != entry.Value) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// One-shot self-check of <see cref="SameTimers"/> on real il2cpp dictionaries of the running game,
+    /// because no offline test process can build those types. The four cases are the ones the countdown
+    /// needs: two key orders of one value must be equal, a changed value, a changed key and a different
+    /// size must not. Called once by the client on its first group-timer packet; the found detail is
+    /// logged next to the verdict, and nothing here may throw.
+    /// </summary>
+    public static bool SelfCheckSameTimers(out string detail)
+    {
+        try
+        {
+            var ascending = new Il2CppSystem.Collections.Generic.Dictionary<int, ushort>();
+            ascending[1] = 20;
+            ascending[2] = 20;
+            var descending = new Il2CppSystem.Collections.Generic.Dictionary<int, ushort>();
+            descending[2] = 20;
+            descending[1] = 20;
+            var changedValue = new Il2CppSystem.Collections.Generic.Dictionary<int, ushort>();
+            changedValue[1] = 20;
+            changedValue[2] = 19;
+            var changedKey = new Il2CppSystem.Collections.Generic.Dictionary<int, ushort>();
+            changedKey[1] = 20;
+            changedKey[3] = 20;
+
+            var orderIndependent = SameTimers(ascending, descending);
+            var valueDetected = !SameTimers(ascending, changedValue);
+            var keyDetected = !SameTimers(ascending, changedKey);
+            detail = $"keyOrder(free)={orderIndependent} valueChange(detected)={valueDetected} " +
+                $"keyChange(detected)={keyDetected}";
+            return orderIndependent && valueDetected && keyDetected;
+        }
+        catch (System.Exception exception)
+        {
+            detail = "the self-check itself failed (" + exception.GetType().Name + ": " + exception.Message + ")";
+            return false;
+        }
+    }
+}
+
+/// <summary>
+/// The verdict one registered participant of a running countdown gets, see
+/// <see cref="TransitCountdownGuard.Classify"/>.
+/// </summary>
+public enum ETransitMemberState
+{
+    /// <summary>Registered, alive and inside the point: the countdown continues.</summary>
+    Inside = 0,
+    /// <summary>Alive and inside the point, but the zone report of this machine does not say so (lost report).</summary>
+    Missing = 1,
+    /// <summary>Alive, still in this raid, but outside the point: this cancels the transfer.</summary>
+    Left = 2,
+    /// <summary>Dead: dropped from the participant list, or a cancel reason when the death switch is on.</summary>
+    Dead = 3,
+    /// <summary>Not part of this raid any more: disconnected, extracted or already on the way out.</summary>
+    Gone = 4
+}
+
+/// <summary>
+/// The continuous half of the transit rule the user asked for, shared by the playable host
+/// (<see cref="FikaHostTransitController"/>) and the dedicated host
+/// (Fika.Headless.Classes.FikaHeadlessTransitController).
+/// <para>
+/// Round 12 evaluated the rule once: <c>CheckForPlayers</c> plus the strict gate decided at the moment of a
+/// press, the whole team was registered and the countdown then ran without ever looking at the point again
+/// (analysis/transit-countdown-transfer/REPORT.md, section 4). The user's first report - "if the client
+/// leaves the point, both machines keep counting down and the end transfers nobody, so the interaction has
+/// to be made again" - is exactly that missing re-check. The third report - "a disconnect makes the point
+/// answer NonAllTeammates forever" - is the missing "who is still here" filter, see
+/// <see cref="TransitDropouts"/>.
+/// </para>
+/// <para>
+/// Of the five verdicts only two can ever end a transfer, and both are switchable:
+/// <list type="number">
+/// <item>a registered teammate who is <b>still in the raid but outside the point</b> cancels the whole
+/// transfer (<see cref="AbortWhenSomeoneLeaves"/>, default true). That is the native rule as well: the
+/// point's own <c>OnTriggerExit</c> drops the player's group membership and with it the group's
+/// countdown;</item>
+/// <item>a registered teammate who <b>died</b> is dropped from the participant list and the survivors
+/// continue (<see cref="AbortWhenSomeoneDies"/>, default false) - the shape the native machinery has,
+/// where <c>OnPlayerDead</c> removes him from the group and <c>SeparateGroupPlayers</c> carries the
+/// rest;</item>
+/// <item>a teammate who <b>left this raid</b> (disconnect, extract, already transferred) is removed from
+/// the participant set and from both gates and never blocks anybody. This part is not switchable: it only
+/// removes a blocker that can never come back by itself, and a blocking ghost is never the intended
+/// behaviour.</item>
+/// </list>
+/// </para>
+/// <para>
+/// One switch, one revert, the pattern of <see cref="TransitStartGate.RequireAllTeammatesInteracted"/>:
+/// <see cref="AbortWhenSomeoneLeaves"/> false (config entry <c>Coop / Transit: Abort When Someone
+/// Leaves</c>) restores the round-12 behaviour - the countdown runs to its end while the player who left
+/// stays registered - and <see cref="AbortWhenSomeoneDies"/> true is the opt-in variant of "a death ends
+/// the transfer for everyone".
+/// </para>
+/// </summary>
+public static class TransitCountdownGuard
+{
+    /// <summary>
+    /// Cancel the running countdown when a registered teammate leaves the point (default true, the
+    /// requested behaviour). False reproduces the round-12 behaviour, in which the countdown keeps running
+    /// and ends without carrying anybody.
+    /// </summary>
+    public static bool AbortWhenSomeoneLeaves = true;
+
+    /// <summary>
+    /// (analysis/transit-terminal-and-countdown) The user's rule of this round: whoever leaves the point of a
+    /// running countdown hides the countdown of <b>every</b> machine and freezes the transfer of <b>everybody</b>,
+    /// and the countdown continues from the frozen second as soon as every registered participant stands inside
+    /// the point again. It takes precedence over <see cref="AbortWhenSomeoneLeaves"/> while it is true: a paused
+    /// countdown can be resumed, a cancelled one cannot, so the cancel switch is unreachable while this one is on
+    /// (that is the point).
+    /// <para>
+    /// This is the switch the existing config key <c>Coop | Transit: Abort When Someone Leaves</c> binds to
+    /// (option 1 of the convergence round: the key keeps its name and its default, its <b>action</b> becomes the
+    /// pause/resume the user asked for). Binding, for the owner of FikaConfig.cs:
+    /// <c>TransitCountdownGuard.PauseWhenSomeoneLeaves = TransitAbortWhenSomeoneLeaves.Value;</c> in
+    /// SetupSetting and in SettingChanged, with
+    /// <c>TransitCountdownGuard.AbortWhenSomeoneLeaves = false;</c> next to it - the old cancel then exists only in
+    /// code and is one assignment away, which is exactly what "the key must not cancel any more" requires. False
+    /// on the key restores the round-12 behaviour: nobody pauses, the countdown runs on and ends without carrying
+    /// the player who walked away.
+    /// </para>
+    /// </summary>
+    public static bool PauseWhenSomeoneLeaves = true;
+
+    /// <summary>
+    /// Cancel the running countdown when a registered teammate dies (default false): a death is not a walk
+    /// away, and the native machinery drops the dead from the group and transfers the survivors.
+    /// </summary>
+    public static bool AbortWhenSomeoneDies = false;
+
+    /// <summary>
+    /// Verdict of one registered participant. <paramref name="inRaid"/> and <paramref name="gone"/> describe
+    /// whether this machine still has a participant for him; <paramref name="insidePoint"/> comes from the
+    /// point's own colliders and is the authoritative half, because it is the one test a missing zone
+    /// report cannot fool; <paramref name="zoneEntryMatches"/> is the zone map both gates read.
+    /// </summary>
+    public static ETransitMemberState Classify(bool inRaid, bool alive, bool gone, bool insidePoint, bool zoneEntryMatches)
+    {
+        if (!inRaid || gone) return ETransitMemberState.Gone;
+        if (!alive) return ETransitMemberState.Dead;
+        if (insidePoint) return zoneEntryMatches ? ETransitMemberState.Inside : ETransitMemberState.Missing;
+        // Outside every collider of the point. Those bounds are a superset of the trigger volume - the very
+        // test the host's zone-exit confirmation uses - so this verdict is the safe direction.
+        return ETransitMemberState.Left;
+    }
+
+    /// <summary>
+    /// The criterion line the next round greps: one per verdict change of a running countdown. The buckets
+    /// are profile ids (with the placement detail for the ones that cancel), and the verdict is either
+    /// <c>continue</c> or <c>cancel(reason)</c>.
+    /// </summary>
+    public static string DescribeRecheck(int pointId, int members, List<string> inside, List<string> missing,
+        List<string> left, List<string> dead, List<string> dropped, List<string> gone, string verdict)
+    {
+        return $"[TransitDiag] gate recheck point={pointId} members={members} inside={inside.Count} " +
+            $"missing=[{Join(missing)}] left=[{Join(left)}] dead=[{Join(dead)}] " +
+            $"dropped(disconnected)=[{Join(dropped)}] gone=[{Join(gone)}] -> {verdict}";
+    }
+
+    /// <summary>The two switches as one fragment, so every line says which rule produced it.</summary>
+    public static string DescribeSwitches() =>
+        $"abortWhenSomeoneLeaves={AbortWhenSomeoneLeaves} abortWhenSomeoneDies={AbortWhenSomeoneDies} " +
+        $"pauseWhenSomeoneLeaves={PauseWhenSomeoneLeaves}";
+
+    /// <summary>Comma-joined bucket of a criterion line; an empty bucket prints as nothing at all.</summary>
+    public static string Join(List<string> bucket)
+    {
+        if (bucket == null || bucket.Count == 0) return string.Empty;
+        return string.Join(",", bucket);
+    }
+}
+
+/// <summary>
+/// The players of this raid whose <b>peer</b> disconnected.
+/// <para>
+/// Why this exists: <c>FikaServer.OnPeerDisconnected</c> cleans the session bookkeeping (ready flags,
+/// assigned profile, player amount) and emits <c>PeerDisconnectedEvent</c>, but it does not touch
+/// <c>CoopHandler.HumanPlayers</c>, and nothing else removes the character either - a disconnected player
+/// keeps sitting in the raid's player list until his object is disposed. Both transit gates count that
+/// list, which is why a disconnect made the point answer <c>NonAllTeammates</c> forever: the gate waited
+/// for a player who was not there any more (user requirement 3).
+/// </para>
+/// <para>
+/// The registry is fed from the one event that names the peer, keyed by profile, and remembers the net id
+/// of the player object that was dropped, so a reconnect - Fika spawns a new player object for the same
+/// profile - is not mistaken for the dropped one. A live zone report from a profile clears its entry as
+/// well, because such a packet proves the peer is back.
+/// </para>
+/// </summary>
+public static class TransitDropouts
+{
+    /// <summary>Profile id -> net id of the player object whose peer disconnected (-1 when unreadable).</summary>
+    private static readonly Dictionary<string, int> Dropped = [];
+
+    /// <summary>True once the disconnect reporting of this process is armed.</summary>
+    private static bool _armed;
+
+    /// <summary>
+    /// Arms the subscription that feeds this registry. Idempotent, and a static handler: a controller that
+    /// is replaced without a dispose therefore cannot leak a second subscription into the next raid.
+    /// </summary>
+    public static void Arm()
+    {
+        if (_armed) return;
+        _armed = true;
+        try
+        {
+            Fika.Core.Modding.FikaEventDispatcher.SubscribeEvent<Fika.Core.Modding.Events.PeerDisconnectedEvent>(OnPeerDisconnected);
+            
+        }
+        catch (System.Exception exception)
+        {
+                    }
+    }
+
+    private static void OnPeerDisconnected(Fika.Core.Modding.Events.PeerDisconnectedEvent @event)
+    {
+        try
+        {
+            Mark(@event?.Peer?.Player, "peer disconnected");
+        }
+        catch (System.Exception exception)
+        {
+                    }
+    }
+
+    /// <summary>Records the player of a disconnected peer, when that peer had one.</summary>
+    public static void Mark(Player player, string source)
+    {
+        if (player == null) return;
+        var profileId = player.ProfileId;
+        if (string.IsNullOrEmpty(profileId)) return;
+        int netId;
+        try { netId = player.TryCast<FikaPlayer>() is { } fikaPlayer ? fikaPlayer.NetId : -1; }
+        catch (System.Exception) { netId = -1; }
+
+        Dropped[profileId] = netId;
+        
+    }
+
+    /// <summary>True when this player object belongs to a peer that is gone.</summary>
+    public static bool IsDropped(Player player)
+    {
+        if (player == null) return false;
+        string profileId;
+        try { profileId = player.ProfileId; }
+        catch (System.Exception) { return false; }
+        if (string.IsNullOrEmpty(profileId) || !Dropped.TryGetValue(profileId, out var droppedNetId)) return false;
+        try
+        {
+            // Another object for the same profile is a reconnect or a re-spawn: he is in this raid again.
+            if (droppedNetId < 0) return true;
+            return player.TryCast<FikaPlayer>() is not { } fikaPlayer || droppedNetId == fikaPlayer.NetId;
+        }
+        catch (System.Exception)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>Drops the entry of a profile that just proved it is reachable again (a packet from its peer).</summary>
+    public static bool Clear(string profileId, string source)
+    {
+        if (string.IsNullOrEmpty(profileId)) return false;
+        if (!Dropped.Remove(profileId)) return false;
+        
+        return true;
+    }
+
+    /// <summary>How many profiles this raid currently drops, for the diagnostic lines.</summary>
+    public static int Count => Dropped.Count;
+
+    /// <summary>Compact view for the diagnostics.</summary>
+    public static string Describe()
+    {
+        if (Dropped.Count == 0) return "none";
+        var builder = new System.Text.StringBuilder();
+        foreach (var entry in Dropped)
+        {
+            if (builder.Length > 0) builder.Append(' ');
+            builder.Append(entry.Key).Append('/').Append(entry.Value);
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>The raid is over; the next one starts with an empty list.</summary>
+    public static void Forget() => Dropped.Clear();
+
+    /// <summary>
+    /// Drops the dropout bookkeeping of the world that just ended and returns how many profiles it held. The
+    /// entries are profile ids and net ids, not native objects, so nothing here has to touch a point - but a
+    /// net id of a past raid must not exclude a profile of the next one. Idempotent; the event subscription
+    /// (<see cref="Arm"/>) stays armed, because it belongs to the process, not to a world.
+    /// </summary>
+    public static int ForceResetForWorldTeardown(string reason)
+    {
+        var held = Dropped.Count;
+        Dropped.Clear();
+        
+        return held;
+    }
+}
+
+/// <summary>
+/// The rule the user asked for when a transit point and an exfiltration point sit on one spot: once a
+/// player interaction activated the transit point, the exfiltration point(s) at the same position are
+/// taken out of the interaction until the transfer completed, the transit was cancelled or the player
+/// left the point.
+/// <para>
+/// Why it exists: a co-located exit and transit point compete for the same interaction on the same
+/// spot, and an exit that entered the player can drop the transit registration this host waits on
+/// (analysis/transit-trigger-factory/REPORT.md, section 2). Nothing here is bound to a map, a point
+/// name or an array index: the pair is derived from the game data of the running raid - the collider
+/// volume of the transit point against every exfiltration point the raid loaded
+/// (<c>ExfiltrationController.ExfiltrationPoints</c>) - so a map that ships both on one position is
+/// covered without an edit, and a map that does not ship them together is never touched.
+/// </para>
+/// <para>
+/// One switch, one revert: <see cref="SuppressCoLocatedExits"/> false (config entry
+/// <c>Coop / Transit: Suppress Co-Located Exfiltration</c>, default true) turns the whole rule into a
+/// log-only no-op. Every change it makes is the native pair
+/// <c>ExfiltrationPoint.DisableInteraction()</c> / <c>EnableInteraction()</c> of the points it
+/// remembered, so nothing else is written and the release can never enable a point it did not disable.
+/// </para>
+/// </summary>
+public static class TransitCoLocatedExits
+{
+    /// <summary>
+    /// Config switch of the rule, default true (the requested behaviour). It is public so the config
+    /// entry <c>Coop / Transit: Suppress Co-Located Exfiltration</c> can be bound to it without another
+    /// edit here, exactly like <see cref="TransitStartGate.RequireAllTeammatesInteracted"/>.
+    /// </summary>
+    public static bool SuppressCoLocatedExits = true;
+
+    /// <summary>
+    /// Distance in meters that still counts as "the same spot" when the two trigger volumes do not
+    /// overlap. The game data of this build puts a co-located pair on top of each other (0 m), so the
+    /// default is a tolerance for a pair that stands side by side, not a search radius.
+    /// </summary>
+    public static float CoLocatedRadiusMeters = 6f;
+
+    /// <summary>Points this rule disabled, with the point they were disabled for, as the release list.</summary>
+    private static readonly List<ExfiltrationPoint> Suppressed = [];
+
+    /// <summary>
+    /// One line about the exfiltration point(s) at the transit point's own position, for the log of the
+    /// accepted interaction. Read only, never throws.
+    /// </summary>
+    public static string Describe(TransitPoint point)
+    {
+        try
+        {
+            var candidates = CollectCoLocated(point);
+            if (candidates.Count == 0) return "none";
+            var builder = new System.Text.StringBuilder();
+            foreach (var candidate in candidates)
+            {
+                if (builder.Length > 0) builder.Append(", ");
+                builder.Append(Name(candidate)).Append(" distance=")
+                    .Append(UnityEngine.Vector3.Distance(point.transform.position, candidate.transform.position).ToString("F1"))
+                    .Append("m suppressed=").Append(IsSuppressed(candidate));
+            }
+            return builder.ToString();
+        }
+        catch (System.Exception exception)
+        {
+            return "error:" + exception.GetType().Name;
+        }
+    }
+
+    /// <summary>Compact view of the points this raid currently holds out of the interaction.</summary>
+    public static string DescribeSuppressed()
+    {
+        try
+        {
+            if (Suppressed.Count == 0) return "none";
+            var builder = new System.Text.StringBuilder();
+            foreach (var point in Suppressed)
+            {
+                if (builder.Length > 0) builder.Append(", ");
+                builder.Append(Name(point));
+            }
+            return builder.ToString();
+        }
+        catch (System.Exception exception)
+        {
+            return "error:" + exception.GetType().Name;
+        }
+    }
+
+    /// <summary>
+    /// Takes every exfiltration point at the transit point's position out of the interaction. Called
+    /// once per activation, after the players of the point were registered; idempotent for a point this
+    /// raid already holds. Every outcome is one <c>[TransitDiag] activate:</c> line.
+    /// </summary>
+    public static string Suppress(TransitPoint point, string reason)
+    {
+        var pointId = PointId(point);
+        if (point == null)
+        {
+            
+            return "point-unavailable";
+        }
+
+        if (!SuppressCoLocatedExits)
+        {
+            var off = "the switch Coop / Transit: Suppress Co-Located Exfiltration is off; coLocatedExfil=" + Describe(point);
+            
+            return off;
+        }
+
+        try
+        {
+            var candidates = CollectCoLocated(point);
+            var applied = 0;
+            var already = 0;
+            var failed = new System.Text.StringBuilder();
+            foreach (var candidate in candidates)
+            {
+                if (candidate == null || IsSuppressed(candidate))
+                {
+                    already++;
+                    continue;
+                }
+
+                try
+                {
+                    candidate.DisableInteraction();
+                    Suppressed.Add(candidate);
+                    applied++;
+                }
+                catch (System.Exception exception)
+                {
+                    if (failed.Length > 0) failed.Append(',');
+                    failed.Append(Name(candidate)).Append(':').Append(exception.GetType().Name);
+                }
+            }
+
+            var detail = $"coLocatedExfil=[{DescribeList(candidates)}] suppressed={applied} alreadySuppressed={already} " +
+                $"failed=[{failed}] reason={reason}";
+            
+            return detail;
+        }
+        catch (System.Exception exception)
+        {
+            var detail = $"the rule itself failed ({exception.GetType().Name}: {exception.Message})";
+            
+            return detail;
+        }
+    }
+
+    /// <summary>
+    /// Gives every point this rule disabled its interaction back: the transfer completed, the transit was
+    /// cancelled, or the player left the point without a transfer. Called from the same places that lift
+    /// the transit ban, so a raid can never be left with an exit that no longer reacts. Idempotent and
+    /// safe on a raid that suppressed nothing.
+    /// </summary>
+    public static string Release(string reason)
+    {
+        if (Suppressed.Count == 0) return "nothing suppressed";
+
+        var released = 0;
+        var destroyed = 0;
+        var failed = new System.Text.StringBuilder();
+        var names = new System.Text.StringBuilder();
+        // A point whose release failed stays in the ledger, so the next release of this raid tries again
+        // instead of leaving an exit that no longer reacts behind.
+        var retry = new List<ExfiltrationPoint>();
+        foreach (var point in Suppressed.ToArray())
+        {
+            try
+            {
+                if (names.Length > 0) names.Append(", ");
+                names.Append(Name(point));
+                if (point == null)
+                {
+                    // The scene of the raid is gone with the point; there is nothing left to enable.
+                    destroyed++;
+                }
+                else
+                {
+                    point.EnableInteraction();
+                    released++;
+                }
+            }
+            catch (System.Exception exception)
+            {
+                retry.Add(point);
+                if (failed.Length > 0) failed.Append(',');
+                failed.Append(Name(point)).Append(':').Append(exception.GetType().Name);
+            }
+        }
+
+        Suppressed.Clear();
+        foreach (var point in retry) Suppressed.Add(point);
+
+        var detail = $"released={released} destroyed={destroyed} failed=[{failed}] points=[{names}] reason={reason}";
+        
+        return detail;
+    }
+
+    /// <summary>
+    /// Closes the ledger without touching the scene, for the dispose path of a raid whose points are
+    /// already gone. The next raid starts with an empty list.
+    /// </summary>
+    public static void Forget() => Suppressed.Clear();
+
+    /// <summary>
+    /// Drops every exit point this ledger remembers, <b>without touching any of them</b>, and returns how many
+    /// it held. This is the cross-world half of <see cref="Release"/>.
+    /// <para>
+    /// Why it exists (round 13; the finding comes from the world-teardown work of this round): the list holds
+    /// native <see cref="ExfiltrationPoint"/> objects of the world they were disabled in, and the teardown of
+    /// that world is one idempotent sequence (<c>WorldLifecycle.MarkWorldTornDown</c>, wired at the
+    /// authoritative <c>DestroyNetManager</c> and at <c>CoopGame.Dispose/CleanUp</c> as the fallback) that
+    /// clears every cross-raid holder of a native object. This ledger was not part of it, so a world that was
+    /// replaced without a separate raid end could leave dead exit points in it - and reading or
+    /// <c>EnableInteraction()</c>-ing one of those is a touch of a native object that no longer exists, the
+    /// very class of access the two 0xc0000005 crashes of this round belong to.
+    /// </para>
+    /// That is also why this method makes <b>no</b> native call: <see cref="Release"/> gives the exits their
+    /// interaction back and is the right call while the raid is alive (cancellation, abort, the last ban,
+    /// dispose), while a world that is going down has nothing left to re-enable - the next world builds its
+    /// own points. Idempotent and exception free, returns 0 for an empty ledger. Both host controllers call it
+    /// when their raid starts as well, so a teardown that never reached this class still cannot leak.
+    /// </summary>
+    public static int ForceResetForWorldTeardown(string reason)
+    {
+        var held = Suppressed.Count;
+        Suppressed.Clear();
+        
+        return held;
+    }
+
+    /// <summary>
+    /// Every exfiltration point of this raid that sits on the transit point's own position. Criterion:
+    /// the two trigger volumes overlap and stand within twice the radius, or the two anchors are within
+    /// the radius. Both numbers are logged by <see cref="Describe"/>, so a false positive is visible in
+    /// the next log instead of being guessed at.
+    /// </summary>
+    private static List<ExfiltrationPoint> CollectCoLocated(TransitPoint point)
+    {
+        var result = new List<ExfiltrationPoint>();
+        if (point == null) return result;
+
+        var controller = ExfiltrationController.Instance;
+        if (controller == null) return result;
+
+        var transitOverlap = TryGetVolume(point.gameObject, out var transitBounds);
+        var anchor = point.transform.position;
+        Collect(controller.ExfiltrationPoints, point, anchor, transitOverlap, transitBounds, result);
+        Collect(controller.ScavExfiltrationPoints, point, anchor, transitOverlap, transitBounds, result);
+        return result;
+    }
+
+    /// <summary>
+    /// Adds every point of one of the raid's two exfiltration arrays that sits on the transit point's
+    /// position. The arrays carry different concrete types (ExfiltrationPoint, ScavExfiltrationPoint), so
+    /// one generic loop covers both.
+    /// </summary>
+    private static void Collect<T>(Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<T> points,
+        TransitPoint point, UnityEngine.Vector3 anchor, bool transitOverlap, UnityEngine.Bounds transitBounds,
+        List<ExfiltrationPoint> result) where T : ExfiltrationPoint
+    {
+        if (points == null) return;
+        for (var i = 0; i < points.Count; i++)
+        {
+            var candidate = points[i];
+            if (candidate == null) continue;
+            if (IsCoLocated(point, candidate, anchor, transitOverlap, transitBounds)) result.Add(candidate);
+        }
+    }
+
+    private static bool IsCoLocated(TransitPoint point, ExfiltrationPoint candidate, UnityEngine.Vector3 anchor,
+        bool transitOverlap, UnityEngine.Bounds transitBounds)
+    {
+        try
+        {
+            var distance = UnityEngine.Vector3.Distance(anchor, candidate.transform.position);
+            if (distance <= CoLocatedRadiusMeters) return true;
+            if (!transitOverlap || distance > CoLocatedRadiusMeters * 2f) return false;
+            return TryGetVolume(candidate.gameObject, out var exfilBounds) && transitBounds.Intersects(exfilBounds);
+        }
+        catch (System.Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The trigger volume of a point: the union of every collider below it, inactive ones included, so a
+    /// point whose trigger sits on a child (or is disabled) still reports its own volume. False when the
+    /// object owns no collider at all, and then only the anchor distance decides.
+    /// </summary>
+    private static bool TryGetVolume(UnityEngine.GameObject gameObject, out UnityEngine.Bounds bounds)
+    {
+        bounds = default;
+        try
+        {
+            if (gameObject == null) return false;
+            var colliders = gameObject.GetComponentsInChildren<UnityEngine.Collider>(true);
+            if (colliders == null || colliders.Count == 0) return false;
+            bounds = colliders[0].bounds;
+            for (var i = 1; i < colliders.Count; i++)
+            {
+                if (colliders[i] != null) bounds.Encapsulate(colliders[i].bounds);
+            }
+            return true;
+        }
+        catch (System.Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Whether this raid already holds that point out of the interaction. Compared by the native pointer
+    /// (<c>Il2CppObjectBase.Pointer</c>), the same identity the exfil manager keys its bindings with: two
+    /// wrappers of one native point are not necessarily the same managed instance.
+    /// </summary>
+    private static bool IsSuppressed(ExfiltrationPoint point)
+    {
+        if (point == null) return false;
+        try
+        {
+            var pointer = point.Pointer;
+            foreach (var entry in Suppressed)
+            {
+                if (entry != null && entry.Pointer == pointer) return true;
+            }
+        }
+        catch (System.Exception)
+        {
+            return false;
+        }
+
+        return false;
+    }
+
+    private static string DescribeList(List<ExfiltrationPoint> points)
+    {
+        var builder = new System.Text.StringBuilder();
+        foreach (var point in points)
+        {
+            if (builder.Length > 0) builder.Append(", ");
+            builder.Append(Name(point));
+        }
+        return builder.Length == 0 ? "none" : builder.ToString();
+    }
+
+    private static string Name(ExfiltrationPoint point)
+    {
+        try
+        {
+            if (point == null) return "<destroyed>";
+            var name = point.Settings?.Name;
+            return string.IsNullOrEmpty(name) ? "<unnamed>" : "'" + name + "'";
+        }
+        catch
+        {
+            return "<unreadable>";
+        }
+    }
+
+    private static string PointId(TransitPoint point)
+    {
+        try
+        {
+            return point?.parameters == null ? "?" : point.parameters.id.ToString();
+        }
+        catch (System.Exception)
+        {
+            return "?";
+        }
+    }
+}
+
+/// <summary>
+/// The destination location of a transit point, derived from the point's own data only.
+/// <para>
+/// Every map of this build carries the same schema - checked against
+/// <c>SPT_Data/database/locations/*/base.json</c>: <c>factory4_night</c> (12 Woods, 13 bigmap,
+/// 14 laboratory), <c>woods</c>, <c>bigmap</c>, <c>interchange</c>, <c>sandbox</c>,
+/// <c>lighthouse</c>, <c>shoreline</c>, <c>rezervbase</c> and <c>tarkovstreets</c> all fill
+/// <c>parameters.location</c> with the destination location id the loading screen needs and
+/// <c>parameters.target</c> with the destination MongoId the access requirements use. Nothing here
+/// keys off a map name, a point name or an array index, so a map added later is covered by its own data.
+/// </para>
+/// <para>
+/// The fallback exists for a data set that leaves the id empty: it then names the target and the log
+/// says which source was used, so the next round can tell a map data problem from a code problem.
+/// </para>
+/// </summary>
+public static class TransitDestination
+{
+    /// <summary>Destination location id of a point, or an empty string when the point carries none.</summary>
+    public static string Resolve(TransitPoint point, out string source)
+    {
+        source = "none";
+        try
+        {
+            var location = point?.parameters == null ? null : point.parameters.location;
+            if (!string.IsNullOrWhiteSpace(location))
+            {
+                source = "parameters.location";
+                return location;
+            }
+
+            var target = point?.parameters == null ? null : point.parameters.target;
+            if (!string.IsNullOrWhiteSpace(target))
+            {
+                source = "parameters.target (parameters.location was empty for this point)";
+                return target;
+            }
+        }
+        catch (System.Exception exception)
+        {
+            source = "error:" + exception.GetType().Name;
+        }
+
+        return string.Empty;
+    }
+}
+
+public class FikaHostTransitController : FikaWorldController<LocalTransitController>
+{
+    public FikaHostTransitController(TransitGlobalSettings settings, Il2CppReferenceArray<LocationSettings.Location.TransitParameters> parameters, Profile profile, LocalRaidSettings localRaidSettings)
+        : base(new LocalTransitController(settings, parameters, profile, localRaidSettings))
+    {
+        IsEvent = localRaidSettings.transitionType.HasFlagNoBox(ELocationTransition.Event);
+        _localRaidSettings = localRaidSettings;
+        var array = FikaTransitHistory.AppendLocation(localRaidSettings);
+        Native.summonedTransits[profile.Id] = new(localRaidSettings.transition.transitionRaidId, localRaidSettings.transition.transitionCount,
+            array, IsEvent);
+        Native.TransferItemsController.InitItemControllerServer(FikaGlobals.TransitTraderId, FikaGlobals.TransitTraderName);
+        _server = FikaSingleton<FikaServer>.Instance;
+        _playersInTransitZone = [];
+        _transittedPlayers = [];
+    }
+
+    /// <summary>
+    /// Local raid settings of this raid, kept so a remote player can be given the transit history the
+    /// constructor only creates for the host's own profile (see <see cref="EnsureSummonedTransit"/>).
+    /// </summary>
+    private readonly LocalRaidSettings _localRaidSettings;
+
+    private readonly FikaServer _server;
+    private readonly Dictionary<string, int> _playersInTransitZone;
+    private readonly HashSet<int> _transittedPlayers;
+    /// <summary>
+    /// Point ids whose "not everyone is here yet" answer was already reported for the
+    /// player that was interacting, so a retry does not repeat the same line.
+    /// </summary>
+    private readonly HashSet<string> _zoneCheckLogged = [];
+    /// <summary>
+    /// Zone-exit reports already explained once per player and point. A repeated spurious "left" from
+    /// the client's geometric fallback is then one line instead of one line per report.
+    /// </summary>
+    private readonly HashSet<string> _zoneExitLogged = [];
+    /// <summary>False until the first CheckForPlayers call of this raid, which resets the shared diagnostic set.</summary>
+    private bool _zoneCheckFirstCall;
+    /// <summary>
+    /// Profile id -> point id of every player whose transit interaction this host accepted. The strict
+    /// start gate reads it (see <see cref="EveryoneInteracted"/>), and it is the only record of a player
+    /// who pressed the interaction while the group was still incomplete: nothing is registered and no
+    /// countdown runs for him until the whole group is at the point.
+    /// </summary>
+    private readonly Dictionary<string, int> _interactedPlayers = [];
+    /// <summary>One accepted-interaction line per player and point, so a retry does not repeat it.</summary>
+    private readonly HashSet<string> _interactionLogged = [];
+    /// <summary>Players this host already pushed a transfer for; keeps the two drivers from double-sending.</summary>
+    private readonly HashSet<int> _transferIssued = [];
+    /// <summary>
+    /// Why a registered player of the last transfer round did not get his transfer, one entry per player.
+    /// The countdown-end report reads it, so one line answers who was left behind and why.
+    /// </summary>
+    private readonly List<string> _transferFailures = [];
+    /// <summary>Point the Fika countdown currently runs for, or -1 when none runs.</summary>
+    private int _countdownPointId = -1;
+    /// <summary>Unscaled time the running countdown reaches zero.</summary>
+    private float _countdownEndsAt;
+    /// <summary>Length of the running countdown in seconds (the point's own time).</summary>
+    private int _countdownSeconds;
+    /// <summary>Last second that was broadcast, so one packet and one line per second.</summary>
+    private int _lastBroadcastSecond = -1;
+    /// <summary>
+    /// Point and timer values of the last native <see cref="Timers"/> call of this raid, so the native
+    /// group-timer tick is forwarded once per value instead of once per event. The client's native
+    /// applier ends in the panel's Display() and Show(seconds), and Show restarts the panel's own
+    /// coroutines (<c>BattleUITimerPanel.StopActiveCoroutines</c> / <c>ShowCountdownPanel</c>): every
+    /// redundant forward therefore replays that animation on the client.
+    /// </summary>
+    private int _lastNativeTimerPointId = -1;
+    private Il2CppSystem.Collections.Generic.Dictionary<int, ushort> _lastNativeTimers;
+    /// <summary>
+    /// This host's own timer surface: the point it was started for, the seconds it was started with and
+    /// when. <c>LocationTransitTimerPanel.Show(seconds)</c> is not a value display - it starts a countdown
+    /// that counts the seconds down by itself (<c>Co_Countdown</c>: <c>time -= Time.deltaTime</c> per
+    /// frame) and it starts the panel's fade-in again (<c>Co_ShowInfoPanel</c> sets the canvas alpha to 0
+    /// first). Round 9 proved that on a client (LogOutput.log:2922-2942: one start per value, the reported
+    /// blink once a second) and this host's own panel is the same object with the same coroutines, so the
+    /// surface is started once per countdown and only re-started when the countdown really restarts or
+    /// when the panel fell behind the announced value.
+    /// </summary>
+    private int _panelSurfacePointId = -1;
+    private float _panelSurfaceSeconds = -1f;
+    private float _panelSurfaceStartedAt;
+    /// <summary>Surface starts that were not the first one of a countdown, reported once each.</summary>
+    private int _panelSurfaceRestarts;
+    /// <summary>Last moment a surface that had disappeared was started again, so that happens at most once a second.</summary>
+    private float _panelSurfaceReshowAt = -1f;
+    /// <summary>Redundant native group-timer values that were not forwarded, and how many were reported.</summary>
+    private int _nativeTimerRepeatsSkipped;
+    private int _nativeTimerRepeatsLogged;
+    /// <summary>Last gate-recheck line of the running countdown, so one line appears per verdict change.</summary>
+    private string _recheckLoggedSignature;
+    /// <summary>Gate rechecks of the running countdown, for the cancel line.</summary>
+    private int _recheckCount;
+    /// <summary>Failed gate rechecks of this raid, reported at most a few times.</summary>
+    private int _recheckFailures;
+    /// <summary>Unscaled time the grace window that waits for the native transfer of this host's own player expires, or -1.</summary>
+    private float _transferGraceEndsAt = -1f;
+    /// <summary>Point whose countdown ended and whose clients wait for the native transfer of this host's own player, or -1.</summary>
+    private int _pendingTransferPointId = -1;
+    /// <summary>
+    /// (analysis/transit-terminal-and-countdown) The paused state of the running countdown: while it is true the
+    /// clock does not move, every registration is kept and both machines hide their surface. The remaining
+    /// seconds are frozen in <c>_countdownPausedRemaining</c> and put back on the clock by the resume.
+    /// </summary>
+    private bool _countdownPaused;
+    private int _countdownPausedRemaining;
+    private float _countdownPausedAt;
+    private int _countdownPauses;
+    /// <summary>The participants that were still outside the point at the last resume attempt, named by the resume.</summary>
+    private string _countdownPausedOutside;
+    /// <summary>Last moment a teammate was nudged with the native CheckAccess answer, and how often, keyed by player and point.</summary>
+    private readonly Dictionary<string, float> _pressNudgedAt = [];
+    private readonly Dictionary<string, int> _pressNudges = [];
+    /// <summary>Hash, keys and player count of the last native Transit call, reused when this host issues a transfer itself.</summary>
+    private string _lastTransitHash;
+    private Il2CppSystem.Collections.Generic.Dictionary<string, ProfileKey> _lastTransitKeys;
+    private int _lastTransitPlayersCount;
+
+    public bool IsEvent { get; }
+
+    public int AliveTransitPlayers
+    {
+        get
+        {
+            return _transittedPlayers.Count;
+        }
+    }
+
+    internal void OnHostPlayerEnter(TransitPoint point, Player player)
+    {
+        
+        if (!Native.TryGetAccessToLocation(player, point.parameters.id, out var _))
+        {
+            // An early exit of the entry path: without access this player never reaches the gate that
+            // starts a countdown, so it is named for every player, not only for the local one.
+            
+            if (player.IsYourPlayer)
+            {
+                Native.AccessNotGrantedNotification();
+            }
+            return;
+        }
+
+
+        // The host's own player goes through the native trigger, so this is the local half of
+        // the same bookkeeping the packet path applies for remote players.
+        TransitZonePresence.RecordInZone(_playersInTransitZone, player.ProfileId, point.parameters.id, "host player entered the zone");
+        // (analysis/transit-terminal-20261013) The native controller creates the per-player transfer
+        // container at exactly this moment (LocalGameTransitControllerClass.method_20 = OnPlayerEnter ->
+        // TransferItemsController.InitPlayerStash). On a Fika host that callback only ever runs for the
+        // local player, so the same half is applied here for every player that reaches the point.
+        EnsureTransferStashFor(player, point, "entered the point (native trigger)");
+
+        if (!Native.transitPlayers.ContainsKey(player.ProfileId))
+        {
+            if (player.TryCast<FikaPlayer>() is { } fikaPlayer)
+            {
+                fikaPlayer.UpdateBtrTraderServiceData()
+                    .HandleExceptions();
+            }
+
+            if (player.IsYourPlayer)
+            {
+                Native.ShowInteraction(point.parameters.id, player, Native.GetSelectedTime());
+                return;
+            }
+
+            TransitEventPacket packet = new()
+            {
+                EventType = TransitEventPacket.ETransitEventType.Interaction,
+                TransitEvent = new TransitInteractionEvent()
+                {
+                    PlayerRaidId = player.RaidId,
+                    PointId = point.parameters.id,
+                    Type = TransitInteractionEvent.EType.Show
+                }
+            };
+
+            _server.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+            return;
+        }
+        Native.pointsById[point.parameters.id].GroupEnter(player);
+    }
+
+    /// <summary>
+    /// Applies a zone report from a client. Remote players never reach
+    /// <see cref="OnHostPlayerEnter"/>: the native trigger only drives the local transit
+    /// controller's own callbacks, so without this method the host's zone map stayed empty
+    /// for every client and <see cref="CheckForPlayers"/> answered NonAllTeammates.
+    /// </summary>
+    /// <param name="profileId">Profile the packet was checked against on the socket thread.</param>
+    /// <param name="pointId">Transit point the client reported.</param>
+    /// <param name="kind">Entry, exit, or the interact-request fallback.</param>
+    internal void OnRemotePlayerZonePresence(string profileId, int pointId,
+        TransitZonePresencePacket.ETransitZonePresenceKind kind)
+    {
+        if (string.IsNullOrEmpty(profileId))
+        {
+            
+            return;
+        }
+        if (kind == TransitZonePresencePacket.ETransitZonePresenceKind.Left)
+        {
+            // The native PlayerExit on this machine also calls point.GroupExit for a
+            // registered player, but a remote player never reaches that callback, so this
+            // side only maintains the map the zone check reads. The transit registration
+            // itself stays untouched: a player who stepped out still owns their slot.
+            // The packet carries no reason, so the removal is confirmed against this machine
+            // before the entry is dropped - see OnRemotePlayerLeftZone.
+            OnRemotePlayerLeftZone(profileId, pointId);
+            return;
+        }
+
+        if (!Native.pointsById.TryGetValue(pointId, out _))
+        {
+            
+            return;
+        }
+
+        var reason = kind == TransitZonePresencePacket.ETransitZonePresenceKind.In
+            ? "client reported entering the zone" : "client interaction fallback";
+        // A live packet from this peer is the proof that the profile of a recorded dropout is in this raid
+        // again (a reconnect), so the entry is cleared before it can exclude a player who came back.
+        TransitDropouts.Clear(profileId, "a zone report of this peer arrived");
+        // RecordInZone answers true exactly when this profile was not known at this point, so the offer
+        // below happens once per entry and a repeated report cannot re-send it.
+        if (!TransitZonePresence.RecordInZone(_playersInTransitZone, profileId, pointId, reason)) return;
+        SendInteractionShow(profileId, pointId, reason);
+        // The moment this host learns that a remote player stands at a point is the moment the native
+        // controller would have run its per-player transfer-stash half for him. Guarded inside: a usable
+        // container is never recreated, so this cannot empty one a player has already filled.
+        EnsureTransferStashFor(FindHumanPlayer(profileId), FindPoint(pointId), reason);
+    }
+
+    /// <summary>
+    /// Offers the transit prompt to a remote player that has just been registered in a point.
+    /// <para>
+    /// Why it is sent from here: the prompt is authoritative - the only native entry is
+    /// <c>ClientTransitController.ShowInteraction</c>, and a remote player never reaches this machine's
+    /// native <c>PlayerEnter</c>, so the host has to push <c>TransitInteractionEvent{Show}</c>.
+    /// <see cref="OnHostPlayerEnter"/>'s remote branch does exactly that, but it is only reachable through
+    /// the host's own native <c>PlayerEnter</c>, so for a client's player it never ran: the client saw no
+    /// prompt and therefore never sent an interact request either. The presence report is the moment this
+    /// machine learns that a remote player stands at a point, so the same packet is sent from there.
+    /// The packet is built exactly like the existing remote branch; nothing else changes.
+    /// </para>
+    /// </summary>
+    private void SendInteractionShow(string profileId, int pointId, string reason)
+    {
+        var player = FindHumanPlayer(profileId);
+        if (player == null)
+        {
+            // The packet needs a raid id, which only the resolved player carries. A peer whose player
+            // object is not in this raid yet is reported loudly instead of being skipped in silence.
+            
+            return;
+        }
+        if (player.IsYourPlayer) return;
+
+        // Same gate as the existing remote branch: a player who is already registered for a transit
+        // keeps the interaction state he has.
+        if (Native.transitPlayers.ContainsKey(profileId)) return;
+
+        TransitEventPacket packet = new()
+        {
+            EventType = TransitEventPacket.ETransitEventType.Interaction,
+            TransitEvent = new TransitInteractionEvent()
+            {
+                PlayerRaidId = player.RaidId,
+                PointId = pointId,
+                Type = TransitInteractionEvent.EType.Show
+            }
+        };
+
+        _server.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+        
+    }
+
+    /// <summary>
+    /// A client reported that its player left the transit zone. The packet carries no reason, and the
+    /// client-side senders are not equivalent: a real step out of the trigger, a death, an extract and
+    /// the client's 0.25 s geometric fallback all arrive as the same "left". The fallback evaluates the
+    /// trigger volume on the client, so a single mis-evaluation while the player is still standing in
+    /// the point used to drop a registration that CheckForPlayers had just counted. This side therefore
+    /// does not take the report at face value: the player has to be gone for a reason this machine can
+    /// confirm - dead, extracted, already transferred, or outside the point's own trigger volume.
+    /// A confirmed removal keeps the existing wording and log format.
+    /// </summary>
+    private void OnRemotePlayerLeftZone(string profileId, int reportedPointId)
+    {
+        if (!_playersInTransitZone.TryGetValue(profileId, out var registeredPoint))
+        {
+            
+            return;
+        }
+
+        var player = FindHumanPlayer(profileId);
+        var alive = player != null && player.HealthController?.IsAlive == true;
+        var transited = player != null && _transittedPlayers.Contains(player.RaidId);
+        var extracted = player != null && player.TryCast<FikaPlayer>() is { } fikaPlayer &&
+            FikaSingleton<IFikaNetworkManager>.Instance.CoopHandler.ExtractedPlayers.Contains(fikaPlayer.NetId);
+        var inside = alive && !transited && !extracted && IsInsidePointBounds(registeredPoint, player);
+
+        var verdict = player == null ? "player is no longer in this raid"
+            : !alive ? "player is not alive"
+            : transited ? "player already transferred"
+            : extracted ? "player already extracted"
+            : inside ? "still inside the point (spurious report)"
+            : "outside the point";
+
+        var detail = player == null ? "player=none" : DescribePlayerPlacement(registeredPoint, player);
+
+        if (inside)
+        {
+            // Only the first one is reported; the client's fallback can repeat the same verdict.
+            if (_zoneExitLogged.Add(profileId + "@" + registeredPoint))
+            {
+                
+            }
+            return;
+        }
+
+        
+        TransitZonePresence.RemoveFromZone(_playersInTransitZone, profileId, "client left the zone");
+    }
+
+    private TransitPoint FindPoint(int pointId) =>
+        Native.pointsById != null && Native.pointsById.TryGetValue(pointId, out var point) ? point : null;
+
+    /// <summary>
+    /// Whether the player still stands at the point, judged by every collider the point owns. Testing
+    /// only the first collider found would reproduce the very mis-evaluation this check exists to
+    /// catch: the trigger volume can sit on a child of the point, and a smaller sibling collider would
+    /// then answer "outside" for a player who is standing in the trigger. A hit on any collider counts,
+    /// so the test is a superset of the trigger volume - the safe direction for a veto, because it can
+    /// only keep a registration that this host already counted.
+    /// </summary>
+    private bool IsInsidePointBounds(int pointId, Player player)
+    {
+        if (player == null) return false;
+        var point = FindPoint(pointId);
+        if (point == null) return false;
+
+        var position = player.Position;
+        var colliders = point.GetComponentsInChildren<UnityEngine.Collider>(true);
+        if (colliders != null)
+        {
+            for (var i = 0; i < colliders.Count; i++)
+            {
+                var collider = colliders[i];
+                if (collider != null && collider.bounds.Contains(position)) return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Player position plus the point anchor, so a geometric verdict can be re-derived from the log.</summary>
+    private string DescribePlayerPlacement(int pointId, Player player)
+    {
+        var position = player.Position;
+        var builder = new System.Text.StringBuilder();
+        builder.Append("pos=(").Append(position.x.ToString("F1")).Append(',')
+            .Append(position.y.ToString("F1")).Append(',').Append(position.z.ToString("F1")).Append(')');
+
+        var point = FindPoint(pointId);
+        if (point == null)
+        {
+            builder.Append(" point=unavailable");
+            return builder.ToString();
+        }
+
+        var anchor = point.transform.position;
+        builder.Append(" point=(").Append(anchor.x.ToString("F1")).Append(',')
+            .Append(anchor.y.ToString("F1")).Append(',').Append(anchor.z.ToString("F1")).Append(')')
+            .Append(" distance=").Append(UnityEngine.Vector3.Distance(position, anchor).ToString("F1"))
+            .Append(" colliders=").Append(point.GetComponentsInChildren<UnityEngine.Collider>(true)?.Count ?? 0);
+        return builder.ToString();
+    }
+
+    /// <summary>Native transit death path for the host's own controller; a dead player never counts again.</summary>
+    internal void OnHostPlayerDead(Player player)
+    {
+        if (player == null) return;
+        TransitZonePresence.RemoveFromZone(_playersInTransitZone, player.ProfileId, "host player died");
+        DropDeadParticipant(player, "the host player died");
+    }
+
+    internal void OnHostPlayerExit(TransitPoint point, Player player)
+    {
+        // Whether this leave ends the transfer of the whole group is decided below, but the answer has to be
+        // read before the registration is removed here.
+        var registeredForThisPoint = false;
+        try
+        {
+            registeredForThisPoint = Native.transitPlayers != null &&
+                Native.transitPlayers.TryGetValue(player.ProfileId, out var registeredPoint) &&
+                registeredPoint == point.parameters.id;
+        }
+        catch (System.Exception)
+        {
+        }
+
+        if (_playersInTransitZone.TryGetValue(player.ProfileId, out var value))
+        {
+            if (value == point.parameters.id)
+            {
+                _playersInTransitZone.Remove(player.ProfileId);
+            }
+        }
+
+        if (registeredForThisPoint && _countdownPointId == point.parameters.id &&
+            TransitCountdownGuard.AbortWhenSomeoneLeaves)
+        {
+            // The host player left the point while its countdown runs (user requirement 1). The native half of
+            // this leave - point.GroupExit for this player, the cancelled interaction and the lifted ban - is
+            // applied by the cancellation itself, so this path ends here.
+            CancelCountdown("the host player left the point",
+                " player=" + player.ProfileId + " " + DescribePlayerPlacement(point.parameters.id, player));
+            return;
+        }
+
+        if (Native.transitPlayers.ContainsKey(player.ProfileId))
+        {
+            point.GroupExit(player);
+            // The native side of this exit: dropping the native group stops the countdown that carries a
+            // player out of this raid. A co-located exit that makes the trigger flip therefore shows up
+            // here, next to the Fika countdown that keeps running.
+            
+        }
+        if (player.IsYourPlayer)
+        {
+            Native.Cancel(player);
+            // The native interaction was just cancelled. This path also runs when the transfer itself has
+            // already teleported the player out of the trigger, and then the ban has to stay: it is what
+            // keeps a pending transit from being turned into a normal exit. Only a leave that did not
+            // start a transfer undoes the accepted interaction - otherwise the player can never extract
+            // again in this raid.
+            if (_transittedPlayers.Contains(player.RaidId))
+            {
+                
+            }
+            else
+            {
+                var wasRegistered = Native.transitPlayers.Remove(player.ProfileId);
+                ReleaseTransitBanFor(player.RaidId, player.ProfileId,
+                    $"host player left the point, interaction cancelled (transitRegistrationRemoved={wasRegistered})");
+            }
+
+            return;
+        }
+
+        TransitEventPacket packet = new()
+        {
+            EventType = TransitEventPacket.ETransitEventType.Interaction,
+            TransitEvent = new TransitInteractionEvent()
+            {
+                PlayerRaidId = player.RaidId,
+                PointId = point.parameters.id,
+                Type = TransitInteractionEvent.EType.Hide
+            }
+        };
+
+        _server.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+    }
+
+    public void Sizes(int pointId, Il2CppSystem.Collections.Generic.Dictionary<int, byte> sizes)
+    {
+        Native._currentTransitPointId = pointId;
+#if DEBUG
+        foreach (var item in sizes)
+        {
+            FikaGlobals.LogWarning($"int: {item.Key}, byte: {item.Value}");
+        }
+#endif
+
+        // The native dictionary is the point's own bookkeeping (group size over the point's player
+        // groups). On a Fika host a remote player only enters that bookkeeping through
+        // InteractWithTransit, so the panel showed the host alone for as long as the client's own
+        // interact request had not been accepted, while CheckForPlayers - which reads
+        // _playersInTransitZone - already counted both. The numbers are rebuilt from that same map so
+        // the panel and the gate describe one fact: who currently stands in the point. No native
+        // bookkeeping is written here.
+        var shown = BuildZoneSizes(pointId, sizes);
+        
+
+        foreach (var size in shown)
+        {
+            if (!FikaBackendUtils.IsHeadless && GamePlayerOwner.MyPlayer?.RaidId == size.Key && MonoBehaviourSingleton<GameUI>.Instance != null)
+            {
+                var groupSizePanel = MonoBehaviourSingleton<GameUI>.Instance.LocationTransitGroupSize;
+                // Display() makes the panel visible; Show() fills it and starts its coroutines, which
+                // Unity refuses while the object is inactive.
+                groupSizePanel.Display();
+                if (FikaUiPanels.CanDrive(groupSizePanel, "FikaHostTransitController.GroupSize.Show"))
+                {
+                    groupSizePanel.Show(size.Value, Native.GetCurrentPointMaxGroupSize());
+                }
+            }
+        }
+
+        TransitEventPacket packet = new()
+        {
+            EventType = TransitEventPacket.ETransitEventType.GroupSize,
+            TransitEvent = new TransitGroupSizeEvent()
+            {
+                PointId = pointId,
+                Sizes = shown
+            }
+        };
+
+        _server.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+    }
+
+    /// <summary>
+    /// The native timer notification of this raid: the native controller computed the countdown of the
+    /// point and this machine forwards it to the clients.
+    /// <para>
+    /// Two things are added to the forwarded dictionary. First, every player the native dictionary does
+    /// not carry gets an entry keyed by his raid id, because both timer panels look the local player up by
+    /// raid id and the native bookkeeping of a local raid describes the local group only. Without that
+    /// the client had no entry for itself, which is exactly why round 7 showed a group size on the client
+    /// and never a countdown (see TransitStartGate.BuildTimers). Second, while this host runs its own
+    /// countdown (the strict gate passed, see <see cref="BeginCountdown"/>) that countdown is the
+    /// authority and this native value is only logged.
+    /// </para>
+    /// </summary>
+    public void Timers(int pointId, Il2CppSystem.Collections.Generic.Dictionary<int, ushort> timers)
+    {
+        try
+        {
+            Native._currentTransitPointId = pointId;
+            if (_countdownPointId == pointId)
+            {
+                
+                HostCountdownTick();
+                return;
+            }
+
+            // The native tick is forwarded once per value, not once per event. A forwarded value ends
+            // in the client's panel Show(), which restarts the panel's animation, so a repeated forward
+            // is the blink the client reported. The repeating case exists for a reason: this host
+            // announces the starting value twice, once on its own start line (BeginCountdown) and once
+            // when the native tick reports the same second (round 8: LogOutput.log:2637 and 2639).
+            var unchanged = _lastNativeTimers != null && _lastNativeTimerPointId == pointId &&
+                TransitStartGate.SameTimers(_lastNativeTimers, timers);
+            if (unchanged)
+            {
+                _nativeTimerRepeatsSkipped++;
+                if (_nativeTimerRepeatsLogged < 3)
+                {
+                    _nativeTimerRepeatsLogged++;
+                    
+                }
+
+                HostCountdownTick();
+                return;
+            }
+
+            _lastNativeTimerPointId = pointId;
+            _lastNativeTimers = timers;
+            // (analysis/transit-terminal-and-countdown) The forwarded dictionary is built from the registered
+            // participants, not from the zone map: every player the countdown carries needs his own entry in it,
+            // otherwise his machine shows no countdown at all (see CountdownParticipants).
+            var shown = TransitStartGate.BuildTimers(CountdownParticipants(pointId), 0, timers);
+            
+
+            foreach (var timer in shown)
+            {
+                if (!FikaBackendUtils.IsHeadless && GamePlayerOwner.MyPlayer?.RaidId == timer.Key && MonoBehaviourSingleton<GameUI>.Instance != null)
+                {
+                    var panel = DriveLocalTimerPanel(pointId, timer.Value);
+                    
+                }
+            }
+
+            TransitEventPacket packet = new()
+            {
+                EventType = TransitEventPacket.ETransitEventType.GroupTimer,
+                TransitEvent = new TransitGroupTimerEvent()
+                {
+                    PointId = pointId,
+                    Timers = shown
+                }
+            };
+
+            _server.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+        }
+        catch (System.Exception exception)
+        {
+                    }
+
+        // The native tick is one of the two clocks of this host's countdown; the poll is the other.
+        HostCountdownTick();
+    }
+
+    public void InactivePointNotification(int playerId, int pointId)
+    {
+        if (!FikaBackendUtils.IsHeadless && GamePlayerOwner.MyPlayer?.RaidId == playerId)
+        {
+            NotificationManager.DisplayWarningNotification("Transit/InactivePoint".Localized(null), ENotificationDurationType.Default);
+            Native.ShowPanel(pointId);
+            return;
+        }
+
+        TransitEventPacket packet = new()
+        {
+            EventType = TransitEventPacket.ETransitEventType.Interaction,
+            TransitEvent = new TransitInteractionEvent()
+            {
+                PlayerRaidId = playerId,
+                PointId = pointId,
+                Type = TransitInteractionEvent.EType.InactivePoint
+            }
+        };
+
+        _server.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+    }
+
+    /// <summary>Seconds the native transfer of this host's own player may still take after the countdown ended.</summary>
+    private const float TransferGraceSeconds = 8f;
+
+    /// <summary>
+    /// The teammates this machine still counts for the gates and both panels: alive, not already
+    /// transferred, not extracted, and not the host's own player on a dedicated server (which has no
+    /// transit entry of its own). Exactly the predicate the two loops of <see cref="CheckForPlayers"/>
+    /// apply and the one <see cref="CollectZonePlayers"/> uses, read once so gate, panel and log agree.
+    /// </summary>
+    private List<Player> EligibleMembers()
+    {
+        var result = new List<Player>();
+        var coopHandler = FikaSingleton<IFikaNetworkManager>.Instance?.CoopHandler;
+        var players = coopHandler?.HumanPlayers;
+        if (players == null) return result;
+
+        foreach (var member in players)
+        {
+            if (member == null || member.HealthController?.IsAlive != true) continue;
+            if (TransitDropouts.IsDropped(member)) continue;
+            if (_transittedPlayers.Contains(member.RaidId)) continue;
+            if (coopHandler.ExtractedPlayers.Contains(member.NetId)) continue;
+            if (member.IsYourPlayer && FikaBackendUtils.IsHeadless) continue;
+            result.Add(member);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Records an accepted interaction. This is what makes the strict gate possible: the press of a
+    /// player whose team is not complete yet is remembered instead of registering him, so no native
+    /// countdown can start before the whole team is at the point.
+    /// </summary>
+    private void RecordInteraction(Player player, int pointId)
+    {
+        _interactedPlayers[player.ProfileId] = pointId;
+        if (!_interactionLogged.Add(player.ProfileId + "@" + pointId)) return;
+        
+    }
+
+    /// <summary>
+    /// Strict start gate: true when every eligible teammate has completed the interaction at this point
+    /// and stands inside it. A false answer only notifies the waiting player, it never registers anyone.
+    /// </summary>
+    private bool EveryoneInteracted(Player player, int pointId)
+    {
+        if (!TransitStartGate.RequireAllTeammatesInteracted) return true;
+
+        var members = EligibleMembers();
+        var missing = TransitStartGate.DescribeNotReady(members, _playersInTransitZone, _interactedPlayers, pointId, out var ready);
+        if (missing == null)
+        {
+            return true;
+        }
+
+        NotifyTeammatesNotReady(player);
+        // (analysis/transit-terminal-and-countdown) The waiting half of the round's repair: a teammate who stands
+        // in the point but whose press never reached this host gets the native answer that makes his own machine
+        // produce it (TransitInteractionEvent.CheckAccess), bounded and reported.
+        return false;
+    }
+
+    /// <summary>
+    /// (analysis/transit-terminal-20261013) The per-player half of the in-raid gear transfer, applied at the
+    /// moment the native local controller applies it.
+    /// <para>
+    /// Native facts (checked 2026-10-13): the transfer container of a transit is
+    /// <c>TransitController.TransferItemsController</c> (interop dump 238759/238814), the per-player grid
+    /// inside it is created by <c>TransferItemsController.InitPlayerStash(Player)</c>
+    /// (eft40-decompiled/TransferItemsControllerAbstractClass.cs:160-171), its size comes from
+    /// <c>GetGridSize(profile)</c> -&gt; <c>GameWorld.GetAlivePlayerByProfileID(profileId)</c>, which answers
+    /// <b>0x0 plus a Debug.LogError("Cant find player with id ...")</b> when the profile has no player object
+    /// (same file :199-209), and the native caller is
+    /// <c>LocalGameTransitControllerClass.method_20</c> = <c>OnPlayerEnter</c> (same dump :186-205), i.e. the
+    /// machine-local trigger.
+    /// </para>
+    /// <para>
+    /// That is why the gear transfer does not reach every player on Fika: the native per-player call is only
+    /// ever reached by the local player, and the host's substitute (<c>BaseGameController.CreateStashes</c>,
+    /// started from <c>HostGameController.CountdownScreen</c>) runs once at raid start - a player whose
+    /// character object is not in the world yet gets a 0x0 container there, and a client never runs the call
+    /// for itself at all. This method closes that gap the native way: <b>only when the player has no usable
+    /// container</b> (missing, or a 0x0 grid, which cannot hold anything anyway), never when it carries
+    /// items, so a container a player already filled is never emptied (InitPlayerStash clears it). The host
+    /// then re-publishes the containers with <c>FikaServer.SendStashes()</c>, the same call the raid start
+    /// uses.
+    /// </para>
+    /// <para>Every outcome is one ungated <c>[TransitDiag] dest=... gear-transfer applied=yes|no</c> line.</para>
+    /// </summary>
+    internal void EnsureTransferStashFor(Player member, TransitPoint point, string source)
+    {
+        if (!true || member == null) return;
+        var profileId = member.ProfileId;
+        if (string.IsNullOrEmpty(profileId)) return;
+
+        var destination = point == null ? string.Empty : TransitDestination.Resolve(point, out _);
+        try
+        {
+            var controller = Native.TransferItemsController;
+            if (controller == null)
+            {
+                
+
+                return;
+            }
+
+            // Read-only look at the containers of this raid. The element type stays unnamed on purpose, so
+            // this file needs no extra using of the inventory namespace for a diagnostic.
+            var containers = -1;
+            var found = false;
+            var width = 0;
+            var height = 0;
+            try
+            {
+                var list = controller._transferContainers;
+                if (list != null)
+                {
+                    containers = list.Count;
+                    for (var i = 0; i < list.Count; i++)
+                    {
+                        var candidate = list[i];
+                        if (candidate == null || candidate.Id != profileId) continue;
+                        found = true;
+                        var grid = candidate.Grid;
+                        if (grid != null)
+                        {
+                            width = grid.GridWidth;
+                            height = grid.GridHeight;
+                        }
+
+                        break;
+                    }
+                }
+            }
+            catch (System.Exception)
+            {
+            }
+
+            if (found && width > 0 && height > 0) return;
+
+            // The grid size is read from the player object of this world, so a profile without one would
+            // produce the native 0x0 container again. Ask for the alive player instead of the passed
+            // reference: a client's player is looked up by profile on this machine the same way.
+            var resolved = Singleton<GameWorld>.Instance?.GetAlivePlayerByProfileID(profileId);
+            if (resolved == null)
+            {
+                
+
+                return;
+            }
+
+            controller.InitPlayerStash(resolved);
+            var newWidth = 0;
+            var newHeight = 0;
+            try
+            {
+                var list = controller._transferContainers;
+                if (list != null)
+                {
+                    for (var i = 0; i < list.Count; i++)
+                    {
+                        var candidate = list[i];
+                        if (candidate == null || candidate.Id != profileId) continue;
+                        var grid = candidate.Grid;
+                        if (grid != null)
+                        {
+                            newWidth = grid.GridWidth;
+                            newHeight = grid.GridHeight;
+                        }
+
+                        break;
+                    }
+                }
+            }
+            catch (System.Exception)
+            {
+            }
+            var sent = false;
+            try
+            {
+                FikaSingleton<FikaServer>.Instance.SendStashes();
+                sent = true;
+            }
+            catch (System.Exception exception)
+            {
+                
+            }
+
+            
+        }
+        catch (System.Exception exception)
+        {
+            
+        }
+    }
+
+    /// <summary>
+    /// Tells the player who is waiting that the countdown has not started. Same message the native zone
+    /// check uses, so the player sees one wording for both reasons.
+    /// </summary>
+    private void NotifyTeammatesNotReady(Player player)
+    {
+        try
+        {
+            if (player.IsYourPlayer)
+            {
+                NotificationManager.DisplayWarningNotification(TransitMessagesEvent.EType.NonAllTeammates.ToString(), ENotificationDurationType.Default);
+                return;
+            }
+
+            Il2CppSystem.Collections.Generic.Dictionary<int, TransitMessagesEvent.EType> messages = new();
+            messages.Add(player.RaidId, TransitMessagesEvent.EType.NonAllTeammates);
+            TransitEventPacket messagePacket = new()
+            {
+                EventType = TransitEventPacket.ETransitEventType.Messages,
+                TransitEvent = new TransitMessagesEvent()
+                {
+                    Messages = messages
+                }
+            };
+
+            _server.SendData(ref messagePacket, DeliveryMethod.ReliableOrdered);
+        }
+        catch (System.Exception exception)
+        {
+                    }
+    }
+
+    /// <summary>Teammates a point's countdown and panels speak for, as profile/raid-id pairs.</summary>
+    private string DescribeParticipants(int pointId)
+    {
+        var builder = new System.Text.StringBuilder();
+        foreach (var member in CollectZonePlayers(pointId))
+        {
+            if (member == null) continue;
+            if (builder.Length > 0) builder.Append(' ');
+            builder.Append(member.ProfileId).Append('/').Append(member.RaidId);
+        }
+        return builder.Length == 0 ? "none" : builder.ToString();
+    }
+
+    /// <summary>The native transit registry of this host: which profile is registered for which point.</summary>
+    private string DescribeNativeRegistry()
+    {
+        try
+        {
+            var builder = new System.Text.StringBuilder();
+            foreach (var entry in Native.transitPlayers)
+            {
+                if (builder.Length > 0) builder.Append(' ');
+                builder.Append(entry.Key).Append('=').Append(entry.Value);
+            }
+            return builder.Length == 0 ? "empty" : builder.ToString();
+        }
+        catch (System.Exception exception)
+        {
+            return "error:" + exception.GetType().Name;
+        }
+    }
+
+    /// <summary>
+    /// Registers every teammate that stands in the point for the transfer and answers each remote
+    /// machine with the Confirm its controller waits for. Runs only after both gates passed, so the
+    /// native countdown of this raid starts for the whole group in the same moment.
+    /// </summary>
+    private bool RegisterTransitParticipants(TransitPoint point, Player interacting, string keyId, EDateTime time)
+    {
+        var pointId = point.parameters.id;
+        var members = EligibleMembers();
+        var eligible = 0;
+        var registered = 0;
+        foreach (var member in members)
+        {
+            if (member == null || member.IsYourPlayer && FikaBackendUtils.IsHeadless) continue;
+            if (!_playersInTransitZone.TryGetValue(member.ProfileId, out var zone) || zone != pointId) continue;
+            eligible++;
+            var preferredKey = member.ProfileId == interacting.ProfileId ? keyId : null;
+            if (RegisterTransitParticipant(member, point, preferredKey, time)) registered++;
+        }
+
+        if (registered == 0)
+        {
+            
+            return false;
+        }
+
+        
+
+        // The point is activated by this registration: the exits at its own position are taken out of the
+        // interaction until the transfer is through, so the two cannot compete for the same press.
+        TransitCoLocatedExits.Suppress(point, $"the point registered {registered} player(s)");
+        return true;
+    }
+
+    /// <summary>
+    /// Host half of the registration an accepted interaction performs for one player: the same native
+    /// bookkeeping the single-player path used to apply, plus the Confirm the remote controller needs,
+    /// guarded so one failing teammate cannot break the transfer of the others or travel out of here.
+    /// </summary>
+    private bool RegisterTransitParticipant(Player member, TransitPoint point, string preferredKeyId, EDateTime time)
+    {
+        var pointId = point.parameters.id;
+        var profileId = member.ProfileId;
+        if (Native.transitPlayers.ContainsKey(profileId))
+        {
+            
+            return false;
+        }
+
+        var keyId = preferredKeyId;
+        try
+        {
+            if (string.IsNullOrEmpty(keyId)) Native.TryGetAccessToLocation(member, pointId, out keyId);
+        }
+        catch (System.Exception exception)
+        {
+                        keyId = null;
+        }
+
+        try
+        {
+            Native.profileTime[profileId] = time;
+            Native.transitPlayers[profileId] = member.RaidId;
+            Native.profileKeys[profileId] = keyId;
+            point.GroupEnter(member);
+            ExfiltrationController.Instance.BannedPlayers.Add(member.RaidId);
+            ExfiltrationController.Instance.CancelExtractionForPlayer(member);
+            if (member.IsYourPlayer)
+            {
+                // Native.Cancel(player) must not run here: that interaction state owns the countdown UI
+                // (see the class comment of the previous single-player path).
+                Native.HideTransitInteractionNotification();
+                ExfiltrationController.Instance.DisableExitsInteraction();
+            }
+            else
+            {
+                SendTransitInteraction(member.RaidId, pointId, TransitInteractionEvent.EType.Confirm);
+            }
+        }
+        catch (System.Exception exception)
+        {
+                        ReleaseTransitBanFor(member.RaidId, profileId, "the registration threw; this player does not take part");
+            return false;
+        }
+
+        
+        return true;
+    }
+
+    /// <summary>One native interaction event of this host to all clients (the Show/Confirm/Hide answers).</summary>
+    private void SendTransitInteraction(int playerRaidId, int pointId, TransitInteractionEvent.EType type)
+    {
+        TransitEventPacket packet = new()
+        {
+            EventType = TransitEventPacket.ETransitEventType.Interaction,
+            TransitEvent = new TransitInteractionEvent()
+            {
+                PlayerRaidId = playerRaidId,
+                PointId = pointId,
+                Type = type
+            }
+        };
+
+        _server.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+    }
+
+    /// <summary>
+    /// Starts the countdown of a point whose gate just passed. Length and clock are Fika's: the native
+    /// tick of a local raid is not guaranteed to run for a transferred group, and both drivers cannot
+    /// disagree because the value is computed from this one clock.
+    /// </summary>
+    private void BeginCountdown(TransitPoint point)
+    {
+        var seconds = TransitStartGate.CountdownSeconds(point);
+        FikaGlobals.LogWarning($"[TransitDiag] host countdown start point={point.parameters.id} seconds={seconds}");
+        _countdownPointId = point.parameters.id;
+        _countdownSeconds = seconds;
+        _countdownEndsAt = Time.unscaledTime + seconds;
+        // (analysis/transit-terminal-and-countdown) A new countdown never inherits the frozen seconds of the
+        // previous one.
+        _countdownPaused = false;
+        _countdownPausedRemaining = 0;
+        _lastBroadcastSecond = -1;
+        _recheckLoggedSignature = null;
+        _recheckCount = 0;
+        // A new countdown of this point starts the panel again: the surface of an older countdown is
+        // closed or stale and must not be mistaken for this one.
+        _panelSurfacePointId = -1;
+        _panelSurfaceSeconds = -1f;
+        _transferGraceEndsAt = -1f;
+        
+        BroadcastCountdown(true);
+    }
+
+    /// <summary>
+    /// One tick of the Fika countdown. Driven by <c>TransitPresenceReporter.Poll</c> (four times per
+    /// second, see the GameWorld.Update patch) and by every native <see cref="Timers"/> call, so the
+    /// countdown runs even when the native tick of this raid does not.
+    /// </summary>
+    internal void HostCountdownTick()
+    {
+        try
+        {
+            if (_countdownPointId >= 0)
+            {
+                // The continuous half of the rule: the participant list is re-checked on every tick, not only
+                // when the countdown started. A cancel returns here and the rest of this tick is skipped.
+
+                // (analysis/transit-terminal-and-countdown) The paused half of the rule: while the countdown is
+                // frozen its clock does not move, so this tick only looks for the moment every registered
+                // participant stands inside the point again (nothing is broadcast while it is paused).
+                if (_countdownPaused)
+                {
+                    return;
+                }
+
+                var remaining = System.Math.Max(0, (int)System.Math.Ceiling(_countdownEndsAt - Time.unscaledTime));
+                if (remaining != _lastBroadcastSecond)
+                {
+                    _lastBroadcastSecond = remaining;
+                    BroadcastCountdown(false);
+                }
+
+                if (remaining <= 0) FinishCountdown();
+                return;
+            }
+
+            CheckTransferGrace();
+        }
+        catch (System.Exception exception)
+        {
+                        AbortCountdown("the countdown tick threw");
+        }
+    }
+
+    /// <summary>
+    /// (analysis/transit-terminal-and-countdown) The players the running countdown carries: the ones this host
+    /// registered for the point, keyed by their raid id - the same group the native point keeps in its own timer
+    /// book.
+    /// <para>
+    /// The zone map is deliberately not used here. A registration is the fact the countdown was started from,
+    /// while the zone map only describes which reports arrived; a client whose zone report was lost therefore had
+    /// no entry in the dictionary the host announced, and both the native applier and the Fika surface of that
+    /// client look the local player up by raid id - the countdown stayed on the host and the client never saw it
+    /// (the user's report of this round). Every registered participant gets an entry, always.
+    /// </para>
+    /// </summary>
+    private List<Player> CountdownParticipants(int pointId)
+    {
+        var members = new List<Player>();
+        try
+        {
+            foreach (var entry in Native.transitPlayers)
+            {
+                // The native registry is profileId -> raid id (that is what RegisterTransitParticipant
+                // writes and what every native consumer reads back), not profileId -> point id. Comparing
+                // the value against the point id therefore dropped every participant: the group timer was
+                // announced with one entry or none and the client never found its own raid id in it, which
+                // is why the client showed no countdown at all. Both shapes are accepted here so a
+                // registry filled by a native path keeps working.
+                var member = FindHumanPlayer(entry.Key);
+                if (member == null || (entry.Value != member.RaidId && entry.Value != pointId)) continue;
+                members.Add(member);
+            }
+        }
+        catch (System.Exception exception)
+        {
+                    }
+
+        return members;
+    }
+
+    /// <summary>
+    /// (analysis/transit-terminal-and-countdown) Freezes the countdown of the whole group because a registered
+    /// participant left the point. Unlike <see cref="CancelCountdown"/> nothing is thrown away: the remaining
+    /// seconds, the registrations, the native group membership and the transit bans all stay, the host panel is
+    /// closed and every client is told to close its own surface (a group-timer announcement without an entry for
+    /// that machine). <see cref="TryResumeCountdown"/> continues the same countdown from the frozen second.
+    /// </summary>
+
+    /// <summary>
+    /// The resume half of <see cref="PauseCountdown"/>: every registered participant stands inside the point
+    /// again, so the frozen seconds are put back on the clock and the same countdown continues for the whole
+    /// group. Runs on every tick of the paused state, writes one line per resume and never throws.
+    /// </summary>
+
+    /// <summary>
+    /// (analysis/transit-terminal-and-countdown) The paused announcement of a countdown: a group-timer event whose
+    /// dictionary carries <b>no</b> entry at all. Both machine halves read that as "this countdown does not carry
+    /// me" - the native applier shows nothing (it only ever looks up the local player) and the Fika surface of the
+    /// client closes the panel it still has on screen (see true). It is the
+    /// inverse of the announcement that starts a countdown, so no protocol field is added for the pause.
+    /// </summary>
+    private void BroadcastCountdownPaused(int pointId, int remaining)
+    {
+        try
+        {
+            TransitEventPacket packet = new()
+            {
+                EventType = TransitEventPacket.ETransitEventType.GroupTimer,
+                TransitEvent = new TransitGroupTimerEvent
+                {
+                    PointId = pointId,
+                    Timers = new Il2CppSystem.Collections.Generic.Dictionary<int, ushort>()
+                }
+            };
+
+            _server.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+            
+        }
+        catch (System.Exception exception)
+        {
+                    }
+    }
+
+    /// <summary>
+    /// (analysis/transit-terminal-and-countdown) One native answer of this host to one client, exactly the event
+    /// the native authority sends for the same case: <c>InactivePoint</c> for a point that is not available and
+    /// <c>CheckAccess</c> when the client has to resolve its own access and send its request itself. The client
+    /// applies it with its own native handler, so nothing about the answer is invented here.
+    /// </summary>
+    private void SendAnswerEvent(Player player, int pointId, TransitInteractionEvent.EType type, string reason)
+    {
+        if (!true || player == null || player.IsYourPlayer) return;
+
+        // (analysis/transit-terminal-and-countdown) CheckAccess makes the client send its request in the same
+        // moment, so a state where this host refuses what the client considers valid would otherwise answer for
+        // ever. The answer therefore obeys the same bound as the nudge, one bucket shared by every reason.
+        if (type == TransitInteractionEvent.EType.CheckAccess)
+        {
+            var bucket = "answer:" + player.ProfileId + "@" + pointId;
+            var answered = _pressNudges.TryGetValue(bucket, out var count) ? count : 0;
+            if (answered >= 4)
+            {
+                
+
+                return;
+            }
+
+            var lastAnswer = _pressNudgedAt.TryGetValue(bucket, out var at) ? at : float.MinValue;
+            if (Time.unscaledTime - lastAnswer < 5f) return;
+            _pressNudgedAt[bucket] = Time.unscaledTime;
+            _pressNudges[bucket] = answered + 1;
+        }
+
+        var sent = "no";
+        try
+        {
+            SendTransitInteraction(player.RaidId, pointId, type);
+            sent = "yes";
+        }
+        catch (System.Exception exception)
+        {
+            
+        }
+
+        
+    }
+
+    /// <summary>
+    /// (analysis/transit-terminal-and-countdown) A teammate stands in the point and this host holds no press of
+    /// his, so the strict gate cannot pass and the whole group waits for a press that may never come (the client's
+    /// native press step can die silently - the 2026-10-13 rounds measured exactly that twice at the
+    /// Shoreline -&gt; Terminal point).
+    /// <para>
+    /// The native protocol has an answer for this state: <c>TransitInteractionEvent.CheckAccess</c>. That client's
+    /// own native handler then resolves the access key of the point and calls <c>Player.TransitInteraction</c> - the
+    /// same call the end of its press chain makes - so the request is produced by the game's own code, and when the
+    /// point is not open for that player the client shows 'Transit/AccessNotGranted' instead of waiting in silence.
+    /// Nothing is granted here: the request still passes every gate of this host.
+    /// </para>
+    /// <para>Bounded: one nudge per player, point and interval, at most <see cref="4"/>
+    /// per player and point in a raid, one line per nudge.</para>
+    /// </summary>
+
+    /// <summary>
+    /// Announces the running countdown: one group-timer packet for every client, the value of every
+    /// participant keyed by his raid id, and this host's own timer panel, exactly like the native host
+    /// path drives it.
+    /// </summary>
+    private void BroadcastCountdown(bool force)
+    {
+        var pointId = _countdownPointId;
+        if (pointId < 0) return;
+
+        var remaining = System.Math.Max(0, (int)System.Math.Ceiling(_countdownEndsAt - Time.unscaledTime));
+        if (force) _lastBroadcastSecond = remaining;
+        try
+        {
+            var timers = TransitStartGate.BuildTimers(CountdownParticipants(pointId), remaining, null);
+            var panel = DriveLocalTimerPanel(pointId, remaining);
+            TransitEventPacket packet = new()
+            {
+                EventType = TransitEventPacket.ETransitEventType.GroupTimer,
+                TransitEvent = new TransitGroupTimerEvent()
+                {
+                    PointId = pointId,
+                    Timers = timers
+                }
+            };
+
+            _server.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+            
+        }
+        catch (System.Exception exception)
+        {
+                    }
+    }
+
+    /// <summary>
+    /// This host's own timer panel: display first, then start the countdown - the order the native local
+    /// transit controller uses, and the order the native <see cref="Timers"/> handler above uses.
+    /// <para>
+    /// The pair is issued <b>once per countdown</b>, not once per value. <c>Show(seconds)</c> is not a
+    /// value display: it starts a countdown that counts the seconds down by itself and it starts the
+    /// panel's fade-in again (<c>Co_ShowInfoPanel</c> sets the canvas alpha to 0 and fades it back in), so
+    /// one call per announced value is one blink per value - round 9 shows exactly that on a client
+    /// (LogOutput.log:2922-2942). The surface is therefore only started again when the announced value
+    /// really restarts the countdown (the value went up), when the panel is more than
+    /// <see cref="TransitStartGate.PanelToleranceSeconds"/> off that value, or when it is not on screen at
+    /// all - a closed HUD is re-opened at most once per second, never in a loop.
+    /// </para>
+    /// </summary>
+    private string DriveLocalTimerPanel(int pointId, int seconds)
+    {
+        try
+        {
+            if (FikaBackendUtils.IsHeadless) return "headless";
+            if (GamePlayerOwner.MyPlayer == null || MonoBehaviourSingleton<GameUI>.Instance == null) return "no GameUI";
+            var transitTimerPanel = MonoBehaviourSingleton<GameUI>.Instance.LocationTransitTimerPanel;
+            if (transitTimerPanel == null) return "no timer panel";
+
+            var onScreen = transitTimerPanel.gameObject != null && transitTimerPanel.gameObject.activeInHierarchy;
+            var secondsLeft = TransitStartGate.SurfacedSecondsLeft(pointId, _panelSurfacePointId,
+                _panelSurfaceSeconds, _panelSurfaceStartedAt);
+
+            // The running surface counts its own seconds down, so the announced value of the running
+            // countdown is the one it already shows and it is not started again. This return is the
+            // criterion for the next round - while the countdown runs it must be the normal outcome.
+            if (secondsLeft >= 0f && onScreen &&
+                seconds <= _panelSurfaceSeconds + 0.5f &&
+                System.Math.Abs(seconds - secondsLeft) <= TransitStartGate.PanelToleranceSeconds)
+            {
+                return $"self-walking (at {secondsLeft:0.0}s, not started again)";
+            }
+
+            if (secondsLeft >= 0f)
+            {
+                _panelSurfaceRestarts++;
+                
+            }
+
+            if (!onScreen && Time.unscaledTime - _panelSurfaceReshowAt >= 1f)
+            {
+                // ShowPanel is the controller's own advertisement; it is asked for at most once a second,
+                // so an inactive hierarchy is named by the guard below instead of being hammered here.
+                _panelSurfaceReshowAt = Time.unscaledTime;
+                Native.ShowPanel(pointId);
+                onScreen = transitTimerPanel.gameObject != null && transitTimerPanel.gameObject.activeInHierarchy;
+            }
+
+            transitTimerPanel.Display();
+            if (!FikaUiPanels.CanDrive(transitTimerPanel, "FikaHostTransitController.CountdownTick.Show"))
+            {
+                return onScreen ? "on screen but not drivable" : "the panel is off and was not drivable";
+            }
+
+            transitTimerPanel.Show((float)seconds);
+            _panelSurfacePointId = pointId;
+            _panelSurfaceSeconds = seconds;
+            _panelSurfaceStartedAt = Time.unscaledTime;
+            _panelSurfaceReshowAt = Time.unscaledTime;
+            return $"started once with {seconds}s (the panel walks it down itself)";
+        }
+        catch (System.Exception exception)
+        {
+                        return "error:" + exception.GetType().Name;
+        }
+    }
+
+    /// <summary>
+    /// The countdown reached zero. Every registered client is transferred from here, because the native
+    /// tick of a playable host only drives the host's own player; that player is given a short grace
+    /// window for the native transfer and his ban is lifted again when it does not arrive.
+    /// </summary>
+    private void FinishCountdown()
+    {
+        var pointId = _countdownPointId;
+        _countdownPointId = -1;
+        _countdownPaused = false;
+        _countdownPausedRemaining = 0;
+        _lastBroadcastSecond = -1;
+        _panelSurfacePointId = -1;
+        _panelSurfaceSeconds = -1f;
+        _pendingTransferPointId = pointId;
+        _transferGraceEndsAt = Time.unscaledTime + TransferGraceSeconds;
+        // The clients are transferred together with this host's own player: the native transfer of that
+        // player issues them (see Transit), so both sides leave in the same moment in the normal case.
+        // Only a native transfer that does not arrive within the grace window is replaced by the
+        // transfer issued from CheckTransferGrace - the clients are then carried without the host.
+        _transferFailures.Clear();
+        
+    }
+
+    /// <summary>
+    /// Stops a running countdown that failed (the tick threw) and gives the players it registered their exit
+    /// interaction back. It uses the same release as a cancellation, so an abort cannot leave a registration,
+    /// a native group membership or a transit ban behind either.
+    /// </summary>
+    private void AbortCountdown(string reason)
+    {
+        var pointId = _countdownPointId;
+        _countdownPointId = -1;
+        _countdownPaused = false;
+        _countdownPausedRemaining = 0;
+        _lastBroadcastSecond = -1;
+        _panelSurfacePointId = -1;
+        _panelSurfaceSeconds = -1f;
+        _transferGraceEndsAt = -1f;
+        _pendingTransferPointId = -1;
+        _recheckLoggedSignature = null;
+        
+
+        var released = ReleaseParticipantsOfCancelledCountdown(pointId, "countdown aborted: " + reason);
+        var panel = CloseLocalTimerPanel("the countdown of point " + pointId + " was aborted: " + reason);
+        var suppressed = TransitCoLocatedExits.Release("the countdown of point " + pointId + " was aborted: " + reason);
+        var banned = ExfiltrationController.Instance == null ? -1 : ExfiltrationController.Instance.BannedPlayers.Count;
+        
+    }
+
+    /// <summary>
+    /// The profiles this machine has registered for a point - the participant list of the running countdown,
+    /// read from the native registry (the same registry <see cref="IssueTransferForClients"/> requires, so
+    /// both sides speak about one set).
+    /// </summary>
+    private List<(string ProfileId, int RaidId)> RegisteredParticipants(int pointId)
+    {
+        var result = new List<(string ProfileId, int RaidId)>();
+        try
+        {
+            if (Native.transitPlayers == null) return result;
+            foreach (var entry in Native.transitPlayers)
+            {
+                if (entry.Value == pointId) result.Add((entry.Key, entry.Value));
+            }
+        }
+        catch (System.Exception exception)
+        {
+                    }
+
+        return result;
+    }
+
+    /// <summary>True when this player has already extracted from this raid.</summary>
+    private bool IsExtractedFromThisRaid(Player member)
+    {
+        try
+        {
+            var coopHandler = FikaSingleton<IFikaNetworkManager>.Instance?.CoopHandler;
+            return member != null && coopHandler != null && member.TryCast<FikaPlayer>() is { } fikaPlayer &&
+                coopHandler.ExtractedPlayers.Contains(fikaPlayer.NetId);
+        }
+        catch (System.Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The continuous half of the start rule (user requirement 1): while the countdown of a point runs, its
+    /// participant list is re-checked on every tick of the clock instead of once when it started. The
+    /// verdicts come from <see cref="TransitCountdownGuard.Classify"/> and every verdict change writes one
+    /// criterion line.
+    /// <para>
+    /// Returns true when the countdown was cancelled, i.e. when the caller must not continue this tick. It
+    /// never throws: a failing re-check reports itself and lets the countdown run, because a broken check
+    /// must not break the transfer it observes.
+    /// </para>
+    /// </summary>
+
+    /// <summary>
+    /// Removes one participant from a running countdown without cancelling it: the registration, the native
+    /// group membership of the point and - for a player who is not already on his way out - his transit ban.
+    /// Used for a teammate who died (with the death switch off) and for every teammate who left this raid,
+    /// which is the bug fix of user requirement 3.
+    /// </summary>
+    private bool DropCountdownParticipant(int pointId, string profileId, bool releaseBan, string reason)
+    {
+        var point = FindPoint(pointId);
+        var player = FindHumanPlayer(profileId);
+        var raidId = player == null ? -1 : player.RaidId;
+        var removed = false;
+        try
+        {
+            if (Native.transitPlayers != null)
+            {
+                if (Native.transitPlayers.TryGetValue(profileId, out var registeredRaidId)) raidId = registeredRaidId;
+                removed = Native.transitPlayers.Remove(profileId);
+            }
+        }
+        catch (System.Exception exception)
+        {
+                    }
+
+        _interactedPlayers.Remove(profileId);
+        var groupExited = false;
+        if (player != null && point != null)
+        {
+            try
+            {
+                point.GroupExit(player);
+                point._confirmedPlayers.Remove(profileId);
+                groupExited = true;
+            }
+            catch (System.Exception exception)
+            {
+                            }
+        }
+
+        if (releaseBan && raidId >= 0 && !_transittedPlayers.Contains(raidId))
+        {
+            ReleaseTransitBanFor(raidId, profileId, reason);
+        }
+
+        
+        return removed || groupExited;
+    }
+
+    /// <summary>
+    /// One registered participant died. With <see cref="TransitCountdownGuard.AbortWhenSomeoneDies"/> the
+    /// running countdown is cancelled - the same rule as for a player who left - and otherwise he is dropped
+    /// from the participant list while the countdown of the survivors continues, which is the shape the
+    /// native machinery has (<c>OnPlayerDead</c> removes him from the group, <c>SeparateGroupPlayers</c>
+    /// carries the rest).
+    /// </summary>
+    private void DropDeadParticipant(Player player, string reason)
+    {
+        var pointId = _countdownPointId;
+        if (pointId < 0 || player == null) return;
+
+        var registered = false;
+        try
+        {
+            registered = Native.transitPlayers != null &&
+                Native.transitPlayers.TryGetValue(player.ProfileId, out var registeredPoint) &&
+                registeredPoint == pointId;
+        }
+        catch (System.Exception)
+        {
+        }
+
+        if (!registered) return;
+        if (TransitCountdownGuard.AbortWhenSomeoneDies)
+        {
+            CancelCountdown("a registered teammate died",
+                " player=" + player.ProfileId + " (" + reason + ") " + DescribePlayerPlacement(pointId, player));
+            return;
+        }
+
+        DropCountdownParticipant(pointId, player.ProfileId, true, reason + "; the countdown continues for the others");
+    }
+
+    /// <summary>
+    /// Ends the countdown of a point and the transfer it was preparing (user requirement 1).
+    /// <para>
+    /// Everything the activation did is undone in the order the native path undoes it: every registered
+    /// player leaves the point's native group (<c>GroupExit</c>) and loses its confirmed flag, the native
+    /// registry and the interaction ledger drop him, his transit ban is lifted (the "seal": the entry in
+    /// <c>ExfiltrationController.BannedPlayers</c> plus the disabled exit interaction) and the exits that
+    /// were taken out of the interaction at the point's own position are released again. Every remote
+    /// participant is told about it - the client drops its own registration, re-enables its exits and closes
+    /// its countdown panel - and this machine closes its own panel as well.
+    /// </para>
+    /// The native timer bookkeeping of the point is not written here: the groups are left through the native
+    /// <c>GroupExit</c> pair, which is the call the native exit path uses, and the state it leaves behind
+    /// (<c>pointGroups=.. timers[..] confirmed[..]</c>) is part of the confirmation line below - so the next
+    /// round can read whether the native countdown really stopped instead of having to guess.
+    /// </summary>
+    private void CancelCountdown(string reason, string detail)
+    {
+        var pointId = _countdownPointId;
+        if (pointId < 0) return;
+
+        _countdownPointId = -1;
+        _countdownPaused = false;
+        _countdownPausedRemaining = 0;
+        _lastBroadcastSecond = -1;
+        _panelSurfacePointId = -1;
+        _panelSurfaceSeconds = -1f;
+        _transferGraceEndsAt = -1f;
+        _pendingTransferPointId = -1;
+        _recheckLoggedSignature = null;
+
+        
+
+        var released = ReleaseParticipantsOfCancelledCountdown(pointId, "countdown cancelled: " + reason);
+        var panel = CloseLocalTimerPanel("the countdown of point " + pointId + " was cancelled: " + reason);
+        var suppressed = TransitCoLocatedExits.Release("the countdown of point " + pointId + " was cancelled: " + reason);
+        var banned = ExfiltrationController.Instance == null ? -1 : ExfiltrationController.Instance.BannedPlayers.Count;
+        
+    }
+
+    /// <summary>
+    /// Releases every player a cancelled countdown registered: the native group membership (through the same
+    /// <c>point.GroupExit</c> the native exit path uses), the confirmed flag, the native registry entry, his
+    /// transit ban, and - for a remote player - the message that tells his machine to do the same locally.
+    /// Returns the detail fragment of the confirmation line.
+    /// </summary>
+    private string ReleaseParticipantsOfCancelledCountdown(int pointId, string reason)
+    {
+        var point = FindPoint(pointId);
+        var released = 0;
+        var groupsExited = 0;
+        var clientsTold = 0;
+        var selfCancelled = 0;
+        var failed = new System.Text.StringBuilder();
+
+        foreach (var entry in RegisteredParticipants(pointId))
+        {
+            var profileId = entry.ProfileId;
+            var raidId = entry.RaidId;
+            var player = FindHumanPlayer(profileId);
+            if (player != null && point != null)
+            {
+                try
+                {
+                    point.GroupExit(player);
+                    point._confirmedPlayers.Remove(profileId);
+                    groupsExited++;
+                }
+                catch (System.Exception exception)
+                {
+                    if (failed.Length > 0) failed.Append(';');
+                    failed.Append(profileId).Append(":GroupExit=").Append(exception.GetType().Name);
+                }
+            }
+
+            try
+            {
+                Native.transitPlayers.Remove(profileId);
+            }
+            catch (System.Exception)
+            {
+            }
+
+            _interactedPlayers.Remove(profileId);
+            if (player != null && player.IsYourPlayer)
+            {
+                try
+                {
+                    // The local half: the interaction of this player is cancelled natively (the call the
+                    // native leave path makes) and the prompt of the point goes away with it.
+                    Native.Cancel(player);
+                    Native.HideTransitInteractionNotification();
+                    selfCancelled++;
+                }
+                catch (System.Exception exception)
+                {
+                    if (failed.Length > 0) failed.Append(';');
+                    failed.Append(profileId).Append(":Cancel=").Append(exception.GetType().Name);
+                }
+            }
+            else if (player != null)
+            {
+                // The remote half: the same "your transit interaction is over" event the native leave path
+                // sends, which makes the client drop its registration, re-enable its exits and close its panel.
+                SendTransitInteraction(player.RaidId, pointId, TransitInteractionEvent.EType.Hide);
+                NotifyTransitCancelled(player);
+                clientsTold++;
+            }
+
+            if (!_transittedPlayers.Contains(raidId))
+            {
+                ReleaseTransitBanFor(raidId, profileId, reason);
+            }
+
+            released++;
+        }
+
+        return $"participants={released} nativeGroupsExited={groupsExited} remoteClientsTold={clientsTold} " +
+            $"localInteractionsCancelled={selfCancelled} failed=[{failed}]";
+    }
+
+    /// <summary>
+    /// Tells one remote teammate that the transfer of his point was cancelled, with the message the native
+    /// zone check uses for the same fact ("not all teammates are at the point"): the countdown he sees is
+    /// over and the interaction has to be made again.
+    /// </summary>
+    private void NotifyTransitCancelled(Player player)
+    {
+        try
+        {
+            Il2CppSystem.Collections.Generic.Dictionary<int, TransitMessagesEvent.EType> messages = new();
+            messages.Add(player.RaidId, TransitMessagesEvent.EType.NonAllTeammates);
+            TransitEventPacket messagePacket = new()
+            {
+                EventType = TransitEventPacket.ETransitEventType.Messages,
+                TransitEvent = new TransitMessagesEvent()
+                {
+                    Messages = messages
+                }
+            };
+
+            _server.SendData(ref messagePacket, DeliveryMethod.ReliableOrdered);
+        }
+        catch (System.Exception exception)
+        {
+                    }
+    }
+
+    /// <summary>
+    /// Closes this host's own timer surface through the method the game itself closes it with
+    /// (<c>BattleUITimerPanel.Close</c>, the call the panel's own countdown coroutine ends in), so a cancelled
+    /// countdown cannot leave a number counting down to a transfer that will not happen.
+    /// </summary>
+    private string CloseLocalTimerPanel(string reason)
+    {
+        try
+        {
+            if (FikaBackendUtils.IsHeadless) return "headless";
+            var gameUi = MonoBehaviourSingleton<GameUI>.Instance;
+            var panel = gameUi == null ? null : gameUi.LocationTransitTimerPanel;
+            if (panel == null) return "no timer panel";
+            if (panel.gameObject == null || !panel.gameObject.activeInHierarchy) return "already off";
+            panel.Close();
+            return "closed (" + reason + ")";
+        }
+        catch (System.Exception exception)
+        {
+                        return "error:" + exception.GetType().Name;
+        }
+    }
+
+    /// <summary>
+    /// After the countdown ended, checks whether the native transfer of this host's own player started.
+    /// When it did not, the transit ban is lifted: the player has to be able to extract again instead of
+    /// staying locked in a raid that will not move him.
+    /// </summary>
+    private void CheckTransferGrace()
+    {
+        if (_transferGraceEndsAt < 0f || Time.unscaledTime < _transferGraceEndsAt) return;
+        _transferGraceEndsAt = -1f;
+        var pointId = _pendingTransferPointId;
+        _pendingTransferPointId = -1;
+        var player = GamePlayerOwner.MyPlayer;
+        if (player != null && _transittedPlayers.Contains(player.RaidId))
+        {
+            
+            _transferFailures.Clear();
+            return;
+        }
+
+        var issued = pointId >= 0 ? IssueTransferForClients(pointId, "no native transfer after the countdown ended") : 0;
+        FikaGlobals.LogWarning($"[TransitDiag] host grace point={pointId} issued={issued} keys={(_lastTransitKeys == null ? "null" : _lastTransitKeys.Count.ToString())} hashEmpty={string.IsNullOrEmpty(_lastTransitHash)}");
+        var failures = _transferFailures.Count == 0 ? "none" : string.Join(";", _transferFailures);
+        if (player == null)
+        {
+            
+            return;
+        }
+
+        
+        Native.transitPlayers.Remove(player.ProfileId);
+        ReleaseTransitBanFor(player.RaidId, player.ProfileId, "no native transfer after the countdown ended");
+    }
+
+    /// <summary>
+    /// Pushes the transfer to every remote teammate registered for this point. This is the step the port
+    /// was missing: on a playable host the native tick of a local raid drives the host's own player only,
+    /// so without this call the clients stay in the old raid after the host has left.
+    /// </summary>
+    private int IssueTransferForClients(int pointId, string source)
+    {
+        var point = FindPoint(pointId);
+        if (point == null)
+        {
+            
+            return 0;
+        }
+
+        _transferFailures.Clear();
+        var issued = 0;
+        var eligible = 0;
+        foreach (var member in EligibleMembers())
+        {
+            if (member == null || member.IsYourPlayer) continue;
+            eligible++;
+            if (!Native.transitPlayers.TryGetValue(member.ProfileId, out var registeredPoint) || registeredPoint != pointId)
+            {
+                _transferFailures.Add($"{member.ProfileId}=not registered for point {pointId} (registry={DescribeNativeRegistry()})");
+                
+                continue;
+            }
+
+            if (IssueClientTransfer(member, point, source)) issued++;
+            else _transferFailures.Add($"{member.ProfileId}=not sent, see the line above");
+        }
+
+        
+
+        return issued;
+    }
+
+    /// <summary>
+    /// Sends one client its transit: remembers the destination in this host's own registry (the client
+    /// validates the packet against it and the next raid reads it) and reports the transfer with the same
+    /// line the native path logs. Idempotent and guarded.
+    /// </summary>
+    private bool IssueClientTransfer(Player member, TransitPoint point, string source)
+    {
+        if (!_transferIssued.Add(member.RaidId))
+        {
+            
+            return false;
+        }
+
+        try
+        {
+            if (!EnsureSummonedTransit(member.ProfileId))
+            {
+                _transferFailures.Add($"{member.ProfileId}=no transit history for this profile");
+                
+                _transferIssued.Remove(member.RaidId);
+                return false;
+            }
+
+            var destination = BuildDestination(member, point, _lastTransitHash, _lastTransitKeys,
+                _lastTransitPlayersCount > 0 ? _lastTransitPlayersCount : CountRegisteredParticipants(point.parameters.id));
+            Native.alreadyTransits[member.ProfileId] = destination;
+            _transittedPlayers.Add(member.RaidId);
+            TransitEventPacket packet = new()
+            {
+                EventType = TransitEventPacket.ETransitEventType.Extract,
+                PlayerId = member.RaidId,
+                TransitId = point.parameters.id,
+                Destination = destination
+            };
+
+            _server.SendData(ref packet, DeliveryMethod.ReliableOrdered);
+            
+            return true;
+        }
+        catch (System.Exception exception)
+        {
+            _transferIssued.Remove(member.RaidId);
+            _transferFailures.Add($"{member.ProfileId}={exception.GetType().Name}: {exception.Message}");
+                        return false;
+        }
+    }
+
+    /// <summary>Players this host currently counts as registered for a point, as the transfer's player count.</summary>
+    private int CountRegisteredParticipants(int pointId)
+    {
+        var count = 0;
+        try
+        {
+            foreach (var entry in Native.transitPlayers)
+            {
+                if (entry.Value == pointId) count++;
+            }
+        }
+        catch (System.Exception)
+        {
+            return 1;
+        }
+
+        return count > 0 ? count : 1;
+    }
+
+    /// <summary>
+    /// The transit history of a profile. The constructor creates one entry, for the host's own profile
+    /// only, so every remote transfer used to stop in the "no transit history" branch of
+    /// <see cref="Transit"/> and only released the ban - one of the ways the client stayed behind.
+    /// </summary>
+    private bool EnsureSummonedTransit(string profileId)
+    {
+        try
+        {
+            if (Native.summonedTransits.ContainsKey(profileId)) return true;
+            if (_localRaidSettings == null) return false;
+            Native.summonedTransits[profileId] = new Transit(_localRaidSettings.transition.transitionRaidId,
+                _localRaidSettings.transition.transitionCount, FikaTransitHistory.AppendLocation(_localRaidSettings), IsEvent);
+            
+            return true;
+        }
+        catch (System.Exception exception)
+        {
+                        return false;
+        }
+    }
+
+    /// <summary>
+    /// The destination of one player's transfer, built like the native path builds it. The client
+    /// validates the packet against its own profile, so the key set is copied and completed where the
+    /// native call did not carry this player.
+    /// </summary>
+    private LocationTransit BuildDestination(Player player, TransitPoint point, string hash,
+        Il2CppSystem.Collections.Generic.Dictionary<string, ProfileKey> keys, int playersCount)
+    {
+        var profiles = new Il2CppSystem.Collections.Generic.Dictionary<string, ProfileKey>();
+        if (keys != null)
+        {
+            foreach (var entry in keys)
+            {
+                if (!profiles.ContainsKey(entry.Key)) profiles.Add(entry.Key, entry.Value);
+            }
+        }
+
+        if (!profiles.ContainsKey(player.ProfileId))
+        {
+            
+        }
+
+        var location = TransitDestination.Resolve(point, out var destinationSource);
+        if (destinationSource != "parameters.location")
+        {
+            
+        }
+
+        return new LocationTransit
+        {
+            hash = hash ?? string.Empty,
+            playersCount = playersCount,
+            ip = string.Empty,
+            location = location,
+            profiles = profiles,
+            transitionRaidId = Native.summonedTransits.TryGetValue(player.ProfileId, out var history) ? history.raidId : _localRaidSettings?.transition.transitionRaidId ?? string.Empty,
+            raidMode = ERaidMode.Local,
+            side = player.Side == EPlayerSide.Savage ? ESideType.Savage : ESideType.Pmc,
+            dayTime = Native.profileTime.TryGetValue(player.ProfileId, out var time) ? time : Native._localRaidSettings.timeVariant
+        };
+    }
+
+    public void InteractWithTransit(Player player, InteractWithTransitPacket packet)
+    {
+        if (player == null || packet == null || !packet.hasInteraction || player.HealthController?.IsAlive != true)
+        {
+            
+            return;
+        }
+        if (!Native.pointsById.TryGetValue(packet.pointId, out var point))
+        {
+            
+            return;
+        }
+        if (!point.Enabled)
+        {
+            
+
+            SendAnswerEvent(player, packet.pointId, TransitInteractionEvent.EType.InactivePoint, "point-disabled");
+            return;
+        }
+        // Self-healing: an accepted interaction is proof that the player is standing at the
+        // point, so it also registers him. This covers a lost zone packet and every path that
+        // does not report zone state at all. The remaining checks below (access, entry
+        // requirements, group size, quest condition) are unchanged, so presence alone never
+        // lets a player transfer from somewhere else.
+        if (!_playersInTransitZone.TryGetValue(player.ProfileId, out var currentPoint) || currentPoint != packet.pointId)
+        {
+            TransitZonePresence.RecordInZone(_playersInTransitZone, player.ProfileId, packet.pointId,
+                "interact request at the point");
+        }
+        if (Native.transitPlayers.ContainsKey(player.ProfileId))
+        {
+            
+
+            // (analysis/transit-terminal-and-countdown) A press of an already registered player is a no-op, and
+            // the client cannot see that from its own side. The native answer for "this point carries you already"
+            // is the inactive notification, which only informs (it does not release the interaction).
+            SendAnswerEvent(player, packet.pointId, TransitInteractionEvent.EType.InactivePoint, "already-registered");
+            return;
+        }
+        if (!Native.TryGetAccessToLocation(player, packet.pointId, out var keyId))
+        {
+            
+
+            // (analysis/transit-terminal-and-countdown) The native answer for "this point is not open for you": the
+            // client re-checks its own access and either sends its request itself or shows Transit/AccessNotGranted.
+            // Without it the player only gets a silent refusal (the 2026-10-13 Terminal rounds).
+            SendAnswerEvent(player, packet.pointId, TransitInteractionEvent.EType.CheckAccess, "access-not-granted");
+            return;
+        }
+        if (!EFT.ClientTransitController.HasMetEntryRequirements(point, player))
+        {
+            
+
+            // (analysis/transit-terminal-and-countdown) Same native answer as above: the client resolves its own
+            // state and answers with its own request or with 'Transit/AccessNotGranted'. The Terminal point is the
+            // one point of the game whose requirements are not a formality (its own condition string is a time
+            // window, 21:00-6:00, next to hideIfNoKey and its own reference conditions), so this is the case the
+            // user's report is about.
+            // (2026-10-17) This answer used to be CheckAccess, which makes the client run its press step
+            // and send the request again: when the host's own entry-requirements evaluation is the thing
+            // that refuses, the two machines ping-pong until the answer bound is spent and then go silent.
+            // The native answer for "this point is not available for you" is InactivePoint: the client
+            // clears its interaction and the game shows the reason. Nothing is relaxed - the gate refuses.
+            SendAnswerEvent(player, packet.pointId, TransitInteractionEvent.EType.InactivePoint, "entry-requirements-not-met");
+            return;
+        }
+        // The quest condition is already validated for each player by the client that
+        // shows the interaction prompt and by EFT.ClientTransitController.HasMetEntryRequirements
+        // above, while this extra native lookup answered false for every profile and
+        // blocked every transit. It is logged instead of enforced.
+        if (!Native.HasMetCompletedQuestRequirement(point, player))
+        {
+            
+        }
+        
+
+        // (analysis/client-transit-terminal) The arrival of a request is the one fact that separates a client
+        // whose press never left its machine from a client the host answered, and the 2026-10-13 round could
+        // not tell the two apart (every line of this branch was behind 'Coop / Diagnostics'). One line per
+        // player and point: the press reached this host and passed the native checks; the two start gates
+        // below decide the countdown next.
+        
+        
+
+        if (_countdownPointId == packet.pointId)
+        {
+            // The group is at the point and the countdown runs; a repeated press is one more request of
+            // a player who is already registered and must not start a second countdown.
+            
+            return;
+        }
+
+        // The press is remembered first: the strict gate below needs it as the record that this player
+        // did his part, and nothing is registered before the whole team has.
+        RecordInteraction(player, packet.pointId);
+        if (!CheckForPlayers(player, packet.pointId)) return;
+        if (!EveryoneInteracted(player, packet.pointId)) return;
+
+        if (!RegisterTransitParticipants(point, player, keyId, packet.time))
+        {
+            // Nothing was registered, so no countdown may start; the interaction stays recorded and a
+            // later press of any teammate evaluates the gate again.
+            return;
+        }
+
+        BeginCountdown(point);
+    }
+
+    private bool CheckForPlayers(Player player, int pointId)
+    {
+        if (!_zoneCheckFirstCall)
+        {
+            _zoneCheckFirstCall = true;
+            _zoneCheckLogged.Clear();
+            TransitZonePresence.ResetLog();
+        }
+
+        // Players who died, extracted or transferred are excluded by both loops below, so
+        // their zone entries only darken the map; drop them here. A player who is simply
+        // somewhere else in the map stays registered, exactly like in a native host, where
+        // a registration is only removed by a PlayerExit trigger.
+        PruneStaleZoneRegistrations();
+
+        var humanPlayers = 0;
+        foreach (var fikaPlayer in FikaSingleton<IFikaNetworkManager>.Instance.CoopHandler.HumanPlayers)
+        {
+            // A player who has already completed this transition is removed
+            // from the active raid on the next frame.  During that small
+            // window do not make the remaining group wait for an extracted
+            // member to enter the point.
+            if (fikaPlayer.HealthController.IsAlive &&
+                !TransitDropouts.IsDropped(fikaPlayer) &&
+                !_transittedPlayers.Contains(fikaPlayer.RaidId) &&
+                !FikaSingleton<IFikaNetworkManager>.Instance.CoopHandler.ExtractedPlayers.Contains(fikaPlayer.NetId))
+            {
+                if (fikaPlayer.IsYourPlayer && FikaBackendUtils.IsHeadless)
+                {
+                    continue;
+                }
+
+                humanPlayers++;
+            }
+        }
+
+        var playersInPoint = 0;
+        foreach (var member in FikaSingleton<IFikaNetworkManager>.Instance.CoopHandler.HumanPlayers)
+        {
+            if (member.HealthController?.IsAlive == true &&
+                !TransitDropouts.IsDropped(member) &&
+                !_transittedPlayers.Contains(member.RaidId) &&
+                !FikaSingleton<IFikaNetworkManager>.Instance.CoopHandler.ExtractedPlayers.Contains(member.NetId) &&
+                !(member.IsYourPlayer && FikaBackendUtils.IsHeadless) &&
+                _playersInTransitZone.TryGetValue(member.ProfileId, out var zone) && zone == pointId)
+                playersInPoint++;
+        }
+        // (analysis/transit-terminal-20261013) The second producer of the native 'NonAllTeammates' answer
+        // names itself in every mode, pass and abort alike: a client whose zone report never arrived lands
+        // here, and the two gates of this chain are otherwise indistinguishable in the log.
+        if (playersInPoint < humanPlayers)
+        {
+            if (_zoneCheckLogged.Add(pointId + ":" + player.ProfileId))
+            {
+                
+            }
+
+            if (player.IsYourPlayer)
+            {
+                NotificationManager.DisplayWarningNotification(TransitMessagesEvent.EType.NonAllTeammates.ToString(), ENotificationDurationType.Default);
+                return false;
+            }
+
+            Il2CppSystem.Collections.Generic.Dictionary<int, TransitMessagesEvent.EType> messages = new();
+            messages.Add(player.RaidId, TransitMessagesEvent.EType.NonAllTeammates);
+
+            TransitEventPacket messagePacket = new()
+            {
+                EventType = TransitEventPacket.ETransitEventType.Messages,
+                TransitEvent = new TransitMessagesEvent()
+                {
+                    Messages = messages
+                }
+            };
+
+            _server.SendData(ref messagePacket, DeliveryMethod.ReliableOrdered);
+            return false;
+        }
+
+        
+        return true;
+    }
+
+    /// <summary>
+    /// The players the host currently counts as standing in a point: the same predicate
+    /// CheckForPlayers applies (alive, not already transferred, not extracted, not the host's own
+    /// player on a headless host), read from the same map - so the panel cannot disagree with the
+    /// gate that decides whether a transit may start.
+    /// </summary>
+    private List<Player> CollectZonePlayers(int pointId)
+    {
+        var result = new List<Player>();
+        var coopHandler = FikaSingleton<IFikaNetworkManager>.Instance?.CoopHandler;
+        var players = coopHandler?.HumanPlayers;
+        if (players == null) return result;
+
+        for (var i = 0; i < players.Count; i++)
+        {
+            var member = players[i];
+            if (member == null || member.HealthController?.IsAlive != true) continue;
+            if (TransitDropouts.IsDropped(member)) continue;
+            if (_transittedPlayers.Contains(member.RaidId)) continue;
+            if (coopHandler.ExtractedPlayers.Contains(member.NetId)) continue;
+            if (member.IsYourPlayer && FikaBackendUtils.IsHeadless) continue;
+            if (!_playersInTransitZone.TryGetValue(member.ProfileId, out var zone) || zone != pointId) continue;
+            result.Add(member);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Replaces the native group-size numbers with the observed in-zone count, once per player that is
+    /// in the point, so every machine finds its own raid id in the dictionary and all of them show the
+    /// same number. The native dictionary is handed through unchanged when nothing is observed, and the
+    /// slots it defined are kept, so a display this map cannot account for never disappears.
+    /// </summary>
+    private Il2CppSystem.Collections.Generic.Dictionary<int, byte> BuildZoneSizes(int pointId,
+        Il2CppSystem.Collections.Generic.Dictionary<int, byte> nativeSizes)
+    {
+        var inZone = CollectZonePlayers(pointId);
+        if (inZone.Count == 0) return nativeSizes;
+
+        var value = (byte)System.Math.Clamp(inZone.Count, 0, byte.MaxValue);
+        var result = new Il2CppSystem.Collections.Generic.Dictionary<int, byte>();
+        foreach (var member in inZone)
+        {
+            if (!result.ContainsKey(member.RaidId)) result.Add(member.RaidId, value);
+        }
+
+        if (nativeSizes != null)
+        {
+            foreach (var entry in nativeSizes)
+            {
+                if (!result.ContainsKey(entry.Key)) result.Add(entry.Key, value);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>Compact view of a raid-id to count dictionary for the diagnostics.</summary>
+
+    /// <summary>
+    /// The native point bookkeeping the native panel number used to be built from: which profile
+    /// belongs to which group, and each group's size. It is the evidence for whether a remote player
+    /// ever reached the point's own groups on this host.
+    /// </summary>
+    private string DescribePointGroups(int pointId)
+    {
+        if (Native.pointsById == null || !Native.pointsById.TryGetValue(pointId, out var point) || point == null)
+        {
+            return "point-unknown";
+        }
+
+        var builder = new System.Text.StringBuilder();
+        foreach (var entry in point._playerGroups)
+        {
+            if (builder.Length > 0) builder.Append(' ');
+            builder.Append(entry.Key).Append("->").Append(entry.Value);
+        }
+
+        builder.Append(" size[");
+        if (point._groupSize != null)
+        {
+            foreach (var entry in point._groupSize)
+            {
+                builder.Append(entry.Key).Append('=').Append(entry.Value).Append(';');
+            }
+        }
+
+        // The native countdown of the point (group -> seconds left) is the clock that carries the host's
+        // own player, and the confirmed set is what the native group bookkeeping waits on. A co-located
+        // exit or a map that never registered the group breaks one of the two, and both are visible here.
+        builder.Append("] timers[");
+        if (point._groupTimers != null)
+        {
+            foreach (var entry in point._groupTimers)
+            {
+                builder.Append(entry.Key).Append('=').Append(entry.Value).Append(';');
+            }
+        }
+
+        builder.Append("] confirmed[");
+        if (point._confirmedPlayers != null)
+        {
+            foreach (var profile in point._confirmedPlayers)
+            {
+                builder.Append(profile).Append(';');
+            }
+        }
+
+        builder.Append("] enabled=").Append(point.Enabled).Append(" active=").Append(point.IsActive);
+        return builder.ToString();
+    }
+
+    /// <summary>Drops registrations of players that can never transfer again.</summary>
+    private void PruneStaleZoneRegistrations()
+    {
+        PruneInteractionLedger();
+        if (_playersInTransitZone.Count == 0) return;
+        var coopHandler = FikaSingleton<IFikaNetworkManager>.Instance?.CoopHandler;
+        if (coopHandler == null) return;
+
+        List<string> stale = null;
+        foreach (var entry in _playersInTransitZone)
+        {
+            var member = FindHumanPlayer(entry.Key);
+            // A profile that is no longer in HumanPlayers left the raid; it is not counted by
+            // CheckForPlayers any more either, so its entry can stay until the raid ends.
+            if (member == null) continue;
+            if (member.HealthController?.IsAlive != true ||
+                _transittedPlayers.Contains(member.RaidId) ||
+                (member.TryCast<FikaPlayer>() is { } fikaPlayer && coopHandler.ExtractedPlayers.Contains(fikaPlayer.NetId)))
+            {
+                stale ??= [];
+                stale.Add(entry.Key);
+            }
+        }
+
+        if (stale == null) return;
+        foreach (var profileId in stale)
+        {
+            TransitZonePresence.RemoveFromZone(_playersInTransitZone, profileId, "dead, extracted or already transferred");
+        }
+    }
+
+    /// <summary>
+    /// Drops the recorded interactions of players that can never take part again, so a dead or
+    /// extracted teammate cannot hold the countdown of the survivors.
+    /// </summary>
+    private void PruneInteractionLedger()
+    {
+        if (_interactedPlayers.Count == 0) return;
+        List<string> stale = null;
+        foreach (var entry in _interactedPlayers)
+        {
+            var member = FindHumanPlayer(entry.Key);
+            // Not in HumanPlayers any more: the profile left the raid and neither gate counts it.
+            if (member == null) continue;
+            var transited = _transittedPlayers.Contains(member.RaidId);
+            var extracted = member.TryCast<FikaPlayer>() is { } fikaPlayer &&
+                FikaSingleton<IFikaNetworkManager>.Instance.CoopHandler.ExtractedPlayers.Contains(fikaPlayer.NetId);
+            if (member.HealthController?.IsAlive != true || transited || extracted)
+            {
+                stale ??= [];
+                stale.Add(entry.Key);
+            }
+        }
+
+        if (stale == null) return;
+        foreach (var profileId in stale)
+        {
+            _interactedPlayers.Remove(profileId);
+        }
+
+        
+    }
+
+    private static Player FindHumanPlayer(string profileId)
+    {
+        var players = FikaSingleton<IFikaNetworkManager>.Instance?.CoopHandler?.HumanPlayers;
+        if (players == null) return null;
+        for (var i = 0; i < players.Count; i++)
+        {
+            if (players[i] != null && string.Equals(players[i].ProfileId, profileId, System.StringComparison.Ordinal)) return players[i];
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Lifts the transit ban an accepted interaction applied (see <see cref="InteractWithTransit"/>) when
+    /// the transfer is not going to happen after all.
+    /// <para>
+    /// Why this is needed: the accept path adds the player to <c>ExfiltrationController.BannedPlayers</c>,
+    /// cancels his extraction and disables exit interaction, but the only native release runs on the way
+    /// out through <c>TransitController.EnableExits(player)</c>. A transit that is cancelled, aborted or
+    /// never stops its raid therefore left the player unable to extract for the rest of the raid.
+    /// </para>
+    /// Idempotent: removing an id that is not banned changes nothing, and exit interaction is re-enabled
+    /// only when no banned player is left, so a player still waiting for his own transit is never
+    /// unblocked. Callers must not add state of their own around it.
+    /// </summary>
+    private void ReleaseTransitBanFor(int raidId, string profileId, string reason)
+    {
+        var exfiltration = ExfiltrationController.Instance;
+        if (exfiltration?.BannedPlayers == null)
+        {
+            
+            return;
+        }
+
+        var removed = exfiltration.BannedPlayers.Remove(raidId);
+        var remaining = exfiltration.BannedPlayers.Count;
+        if (remaining == 0)
+        {
+            // Only the empty set re-opens the exits; another player's ban stays enforced.
+            exfiltration.EnableExitsInteraction();
+            // Nobody waits for a transit any more, so the exits at the point react again as well.
+            TransitCoLocatedExits.Release("no player waits for a transit any more");
+        }
+
+        
+    }
+
+    public TransitEventPacket CreateInitialization(Player player)
+    {
+        if (player == null || !Native.summonedTransits.TryGetValue(player.ProfileId, out var history)) return null;
+        var points = new Il2CppSystem.Collections.Generic.Dictionary<int, LocationSettings.Location.TransitParameters>();
+        var requirements = new Il2CppSystem.Collections.Generic.Dictionary<int, bool>();
+        var enabled = new List<int>();
+        var registeredPoint = -1;
+        foreach (var entry in Native.pointsById)
+        {
+            if (entry.Value.parameters.active) points.Add(entry.Key, entry.Value.parameters);
+            // Raw native result disabled the point in every client UI, so report it as
+            // met; the per-player validation stays with the client and with
+            // EFT.ClientTransitController.HasMetEntryRequirements on the host.
+            requirements.Add(entry.Key, true);
+            if (entry.Value.Enabled) enabled.Add(entry.Key);
+            if (Native.transitPlayers.ContainsKey(player.ProfileId) && entry.Value._playerGroups.ContainsKey(player.ProfileId))
+                registeredPoint = entry.Key;
+        }
+        Native.profileKeys.TryGetValue(player.ProfileId, out var key);
+        var time = Native.profileTime.TryGetValue(player.ProfileId, out var selected) ? selected : Native._localRaidSettings.timeVariant;
+        return new TransitEventPacket
+        {
+            EventType = TransitEventPacket.ETransitEventType.Init,
+            TransitEvent = new TransitInitEvent
+            {
+                PlayerRaidId = player.RaidId, Points = points, CompletedQuestRequirementMetByPointId = requirements,
+                TransitionCount = (ushort)history.count, EventPlayer = history.events
+            },
+            EnabledPointIds = enabled.ToArray(), RegisteredPointId = registeredPoint, KeyId = key, SelectedTime = time
+        };
+    }
+
+    /// <summary>
+    /// The native transfer entry point of this raid (the patch on
+    /// <c>LocalTransitController.Transit</c> routes every native call here), plus everything this host
+    /// issues itself: when the native call drives this host's own player, the clients are transferred
+    /// from here as well, because the native tick of a playable host only ever drives its own player.
+    /// </summary>
+    public void Transit(TransitPoint point, int playersCount, string hash, Il2CppSystem.Collections.Generic.Dictionary<string, ProfileKey> keys, Player player)
+    {
+        var callDestination = TransitDestination.Resolve(point, out var destinationSource);
+        
+        if (player == null || point == null)
+        {
+            
+            
+            return;
+        }
+
+        if (_transferIssued.Contains(player.RaidId))
+        {
+            // This host issued this player's transfer itself. A second driver must not send the packet
+            // twice, and it must not lift the ban the pending transfer depends on.
+            
+            
+            return;
+        }
+
+        // The native arguments are kept: the transfers this host issues itself (countdown end, the
+        // clients of a native-driven countdown) are built from the same values.
+        _lastTransitHash = hash;
+        _lastTransitKeys = keys;
+        _lastTransitPlayersCount = playersCount;
+
+        if (_transittedPlayers.Contains(player.RaidId) || !EnsureSummonedTransit(player.ProfileId))
+        {
+            // The transfer will not start, but the accepted interaction already banned this player from
+            // extracting: lift it here or he stays banned for the rest of the raid.
+            
+            ReleaseTransitBanFor(player.RaidId, player.ProfileId,
+                "transit did not start (already transferred or no transit history for this profile)");
+            return;
+        }
+        var history = Native.summonedTransits[player.ProfileId];
+        var destination = new LocationTransit
+        {
+            hash = hash, playersCount = playersCount, ip = "", location = callDestination,
+            profiles = keys, transitionRaidId = history.raidId, raidMode = ERaidMode.Local,
+            side = player.Side == EPlayerSide.Savage ? ESideType.Savage : ESideType.Pmc,
+            dayTime = Native.profileTime.TryGetValue(player.ProfileId, out var time) ? time : Native._localRaidSettings.timeVariant
+        };
+        if (player.IsYourPlayer)
+        {
+            var fikaPlayer = player.TryCast<FikaPlayer>();
+            if (fikaPlayer == null || FikaSingleton<IFikaGame>.Instance is not CoopGame game)
+            {
+                
+                ReleaseTransitBanFor(player.RaidId, player.ProfileId,
+                    "transit did not start (no host game for the transferring player)");
+                return;
+            }
+            if (TarkovApplication.Exist(out var application))
+                application.TransitionStatus = new(destination.location, false, destination.side, destination.raidMode, destination.dayTime);
+            Native.alreadyTransits[player.ProfileId] = destination;
+            _transittedPlayers.Add(player.RaidId);
+            _transferIssued.Add(player.RaidId);
+            // AliveTransitPlayers is _transittedPlayers.Count and HostGameController sends it as the
+            // backend player amount at this moment (HostGameController.cs:1117-1118), so the value the
+            // next raid's wait-for-players gate receives has to be readable from this log.
+            
+            try
+            {
+                game.Extract(fikaPlayer, null, point);
+            }
+            catch (System.Exception extractException)
+            {
+                
+                throw;
+            }
+
+            
+
+            // The native tick drove this host's own player only, so the clients of the same point are
+            // transferred here: that is the step that used to leave every client in the old raid.
+            var clientTransfers = IssueTransferForClients(point.parameters.id, "host transit started");
+            if (clientTransfers > 0)
+            {
+                
+            }
+
+            // Extract() only extracts the player. A client ends the raid itself in
+            // ClientGameController.Extract, but the host never did: it stayed in the half-extracted
+            // state (gravity switched off, teleported 500 m up) with the raid still running, which is
+            // exactly why the host never loaded the next map and could not move afterwards.
+            var stopGame = game;
+            var stopProfile = fikaPlayer.ProfileId;
+            var stopRaidId = fikaPlayer.RaidId;
+            var stopPointName = point.parameters.name;
+            MainThreadDispatcher.RunAsync(async () =>
+            {
+                await System.Threading.Tasks.Task.Delay(4000);
+                MainThreadDispatcher.Post(() =>
+                {
+                    if (ReferenceEquals(FikaSingleton<IFikaGame>.Instance, stopGame))
+                    {
+                        
+                        stopGame.Stop(stopProfile, ExitStatus.Transit, stopPointName, 0f);
+                        return;
+                    }
+
+                    // The raid that should have ended is not the running one any more, so this player is
+                    // still in a raid while the transit ban keeps him from extracting: lift it.
+                    ReleaseTransitBanFor(stopRaidId, stopProfile, "host raid was replaced before its own transit stop");
+                });
+            }).Forget();
+            return;
+        }
+        // A remote player: one Extract packet, sent through the same path the countdown end uses, so a
+        // player can never be transferred twice (see _transferIssued).
+        Native.alreadyTransits[player.ProfileId] = destination;
+        var remoteSent = IssueClientTransfer(player, point, "native Transit");
+        
+    }
+
+    protected override void DisposeNative() => Native.Dispose();
+
+    protected override void DisposeManaged()
+    {
+        _playersInTransitZone.Clear();
+        _zoneCheckLogged.Clear();
+        _zoneExitLogged.Clear();
+        _interactedPlayers.Clear();
+        _interactionLogged.Clear();
+        _transferIssued.Clear();
+        _countdownPointId = -1;
+        _countdownEndsAt = 0f;
+        _countdownSeconds = 0;
+        _countdownPaused = false;
+        _countdownPausedRemaining = 0;
+        _pressNudgedAt.Clear();
+        _pressNudges.Clear();
+        _panelSurfacePointId = -1;
+        _panelSurfaceSeconds = -1f;
+        _lastBroadcastSecond = -1;
+        _transferGraceEndsAt = -1f;
+        _pendingTransferPointId = -1;
+        _recheckLoggedSignature = null;
+        _recheckCount = 0;
+        TransitDropouts.Forget();
+        _lastTransitHash = null;
+        _lastTransitKeys = null;
+        _lastTransitPlayersCount = 0;
+        // The raid is over; the next one gets a fresh set of diagnostic characters.
+        TransitZonePresence.ResetLog();
+        // Give the exits of the point their interaction back (a destroyed point is skipped), then close the
+        // ledger: the next raid starts with an empty suppression list.
+        TransitCoLocatedExits.Release("the raid ended");
+        TransitCoLocatedExits.Forget();
+        _transferFailures.Clear();
+    }
+
+    public void Init()
+    {
+        // A new raid: nothing of the world that ended may survive in a static of this chain. The teardown
+        // sequence of WorldLifecycle clears both ledgers as well (TransitCoLocatedExits and TransitDropouts
+        // expose ForceResetForWorldTeardown for it); these calls are the self-healing half that also covers a
+        // teardown which never reached this class, and they touch no native object at all.
+        TransitCoLocatedExits.ForceResetForWorldTeardown("a new raid starts");
+        TransitDropouts.ForceResetForWorldTeardown("a new raid starts");
+        // The one subscription that feeds the dropout registry is armed once per process (idempotent).
+        TransitDropouts.Arm();
+
+        var enabledFlags = string.Empty;
+        foreach (var entry in Native.pointsById)
+        {
+            enabledFlags += entry.Key + ":" + entry.Value.Enabled + " ";
+        }
+        
+        Native.EnablePoints(true);
+        if (!FikaBackendUtils.IsHeadless && GamePlayerOwner.MyPlayer is { } player)
+        {
+            Native.SetTimers(Native.pointsById.Values, player, false);
+            Native.HandleExits(Native.pointsById.Values, player);
+        }
+    }
+}

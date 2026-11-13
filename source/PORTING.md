@@ -6,51 +6,42 @@
 
 | 项 | 状态 |
 |---|---|
-| 源码基线 | ✅ 已导入 47888 版源码树（Fika 3.0.3 派生，含 `Client` / `Headless` / `Server`） |
-| 编译 | ⚠️ **未在本仓验证**（缺 47888 的 `BepInEx/core` 与 `SPT_Runtime` 程序集；`BepInEx/interop` 副本在旧源码树的 `tests/Fika.PatchChecks/bin-ajplant/` 下） |
-| 发布包 | ❌ 尚未生成（需先完成编译验证） |
-| 实机 | ❌ 未测试 |
+| 源码 | ✅ **已移植**：直接采用 `47965` 分支最新源码（含 W41–W51、PR #1、N5、i18n） |
+| 编译 | ✅ **通过**：`Client` / `Headless` / `Server` 三项目 **0 error** |
+| 发布包 | ✅ 已生成（`v2026.11.13-47888`） |
+| 实机 | ❌ 未验证（本机 47888 游戏客户端已删除） |
 
-**不要**把本分支当作可直接部署的版本；可部署的版本见 `47965` 分支与对应 Release。
+## 移植方式与依据
 
-## 与 47965 分支的关系
+两分支同源（同一上游 3.0.x）。把 `47965` 的整个 `source/` 覆盖到本分支后，用 **47888 自己的 interop** 编译：
 
-两个分支同源（同一上游 3.0.x）。`47965` 分支在本仓已经过多轮修复（W41–W51、PR #1、N5）与 i18n，且**构建已验证 0 error**。
+```
+interop: mods/fika-47888/source/tests/Fika.PatchChecks/bin-ajplant/Debug/net10.0/Assembly-CSharp.dll  (62.7 MB)
+GameDir: 47965 的 BepInEx/core + SPT_Runtime，interop 目录替换为上面这份
+结果:   Fika.Core 0 error / Fika.Headless 0 error / FikaServer 0 error
+```
 
-把 `47965` 的修复移植到本分支时，必须逐项判断：
+**编译通过即说明：`47965` 代码用到的所有 interop 成员（`MovementContext.PickupAction`、`BeginLocalSceneIkLateUpdate`、`CutsceneProcess.playersInCurrentView` 等）在 47888 的 `Assembly-CSharp` 里全部存在且签名一致。** 因此不需要逐个 API 判断兼容性。
 
-| 类型 | 处理 |
-|---|---|
-| 纯托管逻辑修复（如 `MarkOperationItemsKnown` 递归、`transitPlayers` 双形状、`Forget()` 吞异常、看门狗、IK 批次调用） | ✅ 直接移植 |
-| 依赖 47965 才有的 interop 成员/签名 | ⚠️ 先核 47888 的 `Assembly-CSharp` 是否有该成员，否则跳过并在本文件登记 |
-| i18n 注释翻译 | 可选，不阻塞功能 |
-| `Directory.Build.props` 的 `GameDir` 默认值 | 保持各分支本地化，不要跨分支覆盖 |
+## 已知限制
 
-## 移植清单（按 `47965` 的修复编号）
+1. **未实机验证**：本机 47888 客户端已删除，只有 interop 副本。编译通过只证明 API 兼容，不证明运行时行为。
+2. **BepInEx 版本要求**：本次构建用的是 47965 的 `BepInEx/core`（net10 版）。若 47888 实际安装的 BepInEx 是 net6 版，产物会加载失败（参考 47242 分支的 `CS1705` 记录）。**部署前请确认 47888 的 BepInEx 为 net10（be 版）。**
+3. **版本常量**：`FikaVersion` 仍是 `3.0.4`（与 47965 相同），未按目标版本改写；这会影响日志里的版本行，不影响功能。
 
-- [ ] W41 物品链：`MarkOperationItemsKnown` 递归 `InternalOperation` + `MarkOperationOwnItemsKnown`
-- [ ] W41 拾取看门狗：`NativeInteractionRelease.WatchLostInteractionSchedule`（8 秒）
-- [ ] W42 转移：`transitPlayers` 双形状（含 Headless 4 处）
-- [ ] W42/W43 撤离：`ExfilCountdown` 不覆盖本机激活、`FikaExfilManager` 保留本机倒计时
-- [ ] W46 `RallyZoneEventCountPatch` 改 patch 声明处（`BaseEvent.Invoke`）
-- [ ] W47 无头低开销：640x360 / 30Hz
-- [ ] W48 N1：`InteractWithTransit` 按 `parameters.active` 放行
-- [ ] W48 N4 + PR #1：过场结束恢复 `DamageCoeff` + `DamageMultiplier` + `UnpauseAllEffectsOnPlayer()` + 守卫 + 主机看门狗
-- [ ] W48 N2 + W49：`CutsceneStallWatchdog` + 主机座位表收窄
-- [ ] W51：`HostOperationWatchdog` + `PickupContinuationRepair` + 描述符失败不取消操作
-- [ ] N5：`ObservedPlayer.LateUpdate` 加入 `BeginLocalSceneIkLateUpdate` / `EndLocalSceneIkLateUpdate`
-- [ ] W39 复活补丁移除 `[IgnoreAutoPatch]`
+## 与 47965 的差异
 
-## 移植后需要的东西（缺了无法出包）
+**只有 `source/PORTING.md` 本身**（本文件）。代码完全一致。
 
-1. **47888 的 SPT 5.0 安装目录**（至少含 `BepInEx/core`、`BepInEx/interop/Assembly-CSharp.dll`、`SPT_Runtime/*.dll`、`BepInEx/plugins/spt*`）
-2. 或：确认可以用 47965 的 `BepInEx/core` + `SPT_Runtime` 搭配 47888 的 `interop` 编译（有 API 不匹配风险，需实测）
-3. 实机验收：47888 客户端 + 服务端各跑一局
+## 后续若要做真机适配
 
-## 构建（拿到环境后）
+1. 拿到 47888 客户端安装 → 部署 `v2026.11.13-47888` 的两个包 → 跑 47965 那六条验收
+2. 若出现 47965 没有的 47888 专属行为差异，再按 `47965` 的提交逐条对照定位（`git log 47965 --oneline`）
+
+## 构建
 
 ```powershell
-dotnet build source\Client\Fika.Core\Fika.Core.csproj            -c Release -p:GameDir=<47888 安装目录> --nologo
-dotnet build source\Headless\Fika.Headless\Fika.Headless.csproj  -c Release -p:GameDir=<47888 安装目录> --nologo
-dotnet build source\Server\FikaServer\FikaServer.csproj          -c Release -p:GameDir=<47888 安装目录> --nologo
+dotnet build source\Client\Fika.Core\Fika.Core.csproj            -c Release -p:GameDir=<47888 GameDir> --nologo
+dotnet build source\Headless\Fika.Headless\Fika.Headless.csproj  -c Release -p:GameDir=<47888 GameDir> --nologo
+dotnet build source\Server\FikaServer\FikaServer.csproj          -c Release -p:GameDir=<47888 GameDir> --nologo
 ```

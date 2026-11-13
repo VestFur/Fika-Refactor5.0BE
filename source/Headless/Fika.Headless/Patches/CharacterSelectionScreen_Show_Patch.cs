@@ -35,26 +35,26 @@ public class CharacterSelectionScreen_Show_Patch : ModulePatch
         Logger.LogInfo($"[Headless] Profile: character selection (id={profileData?.ProfileId}, nickname={nickname ?? "<null>"}, " +
             $"hasProfile={profileData?.HasProfile}, selectable={profileData?.IsSelectable}, locked={profileData?.IsLocked}, isHeadlessProfile={isHeadlessProfile})");
 
-        // Normal play: never submit, never select, never touch the screen. The
-        // player picks the profile exactly as if this plugin were not loaded.
+        // 正常游玩：绝不提交、绝不选择、绝不触碰界面。
+        // 玩家挑选档案的过程与本插件未被加载时完全一致。
         if (!isHeadlessProfile)
         {
             FikaHeadlessPlugin.Instance?.NoteNormalPlay("CharacterSelectionScreen.Show", nickname);
             return;
         }
 
-        // On some SPT 5 IL2CPP startup paths ConsoleScreen.OnProfileReceive is
-        // never dispatched, although the character-selection data is already
-        // populated.  The generated headless profile is identifiable here,
-        // so complete the readiness handshake from this authoritative data.
+        // 在某些 SPT 5 IL2CPP 启动路径上 ConsoleScreen.OnProfileReceive
+        // 从不会被派发，尽管角色选择数据已经
+        // 填充好了。生成的无头档案在这里是可以识别的，
+        // 所以就用这份权威数据完成就绪握手。
         FikaHeadlessPlugin.Instance.MarkProfileVerified("CharacterSelectionScreen.Show", nickname);
 
-        // Harmony invokes a postfix after CharacterSelectionScreen.Show has
-        // returned. Calling Submit here is therefore already outside Show's
-        // native call frame. Queuing this through Fika's managed dispatcher
-        // can stall in batchmode when the menu lifecycle stops ticking before
-        // the first frame, leaving headless clients permanently at profile
-        // selection. Submit directly and report any native exception.
+        // Harmony 在 CharacterSelectionScreen.Show 返回之后
+        // 才会调用 postfix。因此在这里调用 Submit 已经处于 Show 的
+        // 原生调用帧之外。把这件事经由 Fika 的托管派发器排队
+        // 在批处理模式下可能卡住——当菜单生命周期在第一帧之前
+        // 就停止 tick 时，无头客户端会永久停在档案
+        // 选择界面。直接 Submit，并上报任何原生异常。
         try
         {
             controller.Submit(EGameMode.Pve, profileData);

@@ -9,7 +9,7 @@ internal sealed class BotInventoryOperationHandlerPool(int size, Func<BotInvento
     public static BotInventoryOperationHandlerPool Instance { get; private set; }
 
     /// <summary>
-    /// Creates a new instance of the pool
+    /// 创建该池的新实例
     /// </summary>
     public static void Create()
     {
@@ -17,7 +17,7 @@ internal sealed class BotInventoryOperationHandlerPool(int size, Func<BotInvento
     }
 
     /// <summary>
-    /// Clears the pool
+    /// 清空池
     /// </summary>
     public static void Clear()
     {

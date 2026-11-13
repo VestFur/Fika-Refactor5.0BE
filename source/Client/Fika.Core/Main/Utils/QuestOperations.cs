@@ -5,37 +5,37 @@ using EFT.InventoryLogic.Operations;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Classification and diagnostics for the operations that only change the quest
-/// data of the player who triggered them: reading a note, a chapter's conditions,
-/// a single condition or a note link, and studying a tape.
+/// 对只改动触发它的玩家任务数据的那些操作做分类与诊断：
+/// 读取一个笔记、某一章的条件、单个条件或一个笔记链接，
+/// 以及研究一盘磁带。
 /// <para>
-/// Quest state is authoritative on the machine that owns the profile. A client
-/// runs its own quest controller and its profile is what <c>LocalRaidEnded</c>
-/// uploads when the raid ends, while the host only keeps a display copy of a
-/// peer's quests (<c>ObservedQuestController</c>, fed by <c>QuestSyncPacket</c>).
-/// These operations move no items and pay no rewards - they are pure profile
-/// bookkeeping - so they have to run on the local controller and must never be
-/// relayed: a relay would delay the read until the host acknowledges it and turn
-/// any rejection into an inventory resync in the middle of the quest screen.
+/// 任务状态的权威在拥有该档案的机器上。客户端运行自己的任务 controller，
+/// raid 结束时由 <c>LocalRaidEnded</c> 上传的正是它自己的档案，
+/// 而主机只保留一份对端任务记录的显示副本
+/// （<c>ObservedQuestController</c>，由 <c>QuestSyncPacket</c> 喂入）。
+/// 这些操作不移动物品、不发放奖励 —— 它们是纯粹的档案记账 ——
+/// 因此必须在本地 controller 上运行，绝不能转发：
+/// 转发会把读取延迟到主机确认之后，并把
+/// 任何拒绝变成任务界面中途的一次库存重同步。
 /// </para>
 /// <para>
-/// They are not <c>BaseQuestOperation</c> subclasses, which is why the port used
-/// to dispatch them even though it already executed every other quest
-/// transaction locally. That dispatch is also what produced the
-/// "Serializer delegate missing for registered type" failures for
-/// <c>ReadChapterConditionsOperationDescriptor</c> and
-/// <c>ReadQuestNoteOperationDescriptor</c> in real raids.
+/// 它们不是 <c>BaseQuestOperation</c> 的子类，这也是本移植过去会把它们
+/// 派发出去的原因，尽管它已经把其他每一个任务事务
+/// 都在本地执行了。那次派发也正是真实 raid 中出现
+/// "Serializer delegate missing for registered type" 失败的原因，
+/// 涉及 <c>ReadChapterConditionsOperationDescriptor</c> 与
+/// <c>ReadQuestNoteOperationDescriptor</c> 两类操作。
 /// </para>
 /// <para>
-/// Every accessor is guarded: this classification drives execution, so a
-/// diagnostic that throws must never decide it.
+/// 每个访问器都被防护：这个分类结果会驱动执行，因此一个
+/// 会抛出的诊断绝不能决定它。
 /// </para>
 /// </summary>
 internal static class QuestOperations
 {
     /// <summary>
-    /// True for operations that only change the local player's quest bookkeeping.
-    /// <paramref name="detail"/> describes the target for the <c>[QuestOp]</c> log.
+    /// 对于只改动本地玩家任务记账的操作返回 true。
+    /// <paramref name="detail"/> 为 <c>[QuestOp]</c> 日志描述目标。
     /// </summary>
     internal static bool IsLocalOnly(AbstractOperation operation, out string detail)
     {
@@ -70,8 +70,8 @@ internal static class QuestOperations
             return true;
         }
 
-        // StudyItemPlayerOperation derives from StudyItemBaseOperation, so it has
-        // to be tested first.
+        // StudyItemPlayerOperation 派生自 StudyItemBaseOperation，因此
+        // 必须先检测它。
         if (operation.TryCast<StudyItemPlayerOperation>() is { } studyForPlayer)
         {
             detail = $"tape {Safe(() => studyForPlayer.Item?.Id)} (recorder)";
@@ -88,8 +88,8 @@ internal static class QuestOperations
     }
 
     /// <summary>
-    /// Describes a quest-family operation for the <c>[QuestOp]</c> log lines.
-    /// Returns false for every unrelated operation.
+    /// 为 <c>[QuestOp]</c> 日志行描述一个任务族操作。
+    /// 对每个不相关的操作返回 false。
     /// </summary>
     internal static bool TryDescribe(AbstractOperation operation, out string detail)
     {
@@ -109,8 +109,8 @@ internal static class QuestOperations
     }
 
     /// <summary>
-    /// Describes a quest-family operation descriptor for the <c>[QuestOp]</c> log
-    /// lines. Returns false for every unrelated descriptor.
+    /// 为 <c>[QuestOp]</c> 日志行描述一个任务族操作
+    /// 描述符。对每个不相关的描述符返回 false。
     /// </summary>
     internal static bool TryDescribe(InventoryOperationDescriptor descriptor, out string detail)
     {
@@ -120,7 +120,7 @@ internal static class QuestOperations
             return false;
         }
 
-        // The player variant derives from the plain study descriptor.
+        // 玩家变体派生自普通的 study 描述符。
         if (descriptor.TryCast<StudyItemPlayerOperationDescriptor>() is { } studyForPlayer)
         {
             detail = $"tape {studyForPlayer.ItemId} (recorder)";

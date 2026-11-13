@@ -43,8 +43,8 @@ public class HeadlessRequesterWebSocket(SaveServer saveServer, JsonUtil jsonUtil
             return;
         }
 
-        // Reconnection can arrive before the old socket's close callback.
-        // Always make the newest connection authoritative.
+        // 重连可能先于旧 socket 的关闭回调到达。
+        // 始终以最新的连接为权威。
         requesterWebSockets.TryGetValue(userSessionID, out var previous);
         requesterWebSockets[userSessionID] = ws;
         if (previous != null && !ReferenceEquals(previous, ws)) previous.Abort();
@@ -53,7 +53,7 @@ public class HeadlessRequesterWebSocket(SaveServer saveServer, JsonUtil jsonUtil
 
     public Task OnMessageAsync(byte[] rawData, WebSocketMessageType messageType, WebSocket ws, HttpContext context)
     {
-        // Do nothing
+        // 不做任何处理
         return Task.CompletedTask;
     }
 
@@ -76,10 +76,10 @@ public class HeadlessRequesterWebSocket(SaveServer saveServer, JsonUtil jsonUtil
         var serialized = jsonUtil.Serialize(message)
             ?? throw new InvalidOperationException("Cannot serialize headless requester notification");
 
-        // Serialize enqueue + flush as one operation.  If the assignment is
-        // performed before acquiring sendGate, a second notification can
-        // overwrite the first one while its flush is waiting, losing the
-        // earlier join event during rapid COMPLETE/status callbacks.
+        // 把入队与刷新作为一个操作串行化。如果在获取 sendGate 之前
+        // 就完成赋值，第二个通知可能在第一个通知的刷新仍等待时
+        // 将其覆盖，从而在快速连续的 COMPLETE/状态回调中
+        // 丢失更早的加入事件。
         await sendGate.WaitAsync();
         try
         {

@@ -11,7 +11,7 @@ using Fika.Core.Networking.Packets.World;
 namespace Fika.Core.Main.HostClasses;
 
 /// <summary>
-/// <see cref="World"/> used for the host to synchronize game logic
+/// <see cref="World"/>，由主机用于同步游戏逻辑
 /// </summary>
 public class FikaHostWorld : World
 {
@@ -36,9 +36,9 @@ public class FikaHostWorld : World
     private bool _hasCriticalData;
 
     /// <summary>
-    /// Queues the terminal state raised by the native grenade destroy event.
-    /// SPT 5 also exposes a critical-state queue from <c>UnregisterGrenade</c>;
-    /// when that queue already contains the same grenade, skip the duplicate.
+    /// 将原生手雷销毁事件引发的终态入队。
+    /// SPT 5 还从 <c>UnregisterGrenade</c> 暴露了一个关键状态队列；
+    /// 当该队列已经包含同一颗手雷时，跳过这条重复项。
     /// </summary>
     public bool TryQueueGrenadeDestroy(Throwable grenade)
     {
@@ -69,14 +69,14 @@ public class FikaHostWorld : World
             RagdollPackets = new(8)
         };
         hostWorld._grenadeData = new(16);
-        // (analysis/transit-crash-unload) A fresh world exists from here on: the teardown window of
-        // WorldLifecycle ends and the [LoadCost] window of the swap is closed with its summary line.
+        // (analysis/transit-crash-unload) 从这里开始存在一个全新的世界：WorldLifecycle 的拆除窗口
+        // 结束，本次切换的 [LoadCost] 窗口以其汇总行关闭。
         Fika.Core.Main.Utils.WorldLifecycle.MarkWorldUp("FikaHostWorld.Create");
-        // Bind the registered native method directly. DelegateSupport cannot
-        // convert a managed Action carrying the boxed DamageInfo value type.
-        // DamageInfo travels by value, which is the shape this interop refuses to marshal into a
-        // CLR delegate. Window-hit synchronisation is an enhancement, so a refused bind disables
-        // that one packet instead of taking the host raid down with it.
+        // 直接绑定已注册的原生方法。DelegateSupport 无法
+        // 转换携带装箱 DamageInfo 值类型的托管 Action。
+        // DamageInfo 按值传递，而这正是该 interop 拒绝封送到
+        // CLR 委托的形式。窗口命中同步是一项增强功能，因此绑定被拒绝只会禁用
+        // 那一个封包，而不会顺带把主机 raid 弄崩。
         if (NativeDelegates.TryBindManaged<System.Action<WindowBreaker, DamageInfo, WindowBreakingConfig.Crack, float>>(
                 hostWorld, nameof(WindowBreaker_OnWindowHitAction), "FikaHostWorld.WindowHit", out var windowHit))
         {
@@ -87,13 +87,11 @@ public class FikaHostWorld : World
         {
             hostWorld._windowHitHandler = null;
         }
-        // (analysis/cutscene-world-factory, superseded by analysis/cutscene-native-registration) The two
-        // cutscene controllers used to be created here, inside the port's replacement of the native
-        // GameWorld.Create<T> body. That body never created them (4.0 EFT/GameWorld.cs:1111-1123) - the native
-        // position is the raid-start coroutine, which this port replaces with CoopGame.InitPlayer, and there
-        // they are now created AND registered on their per-frame hook. This call is the rollback path only:
-        // CutsceneBoundary.CreateControllerIfMissing == false switches it off, one const switches it back on.
-        global::Fika.Core.Main.Components.CutsceneBoundary.EnsureControllers(gameWorld, "FikaHostWorld.Create");
+        // (analysis/cutscene-world-factory，已被 analysis/cutscene-native-registration 取代) 两个
+        // 过场控制器过去在这里创建，位于本移植对原生
+        // GameWorld.Create<T> 方法体的替换实现内部。该方法体从未创建它们（4.0 EFT/GameWorld.cs:1111-1123）——原生
+        // 位置是 raid 启动协程，本移植用 CoopGame.InitPlayer 替换它，而现在
+        // 它们在各自的每帧钩子上被创建并注册。此调用仅是回滚路径：
         return hostWorld;
     }
 
@@ -102,9 +100,9 @@ public class FikaHostWorld : World
         if (_windowHitHandler != null)
             WindowBreaker.OnWindowHitAction -= _windowHitHandler;
         if (ReferenceEquals(_server?.FikaHostWorld, this)) _server.FikaHostWorld = null;
-        // (analysis/transit-crash-unload) The world this component belongs to is going away: drop every
-        // list and packet it still held for it, so nothing of the replaced raid can reach the next world
-        // through the surviving FikaServer. The network ids in _terminalGrenadeIds are raid scoped.
+        // (analysis/transit-crash-unload) 本组件所属的世界即将销毁：丢弃它
+        // 仍为该世界持有的每个列表和封包，这样被替换的 raid 中的任何东西都无法通过残留的
+        // FikaServer 到达下一个世界。_terminalGrenadeIds 中的网络 ID 是 raid 作用域的。
         LootSyncPackets?.Clear();
         _grenadeData?.Clear();
         _terminalGrenadeIds.Clear();
@@ -141,7 +139,7 @@ public class FikaHostWorld : World
     }
 
     /// <summary>
-    /// Marks the current <see cref="WorldPacket"/> as critical
+    /// 将当前的 <see cref="WorldPacket"/> 标记为关键
     /// </summary>
     internal void SetCritical()
     {
@@ -162,9 +160,9 @@ public class FikaHostWorld : World
 
         if (_gameWorld.GrenadesCriticalStates.Count > 0)
         {
-            // SPT 5 UnregisterGrenade queues the final state, removes the
-            // throwable and unsubscribes its destroy event. Consume that native
-            // queue instead of suppressing GameWorld.GrenadeDestroyEvent.
+            // SPT 5 的 UnregisterGrenade 会入队最终状态、移除
+            // 投掷物并取消订阅其销毁事件。消费该原生
+            // 队列，而不是压制 GameWorld.GrenadeDestroyEvent。
             foreach (var packet in _gameWorld.GrenadesCriticalStates)
             {
                 if (_terminalGrenadeIds.Add(packet.Id))
@@ -187,8 +185,8 @@ public class FikaHostWorld : World
         }
 
         _grenadeData.Clear();
-        // Network ids are scoped to a raid.  This component is destroyed on
-        // raid end, so the terminal-id set cannot leak into the next world.
+        // 网络 ID 以 raid 为作用域。本组件会在
+        // raid 结束时销毁，因此终态 ID 集合不会泄漏到下一个世界。
         _gameWorld.ArtilleryProjectilesStates.Clear();
     }
 
@@ -197,11 +195,11 @@ public class FikaHostWorld : World
         for (var i = LootSyncPackets.Count - 1; i >= 0; i--)
         {
             var gstruct = LootSyncPackets[i];
-            // DictionaryListHydra is an IL2CPP native collection. Values can
-            // be surfaced through the LootItem wrapper even when the native
-            // object is the observed subclass, so CLR pattern matching can
-            // silently skip position updates. Resolve the native identity
-            // explicitly before applying the packet.
+            // DictionaryListHydra 是一个 IL2CPP 原生集合。即使原生
+            // 对象是被观察的子类，值也可能通过 LootItem 包装器
+            // 暴露出来，因此 CLR 模式匹配可能
+            // 静默跳过位置更新。在应用该封包之前
+            // 要显式解析原生身份。
             if (lootItems.TryGetByKey(gstruct.Id, out var lootItem)
                 && lootItem?.TryCast<ObservedLootItem>() is { } observedLootItem)
             {
@@ -212,7 +210,7 @@ public class FikaHostWorld : World
     }
 
     /// <summary>
-    /// Sets up all the <see cref="BorderZone"/>s on the map
+    /// 在地图上设置所有的 <see cref="BorderZone"/>
     /// </summary>
     public override void SubscribeToBorderZones(Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<BorderZone> zones)
     {
@@ -224,7 +222,7 @@ public class FikaHostWorld : World
     }
 
     /// <summary>
-    /// Triggered when a <see cref="BorderZone"/> triggers (only runs on host)
+    /// 当某个 <see cref="BorderZone"/> 触发时触发（仅在主机上运行）
     /// </summary>
     /// <param name="player"></param>
     /// <param name="zone"></param>

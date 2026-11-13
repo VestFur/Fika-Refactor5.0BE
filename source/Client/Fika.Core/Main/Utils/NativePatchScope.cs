@@ -9,9 +9,9 @@ using MonoMod.Utils;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Recent interop wrappers dispatch explicit interface members through a
-/// NativeInterfaceMethodInfoPtr field. Harmony must detour the concrete class
-/// implementation, whose NativeMethodInfoPtr field is still generated.
+/// 较新的 interop 包装器通过一个
+/// NativeInterfaceMethodInfoPtr 字段来分派显式接口成员。Harmony 必须挂接具体的类
+/// 实现，而它的 NativeMethodInfoPtr 字段仍然是生成出来的。
 /// </summary>
 internal sealed class NativePatchScope : IDisposable
 {

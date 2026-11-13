@@ -8,21 +8,21 @@ using UnityEngine;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// A client's grenade is an ObservedGrenade: it never runs the real fuse. Its StartTimer only
-/// schedules Expire(), which logs "Grenade expired by time" and destroys the object WITHOUT any
-/// explosion (proven by nine such lines in a real client log where the client saw and heard
-/// nothing). The only thing that can produce the client's visible and audible explosion is
-/// ObservedGrenade.OnDoneFromNet() -> Grenade.InvokeBlowUpEvent(), which for a client either never
-/// arrives or is swallowed, so this helper runs the same effect explicitly.
+/// 客户端的投掷物是 ObservedGrenade：它从不执行真正的引信。它的 StartTimer 只
+/// 排定 Expire()，后者记录 "Grenade expired by time" 并销毁对象，而完全没有
+/// 任何爆炸（真实的客户端日志里有九条这样的行作为证据，而客户端既没看到、也没听到
+/// 任何东西）。唯一能产生客户端可见、可听的爆炸效果的东西是
+/// ObservedGrenade.OnDoneFromNet() -> Grenade.InvokeBlowUpEvent()，而它在客户端要么从不到达，
+/// 要么被吞掉，所以这个辅助方法显式地执行同样的效果。
 /// </summary>
 internal static class FikaGrenadeExplosion
 {
     private static readonly HashSet<IntPtr> Exploded = new();
 
     /// <summary>
-    /// Drops the exploded-grenade set at a world teardown (analysis/transit-crash-unload). The set holds raw
-    /// native addresses, so a new world that happens to reuse an address would otherwise be reported as
-    /// already exploded. Returns the number of entries dropped.
+    /// 在世界拆除时丢弃已爆炸投掷物集合（analysis/transit-crash-unload）。该集合保存的是原始
+    /// 原生地址，所以新世界若恰好复用了某个地址，否则它就会被报告为
+    /// 已爆炸。返回被丢弃的条目数量。
     /// </summary>
     internal static int ClearForWorldTeardown()
     {
@@ -55,14 +55,14 @@ internal static class FikaGrenadeExplosion
                 : weapon?.ExplosionEffectType;
             var position = grenade.transform.position;
 
-            // 1) the visible + audible explosion the client was missing
+            // 1) 客户端缺失的可见 + 可听爆炸效果
             if (!string.IsNullOrEmpty(effect) && Singleton<Effects>.Instantiated)
             {
                 Singleton<Effects>.Instance.EmitGrenade(effect, position, Vector3.up, 0f);
             }
 
-            // 2) the native damage/contusion pass for whatever this machine is authoritative for.
-            //    On a client the host relays the real damage, so this only covers the local case.
+            // 2) 对这台机器具有权威的任意目标执行原生伤害/震荡处理。
+            //    在客户端上真实伤害由主机转发，所以这里只覆盖本地情形。
             var explosive = weapon == null ? null : weapon.TryCast<IExplosiveItem>();
             if (explosive != null)
             {

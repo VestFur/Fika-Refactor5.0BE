@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -11,7 +11,7 @@ using HarmonyLib;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Provides access to UI Fixes' multiselect functionality
+/// 提供对 UI Fixes 多选功能的访问
 /// </summary>
 internal static class MultiSelect
 {
@@ -26,7 +26,7 @@ internal static class MultiSelect
     private static MethodInfo _applyMethod;
 
     /// <summary>
-    /// The number of items in the current selection, 0 if UI Fixes is not present.
+    /// 当前选择中的物品数量，UI Fixes 不存在时为 0。
     /// </summary>
     public static int Count
     {
@@ -42,7 +42,7 @@ internal static class MultiSelect
     }
 
     /// <summary>
-    /// Enumerable list of items in the current selection, empty if UI Fixes is not present
+    /// 当前选择中物品的可枚举列表，UI Fixes 不存在时为空
     /// </summary>
     public static IEnumerable<Item> Items
     {
@@ -58,11 +58,11 @@ internal static class MultiSelect
     }
 
     /// <summary>
-    /// This method takes an <c>Action</c> and calls it *sequentially* on each item in the current selection.
-    /// Will no-op if UI Fixes is not present.
+    /// 该方法接收一个 <c>Action</c>，并按顺序在当前选择中的每个物品上调用它。
+    /// UI Fixes 不存在时不做任何操作。
     /// </summary>
-    /// <param name="action">The action to call on each item.</param>
-    /// <param name="itemUiContext">Optional <c>ItemUiContext</c>; will use <c>ItemUiContext.Instance</c> if not provided.</param>
+    /// <param name="action">要在每个物品上调用的操作。</param>
+    /// <param name="itemUiContext">可选的 <c>ItemUiContext</c>；未提供时使用 <c>ItemUiContext.Instance</c>。</param>
     public static void Apply(Action<Item> action, ItemUiContext itemUiContext = null)
     {
         if (!Loaded)
@@ -80,12 +80,12 @@ internal static class MultiSelect
     }
 
     /// <summary>
-    /// This method takes an <c>Func</c> that returns a <c>Task</c> and calls it *sequentially* on each item in the current selection.
-    /// Will return a completed task immediately if UI Fixes is not present.
+    /// 该方法接收一个返回 <c>Task</c> 的 <c>Func</c>，并按顺序在当前选择中的每个物品上调用它。
+    /// UI Fixes 不存在时立即返回一个已完成的任务。
     /// </summary>
-    /// <param name="func">The function to call on each item</param>
-    /// <param name="itemUiContext">Optional <c>ItemUiContext</c>; will use <c>ItemUiContext.Instance</c> if not provided.</param>
-    /// <returns>A <c>Task</c> that will complete when all the function calls are complete.</returns>
+    /// <param name="func">要在每个物品上调用的函数</param>
+    /// <param name="itemUiContext">可选的 <c>ItemUiContext</c>；未提供时使用 <c>ItemUiContext.Instance</c>。</param>
+    /// <returns>在所有函数调用完成后完成的 <c>Task</c>。</returns>
     public static Task Apply(Func<Item, Task> func, ItemUiContext itemUiContext = null)
     {
         if (!Loaded)
@@ -113,6 +113,15 @@ internal static class MultiSelect
                         _getCountMethod = AccessTools.Method(_multiSelectType, "GetCount");
                         _getItemsMethod = AccessTools.Method(_multiSelectType, "GetItems");
                         _applyMethod = AccessTools.Method(_multiSelectType, "Apply");
+                    }
+
+                    // 插件列表中存在、但控制器被重命名的版本
+                    // 不可用：下面的每个访问器都会在未做 null 检查的情况下解引用这些 MethodInfo，
+                    // 因此未解析的成员必须在这里关闭该功能，
+                    // 而不是在第一个多选操作时抛异常。
+                    if (_multiSelectType == null || _getCountMethod == null || _getItemsMethod == null || _applyMethod == null)
+                    {
+                        _uIFixesLoaded = false;
                     }
                 }
             }

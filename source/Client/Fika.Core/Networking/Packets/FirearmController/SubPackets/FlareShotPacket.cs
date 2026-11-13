@@ -56,8 +56,8 @@ public sealed class FlareShotPacket : IPoolSubPacket
             {
                 var bulletClass = Singleton<ItemFactory>.Instance.CreateItem(MongoID.Generate(), AmmoTemplateId, null).Cast<Ammo>();
                 controller.InitiateFlare(bulletClass, ShotPosition, ShotForward);
-                // The flare this peer's machine just created. A green one activates an exit; the replicator
-                // needs this exact object to run the exit chain on this machine as well.
+                // 该对端机器刚创建的信号弹。绿色信号弹会激活撤离点；复现器
+                // 需要这个确切的对象，才能在本机同样执行撤离链路。
                 Fika.Core.Main.Components.FikaFlareExfil.RememberRemoteFlareShot(player.ProfileId, bulletClass);
                 bulletClass.IsUsed = true;
                 controller.WeaponManager.MoveAmmoFromChamberToShellPort(bulletClass.IsUsed, 0);

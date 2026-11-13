@@ -1,157 +1,157 @@
 ﻿namespace Fika.Core.Networking.Packets.FirearmController;
 
 /// <summary>
-/// Describes sub-packet types related to firearms and combat actions.
+/// 描述与枪械和战斗动作相关的子包类型。
 /// </summary>
 public enum EFirearmSubPacketType : byte
 {
     /// <summary>
-    /// Information about a shot fired.
+    /// 一次开火的信息。
     /// </summary>
     ShotInfo,
 
     /// <summary>
-    /// Change the firearm's fire mode.
+    /// 切换枪械的射击模式。
     /// </summary>
     ChangeFireMode,
 
     /// <summary>
-    /// Toggle aiming state.
+    /// 切换瞄准状态。
     /// </summary>
     ToggleAim,
 
     /// <summary>
-    /// Examine the weapon.
+    /// 检视武器。
     /// </summary>
     ExamineWeapon,
 
     /// <summary>
-    /// Check the ammo count.
+    /// 检查弹药数量。
     /// </summary>
     CheckAmmo,
 
     /// <summary>
-    /// Check the chamber status.
+    /// 检查枪膛状态。
     /// </summary>
     CheckChamber,
 
     /// <summary>
-    /// Check the current fire mode.
+    /// 检查当前的射击模式。
     /// </summary>
     CheckFireMode,
 
     /// <summary>
-    /// Toggle the light states on the firearm.
+    /// 切换枪械上的灯具状态。
     /// </summary>
     ToggleLightStates,
 
     /// <summary>
-    /// Toggle the scope states on the firearm.
+    /// 切换枪械上的瞄具状态。
     /// </summary>
     ToggleScopeStates,
 
     /// <summary>
-    /// Toggle the launcher attachment.
+    /// 切换榴弹发射器配件。
     /// </summary>
     ToggleLauncher,
 
     /// <summary>
-    /// Toggle the inventory view or state.
+    /// 切换背包视图或状态。
     /// </summary>
     ToggleInventory,
 
     /// <summary>
-    /// Perform a loot action.
+    /// 执行搜刮动作。
     /// </summary>
     Loot,
 
     /// <summary>
-    /// Reload the magazine.
+    /// 重新装填弹匣。
     /// </summary>
     ReloadMag,
 
     /// <summary>
-    /// Perform a quick reload of the magazine.
+    /// 对弹匣执行快速重装。
     /// </summary>
     QuickReloadMag,
 
     /// <summary>
-    /// Reload using ammo.
+    /// 使用弹药重新装填。
     /// </summary>
     ReloadWithAmmo,
 
     /// <summary>
-    /// Reload the cylinder magazine.
+    /// 重新装填转轮弹巢。
     /// </summary>
     CylinderMag,
 
     /// <summary>
-    /// Reload the launcher.
+    /// 重新装填榴弹发射器。
     /// </summary>
     ReloadLauncher,
 
     /// <summary>
-    /// Reload the barrels.
+    /// 重新装填枪管。
     /// </summary>
     ReloadBarrels,
 
     /// <summary>
-    /// Grenade-related action.
+    /// 手雷相关动作。
     /// </summary>
     Grenade,
 
     /// <summary>
-    /// Cancel a grenade action.
+    /// 取消手雷动作。
     /// </summary>
     CancelGrenade,
 
     /// <summary>
-    /// Toggle the compass.
+    /// 切换指南针。
     /// </summary>
     CompassChange,
 
     /// <summary>
-    /// Knife-related action.
+    /// 刀具相关动作。
     /// </summary>
     Knife,
 
     /// <summary>
-    /// Flare fired.
+    /// 已发射信号弹。
     /// </summary>
     FlareShot,
 
     /// <summary>
-    /// Rocket shot fired.
+    /// 已发射火箭弹。
     /// </summary>
     RocketShot,
 
     /// <summary>
-    /// Reload bolt-action firearm.
+    /// 重新装填栓动式枪械。
     /// </summary>
     ReloadBoltAction,
 
     /// <summary>
-    /// Roll the cylinder magazine.
+    /// 转动转轮弹巢。
     /// </summary>
     RollCylinder,
 
     /// <summary>
-    /// Increase underbarrel sighting range.
+    /// 增大枪管下挂瞄具的标定距离。
     /// </summary>
     UnderbarrelSightingRangeUp,
 
     /// <summary>
-    /// Decrease underbarrel sighting range.
+    /// 减小枪管下挂瞄具的标定距离。
     /// </summary>
     UnderbarrelSightingRangeDown,
 
     /// <summary>
-    /// Toggle bipod deployment.
+    /// 切换两脚架的展开状态。
     /// </summary>
     ToggleBipod,
 
     /// <summary>
-    /// Left stance changed.
+    /// 左侧持枪姿态发生改变。
     /// </summary>
     LeftStanceChange
 }

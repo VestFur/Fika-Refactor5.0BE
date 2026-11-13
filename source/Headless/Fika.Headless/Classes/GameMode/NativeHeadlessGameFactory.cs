@@ -10,9 +10,9 @@ using Il2CppObjectPool = Il2CppInterop.Runtime.Runtime.Il2CppObjectPool;
 namespace Fika.Headless.Classes.GameMode;
 
 /// <summary>
-/// Invokes AbstractGame.Create with a native HeadlessGame generic argument.
-/// The generated CLR generic method can resolve the wrong IL2CPP generic store
-/// for an injected game type, so close it through native reflection instead.
+/// 以原生的 HeadlessGame 泛型参数调用 AbstractGame.Create。
+/// 对于注入的游戏类型，生成的 CLR 泛型方法可能解析到错误的 IL2CPP 泛型
+/// 仓库，因此改为通过原生反射来完成。
 /// </summary>
 internal static class NativeHeadlessGameFactory
 {

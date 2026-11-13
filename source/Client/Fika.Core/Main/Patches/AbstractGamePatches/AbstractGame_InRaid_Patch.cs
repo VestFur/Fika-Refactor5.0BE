@@ -7,7 +7,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.AbstractGamePatches;
 
 /// <summary>
-/// Used to support mods that rely on the <see cref="AbstractGame.InRaid"/> property, which normally casts to <see cref="LocalGame"/>
+/// 用于支持依赖 <see cref="AbstractGame.InRaid"/> 属性的 mod，该属性通常会强制转换为 <see cref="LocalGame"/>
 /// </summary>
 internal class AbstractGame_InRaid_Patch : ModulePatch
 {
@@ -20,9 +20,9 @@ internal class AbstractGame_InRaid_Patch : ModulePatch
     public static bool Prefix(AbstractGame __instance, ref bool __result)
     {
         if (FikaBackendUtils.ClientType == EClientType.None) return true;
-        // HeadlessGame is an AbstractGame too, but it still represents an
-        // active Fika raid.  Returning false here makes native callers skip
-        // raid-only cleanup and reconnect logic on a dedicated host.
+        // HeadlessGame 同样是一个 AbstractGame，但它仍然代表着
+        // 一场正在进行的 Fika 战局。在这里返回 false 会让原生调用方跳过
+        // 专用主机上仅属于战局的清理与重连逻辑。
         __result = __instance is CoopGame || FikaBackendUtils.IsHeadless || FikaBackendUtils.IsHeadlessGame;
         return false;
     }

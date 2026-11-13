@@ -8,31 +8,31 @@ using System.Threading.Tasks;
 namespace Fika.Core.Networking.Websocket;
 
 /// <summary>
-/// What a Fika web socket loop looks like when the application is going away.
+/// 应用正在退出时 Fika web socket 循环的模样。
 ///
-/// Closing a client socket (<c>Close</c>/<c>Dispose</c>/<c>Abort</c>) does not silently end the reads that
-/// are waiting on it: they come back as a cancellation, an aborted stream, or an object that is already
-/// disposed - <c>OperationCanceledException</c>, <c>IOException</c> ("The read operation failed"),
-/// <c>WebSocketException</c>, <c>ObjectDisposedException</c>. Every one of those used to travel through the
-/// generic <c>catch</c> of the loops and come out as a warning line, while the cancellation of a
-/// <c>Task.Delay(token)</c> escaped the loop entirely as a faulted fire-and-forget task
-/// (2026-10-10, frame=21499: 13 exception blocks and 286 diagnostic lines in the last 90 ms of the run).
+/// 关闭客户端 socket（<c>Close</c>/<c>Dispose</c>/<c>Abort</c>）并不会静默结束等待在其上的
+/// 读取：它们会以取消、被中止的流，或已经处置的对象的形式返回——
+/// <c>OperationCanceledException</c>、<c>IOException</c>（"The read operation failed"）、
+/// <c>WebSocketException</c>、<c>ObjectDisposedException</c>。这些以前都会穿过循环的
+/// 通用 <c>catch</c>，变成一行警告，而
+/// <c>Task.Delay(token)</c> 的取消则会完全逃出循环，变成一个故障的即发即忘任务
+/// （2026-10-10，frame=21499：运行的最后 90 ms 内有 13 个异常块和 286 行诊断日志）。
 ///
-/// Two small helpers are all that is needed to tell that apart from a real socket problem: the condition
-/// is "the stop token is already cancelled", and it is checked by the callers.
+/// 只需两个小辅助方法就能把它与真正的 socket 问题区分开：条件是
+/// 「停止令牌已被取消」，并由调用方自行检查。
 /// </summary>
 internal static class WebSocketShutdown
 {
-    /// <summary>True for the exceptions a closed or aborted socket releases instead of a clean end.</summary>
+    /// <summary>对于关闭或中止的 socket 释放出的异常（而非干净结束）返回 true。</summary>
     internal static bool IsTeardown(Exception exception) =>
         exception is OperationCanceledException or IOException or ObjectDisposedException or WebSocketException
             or SocketException;
 
     /// <summary>
-    /// Waits before the next reconnect attempt and returns false when the stop token was cancelled while
-    /// waiting. <c>Task.Delay(delay, token)</c> raises <c>TaskCanceledException</c> instead - it is awaited
-    /// outside the loop's try block, so at shutdown it faulted the loop's own task and the first-chance
-    /// probe recorded it as a teardown exception.
+    /// 在下一次重连尝试前等待，若等待期间停止令牌被取消则返回 false。
+    /// <c>Task.Delay(delay, token)</c> 则会抛出 <c>TaskCanceledException</c>——它是在循环 try 块之外
+    /// 被等待的，所以关闭时它会让循环自身的任务进入故障状态，而首次机会
+    /// 探测则把它记录为拆除异常。
     /// </summary>
     internal static async Task<bool> WaitBeforeReconnectAsync(TimeSpan delay, CancellationToken token)
     {

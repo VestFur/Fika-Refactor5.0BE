@@ -27,24 +27,24 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
     private readonly ConcurrentDictionary<MongoId, MatchInsuranceState> _matchInsuranceInfo = [];
 
     /// <summary>
-    /// Gets the match the player is part of
+    /// 获取该玩家所在的战局
     /// </summary>
-    /// <param name="sessionID">The profile id to search for</param>
-    /// <returns>The match id or <see langword="null"/> if not found</returns>
+    /// <param name="sessionID">要查找的 profile id</param>
+    /// <returns>战局 id；若未找到则为 <see langword="null"/></returns>
     public MongoId? GetMatchId(MongoId sessionID)
         => GetMatchId(sessionID, null);
 
     /// <summary>
-    /// Gets the insurance snapshot that owns a native raid-end callback.
+    /// 获取持有某个原生战局结束回调的保险快照。
     ///
-    /// A profile can be present in an ending match and in a newly joined
-    /// match at the same time.  When SPT sends the local raid's ServerId,
-    /// matching that token is the only reliable way to avoid assigning the
-    /// old callback to the new raid.
+    /// 某个 profile 可能同时存在于正在结束的战局和新加入的
+    /// 战局中。当 SPT 发送本地战局的 ServerId 时，
+    /// 匹配该 token 是避免把旧回调分配给新战局的
+    /// 唯一可靠方式。
     /// </summary>
-    /// <param name="sessionID">The profile id to search for.</param>
-    /// <param name="raidToken">The ServerId returned by StartLocalRaid.</param>
-    /// <returns>The match id or <see langword="null"/> if not found.</returns>
+    /// <param name="sessionID">要查找的 profile id。</param>
+    /// <param name="raidToken">StartLocalRaid 返回的 ServerId。</param>
+    /// <returns>战局 id；若未找到则为 <see langword="null"/>。</returns>
     public MongoId? GetMatchId(MongoId sessionID, string? raidToken)
     {
         var hasToken = !string.IsNullOrWhiteSpace(raidToken);
@@ -53,10 +53,10 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
         {
             lock (state)
             {
-                // EndMatchCore closes admission before native
-                // EndLocalRaidAsync necessarily arrives.  Keep returning the
-                // retained match while it is settling so the late request can
-                // still record the final inventory.
+                // EndMatchCore 会在原生 EndLocalRaidAsync 必然到达
+                // 之前就关闭准入。在其收尾期间仍应持续返回
+                // 保留的战局，好让迟到的请求仍能
+                // 记录最终库存。
                 if (!state.Players.ContainsKey(sessionID))
                     continue;
 
@@ -65,15 +65,15 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
                     if (!state.Players[sessionID].RaidTokens.Contains(raidToken!))
                         continue;
 
-                    // A token is generated uniquely by StartLocalRaid.  Do
-                    // not continue searching once an exact owner is found.
+                    // token 由 StartLocalRaid 唯一生成。一旦找到确切的
+                    // 所有者，就不要再继续搜索。
                     return matchId;
                 }
 
-                // A profile may already have joined its next raid while an
-                // old state is still draining. Prefer the live state, while
-                // retaining the ending state as a fallback for a late native
-                // EndLocalRaid request from the previous raid.
+                // 旧状态仍在排空时，某个 profile 可能已经加入了下一场
+                // 战局。优先返回实时状态，同时
+                // 保留正在结束的状态，作为上一场战局迟到的原生
+                // EndLocalRaid 请求的兜底。
                 if (!state.IsEnding)
                     return matchId;
 
@@ -85,9 +85,9 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
     }
 
     /// <summary>
-    /// Reads the retained raid participant metadata after the live Fika roster
-    /// has removed a player. This is needed by the native raid-end request,
-    /// which can arrive after /fika/raid/leave.
+    /// 在实时 Fika 名单已移除某玩家之后，读取保留的战局参与者
+    /// 元数据。原生战局结束请求可能在 /fika/raid/leave 之后
+    /// 到达，因此需要这些数据。
     /// </summary>
     public bool IsSpectator(MongoId matchId, MongoId sessionID)
     {
@@ -100,17 +100,17 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
     }
 
     /// <summary>
-    /// Adds a player to the a match
+    /// 将玩家加入某个战局
     /// </summary>
-    /// <param name="matchId">The id of the match</param>
-    /// <param name="sessionID">The profile id to add</param>
+    /// <param name="matchId">战局的 id</param>
+    /// <param name="sessionID">要添加的 profile id</param>
     public bool AddPlayerToMatchId(MongoId matchId, MongoId sessionID, bool isSpectator = false)
     {
-        // A reconnect can arrive after the roster entry was removed while
-        // the insurance snapshot is intentionally retained for a late
-        // EndLocalRaid request. Treat that registration as an idempotent
-        // success before reading the profile again; the profile may already
-        // be unloading while the raid is being torn down.
+        // 重连可能在名单条目已被移除、而保险快照被有意
+        // 保留以供迟到的 EndLocalRaid 请求使用时到达。
+        // 应把这次注册视为幂等的成功，然后再读取
+        // profile；此时战局正在拆除，
+        // profile 可能已在卸载。
         if (_matchInsuranceInfo.TryGetValue(matchId, out var existingState))
         {
             lock (existingState)
@@ -147,12 +147,12 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
         var state = _matchInsuranceInfo.GetOrAdd(matchId, _ => new MatchInsuranceState());
         lock (state)
         {
-            // Reconnects can register the same profile again. Preserve the
-            // first raid-entry inventory and any post-raid result already
-            // recorded for that player.
+            // 重连可能再次注册同一个 profile。保留
+            // 首次进入战局时的库存，以及该玩家已记录的
+            // 任何战局后结果。
             if (state.IsEnding) return false;
-            // The second check closes the race between the fast path above
-            // and profile snapshot construction.
+            // 第二次检查关闭了上述快速路径与 profile 快照
+            // 构建之间的竞态。
             if (state.Players.ContainsKey(sessionID)) return true;
             state.Players.Add(sessionID, player);
             return true;
@@ -160,10 +160,10 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
     }
 
     /// <summary>
-    /// Associates one StartLocalRaid response with the participant's retained
-    /// insurance snapshot. EndLocalRaidRequestData.ServerId is the only raid
-    /// identity sent back by the native SPT endpoint, so this association must
-    /// be made before the client can finish the raid.
+    /// 将某个 StartLocalRaid 响应与参与者保留的
+    /// 保险快照关联起来。EndLocalRaidRequestData.ServerId 是原生 SPT 端点
+    /// 回传的唯一战局标识，因此必须在客户端结束
+    /// 战局之前建立该关联。
     /// </summary>
     public bool AddRaidToken(MongoId matchId, MongoId sessionID, string? raidToken)
     {
@@ -173,16 +173,16 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
 
         lock (state)
         {
-            // EndMatchCore closes admission for new participants before it
-            // waits for native raid-end callbacks. A StartLocalRaid request
-            // that was already in flight may finish after that gate closes;
-            // its existing participant still needs the token registered so
-            // the later EndLocalRaid callback can be matched to this snapshot.
-            // AddPlayerToMatchId remains the admission gate for new players.
-            // If every currently-known raid end was already settled, there is
-            // no waiter left that can observe a newly-added token. Reject the
-            // late response instead of allowing it to be copied after the
-            // final insurance snapshot or attached to a removed state.
+            // EndMatchCore 在等待原生战局结束回调之前，
+            // 会先关闭新参与者的准入。已经在飞行中的
+            // StartLocalRaid 请求可能在该闸门关闭后才完成；
+            // 其已有的参与者仍需要注册该 token，以便后续
+            // 的 EndLocalRaid 回调能匹配到这个快照。
+            // AddPlayerToMatchId 仍是新玩家的准入门。
+            // 若当前已知的所有战局结束都已结算完毕，则
+            // 不再有等待者能观察到新加入的 token。此时应拒绝
+            // 这个迟到的响应，而不是让它在最终保险快照
+            // 之后被复制，或附加到已移除的状态上。
             if (state.IsEnding &&
                 (state.RaidEndsCompleted is null || state.RaidEndsCompleted.Task.IsCompleted))
             {
@@ -210,11 +210,11 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
     }
 
     /// <summary>
-    /// Executed when a clients requests to end a raid
+    /// 在客户端请求结束战局时执行
     /// </summary>
-    /// <param name="sessionID">The profile id that requested the end</param>
-    /// <param name="matchId">The id of the match</param>
-    /// <param name="endLocalRaidRequest">The request data</param>
+    /// <param name="sessionID">请求结束的 profile id</param>
+    /// <param name="matchId">战局的 id</param>
+    /// <param name="endLocalRaidRequest">请求数据</param>
     public void OnEndLocalRaidRequest(MongoId sessionID, MongoId? matchId, EndLocalRaidRequestData endLocalRaidRequest)
     {
         if (!matchId.HasValue)
@@ -236,9 +236,9 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
         => TryBeginRaidEnd(sessionID, matchId, null, out _);
 
     /// <summary>
-    /// Reserves the native end-raid callback for a particular local raid.
-    /// Transit can create several local raids under one Fika match, therefore
-    /// the attempted/pending state is keyed by the StartLocalRaid ServerId.
+    /// 为某个本地战局预留原生结束战局回调。
+    /// 一个 Fika 战局下可能因中转产生多个本地战局，因此
+    /// 已尝试/待处理状态以 StartLocalRaid 的 ServerId 为键。
     /// </summary>
     public bool TryBeginRaidEnd(MongoId sessionID, MongoId? matchId, string? raidToken,
         out string? reservationToken)
@@ -254,9 +254,9 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
 
             if (reservationToken is not null)
             {
-                // A token must have been issued by this service's matching
-                // StartLocalRaid response. Never fall back to a profile-only
-                // reservation when an explicit token is present.
+                // 该 token 必须由本服务对应的 StartLocalRaid 响应
+                // 签发过。存在显式 token 时，绝不退回到仅按
+                // profile 的预留方式。
                 if (!player.RaidTokens.Contains(reservationToken) ||
                     !player.RaidEndAttemptedTokens.Add(reservationToken))
                     return false;
@@ -265,9 +265,9 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
             }
             else
             {
-                // Compatibility path for native clients that did not send a
-                // ServerId. This is deliberately one-shot, as there is no
-                // request-side identity to distinguish transit raids.
+                // 为未发送 ServerId 的原生客户端保留的兼容路径。
+                // 它被刻意设计为一次性使用，因为请求侧
+                // 没有可用于区分中转战局的标识。
                 if (player.RaidEndAttempted)
                     return false;
 
@@ -292,8 +292,8 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
     }
 
     /// <summary>
-    /// Releases a pending raid-end slot when the native SPT request is
-    /// cancelled or faults before producing a result.
+    /// 当原生 SPT 请求在产出结果之前被取消或出错时，
+    /// 释放对应的待处理战局结束槽位。
     /// </summary>
     public void AbortRaidEnd(MongoId sessionID, MongoId? matchId)
         => AbortRaidEnd(sessionID, matchId, null);
@@ -305,9 +305,9 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
 
         lock (state)
         {
-            // The leave callback may already have removed the player from the
-            // insurance roster while the native task is faulting. The pending
-            // counter is the authoritative ownership marker for this slot.
+            // 原生任务出错时，离开回调可能已将玩家从
+            // 保险名单中移除。待处理计数器才是该槽位
+            // 权威的归属标记。
             if (state.Players.TryGetValue(sessionID, out var player))
             {
                 var pendingRemoved = false;
@@ -374,14 +374,14 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
                     state.PendingRaidEnds--;
                 }
 
-                // Keep the inventory and completion flag in the same critical
-                // section so match-end cannot observe a half-written result.
-                // Transit callbacks can complete out of order; the token
-                // sequence prevents an older map from replacing the newest
-                // post-raid inventory.
-                // A legacy callback without ServerId is useful when no token
-                // was registered, but must not overwrite a transit inventory
-                // once a tokenized callback has been received.
+                // 把库存与完成标志放在同一个临界区内，
+                // 使战局结束流程无法观察到写了一半的结果。
+                // 中转回调可能乱序完成；token 序列
+                // 可防止较旧的映射替换最新的
+                // 战局后库存。
+                // 当没有注册任何 token 时，不带 ServerId 的旧式回调
+                // 仍然有用，但一旦收到带 token 的回调，
+                // 就不得覆盖中转库存。
                 var sequence = player.RaidTokens.Count > 0 ? -1 : long.MaxValue;
                 if (!string.IsNullOrWhiteSpace(raidToken) &&
                     player.RaidTokenOrder.TryGetValue(raidToken, out var tokenSequence))
@@ -431,9 +431,9 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
     }
 
     /// <summary>
-    /// Executed when a match ends
+    /// 在战局结束时执行
     /// </summary>
-    /// <param name="matchId">The id of the match</param>
+    /// <param name="matchId">战局的 id</param>
     public async Task OnMatchEndAsync(MongoId matchId)
     {
         if (!_matchInsuranceInfo.TryGetValue(matchId, out var state))
@@ -448,11 +448,11 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
         {
             if (state.IsEnding) return;
             state.IsEnding = true;
-            // EndLocalRaidAsync can arrive after /fika/raid/leave and after
-            // the host has started ending the match. Wait for all retained
-            // non-spectator participants to reach the native request, whether
-            // the request succeeds or faults, rather than only waiting for
-            // requests that happened to be in-flight at this exact instant.
+            // EndLocalRaidAsync 可能在 /fika/raid/leave 之后、且主机已开始
+            // 结束战局之后才到达。应等待所有保留的非观察者
+            // 参与者走到原生请求这一步，无论该请求最终
+            // 成功还是出错，而不是只等待那些恰好在此刻
+            // 正处于飞行中的请求。
             if (!AllRaidEndsSettled(state))
             {
                 state.RaidEndsCompleted ??= new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -532,8 +532,8 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
                 }
             }
 
-            // SPT saves the raid profile before Fika closes the match. Persist
-            // insurance changes made here so they survive a server restart.
+            // SPT 会在 Fika 关闭战局之前保存战局 profile。此处产生的
+            // 保险变更需要持久化，以便在服务器重启后仍然存在。
             foreach (var sessionID in profilesWithChangedInsurance)
             {
                 try
@@ -553,10 +553,10 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
     }
 
     /// <summary>
-    /// Removes all provided itemIds from a profile's <see cref="Insurance"/>
+    /// 从 profile 的 <see cref="Insurance"/> 中移除所有给定的 itemIds
     /// </summary>
-    /// <param name="sessionID">The profile to remove from</param>
-    /// <param name="ids">The item ids to search for and remove</param>
+    /// <param name="sessionID">要从中移除的 profile</param>
+    /// <param name="ids">要查找并移除的物品 id</param>
     /// <exception cref="NullReferenceException"></exception>
     private bool RemoveItemsFromInsurance(MongoId sessionID, MongoId[] ids)
     {
@@ -583,7 +583,7 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
                     continue;
                 }
 
-                // Remove soft inserts out of armor and helmets
+                // 从护甲和头盔中移除软插板
                 if (itemHelper.IsOfBaseclasses(item.Template, [BaseClasses.ARMOR, BaseClasses.HEADWEAR]))
                 {
                     logger.Debug($"[Fika Insurance] {itemId} is armor or helmet");
@@ -592,7 +592,7 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
 
                     foreach (var childItem in children)
                     {
-                        // Soft inserts are not insured
+                        // 软插板不受保险
                         if (!ids.Contains(childItem.Id))
                         {
                             toRemove.Add(childItem);
@@ -600,7 +600,7 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
                     }
                 }
 
-                // Remove children of the item
+                // 移除该物品的子项
                 foreach (var itemToRemove in toRemove)
                 {
                     if (!insurance.Items!.Remove(itemToRemove))
@@ -613,14 +613,14 @@ public class InsuranceService(SaveServer saveServer, ItemHelper itemHelper, ISpt
                     }
                 }
 
-                // Clear list for next iteration
+                // 为下一次迭代清空列表
                 toRemove.Clear();
 
-                // Remove the original item (parent)
+                // 移除原始物品（父项）
                 changed |= insurance.Items!.Remove(item);
             }
 
-            // If all insured items are gone, remove the entry
+            // 若所有受保物品都已消失，则移除该条目
             if (insurance.Items?.Count == 0)
             {
                 profile.InsuranceList.RemoveAt(i--);

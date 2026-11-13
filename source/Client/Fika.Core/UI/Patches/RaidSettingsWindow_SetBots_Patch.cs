@@ -7,7 +7,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.UI.Patches;
 
 /// <summary>
-/// This allows the user to modify all AI settings even after modifying AI amount / difficulty
+/// 这允许用户在修改 AI 数量/难度之后仍能修改所有 AI 设置
 /// </summary>
 public sealed class RaidSettingsWindow_SetBots_Patch : ModulePatch
 {

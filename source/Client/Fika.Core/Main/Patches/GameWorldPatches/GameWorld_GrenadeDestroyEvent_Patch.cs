@@ -7,10 +7,10 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.GameWorldPatches;
 
 /// <summary>
-/// Preserves the final network state of a host grenade when SPT raises the
-/// native destroy event.  SPT 5 may also queue this state from
-/// <c>UnregisterGrenade</c>; the host world de-duplicates delivery by clearing
-/// its per-tick queue after it has been flushed.
+/// 在 SPT 触发原生销毁事件时，保留主机手雷的最终
+/// 网络状态。SPT 5 也可能把该状态排入队列，来源是
+/// <c>UnregisterGrenade</c>；主机世界在每次刷新后清空自己的逐 tick 队列，
+/// 以此对投递去重。
 /// </summary>
 public sealed class GameWorld_GrenadeDestroyEvent_Patch : ModulePatch
 {
@@ -28,9 +28,9 @@ public sealed class GameWorld_GrenadeDestroyEvent_Patch : ModulePatch
         if (hostWorld == null)
             return true;
 
-        // SPT 5's native unregister path is authoritative when it has already
-        // queued a critical final state.  Avoid adding a second identical
-        // packet when the legacy destroy callback arrives afterwards.
+        // 当 SPT 5 的原生 unregister 路径已经排入关键最终状态时，
+        // 它才是权威。避免在旧的销毁回调随后到达时
+        // 再加一个完全相同的数据包。
         if (!hostWorld.TryQueueGrenadeDestroy(grenade))
             return true;
 

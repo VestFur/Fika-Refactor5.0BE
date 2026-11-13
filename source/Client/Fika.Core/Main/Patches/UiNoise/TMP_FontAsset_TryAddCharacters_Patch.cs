@@ -8,25 +8,25 @@ using TMPro;
 namespace Fika.Core.Main.Patches.UiNoise;
 
 /// <summary>
-/// Stops the SimSun character-add flood (5,744 warnings in one raid).
+/// 阻止 SimSun 字符添加洪水（一场 raid 中 5,744 条警告）。
 ///
-/// The Chinese locale makes EFT add the characters of its localization tables to the fallback
-/// SimSun font asset: <c>EFT.LocalizationManager.UpdateFonts(string)</c> calls
-/// <c>TMPro.TMP_FontAsset.TryAddCharacters(string, bool)</c> once per entry it walks, and entries
-/// without characters arrive as null/empty. The vanilla body of that case is only: log
-/// "Unable to add characters to font asset [...] because the provided character list is Null or
-/// Empty", copy the input into the "missing" out parameter and return false - no glyph is added and
-/// no atlas is touched. The 09:45 raid emitted 5,744 of those warnings back to back
-/// (LogOutput.log lines 833-6576) from the single locale update that starts right after Fika's
-/// "Waiting for locales to be ready...".
+/// 中文区域设置让 EFT 把其本地化表中的字符添加到后备
+/// SimSun 字体资源：<c>EFT.LocalizationManager.UpdateFonts(string)</c> 会为它遍历的每个条目
+/// 调用一次 <c>TMPro.TMP_FontAsset.TryAddCharacters(string, bool)</c>，而没有字符的条目
+/// 会以 null/空的形式到达。该情形下原版的方法体只是：记录
+/// 该日志原文为 "Unable to add characters to font asset [...] because the provided character list is Null or
+/// Empty"，把输入复制进 "missing" 输出参数并返回 false —— 不添加任何字形，
+/// 也不触碰图集。09:45 那场 raid 连续输出了 5,744 条这样的警告
+/// （LogOutput.log 第 833-6576 行），它们全都来自 Fika 的
+/// "Waiting for locales to be ready..." 之后紧接着开始的那一次区域设置更新。
 ///
-/// Skipping the call for a null/empty list therefore keeps the game behaviour identical and removes
-/// the spam. The first skip is reported once at Info level with the font name, so the evidence for
-/// this decision survives in the log.
+/// 因此对 null/空列表跳过这次调用既能保持游戏行为完全一致，又能消除
+/// 刷屏。第一次跳过会以 Info 级别带字体名报告一次，使这一决定的
+/// 证据保留在日志中。
 ///
-/// Both guards are exception safe: a guard that throws inside the game's own method would be worse
-/// than the warning it removes, so an unexpected shape degrades to one warning line and the vanilla
-/// call runs unchanged (see <see cref="TrySkipEmptyRequest"/>).
+/// 两个防护都是异常安全的：在游戏本身方法内部抛出的防护会比它所要消除的警告
+/// 更糟，因此意外的形态会降级为一行警告，而原版
+/// 调用照常执行（见 <see cref="TrySkipEmptyRequest"/>）。
 /// </summary>
 internal sealed class TMP_FontAsset_TryAddCharacters_Patch : ModulePatch
 {
@@ -50,11 +50,11 @@ internal sealed class TMP_FontAsset_TryAddCharacters_Patch : ModulePatch
         {
             if (!string.IsNullOrEmpty(characters))
             {
-                // A real request: the game must add those characters.
+                // 真正的请求：游戏必须添加这些字符。
                 return true;
             }
 
-            // The same answer the vanilla body produces for this input, minus the warning.
+            // 与原版方法体对该输入给出的答复相同，只是少了那条警告。
             __result = false;
 
             if (!_reported)
@@ -84,8 +84,8 @@ internal sealed class TMP_FontAsset_TryAddCharacters_Patch : ModulePatch
         }
 
         var element = byRef ? type.GetElementType() : type;
-        // The interop spells System.String as "String" (and Il2CppSystem.String would render the same
-        // way), so the element name is the shape test - never an assembly-qualified string.
+        // interop 把 System.String 写作 "String"（Il2CppSystem.String 呈现的结果也
+        // 一样），因此元素名才是形态检测 —— 绝不用程序集限定字符串。
         return element is not null && element.Name == "String";
     }
 
@@ -102,10 +102,10 @@ internal sealed class TMP_FontAsset_TryAddCharacters_Patch : ModulePatch
 }
 
 /// <summary>
-/// The same guard for the overload that actually owns the warning. The two argument overload above
-/// funnels into this one, and this is the method that logs "Unable to add characters to font asset
-/// [...] because the provided character list is Null or Empty" and then returns false without
-/// touching the atlas. Skipping the empty case therefore produces exactly the vanilla result.
+/// 针对真正产生那条警告的重载的同一个防护。上面的两参数重载
+/// 会汇入这一个，而这个方法正是记录 "Unable to add characters to font asset
+/// [...] because the provided character list is Null or Empty" 然后返回 false、不
+/// 触碰图集的那个。因此跳过空的情形正好得到原版的结果。
 /// </summary>
 internal sealed class TMP_FontAsset_TryAddCharacters_Missing_Patch : ModulePatch
 {
@@ -113,10 +113,10 @@ internal sealed class TMP_FontAsset_TryAddCharacters_Missing_Patch : ModulePatch
 
     protected override MethodBase GetTargetMethod()
     {
-        // The second parameter is an out/byref string. A byref parameter's Type.Name is "String&", so a
-        // scan that compares the name directly never matches (that threw
-        // "TMPro.TMP_FontAsset.TryAddCharacters(string, out string, bool)" at patch validation in the 10:11
-        // run and left this patch unapplied); the element type is the shape that identifies it.
+        // 第二个参数是 out/byref 字符串。byref 参数的 Type.Name 是 "String&"，因此直接比较名称的
+        // 扫描永远匹配不上（那在 10:11 那次运行的补丁校验中抛出了
+        // "TMPro.TMP_FontAsset.TryAddCharacters(string, out string, bool)" 并使该补丁未被应用）；
+        // 元素类型才是识别它的形态。
         return FontGuardTarget.Resolve(
             "TryAddCharacters(string, out string, bool)",
             static parameters => parameters.Length == 3
@@ -136,7 +136,7 @@ internal sealed class TMP_FontAsset_TryAddCharacters_Missing_Patch : ModulePatch
                 return true;
             }
 
-            // Vanilla behaviour for this input: report nothing missing, add nothing, return false.
+            // 该输入下的原版行为：不报告缺失、不添加任何东西、返回 false。
             missingCharacters = characters;
             __result = false;
             return false;
@@ -150,9 +150,9 @@ internal sealed class TMP_FontAsset_TryAddCharacters_Missing_Patch : ModulePatch
 }
 
 /// <summary>
-/// Shared target resolution for both guards: the exact namespace-qualified interop signature first
-/// (<c>AccessTools.Method</c> with the byref parameter spelled the way the metadata has it), then a
-/// parameter-shape scan for a build whose interop spells the types differently.
+/// 两个防护共享的目标解析：先按精确的带命名空间限定的 interop 签名
+/// （<c>AccessTools.Method</c>，byref 参数按元数据里的写法拼写），然后对 interop 中类型写法不同的
+/// 构建做一次参数形态扫描。
 /// </summary>
 internal static class FontGuardTarget
 {

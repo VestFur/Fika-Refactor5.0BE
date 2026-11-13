@@ -3,13 +3,13 @@ using System;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// A plain managed replacement for a Unity <c>WaitForSeconds</c>.
+/// Unity <c>WaitForSeconds</c> 的纯托管替代品。
 ///
-/// Why it exists: the routine pump drives managed iterators, so a port routine that yields the engine
-/// object makes the pump read <c>WaitForSeconds.m_Seconds</c> through the interop wrapper. That read is
-/// what ended the 2026-10-10 host raids: the diagnostics wrote "read WaitForSeconds.m_Seconds" and the
-/// next thing coreclr did was raise its uncatchable 0x80131506 behind JIT_ReversePInvokeEnterRare.
-/// Keeping the duration in managed state removes the engine object from the path entirely.
+/// 存在的原因：协程泵驱动的是托管迭代器，因此一个 yield 引擎对象的
+/// 移植协程会让泵通过 interop 包装器读取 <c>WaitForSeconds.m_Seconds</c>。正是
+/// 这次读取终结了 2026-10-10 的主机战局：诊断写下了 "read WaitForSeconds.m_Seconds"，
+/// 紧接着 coreclr 在 JIT_ReversePInvokeEnterRare 之后抛出了不可捕获的 0x80131506。
+/// 把时长保存在托管状态中，就完全移除了这条路径上的引擎对象。
 /// </summary>
 internal sealed class WaitSeconds
 {

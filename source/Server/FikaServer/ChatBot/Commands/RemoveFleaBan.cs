@@ -1,4 +1,4 @@
-﻿using FikaServer.Models.Fika.Config;
+﻿﻿using FikaServer.Models.Fika.Config;
 using FikaServer.Models.Fika.WebSocket.Notifications;
 using FikaServer.Services.Cache;
 using SPTarkov.DI.Annotations;
@@ -74,7 +74,7 @@ public partial class RemoveFleaBan(FikaServerConfig fikaServerConfig, MailSendSe
             return value;
         }
 
-        // create a new filtered collection without flea bans
+        // 创建一个不含跳蚤市场封禁的新过滤集合
         profile.CharacterData.PmcData.Info.Bans = bans.Where(b => b.BanType != BanType.RagFair);
 
         await saveServer.SaveProfileAsync(profile.ProfileInfo.ProfileId.Value);

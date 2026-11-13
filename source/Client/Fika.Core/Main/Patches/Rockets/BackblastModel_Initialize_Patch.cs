@@ -6,7 +6,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.Rockets;
 
 /// <summary>
-/// Do not run method unless server to avoid double damage
+/// 除非是服务器，否则不要执行该方法，以避免重复伤害
 /// </summary>
 public class BackblastModel_Initialize_Patch : ModulePatch
 {

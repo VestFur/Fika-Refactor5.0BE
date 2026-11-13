@@ -5,7 +5,7 @@ using EFT;
 namespace Fika.Core.Main.ClientClasses;
 
 /// <summary>
-/// Used to simulate having near no inertia
+/// 用于模拟几乎没有惯性的状态
 /// </summary>
 public class NoInertiaMovementContext : ClientMovementContext
 {

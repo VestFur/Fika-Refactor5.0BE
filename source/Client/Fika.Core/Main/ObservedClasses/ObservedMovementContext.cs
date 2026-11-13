@@ -94,7 +94,7 @@ public class ObservedMovementContext : MovementContext
 
     public override void Flash(ref Vector3 motion)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public override void LimitMotionXZ(ref Vector3 motion, float deltaTime, float threshold = 0.0001F)
@@ -104,12 +104,12 @@ public class ObservedMovementContext : MovementContext
 
     public override void LimitProneMotion(ref Vector3 motion)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public override void ApplyGravity(ref Vector3 motion, float deltaTime, bool stickToGround)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public override bool CanRoll(int direction)
@@ -134,7 +134,7 @@ public class ObservedMovementContext : MovementContext
 
     public override void OnControllerColliderHit(ControllerColliderHit hit)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public override bool OverlapOrHasNoGround(float depth, Il2CppSystem.Nullable<Vector3> axis = default, float width = 0, float heightDivider = 4, float extraCastLn = 0)
@@ -144,7 +144,7 @@ public class ObservedMovementContext : MovementContext
 
     public override void ProjectMotionToSurface(ref Vector3 motion)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public override bool IsAbleToRotateProne(Vector3 motion, float deltaYaw, Quaternion predictionRotation, Transform pivot, out ECantRotate cause)
@@ -154,26 +154,25 @@ public class ObservedMovementContext : MovementContext
     }
 
     /// <summary>
-    /// (analysis/stutter-pose-reset) 值未变就不写. The native setter this overrides is unconditional:
-    /// <c>MovementContext.SmoothedCharacterMovementSpeed</c> (decompiled MovementContext.cs:794-809) always calls
-    /// <c>PlayerAnimatorSetCharacterMovementSpeed</c> and then <c>ProceduralWeaponAnimation.Walk.Speed</c>, and
-    /// that second one is not a plain field either - <c>WalkEffector.Speed</c> (WalkEffector.cs:110-122)
-    /// recomputes the walk-bob intensity of the weapon sway. ManualStateUpdate passes the snapshot speed with
-    /// force on every frame and every observed player (61 on the measured client raids), i.e. it re-pushed a
-    /// value the native object already held, which is exactly the 「每帧把姿态/移动写回去」 shape this round is
-    /// about. The value state after the guard is identical - the field keeps the value it already had - while the
-    /// animator call, the walk-intensity recompute and one interop setter per player per frame disappear.
+    /// (analysis/stutter-pose-reset) 值未变就不写。这里重写的原生 setter 是无条件的：
+    /// <c>MovementContext.SmoothedCharacterMovementSpeed</c>（反编译得到的 MovementContext.cs:794-809）总是调用
+    /// <c>PlayerAnimatorSetCharacterMovementSpeed</c>，然后调用 <c>ProceduralWeaponAnimation.Walk.Speed</c>，而
+    /// 后者同样不是普通字段——<c>WalkEffector.Speed</c>（WalkEffector.cs:110-122）
+    /// 会重新计算武器摆动中行走晃动的强度。ManualStateUpdate 每一帧对每个被观测玩家都带着
+    /// 强制标志传入快照速度（实测的客户端突袭中为 61 次），也就是说它重新推入了一个
+    /// 原生对象本已持有的值，这正是本轮所讨论的「每帧把姿态/移动写回去」的形态。
+    /// 加了守卫之后的值状态完全相同——字段保留它原本持有的值——而
+    /// 动画器调用、行走强度重算以及每个玩家每帧一次互操作 setter 都消失了。
     /// <para>
-    /// The other two statements stay unconditional on purpose: <c>CharacterMovementSpeed</c> is the plain native
-    /// field and <c>UpdateCovertEfficiency</c> also depends on the player's weight and skills, not only on the
-    /// pushed speed, so it must keep being refreshed.
+    /// 另外两条语句有意保持无条件：<c>CharacterMovementSpeed</c> 就是普通的原生
+    /// 字段，而 <c>UpdateCovertEfficiency</c> 还取决于玩家的重量和技能，不只是
+    /// 被推入的速度，所以它必须继续被刷新。
     /// </para>
     /// </summary>
     public override void SetCharacterMovementSpeed(float characterMovementSpeed, bool force = false)
     {
         CharacterMovementSpeed = characterMovementSpeed;
-        if (!global::Fika.Core.Main.Utils.PoseWriteGuards.Enabled
-            || SmoothedCharacterMovementSpeed != characterMovementSpeed)
+        if (!global::Fika.Core.Main.Utils.PoseWriteGuards.Enabled || SmoothedCharacterMovementSpeed != characterMovementSpeed)
         {
             SmoothedCharacterMovementSpeed = characterMovementSpeed;
         }
@@ -183,12 +182,12 @@ public class ObservedMovementContext : MovementContext
 
     public override void SmoothPitchLimitations(float deltaTime)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public override void ProcessSpeedLimits(float deltaTime)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public override void ManualUpdate(float deltaTime)
@@ -331,7 +330,7 @@ public class ObservedMovementContext : MovementContext
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call4(this);
         RotationAction = _player.UsedSimplifiedSkeleton ? (System.Action<Player>)SimpleRotate : (System.Action<Player>)Rotate;
 
-        // Fix base game bug where idle animations are not playing
+        // 修复原版游戏空闲动画不播放的 bug
         PlayerAnimator.SetIsThirdPerson(true);
         PlayerAnimator.SetLayerWeight(1, 1f);
     }
@@ -348,7 +347,7 @@ public class ObservedMovementContext : MovementContext
 
     private void SimpleRotate(Player player)
     {
-        // do nothing
+        // 不做任何事
     }
 
     public void ObservedStartExitingMountedState()

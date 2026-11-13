@@ -4,12 +4,12 @@ using BepInEx.Configuration;
 
 namespace Fika.Core.Main.Utils;
 
-/// <summary>Unity color configuration support for the IL2CPP BepInEx runtime.</summary>
+/// <summary>面向 IL2CPP BepInEx 运行时的 Unity 颜色配置支持。</summary>
 internal static class ColorConfigConverter
 {
     internal static void Register()
     {
-        // Respect converters provided by another plugin, including their format.
+        // 尊重其他插件提供的转换器，包括它们所用的格式。
         if (TomlTypeConverter.CanConvert(typeof(Color))) return;
         TomlTypeConverter.AddConverter(typeof(Color), new TypeConverter
         {
@@ -20,7 +20,7 @@ internal static class ColorConfigConverter
 
     private static string Format(Color color)
     {
-        // BepInEx's Mono color format is RRGGBBAA, without a leading '#'.
+        // BepInEx 的 Mono 颜色格式是 RRGGBBAA，不带前导 '#'。
         static string Channel(float value)
         {
             if (!float.IsFinite(value)) throw new FormatException("Color channels must be finite.");
@@ -45,7 +45,7 @@ internal static class ColorConfigConverter
             };
         }
 
-        // Also accept float tuples written by older configuration tools.
+        // 同时接受旧版配置工具写出的浮点元组。
         var parts = text.Split(new[] { ' ', ',', '\t' }, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length is 3 or 4)
         {

@@ -20,14 +20,14 @@ internal sealed class IdentityRedirectManager(NavigationManager navigationManage
     {
         uri ??= "";
 
-        // Prevent open redirects.
+        // 防止开放重定向。
         if (!Uri.IsWellFormedUriString(uri, UriKind.Relative))
         {
             uri = navigationManager.ToBaseRelativePath(uri);
         }
 
-        // During static rendering, NavigateTo throws a NavigationException which is handled by the framework as a redirect.
-        // So as long as this is called from a statically rendered Identity component, the InvalidOperationException is never thrown.
+        // 在静态呈现期间，NavigateTo 会抛出 NavigationException，框架会把它当作一次重定向来处理。
+        // 因此只要是从静态呈现的 Identity 组件中调用它，就永远不会抛出 InvalidOperationException。
         navigationManager.NavigateTo(uri);
         throw new InvalidOperationException($"{nameof(IdentityRedirectManager)} can only be used during static rendering.");
     }

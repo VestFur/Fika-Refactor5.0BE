@@ -4,7 +4,7 @@ using Comfort.Common;
 
 namespace Fika.Core.Main.Utils;
 
-/// <summary>Completes native tasks only after their managed work has finished.</summary>
+/// <summary>只有在其托管部分的工作完成后才结束原生任务。</summary>
 public static class NativeTask
 {
     public static async Task AsManaged(this EFT.AssetsManager.LoadSceneOperation operation)
@@ -12,10 +12,10 @@ public static class NativeTask
         await operation;
     }
 
-    // The generated IL2CPP awaiter forwards MoveNext directly to its native
-    // callback. It cannot restore a CLR SynchronizationContext. Returning a
-    // CLR Task lets the C# awaiter retain the caller's Unity dispatcher across
-    // both native completion and any managed HTTP/delay await that follows.
+    // 生成的 IL2CPP awaiter 会把 MoveNext 直接转发给它的原生
+    // 回调。它无法恢复 CLR 的 SynchronizationContext。返回一个
+    // CLR Task 可以让 C# 的 awaiter 在原生完成以及之后任何托管的
+    // HTTP/delay await 之间都保留调用方的 Unity 调度器。
     public static Task AsManaged(this Il2CppSystem.Threading.Tasks.Task task)
     {
         var source = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);

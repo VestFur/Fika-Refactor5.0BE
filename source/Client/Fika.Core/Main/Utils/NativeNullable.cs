@@ -5,7 +5,7 @@ using Il2CppInterop.Runtime.InteropTypes;
 
 namespace Fika.Core.Main.Utils;
 
-/// <summary>Accesses inline Nullable fields without IL2CPP's special boxing.</summary>
+/// <summary>访问内联的 Nullable 字段，避开 IL2CPP 的特殊装箱。</summary>
 public static class NativeNullable<T> where T : new()
 {
     private static readonly ConcurrentDictionary<(IntPtr Class, string Name), IntPtr> Fields = new();
@@ -23,8 +23,8 @@ public static class NativeNullable<T> where T : new()
     public static unsafe Il2CppSystem.Nullable<T> Read(Il2CppObjectBase owner, string name)
     {
         var result = new Il2CppSystem.Nullable<T>();
-        // Generated getters use value_box, which returns null or boxed T for
-        // Nullable<T>. Copy the inline value into the actual Nullable wrapper.
+        // 生成的 getter 使用 value_box，它对
+        // Nullable<T> 会返回 null 或装箱后的 T。请把内联值复制进真正的 Nullable 包装器。
         IL2CPP.il2cpp_field_get_value(owner.Pointer, Resolve(owner, name),
             (void*)IL2CPP.il2cpp_object_unbox(result.Pointer));
         GC.KeepAlive(owner);

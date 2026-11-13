@@ -145,7 +145,7 @@ public class RaidAdminUIScript : InputNode
 
     private IEnumerator ShowRoutine()
     {
-        // used to bypass the console screen close coroutine
+        // 用于绕过控制台屏幕关闭的协程
         WaitForEndOfFrame waitForEndOfFrame = new();
         yield return waitForEndOfFrame;
         yield return waitForEndOfFrame;

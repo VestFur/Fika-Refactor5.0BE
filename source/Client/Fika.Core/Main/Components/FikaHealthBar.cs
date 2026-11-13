@@ -19,8 +19,8 @@ using Il2CppInterop.Runtime;
 namespace Fika.Core.Main.Components;
 
 /// <summary>
-/// Displays a health bar over another player <br/>
-/// Created by: ssh_
+/// 在其他玩家上方显示生命条 <br/>
+/// 创建者：ssh_
 /// </summary>
 public sealed class FikaHealthBar : MonoBehaviour
 {
@@ -33,9 +33,9 @@ public sealed class FikaHealthBar : MonoBehaviour
     }
 
     /// <summary>
-    /// Check for GClass increments, can be checked in <see cref="StaticIcons.EffectSprites"/> method <see cref="ISerializationCallbackReceiver.OnAfterDeserialize"/> <br/><br/>
-    /// <see cref="ActiveHealthController.Wound"/>, <see cref="ActiveHealthController.Encumbered"/>, <see cref="ActiveHealthController.OverEncumbered"/>, <br/>
-    /// <see cref="ActiveHealthController.MildMusclePain"/>, <see cref="ActiveHealthController.SevereMusclePain"/>
+    /// 检查 GClass 增量，可在 <see cref="StaticIcons.EffectSprites"/> 方法 <see cref="ISerializationCallbackReceiver.OnAfterDeserialize"/> 中检查 <br/><br/>
+    /// <see cref="ActiveHealthController.Wound"/>、<see cref="ActiveHealthController.Encumbered"/>、<see cref="ActiveHealthController.OverEncumbered"/>， <br/>
+    /// <see cref="ActiveHealthController.MildMusclePain"/>、<see cref="ActiveHealthController.SevereMusclePain"/>
     /// </summary>
     private static readonly Il2CppSystem.Type[] _ignoredTypes = [Il2CppType.Of<IWound>(), Il2CppType.Of<IEncumbered>(), Il2CppType.Of<IOverEncumbered>(), Il2CppType.Of<IMildMusclePain>(), Il2CppType.Of<ISevereMusclePain>()];
 
@@ -60,8 +60,8 @@ public sealed class FikaHealthBar : MonoBehaviour
     private IHealthController _boundHealthController;
     private bool _healthEventsBound;
     private bool _effectEventsBound;
-    // Set when the native health notifications could not be bound (their signature carries a
-    // by-value struct). The plate then refreshes itself from Update instead of from the events.
+    // 原生生命值通知无法绑定时设置（其签名携带按值传递的
+    // 结构体）。此时面板改由 Update 自行刷新，而不再依赖这些事件。
     private bool _pollHealth;
     private float _pollTimer;
     private System.Action<EBodyPart, float, DamageInfo> _healthChanged;
@@ -277,10 +277,10 @@ public sealed class FikaHealthBar : MonoBehaviour
         _playerPlate = uiGameObj.GetComponent<PlayerPlateUI>();
         _alphaGroup = _playerPlate.AlphaGroup.Value;
         _plateRectTransform = _playerPlate.ScalarObjectScreen.Value.GetComponent<RectTransform>();
-        // The plate is the teammate's identity on screen. FikaGlobals.GetDisplayName is the one
-        // place that resolves it: a human's main profile name when the game/announcement carried
-        // one, otherwise the nickname - which is the only name an AI profile has, because the
-        // game leaves MainProfileNickname empty for bots.
+        // 面板是队友在屏幕上的身份标识。FikaGlobals.GetDisplayName 是唯一
+        // 解析它的地方：当游戏／公告携带了人类玩家的主档案名时就用它，
+        // 否则用昵称——这也是 AI 档案唯一拥有的名字，因为
+        // 游戏对 bot 的 MainProfileNickname 留空。
         var shownName = _currentPlayer.Profile.GetDisplayName();
 
         _playerPlate.SetNameText(shownName);
@@ -308,7 +308,7 @@ public sealed class FikaHealthBar : MonoBehaviour
         {
             _playerPlate.playerNameScreen.Value.color = FikaPlugin.Instance.Settings.NamePlateTextColor.Value;
         }
-        // Start the plates both disabled, the visibility will be set in the update loop
+        // 启动时两个面板都禁用，可见性将在更新循环中设置
         _playerPlate.usecPlateScreen.Value.gameObject.SetActive(false);
         _playerPlate.bearPlateScreen.Value.gameObject.SetActive(false);
 
@@ -350,9 +350,9 @@ public sealed class FikaHealthBar : MonoBehaviour
     }
 
     /// <summary>
-    /// Binds one native health notification. A refused conversion (DamageInfo and ValueStruct are
-    /// passed by value) disables that single notification instead of throwing while the name plate
-    /// is being created, which happens during the raid start.
+    /// 绑定一个原生生命值通知。被拒绝的转换（DamageInfo 与 ValueStruct
+    /// 按值传递）只会禁用该单个通知，而不会在创建名牌
+    /// 期间抛异常，而创建名牌发生在战局开始时。
     /// </summary>
     private T BindHealthEvent<T>(string method) where T : System.Delegate
     {
@@ -391,7 +391,7 @@ public sealed class FikaHealthBar : MonoBehaviour
                 if (_died != null) _boundHealthController.remove_DiedEvent(_died);
             }
 
-            // Nothing essential is bound: keep the plate current through the pull-based path.
+            // 没有绑定任何必要项：通过拉取式路径保持面板最新。
             _pollHealth = _healthChanged == null || _died == null;
             _healthEventsBound = enabled;
         }
@@ -602,7 +602,7 @@ public sealed class FikaHealthBar : MonoBehaviour
     }
 
     /// <summary>
-    /// Updates the health on the HealthBar, this is invoked from events on the healthcontroller
+    /// 更新 HealthBar 上的生命值，由 healthcontroller 上的事件调用
     /// </summary>
     private void UpdateHealth()
     {
@@ -635,7 +635,7 @@ public sealed class FikaHealthBar : MonoBehaviour
     {
         var color = Color.Lerp(FikaPlugin.Instance.Settings.LowHealthColor.Value,
             FikaPlugin.Instance.Settings.FullHealthColor.Value, normalizedHealth);
-        color.a = _playerPlate.healthBarScreen.Value.color.a; // keep the alpha value unchanged
+        color.a = _playerPlate.healthBarScreen.Value.color.a; // 保持 alpha 值不变
         _playerPlate.healthBarScreen.Value.color = color;
     }
 
@@ -671,7 +671,7 @@ public sealed class FikaHealthBar : MonoBehaviour
 
         if (downed)
         {
-            _playerPlate.downedStateScreen.Value.SetText(LocaleUtils.UI_REVIVING_DOWNED.Localized()); // force downed message in case player was being revived before
+            _playerPlate.downedStateScreen.Value.SetText(LocaleUtils.UI_REVIVING_DOWNED.Localized()); // 强制显示倒地消息，以防玩家此前正处于被救起过程中
         }
 
         _downed = downed;

@@ -31,7 +31,7 @@ public class ClientMovementContext : MovementContext
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call4(this);
         if (!_player.IsYourPlayer && _player.IsAI && !FikaBackendUtils.IsHeadless)
         {
-            // Fix base game bug where idle animations are not playing
+            // 修复基础游戏中待机动画不播放的 bug
             PlayerAnimator.SetIsThirdPerson(true);
             PlayerAnimator.SetLayerWeight(1, 1f);
         }

@@ -53,8 +53,8 @@ public class ClientRunddansController : FikaWorldController<NetworkRunddansContr
 
     internal void DestroyItem(FikaPlayer player, string itemId)
     {
-        // Inventory synchronization may already have removed this exact instance.
-        // A duplicate notification must never consume a different item of the same template.
+        // 物品栏同步可能已经移除了这个确切的实例。
+        // 重复通知绝不能消耗同一模板下的另一个物品。
         if (string.IsNullOrEmpty(itemId) || !player.InventoryController.TryFindItem(itemId, out var item)) return;
         if (!Native.TryRemoveConsumableItem(item))
             FikaGlobals.LogError($"Runddans failed to remove item {itemId} from {player.ProfileId}");

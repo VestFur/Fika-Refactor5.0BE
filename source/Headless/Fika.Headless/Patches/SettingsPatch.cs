@@ -33,10 +33,10 @@ public static class FikaHeadlessSettingsManager
     internal static bool HasSet => _hasSet;
 
     /// <summary>
-    /// Applies the headless settings when the mode was decided by the selected
-    /// profile: that happens after <c>ClientApplicationInitOperation.LoadUserSettings</c>
-    /// ran, so the seam this patch replaces was missed. Never called in normal
-    /// play - an unarmed plugin does not reach it.
+    /// 当模式由所选档案决定时应用 headless 设置：
+    /// 这种情况发生在 <c>ClientApplicationInitOperation.LoadUserSettings</c>
+    /// 运行之后，因此本 patch 替换的接缝被错过了。正常对局中
+    /// 绝不会调用——未启用的插件不会走到这里。
     /// </summary>
     internal static void ApplyDeferred() =>
         MainThreadDispatcher.Post(() => _ = ApplyDeferredAsync());
@@ -62,7 +62,7 @@ public static class FikaHeadlessSettingsManager
         }
         catch (Exception exception)
         {
-            // Cosmetic and memory-management only: never fail the host for it.
+            // 仅涉及外观与内存管理：绝不因此让主机失败。
             FikaHeadlessPlugin.FikaHeadlessLogger.LogError($"[Headless] Settings: applying the headless settings after the mode gate failed: {exception}");
         }
     }
@@ -124,13 +124,15 @@ public static class FikaHeadlessSettingsManager
         await gameSettings.Game.Settings.EnableHideoutPreload.SetValue(false);
         await gameSettings.Game.Settings.Language.SetValue("en");
 
-        EftResolution resolution = new(1024, 768);
+        // (2026-10-27 W47) 无头宿主不需要画面：渲染分辨率 1024x768 -> 640x360，只降填充率/后处理开销，
+        // bot 生成与模拟走同一套逻辑，不受分辨率影响。此前试过 -nographics 直接不要图形设备，结果 bot 创建时原生崩溃（W46）。
+        EftResolution resolution = new(640, 360);
         await gameSettings.Graphics.Settings.DisplaySettings.SetValue(new()
         {
             AspectRatio = EFTAspectHelper.SuitableAspectRatio(ref resolution),
             Display = 0,
             FullScreenMode = FullScreenMode.Windowed,
-            Resolution = new(1024, 768)
+            Resolution = new(640, 360)
         });
 
         await gameSettings.Sound.Save();

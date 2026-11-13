@@ -1,4 +1,4 @@
-﻿#if DEBUG
+#if DEBUG
 using Fika.Core.Main.Utils;
 #endif
 using System;
@@ -7,17 +7,17 @@ using System.Runtime.CompilerServices;
 namespace Fika.Core.Networking.Pooling;
 
 /// <summary>
-/// Manages a pool of packet objects of type <typeparamref name="TType"/> categorized by keys of type <typeparamref name="TEnum"/>.
-/// Provides functionality to create, clear, retrieve, and return packets from the pool.
+/// 管理 <typeparamref name="TType"/> 类型的数据包对象池，并按 <typeparamref name="TEnum"/> 类型的键分类。
+/// 提供创建、清空、取出与归还数据包的功能。
 /// </summary>
-/// <typeparam name="TEnum">The enum type used as keys to identify packet types.</typeparam>
-/// <typeparam name="TType">The packet type that implements <see cref="IDisposable"/>.</typeparam>
+/// <typeparam name="TEnum">用作标识数据包类型的键的枚举类型。</typeparam>
+/// <typeparam name="TType">实现 <see cref="IDisposable"/> 的数据包类型。</typeparam>
 public abstract class BasePacketPoolManager<TEnum, TType>
     where TEnum : Enum
     where TType : class, IDisposable
 {
     /// <summary>
-    /// Array containing the constructing method for every packet type
+    /// 包含每种数据包类型构造方法的数组
     /// </summary>
     protected Func<TType>[] _subPacketFactories;
 
@@ -26,8 +26,8 @@ public abstract class BasePacketPoolManager<TEnum, TType>
     private PacketPool<TType>[] _pool;
 
     /// <summary>
-    /// Creates a pool of packets for each packet type based on the registered factory functions.
-    /// Initializes pools with an initial capacity of 1.
+    /// 基于已注册的工厂函数，为每种数据包类型创建一个数据包池。
+    /// 各池以初始容量 1 初始化。
     /// </summary>
     public void CreatePool()
     {
@@ -44,7 +44,7 @@ public abstract class BasePacketPoolManager<TEnum, TType>
     }
 
     /// <summary>
-    /// Clears and disposes all packet pools, releasing any resources held.
+    /// 清空并释放所有数据包池，释放其持有的任何资源。
     /// </summary>
     public void ClearPool()
     {
@@ -61,13 +61,13 @@ public abstract class BasePacketPoolManager<TEnum, TType>
     }
 
     /// <summary>
-    /// Retrieves a packet of the specified type from the pool.
-    /// If the pool is not created yet, it will be initialized.
+    /// 从池中取出指定类型的数据包。
+    /// 若该池尚未创建，则会先初始化它。
     /// </summary>
-    /// <typeparam name="T">The concrete packet type to retrieve, which must derive from <typeparamref name="TType"/>.</typeparam>
-    /// <param name="type">The key identifying the packet type in the pool.</param>
-    /// <returns>A packet instance from the pool.</returns>
-    /// <exception cref="ArgumentException">Thrown if the specified type does not exist in the pool.</exception>
+    /// <typeparam name="T">要取出的具体数据包类型，必须派生自 <typeparamref name="TType"/>。</typeparam>
+    /// <param name="type">在池中标识该数据包类型的键。</param>
+    /// <returns>来自池的一个数据包实例。</returns>
+    /// <exception cref="ArgumentException">当指定类型在该池中不存在时抛出。</exception>
     public T GetPacket<T>(TEnum type) where T : TType
     {
         if (!_poolExists)
@@ -78,15 +78,22 @@ public abstract class BasePacketPoolManager<TEnum, TType>
             CreatePool();
         }
 
-        return (T)WithdrawPacket(type).Get();
+        var pool = WithdrawPacket(type);
+        if (pool == null)
+        {
+            // 本构建不认识的类型（见 WithdrawPacket）：调用方跳过该包。
+            return default;
+        }
+
+        return (T)pool.Get();
     }
 
     /// <summary>
-    /// Returns a packet to the pool and disposes it.
+    /// 把数据包归还到池中并释放它。
     /// </summary>
-    /// <param name="type">The key identifying the packet type in the pool.</param>
-    /// <param name="packet">The packet instance to return to the pool.</param>
-    /// <remarks>Does nothing if the pool has not been created</remarks>
+    /// <param name="type">在池中标识该数据包类型的键。</param>
+    /// <param name="packet">要归还到池中的数据包实例。</param>
+    /// <remarks>若该池尚未创建则什么都不做</remarks>
     public void ReturnPacket(TEnum type, TType packet)
     {
         if (!_poolExists)
@@ -98,17 +105,37 @@ public abstract class BasePacketPoolManager<TEnum, TType>
         }
 
         packet.Dispose();
-        WithdrawPacket(type).Return(packet);
+
+        // (2026-10-26 W23) WithdrawPacket 现在对本构建不认识的类型返回 default（W22）；旧的
+        // 一行写法随后会在这里解引用 null。该包已被释放，因此丢弃它就是
+        // 「归还」一个未知包的完整工作。
+        var pool = WithdrawPacket(type);
+        if (pool == null)
+        {
+            return;
+        }
+
+        pool.Return(packet);
     }
 
     /// <summary>
-    /// Retrieves the <see cref="PacketPool{TType}"/> associated with the specified type.
+    /// 获取与指定类型关联的 <see cref="PacketPool{TType}"/>。
     /// </summary>
-    /// <param name="type">The key identifying the packet type.</param>
-    /// <returns>The corresponding <see cref="PacketPool{TType}"/> instance.</returns>
-    /// <exception cref="ArgumentException">Thrown if the specified type does not exist in the pool.</exception>
+    /// <param name="type">标识该数据包类型的键。</param>
+    /// <returns>对应的 <see cref="PacketPool{TType}"/> 实例。</returns>
+    /// <exception cref="ArgumentException">当指定类型在该池中不存在时抛出。</exception>
     private PacketPool<TType> WithdrawPacket(TEnum type)
     {
+        // (2026-10-26 W22) 由不同包构建的对端可能发来本构建不认识的子包类型；
+        // 数组索引随后会在网络轮询循环内部抛出 IndexOutOfRange。改为上报它，
+        // 并让调用方跳过该包 —— 一个未知类型不得拖垮整个网络循环。
+        var index = ToInt(type);
+        if ((System.UInt32)index >= (System.UInt32)_pool.Length)
+        {
+            global::Fika.Core.Main.Utils.FikaGlobals.LogError($"packet pool has no entry for {typeof(TEnum).Name}={index} " +
+                $"(this build has {_pool.Length}); the peer runs a different build");
+            return null;
+        }
 #if DEBUG
         return _pool[ToInt(type)]
             ?? throw new ArgumentException("Could not find given type in the packet pool manager!", nameof(type));

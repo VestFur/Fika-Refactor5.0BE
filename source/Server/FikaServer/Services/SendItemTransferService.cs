@@ -22,8 +22,8 @@ using Path = System.IO.Path;
 namespace FikaServer.Services;
 
 /// <summary>
-/// Write-ahead log for player-to-player item mail. The sender is saved before
-/// mail is created, and a marker in the recipient's mail makes replay safe.
+/// 用于玩家间物品邮件的预写日志（write-ahead log）。在创建邮件之前
+/// 先保存发送方，收件人邮件中的标记则使重放变得安全。
 /// </summary>
 [Injectable(InjectionType.Singleton, TypePriority = OnLoadOrder.PostLoad + 1)]
 public sealed class SendItemTransferService(
@@ -68,8 +68,8 @@ public sealed class SendItemTransferService(
                 }
                 catch (Exception ex)
                 {
-                    // Leave this journal intact for a later retry. One bad
-                    // profile must not prevent the server from starting.
+                    // 保留该日志以便稍后重试。单个损坏的
+                    // profile 不应阻止服务器启动。
                     logger.Error($"Could not recover item transfer journal {path}: {ex}");
                 }
             }
@@ -135,8 +135,8 @@ public sealed class SendItemTransferService(
             if (transfer.Stage != "Completed")
                 await CompleteAsync(transfer, cancellationToken);
 
-            // A retry after an ambiguous HTTP failure still tells the client to
-            // remove its selected roots. The journal prevents a second mail.
+            // HTTP 失败原因不明时的重试仍会告知客户端
+            // 移除其选定的 roots。日志则防止产生第二封邮件。
             var deleted = output.ProfileChanges[senderId].Items.DeletedItems;
             foreach (var rootId in rootIds)
             {
@@ -202,23 +202,23 @@ public sealed class SendItemTransferService(
                 }
                 catch (Exception ex) when (HasMail(recipient, transfer.Id))
                 {
-                    // SPT creates the mail before notifying its websocket. A
-                    // notification failure must not cause a second attachment.
+                    // SPT 在通知其 websocket 之前就已创建邮件。通知
+                    // 失败不得导致附件被重复添加。
                     logger.Warning($"Item transfer {transfer.Id} mail exists but notification failed: {ex.Message}");
                     mailCreatedNow = true;
                 }
             }
 
             var mail = FindMail(recipient, transfer.Id);
-            // An earlier attempt may have persisted the mail and the recipient
-            // may already have collected its attachments before replay.
+            // 此前的尝试可能已经持久化了邮件，且收件人
+            // 可能在重放之前就已领取了附件。
             if (mailCreatedNow && (mail?.HasRewards != true || mail.Items?.Data is not { Count: > 0 }))
                 throw new InvalidOperationException($"Transfer {transfer.Id} created mail without rewards");
             if (mail is null && !HasReceipt(recipient, transfer.Id))
                 throw new InvalidOperationException($"Transfer {transfer.Id} did not create mail");
 
-            // Mail can be cleared by the recipient. A separate receipt in the
-            // same profile survives that action and closes the replay window.
+            // 收件人可以清除邮件。同一 profile 中单独的
+            // 回执会保留下来，从而关闭重放窗口。
             recipient.SptData ??= new Spt();
             recipient.SptData.Migrations ??= [];
             recipient.SptData.Migrations.TryAdd(ReceiptPrefix + transfer.Id, DateTimeOffset.UtcNow.ToUnixTimeSeconds());

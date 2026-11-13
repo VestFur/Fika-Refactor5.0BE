@@ -24,7 +24,7 @@ public class SessionResultExitStatus_Show_Patch : ModulePatch
     [PatchPostfix]
     static void PatchPostfix(SessionResultExitStatus __instance)
     {
-        // Skip Session result exit status screen when spectator
+        // 以观战者身份时跳过战局结算退出状态界面
         if (FikaBackendUtils.IsSpectator)
         {
             __instance._mainMenuButton.OnClick.Invoke();

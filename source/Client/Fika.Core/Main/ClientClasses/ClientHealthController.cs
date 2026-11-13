@@ -79,9 +79,9 @@ public sealed class ClientHealthController : PlayerHealthController
     }
 
     /// <summary>
-    /// Checks if any other players are alive that can revive
+    /// 检查是否还有其他能施救的存活玩家
     /// </summary>
-    /// <returns><see langword="true"/> if someone can revive; otherwise <see langword="false"/></returns>
+    /// <returns>若有人能施救则为 <see langword="true"/>；否则为 <see langword="false"/></returns>
     private bool CanBeRevivedByOtherPlayer()
     {
         if (CoopHandler.TryGetCoopHandler(out var coopHandler))
@@ -98,9 +98,9 @@ public sealed class ClientHealthController : PlayerHealthController
     }
 
     /// <summary>
-    /// Checks whether last damage should kill from a grenade or headshot
+    /// 检查最后一击的伤害是否应当因手雷或爆头而致死
     /// </summary>
-    /// <returns><see langword="true"/> if the damage should kill; <see langword="false"/> if not</returns>
+    /// <returns>若该伤害应当致死则为 <see langword="true"/>；否则为 <see langword="false"/></returns>
     public bool CheckIfDamageShouldInstantKill()
     {
         if (_grenadesKills && _fikaPlayer.LatestDamageInfo.DamageType is EDamageType.GrenadeFragment)
@@ -118,8 +118,8 @@ public sealed class ClientHealthController : PlayerHealthController
 
     public override void SendNetworkSyncPacket(SyncHealthPacket packet)
     {
-        // The health controller may still receive native callbacks while the
-        // packet sender is being torn down after a disconnect.
+        // 断线之后，发送包的对象正在被拆除时，生命控制器
+        // 仍可能收到原生回调。
         var networkManager = _fikaPlayer?.PacketSender?.NetworkManager;
         if (networkManager is null)
         {
@@ -219,16 +219,16 @@ public sealed class ClientHealthController : PlayerHealthController
     }
 
     /// <summary>
-    /// Removes all bleed effects from the health controller
+    /// 从生命控制器上移除所有流血效果
     /// </summary>
-    /// <remarks>Mainly used to prevent instantly broken limbs after revive</remarks>
+    /// <remarks>主要用于防止复活后肢体立刻破损</remarks>
     private void RemoveAllBleedEffects()
     {
         for (var i = Effects.Count - 1; i >= 0; i--)
         {
-            // Effects is an IL2CPP native collection; the wrapper can expose
-            // the base IHealthEffect type even when the native object is a
-            // bleeding subtype.
+            // Effects 是一个 IL2CPP 原生集合；包装器可能暴露
+            // 基类型 IHealthEffect，即使原生对象是
+            // 流血的子类型。
             if (Effects[i]?.TryCast<HeavyBleeding>() is { } heavyBleeding)
             {
                 heavyBleeding.ForceRemove();

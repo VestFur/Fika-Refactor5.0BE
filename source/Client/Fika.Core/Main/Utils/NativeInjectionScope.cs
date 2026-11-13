@@ -16,9 +16,9 @@ using Il2CppInterop.Runtime.Runtime.VersionSpecific.MethodInfo;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// The injector resolves System.Nullable&lt;T&gt; to a CLR struct, whereas generated
-/// game wrappers expose Il2CppSystem.Nullable&lt;T&gt;. Correct that signature lookup
-/// only while registering Fika types; keep the generated wrapper's native ABI.
+/// 注入器会把 System.Nullable&lt;T&gt; 解析成 CLR 结构体，而生成的
+/// 游戏 wrapper 暴露的是 Il2CppSystem.Nullable&lt;T&gt;。只在注册 Fika 类型时
+/// 修正该签名查找；保留生成的 wrapper 的原生 ABI。
 /// </summary>
 internal sealed class NativeInjectionScope : IDisposable
 {
@@ -39,48 +39,48 @@ internal sealed class NativeInjectionScope : IDisposable
     private readonly MethodInfo _trampoline;
     private readonly MethodInfo _invoker;
     private readonly MethodInfo _invokerCapture;
-    // A real CLR generic parameter, used only as a lookup marker for inherited
-    // open generic methods. It is never written into a native signature.
+    // 一个真正的 CLR 泛型参数，仅作为继承而来的开放
+    // 泛型方法的查找标记使用。它永远不会被写进原生签名。
     private static readonly Type InheritedParameter = typeof(InheritedGeneric<>).GetGenericArguments()[0];
     private sealed class InheritedGeneric<T> { }
 
     // ------------------------------------------------------------------
-    // Injected-method invoker: replace the emitted calli with a managed call.
+    // 注入方法调用器：把发出的 calli 替换为托管调用。
     //
-    // Il2CppInterop fills an injected method's MethodInfo with two pointers, and BOTH
-    // are managed reverse P/Invoke stubs (Marshal.GetFunctionPointerForDelegate over a
-    // managed delegate): InvokerMethod (the invoker) and MethodPointer (the per-method
-    // trampoline). CreateInvoker's generated body then does
+    // Il2CppInterop 会把注入方法的 MethodInfo 填上两个指针，而这两者
+    // 都是托管的反向 P/Invoke 桩（对托管委托使用 Marshal.GetFunctionPointerForDelegate）：
+    // InvokerMethod（调用器）与 MethodPointer（每方法一个的
+    // trampoline）。CreateInvoker 生成的函数体随后执行
     //     ldarg.0; <push native args>; EmitCalli(Calli, Cdecl, trampolineReturn, trampolineParams)
-    // i.e. managed code performs an indirect call straight into a managed reverse
-    // P/Invoke stub. CoreCLR rejects exactly that combination with an uncatchable
-    // fail-fast ("attempted to call a UnmanagedCallersOnly method from managed code",
-    // HRESULT 0x80131506), which is what killed the 2026-10-10 14:22 host raid.
+    // 也就是说，托管代码直接对一个托管的反向
+    // P/Invoke 桩做间接调用。CoreCLR 正是以不可捕获的
+    // fail-fast 拒绝这种组合（"attempted to call a UnmanagedCallersOnly method from managed code"，
+    // HRESULT 0x80131506），而那正是杀死 2026-10-10 14:22 那场主机战局的原因。
     //
-    // The injector already avoids that combination for constructors: their InvokerMethod
-    // is the managed StaticVoidIntPtrInvoker_MetadataV29, which turns the method pointer
-    // back into the SAME cached delegate with Marshal.GetDelegateForFunctionPointer<T>
-    // and invokes it like any other managed delegate (ClassInjector.decompiled.cs:1541-1544).
-    // The code below applies the same trick to every injected method. The rewrite happens while
-    // ONE body is being built, and any mismatch keeps the injector's original indirect call
-    // (ResolveCurrentTrampolineInvoke returns null and the helper re-emits the calli verbatim).
+    // 注入器对构造函数已经避免了这种组合：它们的 InvokerMethod
+    // 是托管的 StaticVoidIntPtrInvoker_MetadataV29，它会把方法指针
+    // 用 Marshal.GetDelegateForFunctionPointer<T> 变回同一个缓存委托，
+    // 再像调用任何其它托管委托那样调用它（ClassInjector.decompiled.cs:1541-1544）。
+    // 下面的代码把同样的技巧应用到每一个注入方法上。重写发生在
+    // 构建单个函数体的过程中，而任何不匹配都会保留注入器原来的间接调用
+    // （ResolveCurrentTrampolineInvoke 返回 null，助手函数会把 calli 原样重新发出）。
     // ------------------------------------------------------------------
 
-    /// <summary>Method currently being turned into an invoker, set by <see cref="CaptureInvokerMethod"/>.</summary>
+    /// <summary>当前正在被转换为调用器的方法，由 <see cref="CaptureInvokerMethod"/> 设置。</summary>
     [ThreadStatic]
     private static MethodInfo _invokerMethod;
 
-    /// <summary>Delegate type for a method pointer, resolved once (or its failure reported once).</summary>
+    /// <summary>方法指针的委托类型，只解析一次（或只上报一次失败）。</summary>
     private static readonly Dictionary<nint, DelegateInvocation> ManagedTrampolineInvocations = new();
 
-    /// <summary>Method pointers whose invoker body already reported its call site, so the log stays quiet.</summary>
+    /// <summary>调用器函数体已上报过调用点的方法指针，这样日志能保持安静。</summary>
     private static readonly HashSet<nint> ReportedInvokerCallSites = new();
 
-    /// <summary>Once-per-process state of the managed invoker path.</summary>
+    /// <summary>托管调用器路径的每进程一次性状态。</summary>
     private static bool _managedInvokerDegraded;
 
-    // Il2CppInterop's delegate factory, its nested signature key, Marshal's generic
-    // pointer->delegate entry point, and one compiled converter per delegate type.
+    // Il2CppInterop 的委托工厂、它嵌套的签名键、Marshal 的泛型
+    // 指针->委托入口，以及每个委托类型一个已编译的转换器。
     private static MethodInfo _getOrCreateDelegateType;
     private static ConstructorInfo _methodSignatureConstructor;
     private static MethodInfo _getDelegateForFunctionPointer;
@@ -116,17 +116,17 @@ internal sealed class NativeInjectionScope : IDisposable
             _converter = AccessTools.DeclaredMethod(typeof(ClassInjector), "ConvertMethodInfo");
             _converterPostfix = AccessTools.DeclaredMethod(typeof(NativeInjectionScope), nameof(BindUsableItemEntry));
             _harmony.Patch(_converter, postfix: new HarmonyMethod(_converterPostfix));
-            // The invoker of every injected method is what the engine reaches reflectively; the
-            // generated body ends in a calli into a reverse P/Invoke thunk, which is the fatal shape
-            // (analysis/managed-invoker). Replace the entry where the shape is covered, keep the
-            // injector's own invoker everywhere else. Installed here, before the first type registers.
+            // 引擎反射所到达的正是每个注入方法的调用器；
+            // 生成的函数体以一次 calli 进入反向 P/Invoke thunk 结尾，而这正是致命的形态
+            // （analysis/managed-invoker）。在形态被覆盖的地方替换入口，其它地方保留
+            // 注入器自己的调用器。就在这里安装，也就是在第一个类型注册之前。
             //
-            // These hooks deliberately live on their own Harmony instance (see
-            // NativeManagedInvoker.OwnHarmonyId): Dispose() below unpatches every target this scope
-            // patched, and a rewrite hook that disappears with the scope is exactly what let the methods
-            // registered afterwards - BepInEx's coroutine wrapper, a generic instantiation the injector
-            // converts at runtime, another plugin's types - keep the stock, calli shaped invoker
-            // (analysis/managed-invoker/REPORT-sweep.md).
+            // 这些钩子刻意放在它们自己的 Harmony 实例上（见
+            // NativeManagedInvoker.OwnHarmonyId）：下面的 Dispose() 会取消本作用域打过补丁的每个
+            // 目标，而一个随作用域消失的重写钩子，恰恰就是让之后注册的方法
+            // （BepInEx 的协程 wrapper、注入器在运行时转换的某个泛型实例化、
+            // 另一个插件的类型）继续保留原生那套 calli 形态调用器的原因
+            // （analysis/managed-invoker/REPORT-sweep.md）。
             NativeManagedInvoker.Install();
             _interfaceLookup = AccessTools.DeclaredMethod(typeof(ClassInjector), "FindBaseInterfaceImplementation");
             _interfacePrefix = AccessTools.DeclaredMethod(typeof(NativeInjectionScope), nameof(MatchInterfaceSignature));
@@ -139,11 +139,11 @@ internal sealed class NativeInjectionScope : IDisposable
             _invoker = AccessTools.DeclaredMethod(typeof(ClassInjector), "CreateInvoker");
             _harmony.Patch(_invoker, transpiler: new HarmonyMethod(
                 AccessTools.DeclaredMethod(typeof(NativeInjectionScope), nameof(PreserveInvokerReferences))));
-            // The invoker body must also not perform an indirect call into the managed
-            // trampoline stub; the metadata plane names the same method, so capture it with a
-            // prefix on the same body and resolve the delegate type it would have to reproduce.
-            // A missing interop API must not abort the load: the helper then keeps the
-            // injector's own indirect call and reports it once (see ResolveCurrentTrampolineInvoke).
+            // 调用器函数体也必须不对托管 trampoline 桩做间接调用；
+            // 元数据平面命名的是同一个方法，所以用同一个函数体上的 prefix
+            // 捕获它，并解析出它本应复现的委托类型。
+            // 缺失的 interop API 绝不能中止加载：此时助手函数会保留
+            // 注入器自己的间接调用，并只上报一次（见 ResolveCurrentTrampolineInvoke）。
             ResolveDelegateSupport();
             _invokerCapture = AccessTools.DeclaredMethod(typeof(NativeInjectionScope), nameof(CaptureInvokerMethod));
             _harmony.Patch(_invoker, prefix: new HarmonyMethod(_invokerCapture));
@@ -152,8 +152,8 @@ internal sealed class NativeInjectionScope : IDisposable
         }
         catch
         {
-            // A throwing constructor is never disposed by a using statement.
-            // Remove any hooks already installed before allowing load to fail.
+            // 会抛异常的构造函数永远不会被 using 语句释放。
+            // 在允许加载失败之前，先移除已经安装的任何钩子。
             Dispose();
             throw;
         }
@@ -163,9 +163,9 @@ internal sealed class NativeInjectionScope : IDisposable
     {
         if (type.Assembly != _activeAssembly) return true;
         __result = null;
-        // The installed resolver matches only name/arity. ApplyItem's two
-        // overloads have the same arity but incompatible value/reference ABIs.
-        // Use the actual interface slot's full parameter signature instead.
+        // 安装好的解析器只匹配名称与参数个数。ApplyItem 的两个
+        // 重载参数个数相同，但值/引用 ABI 不兼容。
+        // 改用真实接口槽位的完整参数签名。
         var resolver = AccessTools.DeclaredMethod(typeof(ClassInjector), "SystemTypeFromIl2CppType");
         Type Resolve(Il2CppTypeStruct* pointer) => (Type)resolver.Invoke(null,
             new[] { Pointer.Box(pointer, resolver.GetParameters()[0].ParameterType) });
@@ -198,10 +198,10 @@ internal sealed class NativeInjectionScope : IDisposable
     private static unsafe void BindUsableItemEntry(MethodInfo monoMethod, Il2CppMethodInfo* __result)
     {
         if (!IsUsableItemEntry(monoMethod)) return;
-        // Proceed<T> has a closed ABI and its body does not depend on T.
-        // Il2CppInterop leaves generic definitions' pointers empty, then rejects
-        // the vtable slot. Supply a valid fallback while retaining IsGeneric and
-        // the injector's normal per-instantiation inflation dictionary.
+        // Proceed<T> 的 ABI 是封闭的，其函数体不依赖 T。
+        // Il2CppInterop 会让泛型定义的指针为空，随后又拒绝
+        // 该 vtable 槽位。在保留 IsGeneric 与
+        // 注入器正常的按实例化膨胀字典的前提下，提供一个有效的兜底。
         var closed = monoMethod.MakeGenericMethod(typeof(EFT.Player.UsableItemController));
         var trampoline = (Delegate)AccessTools.DeclaredMethod(typeof(ClassInjector), "GetOrCreateTrampoline").Invoke(null, new object[] { closed });
         var invoker = (Delegate)AccessTools.DeclaredMethod(typeof(ClassInjector), "GetOrCreateInvoker").Invoke(null, new object[] { closed });
@@ -225,8 +225,8 @@ internal sealed class NativeInjectionScope : IDisposable
             method.GetParameters().All(p => IsNativeSignatureType(p.ParameterType))) return true;
         if (nativeOverride)
             throw new NotSupportedException($"Native override has a managed-only signature: {method.DeclaringType}.{method}");
-        // ValueTask and Fika packet structs pass the stock IsValueType check,
-        // but have no native class/ABI. Their calls remain entirely managed.
+        // ValueTask 与 Fika 的数据包结构体通过了原生的 IsValueType 检查，
+        // 但没有原生的类/ABI。它们的调用完全保持托管。
         __result = false;
         return false;
     }
@@ -246,8 +246,8 @@ internal sealed class NativeInjectionScope : IDisposable
     private static bool KeepOpenSignature(Type type, ref Type __result)
     {
         if (!type.ContainsGenericParameters) return true;
-        // E.g. IEnumerable<TInventoryOperation>. FullName is null for an open
-        // constructed type. Preserve it for lookup; retain the native method.
+        // 例如 IEnumerable<TInventoryOperation>。对一个开放
+        // 构造类型来说 FullName 为 null。为查找保留它；同时保留原生方法。
         __result = type;
         return false;
     }
@@ -256,10 +256,10 @@ internal sealed class NativeInjectionScope : IDisposable
     {
         var type = UnityVersionHandler.Wrap(typePointer);
         if (type.Type != Il2CppTypeEnum.IL2CPP_TYPE_MVAR) return true;
-        // Execute<TInventoryOperation> is inherited intact. The stock resolver
-        // treats TInventoryOperation as an assembly type and throws before it
-        // can retain that native vtable slot. No Fika method may match this
-        // marker; ValidateDeclaredMethods enforces that boundary.
+        // Execute<TInventoryOperation> 被完整继承。原生解析器
+        // 把 TInventoryOperation 当成程序集类型，并在它能够
+        // 保留该原生 vtable 槽位之前就抛出异常。任何 Fika 方法都不得匹配这个
+        // 标记；ValidateDeclaredMethods 强制这条边界。
         __result = type.ByRef ? InheritedParameter.MakeByRefType() : InheritedParameter;
         return false;
     }
@@ -291,9 +291,9 @@ internal sealed class NativeInjectionScope : IDisposable
         __result = byRef ? wrapper.MakeByRefType() : wrapper;
     }
 
-    // This rewrites the CLR injector's IL generator only during Fika registration.
-    // Native Nullable boxing erases the wrapper (null or boxed T); generated
-    // interop parameters require an actual Nullable<T> object with both fields.
+    // 这段代码只在注册 Fika 期间重写 CLR 注入器的 IL 生成器。
+    // 原生 Nullable 装箱会抹掉 wrapper（null 或装箱的 T）；生成的
+    // interop 参数需要一个同时带两个字段的真实 Nullable<T> 对象。
     private static System.Collections.Generic.IEnumerable<CodeInstruction> PreserveNullableBoxing(
         System.Collections.Generic.IEnumerable<CodeInstruction> source)
     {
@@ -316,10 +316,10 @@ internal sealed class NativeInjectionScope : IDisposable
         if (replacements != 1) throw new NotSupportedException($"Expected one trampoline boxing lookup, found {replacements}.");
     }
 
-    // The installed injector emits ldind.i/stind.i for ref structs. That reads
-    // and writes only a pointer-sized portion of Vector3 (and misreads float
-    // references). Emit typed copies for CLR value types; retain the original
-    // reference conversion for native objects, strings and arrays.
+    // 安装好的注入器对 ref 结构体发出 ldind.i/stind.i。那只读写
+    // Vector3 中指针大小的那一部分（并且会误读 float
+    // 引用）。为 CLR 值类型发出带类型的拷贝；对原生对象、字符串和数组
+    // 保留原来的引用转换。
     private static System.Collections.Generic.IEnumerable<CodeInstruction> PreserveByRefValues(
         System.Collections.Generic.IEnumerable<CodeInstruction> source)
     {
@@ -403,22 +403,22 @@ internal sealed class NativeInjectionScope : IDisposable
 
     private static void EmitInvokerValue(System.Reflection.Emit.ILGenerator body, System.Reflection.Emit.OpCode opcode, Type type)
     {
-        // args[i] already contains the address of a ref/out argument. Native
-        // object references are rewritten to IntPtr*, CLR structs to T&.
-        // Neither address should be dereferenced a second time.
+        // args[i] 已经包含 ref/out 参数的地址。原生
+        // 对象引用会被重写为 IntPtr*，CLR 结构体则重写为 T&。
+        // 这两个地址都不应被再次解引用。
         if (opcode == System.Reflection.Emit.OpCodes.Ldobj && (type.IsByRef || type.IsPointer)) return;
         body.Emit(opcode, type);
     }
 
     // ------------------------------------------------------------------
-    // The invoker body: calli -> managed delegate call
+    // 调用器函数体：calli -> 托管委托调用
     // ------------------------------------------------------------------
 
     /// <summary>
-    /// Harmony prefix on <c>ClassInjector.CreateInvoker</c>: remembers which method's body is
-    /// being built, so the transpiler below can resolve the exact same trampoline delegate type
-    /// that <c>CreateTrampoline</c> created for it. Registration is a single, synchronous pass
-    /// per thread, and the transpiler runs inside that call, before the value is cleared.
+    /// 对 <c>ClassInjector.CreateInvoker</c> 的 Harmony prefix：记住正在构建的是哪个方法的函数体，
+    /// 这样下面的 transpiler 才能解析出为它创建的那个完全相同的 trampoline 委托类型
+    /// （即 <c>CreateTrampoline</c> 为它创建的类型）。注册是每个线程一次同步的
+    /// 过程，而 transpiler 在该调用内部运行，也就是在值被清空之前。
     /// </summary>
     private static void CaptureInvokerMethod(object[] __args)
     {
@@ -434,19 +434,19 @@ internal sealed class NativeInjectionScope : IDisposable
     }
 
     /// <summary>
-    /// Rewrites <c>ILGenerator.EmitCalli(OpCodes.Calli, CallingConvention.Cdecl, returnType,
-    /// parameterTypes)</c> - the one indirect call in <c>CreateInvoker</c> - into a call that
-    /// emits the managed-delegate sequence instead (see <see cref="EmitManagedTrampolineInvoke"/>).
-    /// If the delegate shape cannot be reproduced, the original calli is left untouched and the
-    /// downgrade is reported once: a fix that cannot be proven must not make the callout worse.
+    /// 把 <c>ILGenerator.EmitCalli(OpCodes.Calli, CallingConvention.Cdecl, returnType,
+    /// parameterTypes)</c>——<c>CreateInvoker</c> 中唯一的那次间接调用——重写为一段
+    /// 改为发出托管委托序列的调用（见 <see cref="EmitManagedTrampolineInvoke"/>）。
+    /// 如果无法复现该委托形态，原 calli 保持不动，并且
+    /// 这次降级只上报一次：无法被证明的修复不得让这次回调变得更糟。
     /// </summary>
     private static System.Collections.Generic.IEnumerable<CodeInstruction> PreserveInvokerCalli(
         System.Collections.Generic.IEnumerable<CodeInstruction> source)
     {
-        // This runs ONCE, when the injector's body is first patched - there is no method being
-        // injected yet. It may therefore only redirect the call: the decision to keep the
-        // original indirect call belongs to the helper below, which runs while the injector
-        // builds one concrete body (Harmony transpilers are not re-run per invocation).
+        // 这段代码只在注入器函数体第一次被打补丁时运行一次——那时还没有方法
+        // 正被注入。因此它只能重定向该调用：是否保留
+        // 原来的间接调用由下面的助手函数决定，它在注入器
+        // 构建某个具体函数体时运行（Harmony transpiler 不会每次调用都重跑）。
         var callis = 0;
         foreach (var instruction in source)
         {
@@ -476,23 +476,23 @@ internal sealed class NativeInjectionScope : IDisposable
     }
 
     /// <summary>
-    /// Emits the managed equivalent of the calli that <c>CreateInvoker</c> used to emit.
+    /// 发出 <c>CreateInvoker</c> 过去所发 calli 的托管等价物。
     ///
-    /// Stack contract (identical to the calli's, which is what makes this a drop-in rewrite):
-    ///   in:  [native parameters..., methodPointer]   (the method pointer is pushed last)
-    ///   out: the trampoline's native return value (or nothing for a void trampoline)
+    /// 栈契约（与 calli 的完全相同，这正是它能作为直接替换的原因）：
+    ///   in:  [native parameters..., methodPointer]   （方法指针最后压栈）
+    ///   out: trampoline 的原生返回值（空 trampoline 则什么也不返回）
     ///
-    /// The trampoline delegate is <c>(nint obj, [nint returnBuffer,] nativeParameters...,
-    /// Il2CppMethodInfo* methodInfo)</c> - exactly the calli's parameter list plus the trailing
-    /// <c>methodInfo</c>, which the invoker holds in argument 1 (<c>ldarg.1</c>).
+    /// trampoline 委托是 <c>(nint obj, [nint returnBuffer,] nativeParameters...,
+    /// Il2CppMethodInfo* methodInfo)</c>——正好是 calli 的参数列表再加末尾的
+    /// <c>methodInfo</c>，调用器把它放在第 1 个参数里（<c>ldarg.1</c>）。
     /// </summary>
     internal static void EmitManagedTrampolineInvoke(System.Reflection.Emit.ILGenerator body,
         System.Reflection.Emit.OpCode opcode, CallingConvention callingConvention, Type returnType,
         Type[] parameterTypes)
     {
-        // Everything is decided here, while one concrete body is being built. Any mismatch
-        // keeps the injector's own indirect call: a fix that cannot be proven must not turn a
-        // working (if unsafe) call into a broken one.
+        // 一切都在这里决定，也就是在构建某个具体函数体的过程中。任何不匹配
+        // 都会保留注入器自己的间接调用：无法被证明的修复不得把一个
+        // 能工作（尽管不安全）的调用变成坏掉的调用。
         var invocation = ResolveCurrentTrampolineInvoke(opcode, callingConvention, returnType, parameterTypes);
         if (invocation == null)
         {
@@ -500,8 +500,8 @@ internal sealed class NativeInjectionScope : IDisposable
             return;
         }
 
-        // 1) Save what the calli would have consumed. The stack is [parameters..., pointer]
-        //    (pointer last), so the stores run in reverse: the pointer is stashed first.
+        // 1) 保存 calli 本会消耗掉的东西。栈是 [parameters..., pointer]
+        //    （指针在最后），所以存储按相反顺序进行：先暂存指针。
         var locals = new System.Reflection.Emit.LocalBuilder[parameterTypes.Length + 1];
         for (var i = parameterTypes.Length; i >= 0; i--)
         {
@@ -510,44 +510,44 @@ internal sealed class NativeInjectionScope : IDisposable
             body.Emit(System.Reflection.Emit.OpCodes.Stloc, locals[i]);
         }
 
-        // 2) methodPointer -> the exact delegate instance CreateTrampoline installed.
+        // 2) methodPointer -> CreateTrampoline 所安装的那个确切委托实例。
         body.Emit(System.Reflection.Emit.OpCodes.Ldloc, locals[parameterTypes.Length]);
         body.Emit(System.Reflection.Emit.OpCodes.Call, DelegateConverter(invocation.DelegateType));
 
-        // 3) The trampoline's own arguments: the calli parameters in their original order...
+        // 3) trampoline 自己的参数：按原始顺序排列的 calli 参数……
         for (var i = 0; i < parameterTypes.Length; i++)
             body.Emit(System.Reflection.Emit.OpCodes.Ldloc, locals[i]);
 
-        // ...plus the Il2CppMethodInfo* the invoker received as its second argument.
+        // ……再加上调用器作为第二个参数收到的 Il2CppMethodInfo*。
         var methodInfo = body.DeclareLocal(typeof(Il2CppMethodInfo*));
         body.Emit(System.Reflection.Emit.OpCodes.Ldarg_1);
         body.Emit(System.Reflection.Emit.OpCodes.Stloc, methodInfo);
         body.Emit(System.Reflection.Emit.OpCodes.Ldloc, methodInfo);
 
-        // 3b) Record which method the engine reached, once per method pointer. This is the
-        //     only direct evidence of who calls an injected method reflectively.
+        // 3b) 记录引擎到达了哪个方法，每个方法指针一次。这是
+        //      “谁在反射调用某个注入方法”的唯一直接证据。
         body.Emit(System.Reflection.Emit.OpCodes.Ldloc, methodInfo);
         body.Emit(System.Reflection.Emit.OpCodes.Conv_I);
         body.Emit(System.Reflection.Emit.OpCodes.Call, _reportInvokerCallSite);
 
-        // 4) A normal managed delegate invocation; the trampoline runs, no reverse P/Invoke
-        //    transition and no calli into a managed stub is involved.
+        // 4) 一次普通的托管委托调用；trampoline 运行，不涉及任何反向 P/Invoke
+        //    过渡，也不涉及对托管桩的 calli。
         body.Emit(System.Reflection.Emit.OpCodes.Ldloc, methodInfo);
         body.Emit(System.Reflection.Emit.OpCodes.Callvirt, invocation.Invoke);
     }
 
     /// <summary>
-    /// Resolves the delegate type <c>CreateTrampoline</c> is using for the method currently being
-    /// transpiled by calling the injector's own factory with the same argument it uses
-    /// (<c>new DelegateSupport.MethodSignature(monoMethod, hasThis: true)</c>).
-    /// <c>DelegateSupport.GetOrCreateDelegateType</c> caches its result by that signature, so this
-    /// returns the very same <see cref="Type"/> object - the type identity the round trip through
-    /// <c>Marshal</c> depends on (see analysis/injected-invoker-fix/REPORT.md).
+    /// 解析 <c>CreateTrampoline</c> 正用于当前被 transpile 的方法的委托类型：
+    /// 做法是用它所用的同一个参数调用注入器自己的工厂
+    /// （<c>new DelegateSupport.MethodSignature(monoMethod, hasThis: true)</c>）。
+    /// <c>DelegateSupport.GetOrCreateDelegateType</c> 会按该签名缓存结果，因此这里
+    /// 返回的是同一个 <see cref="Type"/> 对象——经由
+    /// <c>Marshal</c> 的往返所依赖的类型同一性（见 analysis/injected-invoker-fix/REPORT.md）。
     /// </summary>
     /// <summary>
-    /// Resolves the trampoline delegate for the method whose body is being built right now.
-    /// Returns null - after reporting once - whenever anything about the shape does not match,
-    /// so the caller emits the injector's original indirect call instead.
+    /// 解析此刻正在构建函数体的那个方法的 trampoline 委托。
+    /// 只要形态有任何不匹配就返回 null（并只上报一次），
+    /// 好让调用方改为发出注入器原来的间接调用。
     /// </summary>
     private static DelegateInvocation ResolveCurrentTrampolineInvoke(System.Reflection.Emit.OpCode opcode,
         CallingConvention callingConvention, Type returnType, Type[] parameterTypes)
@@ -637,9 +637,9 @@ internal sealed class NativeInjectionScope : IDisposable
     }
 
     /// <summary>
-    /// Resolves (and caches) the data <see cref="EmitManagedTrampolineInvoke"/> needs for a
-    /// delegate type. Returns null - never throws - when the delegate has no usable Invoke, so
-    /// the caller falls back to the original calli.
+    /// 解析（并缓存）<see cref="EmitManagedTrampolineInvoke"/> 对某个委托类型
+    /// 所需的数据。当该委托没有可用的 Invoke 时返回 null 且从不抛出，
+    /// 于是调用方回退到原来的 calli。
     /// </summary>
     private static DelegateInvocation ResolveManagedTrampolineInvoke(Type delegateType)
     {
@@ -666,8 +666,8 @@ internal sealed class NativeInjectionScope : IDisposable
         }
     }
 
-    // Marshal.GetDelegateForFunctionPointer<T>(nint), closed over the exact trampoline delegate
-    // type and cached: the invoker body calls a plain static method, not reflection.
+    // Marshal.GetDelegateForFunctionPointer<T>(nint)，闭合到确切的 trampoline 委托
+    // 类型并缓存：调用器函数体调用的是普通静态方法，而不是反射。
     private static MethodInfo DelegateConverter(Type delegateType)
     {
         lock (DelegateConverters)
@@ -695,10 +695,10 @@ internal sealed class NativeInjectionScope : IDisposable
     }
 
     /// <summary>
-    /// One diagnostic per distinct method pointer: this is the entry point the engine actually
-    /// reached, which is exactly what identifies whoever called an injected method reflectively.
-    /// Runs inside an il2cpp callout, so it only reads the native method info struct - never an
-    /// il2cpp object's ToString - and never lets a failure disturb the invocation.
+    /// 每个不同方法指针一条诊断：这正是引擎实际到达的
+    /// 入口，而它恰好能指认究竟是谁在反射调用某个注入方法。
+    /// 运行在 il2cpp 回调内部，因此只读取原生方法信息结构体——绝不调用某个
+    /// il2cpp 对象的 ToString——也绝不让失败干扰这次调用。
     /// </summary>
     private static unsafe void ReportInvokerCallSite(nint methodInfoPointer)
     {
@@ -773,8 +773,8 @@ internal sealed class NativeInjectionScope : IDisposable
         {
             if ((IL2CPP.il2cpp_field_get_flags(field) & (int)FieldAttributes.Static) != 0) continue;
             var offset = (long)IL2CPP.il2cpp_field_get_offset(field) - headerSize;
-            // The field API handles native references/write barriers as well
-            // as primitive values; do not assume Nullable<T> is blittable.
+            // 字段 API 既能处理原生引用/写屏障，也能处理
+            // 原始值；不要假设 Nullable<T> 是可 blittable 的。
             IL2CPP.il2cpp_field_set_value(boxed, field, (byte*)data + offset);
         }
         return boxed;

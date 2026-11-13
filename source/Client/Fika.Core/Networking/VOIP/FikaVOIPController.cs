@@ -17,10 +17,10 @@ class FikaVOIPController : Il2CppSystem.Object, IPlayerVoipController, IDisposab
     public FikaVOIPController(System.IntPtr pointer) : base(pointer) { }
 
 
-    // SPT 5 exposes DateTime/TimeSpan through Il2CppSystem.  Keep the VOIP
-    // state machine on managed primitives and convert only at API boundaries;
-    // this preserves the original arithmetic and avoids mixing the two
-    // otherwise incompatible struct types.
+    // SPT 5 通过 Il2CppSystem 暴露 DateTime/TimeSpan。让 VOIP
+    // 状态机使用托管基元类型，只在 API 边界处转换；
+    // 这样可以保留原有算术，并避免混用这两种
+    // 否则互不兼容的结构体类型。
     private static DateTime NowManaged => DateTimeExtensions.UtcNow.ToManaged();
     private static readonly TimeSpan _hearingDetectionTime = TimeSpan.FromSeconds(2.0);
 
@@ -55,8 +55,8 @@ class FikaVOIPController : Il2CppSystem.Object, IPlayerVoipController, IDisposab
         _requestedDevice = soundSettings.VoipDevice.Value;
         RefreshMicrophone();
 
-        // Keep the exact native delegates and unsubscribe actions alive. Bindings
-        // exist even when no microphone is present, so plugging one in can recover.
+        // 让精确的原生委托与取消订阅动作保持存活。即使没有麦克风，
+        // 绑定也存在，因此插入麦克风后可以恢复。
         _voipToggle = (Action<bool>)(value => MainThreadDispatcher.Post(() => ToggleVOIP(value)));
         _deviceChanged = (Action<string>)(value => MainThreadDispatcher.Post(() => ChangeDevice(value)));
         try { _unbindEnabled = soundSettings.VoipEnabled.Subscribe(_voipToggle); }
@@ -94,8 +94,8 @@ class FikaVOIPController : Il2CppSystem.Object, IPlayerVoipController, IDisposab
         var comms = DissonanceComms;
         _deviceUnavailable = string.Equals(_requestedDevice, "Settings/UnavailablePressType", StringComparison.Ordinal);
         string selected = null;
-        // Unity's live device list does not reuse SoundSettingsGroup's cached
-        // startup CheckMicrophone result after an unplug/replug.
+        // Unity 的实时设备列表不会复用 SoundSettingsGroup 缓存的
+        // 启动时 CheckMicrophone 结果（在拔出／重插之后）。
         var devices = UnityEngine.Microphone.devices;
         if (devices != null && devices.Length > 0)
         {
@@ -164,7 +164,7 @@ class FikaVOIPController : Il2CppSystem.Object, IPlayerVoipController, IDisposab
             state = _readyState;
         }
         _suspendedLimit = limit;
-        // Re-entering a suspended cooldown must not restart its duration.
+        // 重新进入已挂起的冷却不得重开其计时。
         if (ReferenceEquals(state, _suspendedLimit) && !ReferenceEquals(state, _currentState))
         {
             _currentState.Controller = null;
@@ -179,8 +179,8 @@ class FikaVOIPController : Il2CppSystem.Object, IPlayerVoipController, IDisposab
             DissonanceComms.IsMuted = true;
             DissonanceComms.MuteAllRemoteVoices = !_enabled || _forceMute || _deviceUnavailable;
         }
-        // method_3 intentionally skips same-state entry. Initial Off still needs
-        // to update the native player flag and the UI binding.
+        // method_3 有意跳过同状态进入。初始的 Off 仍然需要
+        // 更新原生玩家标志和 UI 绑定。
         method_4(_currentState.Status);
         Status.Value = _currentState.Status;
     }
@@ -590,8 +590,8 @@ class FikaVOIPController : Il2CppSystem.Object, IPlayerVoipController, IDisposab
     }
     public event Action<string> AbuseNotification;
     private readonly NativeActionEvent _nativeAbuseNotification = new();
-    // IPlayerVoipController declares the event accessors with the IL2CPP
-    // delegate type; the System.Action accessors are the *_Managed helpers.
+    // IPlayerVoipController 用 IL2CPP 委托类型声明了事件访问器；
+    // 那些 System.Action 访问器是 *_Managed 辅助方法。
     public void add_AbuseNotification(Il2CppSystem.Action handler) => _nativeAbuseNotification.Add(handler);
     public void remove_AbuseNotification(Il2CppSystem.Action handler) => _nativeAbuseNotification.Remove(handler);
 
@@ -827,7 +827,7 @@ class FikaVOIPController : Il2CppSystem.Object, IPlayerVoipController, IDisposab
             }
         }
 
-        // Created
+        // 已创建
         public DateTime Created;
         public DateTime DateTime_1;
 
@@ -874,7 +874,7 @@ class FikaVOIPController : Il2CppSystem.Object, IPlayerVoipController, IDisposab
         if (_disposed) return;
         if (UnityEngine.Time.unscaledTime >= _nextDeviceCheck)
         {
-            // Also recover from an unavailable native binding subscription.
+            // 同时从不可用的原生绑定订阅中恢复。
             var enabled = SoundSettings.VoipEnabled.Value;
             if (enabled != _enabled) ToggleVOIP(enabled);
             _requestedDevice = SoundSettings.VoipDevice.Value;
@@ -904,7 +904,7 @@ class FikaVOIPController : Il2CppSystem.Object, IPlayerVoipController, IDisposab
 
     public void ReportAbuse()
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public EVoipControllerStatus StopTalk()

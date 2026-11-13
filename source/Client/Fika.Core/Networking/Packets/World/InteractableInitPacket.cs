@@ -14,8 +14,8 @@ public struct InteractableInitPacket(bool isRequest) : INetSerializable
         Il2CppSystem.Collections.Generic.IReadOnlyDictionary<string, int> interactables)
     {
         System.ArgumentNullException.ThrowIfNull(interactables);
-        // World exposes a native interface proxy, not a CLR Dictionary. Snapshot
-        // its full ID mapping before serializing it with the managed JSON codec.
+        // World 暴露的是原生接口代理，而不是 CLR Dictionary。在用托管
+        // JSON 编解码器序列化它之前，先完整快照它的 ID 映射。
         var snapshot = new Dictionary<string, int>(interactables.Count);
         foreach (var entry in interactables)
             snapshot.Add(entry.Key, entry.Value);

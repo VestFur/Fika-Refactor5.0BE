@@ -7,7 +7,7 @@ using SPTushonka.Reflection.Patching;
 
 namespace Fika.Core.Main.Patches.HandsController;
 
-/// <summary>SPT 5's shot entry point is nonvirtual, including calls from native operations.</summary>
+/// <summary>SPT 5 的射击入口不是虚方法，来自原生操作的调用也在其中。</summary>
 public sealed class FirearmController_InitiateShot_Patch : ModulePatch
 {
     protected override MethodBase GetTargetMethod() => AccessTools.Method(
@@ -18,7 +18,7 @@ public sealed class FirearmController_InitiateShot_Patch : ModulePatch
     private static void Prefix(Player.FirearmController __instance, IWeapon weapon, Ammo ammo,
         Vector3 shotPosition, Vector3 shotDirection, Vector3 fireportPosition, int chamberIndex, float overheat)
     {
-        // IL2CPP can supply a base wrapper for an injected controller.
+        // 对于被注入的控制器，IL2CPP 可能提供基类包装。
         var controller = __instance.TryCast<FikaClientFirearmController>();
         controller?.SendInitiatedShot(weapon, ammo, shotPosition, shotDirection, fireportPosition, chamberIndex, overheat);
     }

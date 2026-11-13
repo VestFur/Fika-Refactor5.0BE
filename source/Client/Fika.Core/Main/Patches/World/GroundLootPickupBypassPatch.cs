@@ -14,17 +14,17 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.World;
 
 /// <summary>
-/// Client side ground loot pickup that skips the native interaction state machine.
-/// The native take runs inside EFT.PickUpState and, when its completion callback is
-/// lost, leaves the player locked in that state: the movement state machine refuses
-/// view rotation, movement and crouch, and MovementContext.CanInteract answers
-/// "Can't interact in Pickup", so no interaction prompt appears and ground loot can
-/// never be taken again for the rest of the raid.
-/// Intercepting InteractionContextHelper.PickupAction lets us run the same inventory
-/// operation the verified startup probe uses (ItemManipulator placement +
-/// ConvertOperationResultToOperation + Execute) and skip entering that state.
-/// The host stays authoritative: the operation still travels through
-/// ClientInventoryController, so loot cannot be duplicated locally.
+/// 客户端侧的地面物资拾取，跳过了原生交互状态机。
+/// 原生拾取运行在 EFT.PickUpState 内部，一旦其完成回调丢失，
+/// 玩家就会被锁在该状态中：移动状态机拒绝
+/// 视角旋转、移动和蹲下，而 MovementContext.CanInteract 回答
+/// “Can't interact in Pickup”，于是不出现交互提示，地面物资在
+/// 本场战局余下的时间里再也无法被拾取。
+/// 拦截 InteractionContextHelper.PickupAction 让我们可以执行与
+/// 启动自检所使用的那套相同的背包操作（ItemManipulator 放置 +
+/// ConvertOperationResultToOperation + Execute），并跳过进入该状态。
+/// 主机始终保持权威：该操作仍然经由
+/// ClientInventoryController 传输，因此战利品无法在本地被复制。
 /// </summary>
 internal sealed class InteractionContextHelper_PickupAction_Patch : ModulePatch
 {
@@ -47,25 +47,25 @@ internal sealed class InteractionContextHelper_PickupAction_Patch : ModulePatch
     [PatchPrefix]
     public static bool Prefix(Player __0, Item __2)
     {
-        // 2026-10-12 (analysis/pickup-auto-fallback): this used to be client-only, which made
-        // the switch below unreachable on a host - and the round-12 raid that got stuck in
-        // EFT.PickUpState ran on the host (the log of that raid contains no [LootDiag]
-        // pickup-request line at all, because this method returned before its first line).
-        // The condition is now "the machine's own player in a Fika raid", host or client.
+        // 2026-10-12（analysis/pickup-auto-fallback）：这里原本只对客户端生效，这使得
+        // 下面的开关在主机上无法到达——而那场卡在
+        // EFT.PickUpState 的第 12 轮战局就跑在主机上（该战局的日志中完全没有 [LootDiag]
+        // 拾取请求行，因为这个方法在第一行之前就返回了）。
+        // 现在的条件是“Fika 战局中本机自己的玩家”，主机或客户端都算。
         if (__0 == null || __2 == null || !GroundLootPickup.IsFikaLocalPlayer(__0))
         {
             return true;
         }
 
-        // 2026-10-12 (analysis/pickup-stuck-again + analysis/pickup-auto-fallback): the native
-        // action relays a take through the inventory controller like every other inventory
-        // action, but it does so inside EFT.PickUpState, and that state can stay entered for the
-        // rest of the raid. Off by default; three modes (see GroundLootPickup):
-        //   native       - the native action runs (default)
+        // 2026-10-12（analysis/pickup-stuck-again + analysis/pickup-auto-fallback）：原生
+        // 动作和其它背包动作一样经由背包控制器转发一次拾取，
+        // 但它是在 EFT.PickUpState 内部这么做的，而该状态可能一直保持到
+        // 战局结束。默认关闭；三种模式（见 GroundLootPickup）：
+        //   native       - 运行原生动作（默认）
         //   bypass(cfg)  - Fika.cfg -> [Gameplay] -> "Ground Loot Pickup Bypass" = true
-        //   bypass(auto) - a stuck pickup was detected in this raid, so the take now skips the
-        //                  native pickup state (Fika.cfg -> [Gameplay] ->
-        //                  "Ground Loot Pickup Auto Fallback" = false turns that switch off)
+        //   bypass(auto) - 本场战局检测到过卡住的拾取，因此拾取现在会跳过
+        //                  原生拾取状态（Fika.cfg -> [Gameplay] ->
+        //                  "Ground Loot Pickup Auto Fallback" = false 会关闭该开关）
         if (!GroundLootPickup.BypassEnabled)
         {
             GroundLootPickup.DiagNativeTake(__0, __2);
@@ -89,11 +89,11 @@ internal sealed class InteractionContextHelper_PickupAction_Patch : ModulePatch
 }
 
 /// <summary>
-/// Puts ground loot into the matching equipment slot. Armour, helmets, rigs, backpacks and
-/// headsets can only live in an equipment slot, which the generic container placement never
-/// offers, so these items used to be left on the ground. Uses the verified native path:
-/// InventoryEquipment.GetSlot + Slot.CreateItemAddress + ItemManipulator.Move (dry run) +
-/// ConvertOperationResultToOperation + Execute, so the host stays authoritative.
+/// 把地面物资放入对应的装备槽位。护甲、头盔、战术背心、背包和
+/// 耳机只能放在装备槽位里，而通用的容器放置从不提供这种槽位，
+/// 所以这些物品以前会被留在地上。使用经过验证的原生路径：
+/// InventoryEquipment.GetSlot + Slot.CreateItemAddress + ItemManipulator.Move（dry run）+
+/// ConvertOperationResultToOperation + Execute，因此主机始终保持权威。
 /// </summary>
 internal static class GroundLootEquip
 {
@@ -230,25 +230,25 @@ internal static class GroundLootEquip
         }
         catch
         {
-            // Type probing must never break the pickup.
+            // 类型探测绝不能破坏拾取流程。
         }
         return null;
     }
 }
 
-/// <summary>Direct ground loot take used by the bypass patch.</summary>
+/// <summary>旁路补丁所使用的直接地面物资拾取。</summary>
 internal static class GroundLootPickup
 {
     /// <summary>
-    /// Whether Fika still bypasses the native ground loot take. Off by default since
-    /// 2026-10-12 (analysis/pickup-stuck-again): the bypass skipped the native pickup state
-    /// and built the inventory operation by hand, and every path where the item could not be
-    /// placed returned true - the interaction was consumed, the item stayed on the ground and
-    /// nothing ever told the player why. The native action reaches the same host-authoritative
-    /// path through ClientInventoryController.
+    /// Fika 是否仍然旁路原生的地面物资拾取。自 2026-10-12 起默认关闭
+    /// （analysis/pickup-stuck-again）：旁路跳过了原生拾取状态并手工构造背包操作，
+    /// 而物品无法放置的每一条路径都会返回 true——交互被消耗、物品留在地上，
+    /// 而且没有任何东西告诉玩家原因。原生动作经由
+    /// ClientInventoryController 到达同一个以主机为权威的
+    /// 路径。
     /// <para>
-    /// One flip back to the previous behaviour, no rebuild needed:
-    /// Fika.cfg -> [Gameplay] -> "Ground Loot Pickup Bypass" = true.
+    /// 翻一个开关即可回到之前的行为，无需重新编译：
+    /// Fika.cfg -> [Gameplay] -> "Ground Loot Pickup Bypass" = true。
     /// </para>
     /// </summary>
     internal static bool BypassEnabled
@@ -259,7 +259,7 @@ internal static class GroundLootPickup
         }
     }
 
-    /// <summary>The manual switch. Fika.cfg -> [Gameplay] -> "Ground Loot Pickup Bypass".</summary>
+    /// <summary>手动开关。Fika.cfg -> [Gameplay] -> "Ground Loot Pickup Bypass"。</summary>
     private static bool CfgBypassEnabled
     {
         get
@@ -271,21 +271,21 @@ internal static class GroundLootPickup
             }
             catch
             {
-                // A missing plugin or settings object must never decide a pickup: fall back
-                // to the native path, which is the default anyway.
+                // 缺失的插件或设置对象绝不能决定一次拾取：回退到
+                // 原生路径，毕竟那本来就是默认。
                 return false;
             }
         }
     }
 
     // ---------------------------------------------------------------------------------------
-    // Pickup path switch (analysis/pickup-auto-fallback, Z4)
+    // 拾取路径开关（analysis/pickup-auto-fallback, Z4）
     // ---------------------------------------------------------------------------------------
-    // native       : default. A ground loot take runs inside EFT.PickUpState (EPlayerState.Pickup).
-    // bypass(cfg)  : "Ground Loot Pickup Bypass" = true. Every take uses the bypass.
-    // bypass(auto) : a real stuck pickup was observed in this raid (NoteStuckPickup), so the take
-    //                now skips EFT.PickUpState for the rest of the raid. No cfg write, no restart:
-    //                BypassEnabled is read again on every take.
+    // native       : 默认。地面物资拾取运行在 EFT.PickUpState（EPlayerState.Pickup）内部。
+    // bypass(cfg)  : "Ground Loot Pickup Bypass" = true。每次拾取都走旁路。
+    // bypass(auto) : 本场战局观测到过真实的卡住拾取（NoteStuckPickup），因此拾取
+    //                在本场战局余下的时间里跳过 EFT.PickUpState。不写 cfg、不重启：
+    //                每次拾取都会重新读取 BypassEnabled。
     internal const string ModeNative = "native";
     internal const string ModeBypassCfg = "bypass(cfg)";
     internal const string ModeBypassAuto = "bypass(auto)";
@@ -297,9 +297,9 @@ internal static class GroundLootPickup
     private static IntPtr _modePlayerPointer;
 
     /// <summary>
-    /// Whether a detected stuck pickup may switch this machine to the bypass (default on).
-    /// One cfg line turns the automatic switch off for good, without a rebuild:
-    /// Fika.cfg -> [Gameplay] -> "Ground Loot Pickup Auto Fallback" = false.
+    /// 检测到的卡住拾取是否可以把本机切换到旁路（默认开启）。
+    /// 一行 cfg 即可永久关闭自动切换，无需重新编译：
+    /// Fika.cfg -> [Gameplay] -> "Ground Loot Pickup Auto Fallback" = false。
     /// </summary>
     internal static bool AutoFallbackEnabled
     {
@@ -313,14 +313,14 @@ internal static class GroundLootPickup
             }
             catch
             {
-                // The switch is a safety net, not a gameplay feature: when the settings object
-                // cannot be read, keep the automatic recovery available.
+                // 该开关是安全网而非玩法特性：当设置对象
+                // 无法读取时，保留自动恢复能力可用。
                 return true;
             }
         }
     }
 
-    /// <summary>The pickup path this machine uses right now: native, bypass(cfg) or bypass(auto).</summary>
+    /// <summary>本机此刻使用的拾取路径：native、bypass(cfg) 或 bypass(auto)。</summary>
     internal static string Mode
     {
         get
@@ -333,7 +333,7 @@ internal static class GroundLootPickup
         }
     }
 
-    /// <summary>Which side of the raid this machine runs, for the diagnostic lines.</summary>
+    /// <summary>本机在这场战局中扮演哪一端，用于诊断行。</summary>
     internal static string Role
     {
         get
@@ -353,7 +353,7 @@ internal static class GroundLootPickup
         }
     }
 
-    /// <summary>One description of the current pickup path, appended to the [LootDiag] lines.</summary>
+    /// <summary>对当前拾取路径的一段描述，附加到 [LootDiag] 行之后。</summary>
     internal static string DescribeSwitch()
     {
         return $"mode={Mode} switches={_switchCount} lastRelease={_lastReleaseReason} " +
@@ -361,8 +361,8 @@ internal static class GroundLootPickup
     }
 
     /// <summary>
-    /// Records which release ran last, so "why was the interaction state dropped" is readable from
-    /// any [LootDiag] line without cross-referencing the whole log.
+    /// 记录最后执行的是哪一次释放，这样“交互状态为何被丢弃”就可以从
+    /// 任意一行 [LootDiag] 读出，而无需交叉比对整份日志。
     /// </summary>
     internal static void NoteRelease(string reason)
     {
@@ -370,8 +370,8 @@ internal static class GroundLootPickup
     }
 
     /// <summary>
-    /// Whether this machine's own player is the one taking the item. Only then may Fika change the
-    /// take: bots and remote players keep the native action on every machine.
+    /// 本机自己的玩家是否就是拾取该物品的那一个。只有此时 Fika 才可以改动
+    /// 拾取：bot 与远端玩家在每台机器上都保留原生动作。
     /// </summary>
     internal static bool IsFikaLocalPlayer(Player player)
     {
@@ -389,22 +389,22 @@ internal static class GroundLootPickup
         }
         catch
         {
-            // A throwing player accessor must never decide a pickup: keep the native action.
+            // 抛出异常的玩家访问器绝不能决定一次拾取：保留原生动作。
             return false;
         }
     }
 
     /// <summary>
-    /// The one and only evidence that switches the pickup path: <c>CoopGame</c>'s watchdog saw the
-    /// local player sit in <see cref="EPlayerState.Pickup"/> for its whole 5 s budget
-    /// (<c>CoopGame.RepairLocalInteractionState</c>, <c>EPlayerState.Pickup =&gt; 5f</c>). A native
-    /// take animates for well under two seconds, so five seconds in that state is not a normal
-    /// pickup. No other state switches anything: Plant has its own 20 s budget and never reaches
-    /// this method with <see cref="EPlayerState.Pickup"/>.
+    /// 唯一会切换拾取路径的证据：<c>CoopGame</c> 的看门狗看到
+    /// 本地玩家在 <see cref="EPlayerState.Pickup"/> 中待满了整整 5 秒的预算
+    /// （<c>CoopGame.RepairLocalInteractionState</c>，<c>EPlayerState.Pickup =&gt; 5f</c>）。原生
+    /// 拾取的动画远不到两秒，因此在该状态停留五秒不是一次正常的
+    /// 拾取。没有其它状态会触发切换：Plant 有自己的 20 秒预算，且永远不会带着
+    /// <see cref="EPlayerState.Pickup"/> 到达本方法。
     /// <para>
-    /// Idempotent: the switch happens at most once per raid, so repeated detections only refresh
-    /// the diagnostic state. The before/after lines around it are the "this take really did flip
-    /// the path" evidence for the next raid.
+    /// 幂等：每场战局最多切换一次，因此重复的检测只会刷新
+    /// 诊断状态。它前后那些 before/after 行就是给下一场战局看的
+    /// “这次拾取确实翻转了路径”的证据。
     /// </para>
     /// </summary>
     internal static void NoteStuckPickup(Player player, EPlayerState stuckState, float heldForSeconds)
@@ -415,7 +415,7 @@ internal static class GroundLootPickup
         }
         if (CfgBypassEnabled)
         {
-            // Already on the bypass: nothing to switch, the player is simply in an odd state.
+            // 已经在旁路上：无需切换，玩家只是处在一个奇怪的状态。
             return;
         }
         if (!AutoFallbackEnabled || _autoSwitched)
@@ -432,11 +432,11 @@ internal static class GroundLootPickup
             }
 
     /// <summary>
-    /// Read-only snapshot of the native pickup state machine, taken the moment the watchdog gives up
-    /// on it (analysis/pickup-auto-fallback). It answers the two questions the next raid has to
-    /// settle: did the take ever reach its inventory operation (<c>MovementContext.PickupAction</c>
-    /// is the native continuation that runs when the take/its animation finished), and was the
-    /// interaction gate closed by the pickup state itself.
+    /// 原生拾取状态机的只读快照，在看门狗放弃它的那一刻采集
+    /// （analysis/pickup-auto-fallback）。它回答下一场战局必须
+    /// 弄清楚的两个问题：这次拾取是否抵达过它的背包操作（<c>MovementContext.PickupAction</c>
+    /// 是拾取及其动画结束后运行的原生延续），以及交互
+    /// 闸门是否被拾取状态本身关闭。
     /// </summary>
     internal static void DiagnoseStuckState(MovementContext movementContext, EPlayerState stuckState,
         float heldForSeconds)
@@ -478,7 +478,7 @@ internal static class GroundLootPickup
             }
             catch
             {
-                // The fields only exist on EFT.PickUpState; a state that is not one keeps "n/a".
+                // 这些字段只存在于 EFT.PickUpState 上；不是该状态时保持 "n/a"。
             }
 
                     }
@@ -488,10 +488,10 @@ internal static class GroundLootPickup
     }
 
     /// <summary>
-    /// Driven once per frame by <c>CoopGame.RepairLocalInteractionState</c>: one [LootDiag] heartbeat
-    /// every 60 s while a raid runs (so "which path is this machine on, how often did it switch"
-    /// needs no other line), and the per-raid reset as soon as the game stopped - the next raid
-    /// starts native again.
+    /// 由 <c>CoopGame.RepairLocalInteractionState</c> 每帧驱动一次：战局进行时每 60 秒一行 [LootDiag]
+    /// 心跳（这样“本机在哪条路径上、切换过几次”就不需要别的行），以及游戏一停止就执行的
+    /// 每战局重置：
+    /// 下一场战局重新从 native 开始。
     /// </summary>
     internal static void TickPickupModeWatchdog(Player player, bool raidRunning)
     {
@@ -505,10 +505,10 @@ internal static class GroundLootPickup
 
             NoteLocalPlayer(player);
 
-            // (analysis/perf-diagnostics-cleanup) The reset above and the player note are functional (they
-            // clear the bypass of the raid that ended); only the heartbeat below is a probe: one [LootDiag]
-            // pickup-mode line every 60 s while a raid runs. With the master switch off it is skipped before
-            // the movement state is read, so a raid writes nothing from here.
+            // （analysis/perf-diagnostics-cleanup）上面的重置与玩家记录是功能性的（它们
+            // 会清除已结束战局的旁路状态）；只有下面的心跳是一个探针：战局进行时每 60 秒
+            // 一行 [LootDiag] 拾取模式。总开关关闭时，它在读取移动状态之前就被跳过，
+            // 因此一场战局不会从这里写出任何东西。
             
 
             if (Time.time < _nextModeDiagTime)
@@ -539,8 +539,8 @@ internal static class GroundLootPickup
     }
 
     /// <summary>
-    /// The switch budget belongs to one local player of one raid: a reconnect or a respawn that
-    /// hands the machine a new player object starts from native again.
+    /// 切换预算属于某一场战局的某一个本地玩家：重连或重生让本机
+    /// 拿到新的玩家对象后，会重新从 native 开始。
     /// </summary>
     private static void NoteLocalPlayer(Player player)
     {
@@ -562,8 +562,8 @@ internal static class GroundLootPickup
     }
 
     /// <summary>
-    /// A switch only ever lives for one raid: once no raid is running any more the next one starts
-    /// native, so a single bad raid cannot leave every later raid on the bypass.
+    /// 一次切换只存活一场战局：一旦不再有战局运行，下一场就从
+    /// native 开始，因此一场坏掉的战局不会让之后每场战局都留在旁路上。
     /// </summary>
     internal static void ResetForNewRaid(string why)
     {
@@ -581,10 +581,10 @@ internal static class GroundLootPickup
             }
 
     /// <summary>
-    /// Reports the interaction the native pickup action is about to handle, so the next raid
-    /// says which path a take took and whether this client even sees the item as a network
-    /// object (analysis/pickup-stuck-again). Throttled per item so holding the interaction key
-    /// cannot flood the log.
+    /// 报告原生拾取动作即将处理的这一次交互，这样下一场战局
+    /// 就能说出某次拾取走了哪条路径，以及这个客户端究竟是否把该物品当作网络
+    /// 对象看到（analysis/pickup-stuck-again）。按物品节流，因此按住交互键
+    /// 也不会刷爆日志。
     /// </summary>
     private static readonly System.Collections.Generic.Dictionary<string, float> DiagSeen = new();
 
@@ -614,12 +614,12 @@ internal static class GroundLootPickup
                     }
     }
 
-    // The native interaction action fires repeatedly while the key is held, and every
-    // invocation used to dispatch its own operation. The second one is rejected by the
-    // host ("Could not find item owner"), and that rejection triggers the authoritative
-    // inventory replacement, which leaves the inventory screen empty for the rest of the
-    // raid. Ignore repeats of the same item for a few seconds; the map is bounded and
-    // self-expiring so a failed pickup can never block an item permanently.
+    // 按住按键时原生交互动作会反复触发，而过去每次
+    // 调用都会派发自己的操作。第二次会被主机拒绝
+    // （"Could not find item owner"），而该拒绝会触发权威的
+    // 背包替换，导致背包界面在本场战局余下的时间里一直是空的。
+    // 对同一物品的重复触发在几秒内被忽略；该映射是有界的、
+    // 会自动过期，因此一次失败的拾取永远不会永久阻塞某个物品。
     private static readonly System.Collections.Generic.Dictionary<string, float> RecentTakes = new();
 
     private static bool IsRepeatedTake(string itemId)
@@ -656,11 +656,11 @@ internal static class GroundLootPickup
             return true;
         }
 
-        // Armour, helmets and rigs only fit into an equipment slot, and pockets, the
-        // tactical rig, the backpack and the secure container are separate compound
-        // items, so search every container the player carries instead of only the
-        // inventory root. Otherwise a take can fail placement and the item is left
-        // on the ground even though the player has room for it.
+        // 护甲、头盔和战术背心只能装进装备槽位，而口袋、
+        // 战术背心、背包和安全容器是各自独立的复合
+        // 物品容器，所以要搜索玩家携带的每一个容器，而不只是
+        // 背包根节点。否则一次拾取可能放置失败，物品被留在
+        // 地上，尽管玩家其实有空间放它。
         var targets = new Il2CppSystem.Collections.Generic.List<CompoundItem>();
         var seen = new System.Collections.Generic.HashSet<IntPtr>();
         void AddTarget(CompoundItem candidate)
@@ -696,10 +696,10 @@ internal static class GroundLootPickup
             FikaGlobals.LogWarning($"[PickupBypass] could not enumerate the carried containers: {exception.Message}");
         }
 
-        // Equipment (armour, helmet, rig, backpack, headset) only fits an equipment slot
-        // and the generic container search never offers one, so try the dedicated slot
-        // move first. Verified native path: Slot.CreateItemAddress + ItemManipulator.Move
-        // (dry run) + ConvertOperationResultToOperation + Execute.
+        // 装备（护甲、头盔、战术背心、背包、耳机）只能装进装备槽位，
+        // 而通用容器搜索从不提供这种槽位，所以先尝试专用的槽位
+        // 移动。经过验证的原生路径：Slot.CreateItemAddress + ItemManipulator.Move
+        // （dry run）+ ConvertOperationResultToOperation + Execute。
         if (GroundLootEquip.TryEquipFromGround(player, item, out var equipError))
         {
             FikaGlobals.LogInfo($"[PickupBypass] equip {item.Id} into its equipment slot " +
@@ -711,10 +711,10 @@ internal static class GroundLootPickup
             ItemManipulator.EMoveItemOrder.IgnoreItemParent | ItemManipulator.EMoveItemOrder.TryEquip, true);
         if (placement.Failed)
         {
-            // Never fall back to the native pickup action here: that path enters
-            // EFT.PickUpState and can lock the player for the rest of the raid.
-            // Log the item class and the localised error so the next report says why
-            // the placement failed (equipment needs a dedicated slot operation).
+            // 这里绝不回退到原生拾取动作：那条路径会进入
+            // EFT.PickUpState，并可能把玩家锁住直到本场战局结束。
+            // 记录物品类别与本地化的错误，这样下一份报告就能说明放置
+            // 为什么失败（装备需要专门的槽位操作）。
             var reason = "unknown";
             try
             {

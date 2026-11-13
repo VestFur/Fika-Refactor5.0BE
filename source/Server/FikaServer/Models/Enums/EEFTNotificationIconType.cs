@@ -1,4 +1,4 @@
-﻿namespace FikaServer.Models.Enums;
+﻿﻿namespace FikaServer.Models.Enums;
 
 public enum EEFTNotificationIconType
 {
@@ -9,7 +9,7 @@ public enum EEFTNotificationIconType
     Note = 4,
     Quest = 5,
     /// <summary>
-    /// This one is broken
+    /// 这一项已损坏
     /// </summary>
     Achievement = 6,
     EntryPoint = 7,

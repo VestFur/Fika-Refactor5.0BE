@@ -8,18 +8,18 @@ public struct PasscodeInitPacket(bool isRequest) : INetSerializable
     public Dictionary<string, string[]> Hints;
 
     /// <summary>
-    /// BO (analysis/icebreaker-keypad-2): the passcode ids of the host's location (id -> list id), or null when
-    /// the host's own controller was not up yet. Both ends of this port send and read the same shape; the field is
-    /// optional on the wire so a peer of an older build still understands the packet (and vice versa).
+    /// BO (analysis/icebreaker-keypad-2)：主机所在位置的通行码 id（id -> 列表 id），当主机的
+    /// 控制器还没启动时为 null。此次移植的两端发送和读取同一种结构；该字段在
+    /// 网络传输中是可选的，这样旧构建的节点仍能理解该包（反之亦然）。
     /// </summary>
     public Dictionary<string, string> Entries;
 
     /// <summary>
-    /// BU (analysis/icebreaker-keypad-3): the code table of this raid (passcode id -> code), drawn on the host
-    /// by the game's own generator. It is the one set both machines check against, so a client can run the
-    /// game's own local validation instead of asking the host about every attempt. Null while the host has not
-    /// drawn its codes yet; the field is an optional tail block, so a peer of an older build keeps understanding
-    /// the packet (and vice versa).
+    /// BU (analysis/icebreaker-keypad-3)：本战局的密码表（通行码 id -> 密码），由主机
+    /// 用游戏自己的生成器抽取。它是两台机器共同校验的那一份，因此客户端可以运行
+    /// 游戏自己的本地校验，而不必每次尝试都去询问主机。当主机尚未
+    /// 抽出密码时为 null；该字段是一个可选的尾部块，因此旧构建的节点仍能
+    /// 理解该包（反之亦然）。
     /// </summary>
     public Dictionary<string, string> Codes;
 
@@ -46,8 +46,8 @@ public struct PasscodeInitPacket(bool isRequest) : INetSerializable
             Hints[passcodeId] = hints;
         }
 
-        // The optional passcode-id block is read only when the sender wrote one. LiteNetLib appends nothing of
-        // its own here, so the writer's own trailing flag is the test.
+        // 可选的通行码 id 块只在发送方写过时才读取。LiteNetLib 在这里不会追加
+        // 自己的内容，因此写入方自己的尾部标志就是判断依据。
         if (reader.AvailableBytes <= 0)
         {
             return;
@@ -66,8 +66,8 @@ public struct PasscodeInitPacket(bool isRequest) : INetSerializable
             Entries[passcodeId] = reader.GetString();
         }
 
-        // BU (analysis/icebreaker-keypad-3): the optional code table of this snapshot, read under the same
-        // rule as the block above - only when the sender really wrote one.
+        // BU (analysis/icebreaker-keypad-3)：本快照的可选密码表，按与上面
+        // 那个块相同的规则读取——只在发送方确实写过时才读。
         if (reader.AvailableBytes <= 0)
         {
             return;
@@ -106,7 +106,7 @@ public struct PasscodeInitPacket(bool isRequest) : INetSerializable
             }
         }
 
-        // BO (analysis/icebreaker-keypad-2): the optional passcode-id block of this snapshot.
+        // BO (analysis/icebreaker-keypad-2)：本快照的可选通行码 id 块。
         writer.Put(Entries != null);
         if (Entries != null)
         {
@@ -118,7 +118,7 @@ public struct PasscodeInitPacket(bool isRequest) : INetSerializable
             }
         }
 
-        // BU (analysis/icebreaker-keypad-3): the optional code table of this snapshot (the raid's codes).
+        // BU (analysis/icebreaker-keypad-3)：本快照的可选密码表（本战局的密码）。
         writer.Put(Codes != null);
         if (Codes == null)
         {

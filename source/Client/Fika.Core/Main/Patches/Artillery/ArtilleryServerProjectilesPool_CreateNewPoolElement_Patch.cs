@@ -21,17 +21,17 @@ public class ArtilleryServerProjectilesPool_CreateNewPoolElement_Patch : ModuleP
         if (FikaSingleton<IFikaGame>.Instance?.GameController is not HostGameController host)
             throw new InvalidOperationException("Server artillery requires a Fika host game controller.");
 
-        // The IL2CPP constructor subscribes to the vanilla game singleton.
-        // Intercept the native factory (also called by InitPool/GetProjectile),
-        // because the installed Harmony backend cannot detour constructors.
+        // IL2CPP 构造函数会订阅原版游戏单例。
+        // 因此改为拦截原生工厂方法（InitPool/GetProjectile 也会调用它），
+        // 因为当前安装的 Harmony 后端无法对构造函数进行 detour。
         var projectilePointer = IL2CPP.il2cpp_object_new(Il2CppClassPointerStore<ArtilleryProjectileServer>.NativeClassPtr);
         if (projectilePointer == IntPtr.Zero)
             throw new InvalidOperationException("Could not allocate native artillery projectile.");
 
-        // The generated IL2CPP wrapper constructor invokes the native
-        // constructor, which dereferences the vanilla artillery singleton and
-        // is not safe while the pool is being initialized. Allocate the
-        // native object directly and initialize every field Fika owns.
+        // 生成的 IL2CPP 包装构造函数会调用原生
+        // 构造函数，而后者会解引用原版火炮单例，
+        // 在池正在初始化的过程中并不安全。因此直接分配
+        // 原生对象，并初始化 Fika 拥有的每一个字段。
         var projectile = new ArtilleryProjectileServer(projectilePointer)
         {
             speed = 50f,

@@ -97,11 +97,11 @@ public class ObservedQuestController(Profile profile, InventoryController invent
 
     private void UpdateClientZoneDrop(MongoID? itemId, string zoneId)
     {
-        // A planted quest item must not be recreated after replaying its drop
-        // during reconnect. A subsequent genuine pickup can add it again.
+        // 重放其掉落之后，不能重新创建已放置的任务物品，
+        // 重连期间也是如此。之后真正的拾取可以再次加入它。
         if (!ReferenceEquals(itemId, null)) _lootedQuestItems.RemoveAll(id => id == itemId);
-        // MongoID is a native value wrapper. Its equality operator unboxes
-        // both operands and cannot compare two missing optional IDs.
+        // MongoID 是原生值包装器。其相等运算符会拆箱
+        // 两个操作数，无法比较两个缺失的可选 ID。
         if (!_zoneDrops.Exists(drop => SameOptionalItemId(drop.ItemId, itemId) && drop.ZoneId == zoneId))
             _zoneDrops.Add(new ZoneDropInformation(itemId, zoneId));
     }
@@ -118,10 +118,10 @@ public class ObservedQuestController(Profile profile, InventoryController invent
 
     internal void DisposeObservedNative()
     {
-        // Observed Run deliberately does not create local quest connectors.
-        // Both SPT 5's client Dispose and its generic base require that manager.
-        // Preserve Fika's observed-only cleanup instead of running local quests
-        // just to manufacture a manager for teardown.
+        // Observed Run 刻意不创建本地任务连接器。
+        // SPT 5 的客户端 Dispose 及其泛型基类都需要该管理器。
+        // 保持 Fika 仅观察的清理方式，而不是为了给拆除流程
+        // 造一个管理器去运行本地任务。
         Native._disposable.Dispose();
         ConditionalBook.Dispose();
         foreach (var quest in ConditionalBook)
@@ -140,8 +140,8 @@ public class ObservedQuestController(Profile profile, InventoryController invent
 
     public Task HandleInraidQuestPacketAsync(InRaidQuestPacket packet)
     {
-        // Bundle loading is asynchronous. Keep quest rewards and handovers in
-        // network order for this observed player on both the host and clients.
+        // bundle 加载是异步的。主机和客户端都要让此观察玩家的
+        // 任务奖励与交接保持网络顺序。
         var previous = _inventoryPacketTail;
         return _inventoryPacketTail = ProcessAfterPrevious(previous, packet);
     }
@@ -149,7 +149,7 @@ public class ObservedQuestController(Profile profile, InventoryController invent
     private async Task ProcessAfterPrevious(Task previous, InRaidQuestPacket packet)
     {
         try { await previous; }
-        catch { /* A failed packet must not block later valid quest operations. */ }
+        catch { /* 失败的包不得阻塞后续有效的任务操作。 */ }
         if (IsDisposed) throw new System.ObjectDisposedException(nameof(ObservedQuestController));
         await ApplyInraidQuestPacket(packet);
     }
@@ -163,8 +163,8 @@ public class ObservedQuestController(Profile profile, InventoryController invent
             for (var i = 0; i < packet.Items.Count; i++)
             {
                 var flat = packet.Items[i];
-                // The sender sends the actual generated tree, including all IDs.
-                // Cloning a QuestReward here would generate a different item tree.
+                // 发送方发送的是实际生成的树，包括所有 ID。
+                // 在此处克隆 QuestReward 会生成不同的物品树。
                 var rootId = packet.RewardRootIds[i].ToString();
                 if (InventoryController.TryFindItem(rootId, out _)) continue;
                 var tree = Singleton<ItemFactory>.Instance.FlatItemsToTree(
@@ -176,10 +176,10 @@ public class ObservedQuestController(Profile profile, InventoryController invent
                     throw new System.InvalidOperationException($"Cannot resolve quest reward address for {rootId}");
                 pendingRewards.Add((item, address));
             }
-            // Check the entire packet before changing the observer's inventory.
-            // A malformed later entry must not leave an earlier reward applied.
-            // Load every resource first, as native quest completion does; a
-            // nested reward item may have no bundle in the observer's loadout.
+            // 在修改观察者的库存之前检查整个包。
+            // 后面格式错误的条目不能导致前面的奖励已被应用。
+            // 像原生任务完成那样先加载所有资源；
+            // 嵌套的奖励物品在观察者的装备中可能没有对应 bundle。
             var resources = new Il2CppSystem.Collections.Generic.List<ResourceKey>();
             var paths = new HashSet<string>();
             foreach (var (reward, _) in pendingRewards)
@@ -204,7 +204,7 @@ public class ObservedQuestController(Profile profile, InventoryController invent
             var itemId = packet.ItemIdsToRemove[i];
             if (!InventoryController.TryFindItem(itemId.ToString(), out var item))
             {
-                if (packet.ItemRemainingCounts[i] == 0) continue; // Already removed by an earlier update.
+                if (packet.ItemRemainingCounts[i] == 0) continue; // 之前的更新已将其移除。
                 throw new System.InvalidOperationException($"Cannot find handed-over item {itemId}");
             }
             var remaining = packet.ItemRemainingCounts[i];

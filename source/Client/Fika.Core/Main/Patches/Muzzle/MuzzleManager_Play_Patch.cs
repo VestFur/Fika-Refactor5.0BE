@@ -6,22 +6,22 @@ using Il2CppSystems.Effects;
 namespace Fika.Core.Main.Patches.Muzzle;
 
 /// <summary>
-/// This patch skips a LINQ allocation during <c>MuzzleManager.IMuzzleParticlePivot.Play(EMuzzleParticlePivot, Transform)</c>
+/// 本补丁在 <c>MuzzleManager.IMuzzleParticlePivot.Play(EMuzzleParticlePivot, Transform)</c> 期间跳过一次 LINQ 分配
 /// </summary>
-/// <remarks>Allocation found by <b>ifp</b></remarks>
+/// <remarks>该分配由 <b>ifp</b> 发现</remarks>
 /// <remarks>
-/// Deliberately not installed on EFT 1.2.0.47888. The target is an explicit interface implementation and
-/// Il2CppInterop 1.6.7 generates its stub against <c>NativeInterfaceMethodInfoPtr_IMuzzleParticlePivot_Play_...</c>;
-/// <c>Il2CppInteropUtils.GetIl2CppMethodInfoPointerFieldForGeneratedMethod</c> scans the stub body for a field
-/// starting with <c>NativeMethodInfoPtr_</c> and therefore finds nothing, so
-/// <c>Il2CppDetourMethodPatcher.IsValid</c> stays false and Harmony falls back to ManagedMethodPatcher (patching
-/// the CLR stub, which native code never calls). That is exactly what Fika.Core's PatchManager refused with
-/// "requires an IL2CPP detour; resolved HarmonyLib.Public.Patching.ManagedMethodPatcher". The same optimization
-/// ships in SPTushonka.Custom (<c>MemoryImprovements.MuzzleManagerPlayPatch</c>) with an identical prefix body; a
-/// second install would not change runtime behavior either. Nothing else calls this method, so the only effect of
-/// the missing patch is one LINQ allocation per muzzle play. Drop [IgnoreAutoPatch] once the build (or a newer
-/// Il2CppInterop) exposes the implementation behind a detourable <c>NativeMethodInfoPtr_</c> field, for example
-/// <c>MuzzleManager.Shot(bool, float)</c> as the non-interface caller.
+/// 在 EFT 1.2.0.47888 上有意不安装。目标是显式接口实现，而
+/// Il2CppInterop 1.6.7 针对 <c>NativeInterfaceMethodInfoPtr_IMuzzleParticlePivot_Play_...</c> 生成其 stub；
+/// <c>Il2CppInteropUtils.GetIl2CppMethodInfoPointerFieldForGeneratedMethod</c> 会在 stub 中扫描以
+/// <c>NativeMethodInfoPtr_</c> 开头的字段，因此什么也找不到，于是
+/// <c>Il2CppDetourMethodPatcher.IsValid</c> 保持 false，Harmony 回退到 ManagedMethodPatcher（修补
+/// CLR stub，而原生代码从不调用它）。这正是 Fika.Core 的 PatchManager 所拒绝的：
+/// "requires an IL2CPP detour; resolved HarmonyLib.Public.Patching.ManagedMethodPatcher"。同样的优化
+/// 也随 SPTushonka.Custom（<c>MemoryImprovements.MuzzleManagerPlayPatch</c>）发布，prefix 体完全一致；
+/// 再安装一次同样不会改变运行时行为。没有其他东西调用该方法，因此缺少该补丁的
+/// 唯一影响就是每次枪口播放多一次 LINQ 分配。一旦该构建（或更新版本的
+/// Il2CppInterop）把该实现暴露在可 detour 的 <c>NativeMethodInfoPtr_</c> 字段之后，例如
+/// 以 <c>MuzzleManager.Shot(bool, float)</c> 作为非接口调用者，就可以去掉 [IgnoreAutoPatch]。
 /// </remarks>
 [IgnoreAutoPatch]
 public sealed class MuzzleManager_Play_Patch : ModulePatch

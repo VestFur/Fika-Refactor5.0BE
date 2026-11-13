@@ -25,8 +25,8 @@ public class GameWorld_Create_Patch : ModulePatch
 
         if (!FikaBackendUtils.RequestFikaWorld)
         {
-            // Preserve SPT 5's complete initialization for hideout/tutorial
-            // worlds, including fields which did not exist in the Mono build.
+            // 为藏身处/教程世界保留 SPT 5 的完整初始化，
+            // 包括 Mono 构建中并不存在的字段。
             return true;
         }
 

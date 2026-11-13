@@ -78,9 +78,9 @@ public sealed class InventoryOperationHandler : IDisposable
                 return;
             }
 
-            // The receive packet and native descriptor belong to the packet
-            // processor. Keep only serialized bytes for an asynchronous native
-            // completion; the packet object may already have been pooled.
+            // 接收数据包与原生描述符属于数据包处理器。
+            // 对于异步的原生完成，只保留序列化后的字节；
+            // 数据包对象可能已经被回收进池。
             try
             {
                 _server.RelayInventoryOperation(_relayPayload, _peer);
@@ -96,8 +96,8 @@ public sealed class InventoryOperationHandler : IDisposable
         }
         finally
         {
-            // Execute may call this delegate synchronously. The caller still
-            // needs this handler until its Execute stack has unwound.
+            // Execute 可能同步调用该委托。调用方在其 Execute 栈
+            // 展开之前仍然需要这个处理器。
             if (!_dispatching)
                 _server.ReturnHandler(this);
         }
@@ -116,8 +116,8 @@ public sealed class InventoryOperationHandler : IDisposable
         if (Completed) return;
         unchecked { ++_generation; }
         Completed = true;
-        // Keep the handler alive until the native Execute stack has unwound.
-        // FinishDispatch returns it to the pool in the synchronous case.
+        // 保持处理器存活，直到原生 Execute 栈展开完毕。
+        // 在同步情形下 FinishDispatch 会把它归还到池中。
         if (!_dispatching)
             _server.ReturnHandler(this);
     }

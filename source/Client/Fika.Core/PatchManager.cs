@@ -14,7 +14,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core;
 
 /// <summary>
-/// Loads and verifies Fika patches against the SPT 5 IL2CPP patch API.
+/// 基于 SPT 5 的 IL2CPP 补丁 API 加载并校验 Fika 补丁。
 /// </summary>
 public sealed class PatchManager
 {
@@ -31,31 +31,31 @@ public sealed class PatchManager
     }
 
     /// <summary>
-    /// SPT 5 gives every instantiation of a generic method the same native body
-    /// and passes the instantiation in a hidden argument. The IL2CPP detour
-    /// replays that body with the instantiation it was installed for, so all
-    /// sibling instantiations then run with the wrong generic context: patching
-    /// <c>SimpleContextMenu.ShowMenu&lt;EItemInfoButton&gt;</c> broke the
-    /// magazine, magazine preset and wishlist menus with MethodAccessException,
-    /// and patching <c>TransitController.Exist&lt;ClientTransitController&gt;</c>
-    /// answered the game's <c>Exist&lt;TransitController&gt;</c> and interaction
-    /// lookups with the wrong controller in raid. Only patches listed here may
-    /// still target a generic method.
+    /// SPT 5 让一个泛型方法的每个实例化共用同一份原生方法体，
+    /// 并通过一个隐藏参数传入实例化信息。IL2CPP detour 会用
+    /// 当初安装时所用的实例化来重放那份方法体，因此所有
+    /// 同类实例化随后都会带着错误的泛型上下文运行：补丁
+    /// <c>SimpleContextMenu.ShowMenu&lt;EItemInfoButton&gt;</c> 让杂志、
+    /// 杂志预设与愿望单菜单以 MethodAccessException 崩掉，
+    /// 而补丁 <c>TransitController.Exist&lt;ClientTransitController&gt;</c>
+    /// 在 raid 中以错误的 controller 应答了游戏的 <c>Exist&lt;TransitController&gt;</c> 与交互
+    /// 查找。只有此处列出的补丁
+    /// 才仍然可以针对泛型方法。
     /// </summary>
     private static readonly HashSet<string> GenericTargetAllowList = new(StringComparer.Ordinal)
     {
-        // The only seam that decides which world class a raid receives.
-        // Create&lt;HideoutGameWorld&gt; and Create&lt;NarrateGameWorld&gt; share
-        // its body; they are unaffected while this patch keeps returning true for
-        // non-Fika worlds, but the shared body is the reason this entry exists.
+        // 唯一决定一场 raid 收到哪个世界类的接缝。
+        // Create&lt;HideoutGameWorld&gt; 与 Create&lt;NarrateGameWorld&gt; 共用
+        // 它的方法体；只要这个补丁对非 Fika 世界持续返回 true，它们就不受影响，
+        // 但共用方法体正是这条记录存在的原因。
         "Fika.Core.Main.Patches.GameWorldPatches.GameWorld_Create_Patch"
     };
 
     /// <summary>
-    /// Patches that are intentionally absent from this build, kept next to the patch count so the
-    /// startup log states the reason instead of silently dropping them. Every entry must correspond to a
-    /// patch type carrying <see cref="IgnoreAutoPatchAttribute"/> (Fika.PatchChecks reports those as
-    /// "conditional"); this list is the human readable half of that decision.
+    /// 本构建中有意缺席的补丁，与补丁计数放在一起，使
+    /// 启动日志能说明原因而不是静默丢弃它们。每个条目必须对应一个携带
+    /// <see cref="IgnoreAutoPatchAttribute"/> 的补丁类型（Fika.PatchChecks 会把那些报告为
+    /// "conditional"）；这个列表就是该决定中人类可读的那一半。
     /// </summary>
     private static readonly string[] DeliberateSkips =
     {
@@ -67,8 +67,8 @@ public sealed class PatchManager
     {
         if (!_autoPatch) return;
         var types = GetAutomaticPatches(_assembly).ToArray();
-        // Check every patch before mutating Harmony. The SPT loader silently
-        // ignores transpiler markers and catches missing-target exceptions.
+        // 在改动 Harmony 之前先检查每个补丁。SPT 加载器会静默忽略
+        // transpiler 标记，并捕获目标缺失的异常。
         var patches = types.Select(type => (ModulePatch)Activator.CreateInstance(type, true)).ToArray();
         var failed = new List<string>();
         foreach (var patch in patches)
@@ -81,10 +81,10 @@ public sealed class PatchManager
             catch (Exception exception)
             {
                 failed.Add(patch.GetType().Name);
-                // GetTargetMethod is invoked through reflection, so every failure arrives as a
-                // TargetInvocationException whose Message says nothing. Log the real reason (and the
-                // signature the patch expected) instead - "Exception has been thrown by the target of an
-                // invocation." cost a round of guessing when the font guard's byref lookup failed.
+                // GetTargetMethod 是通过反射调用的，因此每个失败都以 Message 毫无信息的
+                // TargetInvocationException 形式到达。改为记录真正的原因（以及
+                // 补丁所期望的签名）—— "Exception has been thrown by the target of an
+                // invocation." 这句话曾让字体防护的 byref 查找失败时多花了一轮猜测。
                 var reason = exception is TargetInvocationException { InnerException: { } inner }
                     ? inner.GetType().Name + ": " + inner.Message
                     : exception.GetType().Name + ": " + exception.Message;
@@ -158,8 +158,8 @@ public sealed class PatchManager
         _logger.LogDebug($"Installing {type.FullName} on {target}");
         using var resolution = new NativePatchScope(target);
         using var values = new NativeDetourScope(target);
-        // Harmony can silently fall back to patching a CLR wrapper. Native game
-        // calls then bypass the patch despite a populated Harmony patch table.
+        // Harmony 可能静默退化为对 CLR 包装器打补丁。此时原生游戏
+        // 调用会绕过该补丁，尽管 Harmony 补丁表里已有条目。
         if (typeof(Il2CppObjectBase).IsAssignableFrom(target.DeclaringType))
         {
             var field = Il2CppInteropUtils.GetIl2CppMethodInfoPointerFieldForGeneratedMethod(target);

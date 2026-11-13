@@ -16,7 +16,7 @@ using JsonType;
 
 namespace Fika.Core.Main.Utils;
 
-/// <summary>Uses the game's factory while avoiding the generated CLR generic-store constraint bug.</summary>
+/// <summary>使用游戏自带的工厂，同时避开生成的 CLR 泛型仓库约束缺陷。</summary>
 internal static class NativeCoopGameFactory
 {
     private static IntPtr _method;
@@ -44,8 +44,8 @@ internal static class NativeCoopGameFactory
         EUpdateQueue updateQueue, IEftSession backEndSession, Il2CppSystem.Nullable<Il2CppSystem.TimeSpan> sessionTime,
         ClientMetricsEvents metricsEvents, ClientMetricsCollector metricsCollector, LocalRaidSettings raidSettings)
     {
-        // Same native argument layout as the installed Create<T> wrapper. Only
-        // resolution changes: TPlayerOwner and TGameType remain distinct.
+        // 与所安装的 <T> 包装器使用相同的原生参数布局。只有
+        // 解析方式变了：TPlayerOwner 与 TGameType 仍然保持各自不同。
         var keepAlive = new object[] { inputTree, profile, gameWorld, backendDateTime, insurance, gameUI, location,
             callback, backEndSession, sessionTime, metricsEvents, metricsCollector, raidSettings };
         var args = stackalloc IntPtr[18];

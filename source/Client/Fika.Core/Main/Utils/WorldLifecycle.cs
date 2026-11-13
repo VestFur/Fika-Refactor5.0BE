@@ -10,41 +10,41 @@ using Fika.Core.Main.HostClasses;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// The one place that answers "is the world this process is holding still the world that is up?".
+/// 唯一回答「本进程此刻持有的世界是否仍是上线的那个世界」的地方。
 ///
-/// Why it exists (round 12, analysis/logs-r12test-20261012-184047): both crashes of that run are native
-/// access violations inside UnityPlayer.dll (Windows event 1000, exception code 0xc0000005, fault offsets
-/// 0x161f56e at 15:48:18 and 0xe27f07 at 16:45:51), and both land in a teardown window: the first one
-/// 4 s after the host logged "world swap #2 noted (reason=DestroyNetManager: transit teardown, host world
-/// is down)" (Fika-diagnostics.log, frame=48297), the second one 5 s into the shutdown after a raid start
-/// that the engine had cancelled twice. A native AV cannot be caught, so the only way to survive that
-/// window is to make sure nothing of ours still touches the world that went down.
+/// 它为何存在(第 12 轮,analysis/logs-r12test-20261012-184047):那次运行的两次崩溃都是
+/// UnityPlayer.dll 内部的访问违例(Windows 事件 1000,异常代码 0xc0000005,故障偏移
+/// 分别为 15:48:18 的 0x161f56e 与 16:45:51 的 0xe27f07),而且两者都落在拆除窗口内:第一次
+/// 发生在主机记录 "world swap #2 noted (reason=DestroyNetManager: transit teardown, host world
+/// is down)" 之后 4 秒(Fika-diagnostics.log,frame=48297),第二次发生在关机 5 秒时,此前一次 raid 启动
+/// 已被引擎取消过两次。原生 AV 无法被捕获,因此要熬过那个窗口,唯一的办法就是
+/// 确保我们这边没有任何东西还会去碰那个已经下线的世界。
 ///
-/// The epoch is the cheap half of that: every object we keep across a frame boundary records the epoch it
-/// was created in, and a holder that sees a different epoch knows it is looking at a world that is gone.
-/// <see cref="WorldsAlive"/> is false between the teardown of a world and the creation of its successor,
-/// which is exactly the window in which Singleton&lt;GameWorld&gt;.Instance can still hand back the disposed
-/// world of the raid that just ended.
+/// epoch 是其中廉价的一半:我们每个跨帧边界保留的对象都会记录自己创建时的
+/// epoch,而看到不同 epoch 的持有者就知道自己面对的是一个已经消失的世界。
+/// 在一个世界被拆除与其后继世界被创建之间,<see cref="WorldsAlive"/> 为 false,
+/// 而这正是 Singleton&lt;GameWorld&gt;.Instance 仍可能把刚刚结束的那场 raid 已释放的
+/// 世界交回来的那个窗口。
 ///
-/// The teardown itself is a single, idempotent, exception free sequence: stop the routines the pump would
-/// otherwise keep stepping into the dead world, drop the native enumerator the session sequence holds, and
-/// clear every static cache that is keyed by - or holds - a native object of that world. Each clear reports
-/// how many entries it dropped, so the next run shows in one line whether a cache really carried state
-/// across the swap.
+/// 拆除本身是一个单一、幂等、不抛异常的序列:停掉泵原本会
+/// 持续步进到已死世界的那些协程,丢弃会话序列持有的原生枚举器,并
+/// 清空每个以该世界的原生对象为键、或持有该世界原生对象的静态缓存。每次清空都会报告
+/// 自己丢掉了多少条目,因此下一次运行能在一行里看出某个缓存是否真的把状态
+/// 带过了这次交换。
 ///
-/// Revert: every call site of this class is a single statement, and the whole behaviour can be switched off
-/// with <see cref="Enabled"/> = false (one line, see the report of analysis/transit-crash-unload).
+/// 回滚:本类每个调用点都是一条语句,整个行为可以用
+/// <see cref="Enabled"/> = false 关掉(一行,见 analysis/transit-crash-unload 的报告)。
 /// </summary>
 internal static class WorldLifecycle
 {
-    /// <summary>Diagnostics scope of the judgement lines of this class (prefix matched, see FikaDiagnostics).</summary>
+    /// <summary>本类判定行的诊断作用域(按前缀匹配,见 FikaDiagnostics)。</summary>
     private const string Scope = "WorldLifecycle";
 
     private const string Tag = "[WorldLifecycle]";
 
     /// <summary>
-    /// The one-line kill switch of this round's changes. False makes every method here a no-op, which is
-    /// the same as the build before analysis/transit-crash-unload for everything except the [LoadCost] line.
+    /// 本轮改动的单行总开关。为 False 时这里每个方法都变成空操作,这等价于
+    /// analysis/transit-crash-unload 之前的构建,唯一例外是 [LoadCost] 那一行。
     /// </summary>
     internal static bool Enabled = true;
 
@@ -55,21 +55,21 @@ internal static class WorldLifecycle
     private static float _downAt;
     private static string _upReason = "none";
 
-    /// <summary>The current world generation. Bumped once per world teardown.</summary>
+    /// <summary>当前世界代际。每次世界拆除自增一次。</summary>
     internal static int Epoch => _epoch;
 
-    /// <summary>False between the teardown of a world and the creation of the next one.</summary>
+    /// <summary>在一个世界被拆除与下一个世界被创建之间为 false。</summary>
     internal static bool WorldsAlive => _worldsAlive;
 
-    /// <summary>True exactly inside that window. Cheap enough for a per-frame caller.</summary>
+    /// <summary>恰好在该窗口内为 true。对每帧调用的调用方来说足够廉价。</summary>
     internal static bool WorldDown => !_worldsAlive;
 
     /// <summary>
-    /// True when a value captured in <paramref name="epoch"/> belongs to the world generation that is
-    /// current now. Deliberately *not* gated on <see cref="WorldsAlive"/>: the objects of the next raid are
-    /// constructed inside the swap window (its world controller, its game world components), and they must
-    /// count as valid the moment they exist - the window state answers a different question, namely whether
-    /// the raid that just ended may still be used, and that one is asked by <see cref="WorldDown"/>.
+    /// 当在 <paramref name="epoch"/> 中捕获的值属于当前的世界代际时为
+    /// true。这里刻意*不*以 <see cref="WorldsAlive"/> 作为前置条件:下一场 raid 的对象
+    /// 正是在交换窗口内构造的(它的世界控制器、它的游戏世界组件),而它们
+    /// 必须在存在的那一刻就被视为有效——窗口状态回答的是另一个问题,即刚刚结束的那场
+    /// raid 是否仍可使用,而那个问题由 <see cref="WorldDown"/> 来问。
     /// </summary>
     internal static bool IsCurrent(int epoch)
     {
@@ -77,9 +77,9 @@ internal static class WorldLifecycle
     }
 
     /// <summary>
-    /// True while the given world object is the world the engine currently hands out. A holder that stored
-    /// a world reference across a frame boundary can call this before using it; it is false for the disposed
-    /// world of a raid that ended and for a world the engine has already dropped.
+    /// 当给定世界对象就是引擎当前交出的世界时为 true。一个跨帧边界存下了
+    /// 世界引用的持有者可以在使用它之前调用本方法;对已结束 raid 的已释放
+    /// 世界,以及对引擎已经丢弃的世界,它返回 false。
     /// </summary>
     internal static bool WorldIsCurrent(World world)
     {
@@ -100,9 +100,9 @@ internal static class WorldLifecycle
     }
 
     /// <summary>
-    /// Records that the world this process was holding is gone. Idempotent: the second call inside the same
-    /// window only writes a line, so a teardown that runs through both the world component and the network
-    /// manager cannot clear twice.
+    /// 记录本进程此前持有的世界已经消失。幂等:同一窗口内的第二次调用
+    /// 只会写一行日志,因此一次同时经过世界组件和网络管理器的
+    /// 拆除不会清两次。
     /// </summary>
     internal static void MarkWorldTornDown(string reason)
     {
@@ -141,9 +141,9 @@ internal static class WorldLifecycle
             var timeouts = BotFirstAidTimeouts.ClearForWorldTeardown();
             var grenades = FikaGrenadeExplosion.ClearForWorldTeardown();
             var questSessions = ServerAutoStartQuests.ClearForWorldTeardown();
-            // The transit controller's co-located-exit suppression and its dropout registry both hold native
-            // objects of the world that is going down; the transit side owns the clearing (analysis/
-            // transit-abort-rules §5), this is the one authoritative place that calls it.
+            // 转发控制器的同位置退出抑制表与它的掉线登记表都持有正在下线的那个世界的
+            // 原生对象;清理由转发侧负责(analysis/
+            // transit-abort-rules §5),而这里是唯一权威的调用点。
             var transitExits = TransitCoLocatedExits.ForceResetForWorldTeardown(reason);
 
             
@@ -151,14 +151,14 @@ internal static class WorldLifecycle
         }
         catch (Exception exception)
         {
-            // A teardown path must not gain a new failure mode: the world is going down either way.
+            // 拆除路径不得引入新的失败模式:世界无论如何都在下线。
             Warn("the world teardown of '" + reason + "' threw and was cut short: " + exception.Message);
         }
     }
 
     /// <summary>
-    /// Records that a fresh world exists. Clears the "worlds are down" state, closes the [LoadCost] window
-    /// and prints how long the swap window lasted.
+    /// 记录一个新的世界已存在。清除「世界已下线」状态,关闭 [LoadCost] 窗口
+    /// 并打印交换窗口持续了多久。
     /// </summary>
     internal static void MarkWorldUp(string reason)
     {
@@ -187,7 +187,7 @@ internal static class WorldLifecycle
         }
     }
 
-    /// <summary>One line for the report: what the process thinks about the world right now.</summary>
+    /// <summary>报告用的一行:本进程此刻对世界的看法。</summary>
     internal static string Describe()
     {
         return "epoch=" + _epoch + ", worldsAlive=" + _worldsAlive + ", downReason=" + _downReason

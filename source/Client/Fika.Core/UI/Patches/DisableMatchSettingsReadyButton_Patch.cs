@@ -8,7 +8,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.UI.Patches;
 
 /// <summary>
-/// Created by: Lacyway
+/// 创建者：Lacyway
 /// </summary>
 public class DisableMatchSettingsReadyButton_Patch : ModulePatch
 {

@@ -12,221 +12,221 @@ using Fika.Core.Networking.Packets.Player;
 namespace Fika.Core.Networking;
 
 /// <summary>
-/// Defines the contract for the Fika network manager, responsible for handling network communication,
-/// player synchronization, VOIP, and packet registration.
+/// 定义 Fika 网络管理器的契约，负责处理网络通信、
+/// 玩家同步、VOIP 以及数据包注册。
 /// </summary>
 public interface IFikaNetworkManager
 {
     /// <summary>
-    /// Gets or sets the network identifier for this network manager instance.
+    /// 获取或设置此网络管理器实例的网络标识符。
     /// </summary>
     int NetId { get; set; }
 
     /// <summary>
-    /// Gets or sets the <see cref="CoopHandler"/> responsible for managing gameplay logic.
+    /// 获取或设置负责管理游戏逻辑的 <see cref="CoopHandler"/>。
     /// </summary>
     CoopHandler CoopHandler { get; set; }
 
     /// <summary>
-    /// Gets or sets the raid side type for the current session.
+    /// 获取或设置当前会话的战局阵营类型。
     /// </summary>
     ESideType RaidSide { get; set; }
 
     /// <summary>
-    /// Gets the rate at which network packets are sent.
+    /// 获取网络数据包的发送速率。
     /// </summary>
     int SendRate { get; }
 
     /// <summary>
-    /// Gets or sets a value indicating whether VOIP is allowed.
+    /// 获取或设置一个值，指示是否允许 VOIP。
     /// </summary>
     bool AllowVOIP { get; set; }
 
     /// <summary>
-    /// Whether strict inventory sync is enabled
+    /// 是否启用严格的库存同步
     /// </summary>
     bool StrictInventorySync { get; set; }
 
     /// <summary>
-    /// Gets or sets the list of observed players in the session.
+    /// 获取或设置会话中被观察的玩家列表。
     /// </summary>
     List<ObservedPlayer> ObservedPlayers { get; set; }
 
     /// <summary>
-    /// Temporary stash to spawn items
+    /// 用于生成物品的临时仓库
     /// </summary>
     public Stash TemporaryStash { get; set; }
 
     /// <summary>
-    /// Gets or sets the total number of players in the session.
+    /// 获取或设置会话中的玩家总数。
     /// </summary>
     int PlayerAmount { get; set; }
 
     /// <summary>
-    /// Creates the Fika chat system for in-game communication.
+    /// 创建用于游戏内交流的 Fika 聊天系统。
     /// </summary>
     void CreateFikaChat();
 
     /// <summary>
-    /// Sets up game variables for the specified <see cref="FikaPlayer"/>.
+    /// 为指定的 <see cref="FikaPlayer"/> 设置游戏变量。
     /// </summary>
-    /// <param name="fikaPlayer">The player for whom to set up game variables.</param>
+    /// <param name="fikaPlayer">要为其设置游戏变量的玩家。</param>
     void SetupGameVariables(FikaPlayer fikaPlayer);
 
     /// <summary>
-    /// Sends a packet.
+    /// 发送数据包。
     /// </summary>
-    /// <typeparam name="T">The type of packet to send, which must implement <see cref="INetSerializable"/>.</typeparam>
-    /// <param name="packet">The packet instance to send, passed by reference.</param>
-    /// <param name="deliveryMethod">The delivery method (reliable, unreliable, etc.) to use for sending the packet.</param>
-    /// <param name="broadcast">If <see langword="true"/>, the packet will be sent to multiple recipients; otherwise, it will be sent to a single target (server is always broadcast).</param>
+    /// <typeparam name="T">要发送的数据包类型，必须实现 <see cref="INetSerializable"/>。</typeparam>
+    /// <param name="packet">要发送的数据包实例，按引用传递。</param>
+    /// <param name="deliveryMethod">发送数据包所使用的投递方式（可靠、不可靠等）。</param>
+    /// <param name="broadcast">如果为 <see langword="true"/>，数据包将发送给多个接收者；否则将发送给单个目标（服务器始终为广播）。</param>
     void SendData<T>(ref T packet, DeliveryMethod deliveryMethod, bool broadcast = false) where T : INetSerializable;
 
     /// <summary>
-    /// Sends a generic network packet to one or more peers.
+    /// 向一个或多个对等端发送通用网络数据包。
     /// </summary>
-    /// <param name="type">The generic sub-packet type identifier used to determine how the packet will be processed.</param>
-    /// <param name="subpacket">The sub-packet payload to send. Must implement <see cref="IPoolSubPacket"/>.</param>
-    /// <param name="broadcast">If <see langword="true"/>, the packet will be sent to multiple recipients; otherwise, it will be sent to a single target (server is always broadcast).</param>
-    /// <param name="peerToIgnore">An optional peer to exclude from receiving the packet, typically the sender.</param>
+    /// <param name="type">通用子数据包类型标识符，用于确定数据包的处理方式。</param>
+    /// <param name="subpacket">要发送的子数据包负载，必须实现 <see cref="IPoolSubPacket"/>。</param>
+    /// <param name="broadcast">如果为 <see langword="true"/>，数据包将发送给多个接收者；否则将发送给单个目标（服务器始终为广播）。</param>
+    /// <param name="peerToIgnore">可选的对等端，将其排除在数据包接收方之外，通常是发送方。</param>
     void SendGenericPacket(EGenericSubPacketType type, IPoolSubPacket subpacket, bool broadcast = false, NetPeer peerToIgnore = null);
 
     /// <summary>
-    /// Sends a packet implementing <see cref="INetReusable"/> with manual serialization control.
+    /// 发送实现 <see cref="INetReusable"/> 的数据包，并手动控制序列化。
     /// </summary>
-    /// <typeparam name="T">The packet type, which must implement <see cref="INetReusable"/>.</typeparam>
-    /// <param name="packet">A reference to the packet instance to send.</param>
-    /// <param name="deliveryMethod">The delivery method (reliable, unreliable, etc.) to use for sending the packet.</param>
-    /// <param name="broadcast">If <see langword="true"/>, the packet will be sent to multiple recipients; otherwise, it will be sent to a single target (server is always broadcast).</param>
-    /// <param name="peerToIgnore">An optional peer to exclude from receiving the packet, typically the sender.</param>
+    /// <typeparam name="T">数据包类型，必须实现 <see cref="INetReusable"/>。</typeparam>
+    /// <param name="packet">对要发送的数据包实例的引用。</param>
+    /// <param name="deliveryMethod">发送数据包所使用的投递方式（可靠、不可靠等）。</param>
+    /// <param name="broadcast">如果为 <see langword="true"/>，数据包将发送给多个接收者；否则将发送给单个目标（服务器始终为广播）。</param>
+    /// <param name="peerToIgnore">可选的对等端，将其排除在数据包接收方之外，通常是发送方。</param>
     void SendNetReusable<T>(ref T packet, DeliveryMethod deliveryMethod, bool broadcast = false, NetPeer peerToIgnore = null) where T : INetReusable;
 
     /// <summary>
-    /// Sends a packet of data directly to a specific peer.
+    /// 将数据包直接发送给指定的对等端。
     /// </summary>
-    /// <typeparam name="T">The type of packet to send, which must implement <see cref="INetSerializable"/>.</typeparam>
-    /// <param name="packet">The packet instance to send, passed by reference.</param>
-    /// <param name="deliveryMethod">The delivery method (reliable, unreliable, etc.) to use for sending the packet.</param>
-    /// <param name="peer">The target <see cref="NetPeer"/> that will receive the packet.</param>
+    /// <typeparam name="T">要发送的数据包类型，必须实现 <see cref="INetSerializable"/>。</typeparam>
+    /// <param name="packet">要发送的数据包实例，按引用传递。</param>
+    /// <param name="deliveryMethod">发送数据包所使用的投递方式（可靠、不可靠等）。</param>
+    /// <param name="peer">将接收该数据包的目标 <see cref="NetPeer"/>。</param>
     /// <remarks>
-    /// Should only be used as a <see cref="FikaServer"/>, since a <see cref="FikaClient"/> only has one <see cref="NetPeer"/>.
+    /// 只应作为 <see cref="FikaServer"/> 使用，因为 <see cref="FikaClient"/> 只有一个 <see cref="NetPeer"/>。
     /// </remarks>
     void SendDataToPeer<T>(ref T packet, DeliveryMethod deliveryMethod, NetPeer peer) where T : INetSerializable;
 
     /// <summary>
-    /// Sends a player state using fast serialization.
+    /// 使用快速序列化发送玩家状态。
     /// </summary>
-    /// <param name="packet">The player state packet to send.</param>
+    /// <param name="packet">要发送的玩家状态数据包。</param>
     void SendPlayerState(ref PlayerStateData packet);
 
     /// <summary>
-    /// Sends raw VOIP audio data to a specific peer or multiple recipients.
+    /// 将原始 VOIP 音频数据发送给指定对等端或多个接收者。
     /// </summary>
-    /// <param name="data">The audio data to send, provided as an <see cref="ArraySegment{T}"/> of bytes.</param>
-    /// <param name="deliveryMethod">The delivery method (reliable, unreliable, etc.) to use for sending the packet.</param>
-    /// <param name="peer">The target peer to receive the audio data (only used by server).</param>
+    /// <param name="data">要发送的音频数据，以字节的 <see cref="ArraySegment{T}"/> 形式提供。</param>
+    /// <param name="deliveryMethod">发送数据包所使用的投递方式（可靠、不可靠等）。</param>
+    /// <param name="peer">接收音频数据的目标对等端（仅服务器使用）。</param>
     void SendVOIPData(ArraySegment<byte> data, DeliveryMethod deliveryMethod, NetPeer peer = null);
 
     /// <summary>
-    /// Registers a packet to the <see cref="NetPacketProcessor"/>.
+    /// 向 <see cref="NetPacketProcessor"/> 注册数据包。
     /// </summary>
-    /// <typeparam name="T">The packet type.</typeparam>
-    /// <param name="handle">The <see cref="Action"/> to run when receiving the packet.</param>
+    /// <typeparam name="T">数据包类型。</typeparam>
+    /// <param name="handle">接收数据包时要运行的 <see cref="Action"/>。</param>
     void RegisterPacket<T>(Action<T> handle) where T : INetSerializable, new();
 
     /// <summary>
-    /// Registers a packet to the <see cref="NetPacketProcessor"/> with user data.
+    /// 向 <see cref="NetPacketProcessor"/> 注册带用户数据的数据包。
     /// </summary>
-    /// <typeparam name="T">The packet type.</typeparam>
-    /// <typeparam name="TUserData">The user data type.</typeparam>
-    /// <param name="handle">The <see cref="Action"/> to run when receiving the packet.</param>
+    /// <typeparam name="T">数据包类型。</typeparam>
+    /// <typeparam name="TUserData">用户数据类型。</typeparam>
+    /// <param name="handle">接收数据包时要运行的 <see cref="Action"/>。</param>
     void RegisterPacket<T, TUserData>(Action<T, TUserData> handle) where T : INetSerializable, new();
 
     /// <summary>
-    /// Registers a reusable packet to the <see cref="NetPacketProcessor"/>. Reusable uses the same instance throughout the lifetime of the <see cref="NetManager"/>.
-    /// Custom types must be registered with <see cref="RegisterCustomType{T}(Action{NetDataWriter, T}, Func{NetDataReader, T})"/> first.
+    /// 向 <see cref="NetPacketProcessor"/> 注册可复用数据包。可复用数据包在 <see cref="NetManager"/> 的整个生命周期内使用同一实例。
+    /// 自定义类型必须先用 <see cref="RegisterCustomType{T}(Action{NetDataWriter, T}, Func{NetDataReader, T})"/> 注册。
     /// </summary>
-    /// <typeparam name="T">The packet type.</typeparam>
-    /// <param name="handle">The <see cref="Action"/> to run when receiving the packet.</param>
+    /// <typeparam name="T">数据包类型。</typeparam>
+    /// <param name="handle">接收数据包时要运行的 <see cref="Action"/>。</param>
     void RegisterReusable<T>(Action<T> handle) where T : class, IReusable, new();
 
     /// <summary>
-    /// Registers a reusable packet to the <see cref="NetPacketProcessor"/> with user data. Reusable uses the same instance throughout the lifetime of the <see cref="NetManager"/>.
-    /// Custom types must be registered with <see cref="RegisterCustomType{T}(Action{NetDataWriter, T}, Func{NetDataReader, T})"/> first.
+    /// 向 <see cref="NetPacketProcessor"/> 注册带用户数据的可复用数据包。可复用数据包在 <see cref="NetManager"/> 的整个生命周期内使用同一实例。
+    /// 自定义类型必须先用 <see cref="RegisterCustomType{T}(Action{NetDataWriter, T}, Func{NetDataReader, T})"/> 注册。
     /// </summary>
-    /// <typeparam name="T">The packet type.</typeparam>
-    /// <typeparam name="TUserData">The user data type.</typeparam>
-    /// <param name="handle">The <see cref="Action"/> to run when receiving the packet.</param>
+    /// <typeparam name="T">数据包类型。</typeparam>
+    /// <typeparam name="TUserData">用户数据类型。</typeparam>
+    /// <param name="handle">接收数据包时要运行的 <see cref="Action"/>。</param>
     void RegisterReusable<T, TUserData>(Action<T, TUserData> handle) where T : class, IReusable, new();
 
     /// <summary>
-    /// Registers a reusable network packet to the <see cref="NetPacketProcessor"/>.
+    /// 向 <see cref="NetPacketProcessor"/> 注册可复用网络数据包。
     /// </summary>
-    /// <typeparam name="T">The packet type.</typeparam>
-    /// <param name="handle">The <see cref="Action"/> to run when receiving the packet.</param>
+    /// <typeparam name="T">数据包类型。</typeparam>
+    /// <param name="handle">接收数据包时要运行的 <see cref="Action"/>。</param>
     void RegisterNetReusable<T>(Action<T> handle) where T : class, INetReusable, new();
 
     /// <summary>
-    /// Registers a reusable network packet to the <see cref="NetPacketProcessor"/> with user data.
+    /// 向 <see cref="NetPacketProcessor"/> 注册带用户数据的可复用网络数据包。
     /// </summary>
-    /// <typeparam name="T">The packet type.</typeparam>
-    /// <typeparam name="TUserData">The user data type.</typeparam>
-    /// <param name="handle">The <see cref="Action"/> to run when receiving the packet.</param>
+    /// <typeparam name="T">数据包类型。</typeparam>
+    /// <typeparam name="TUserData">用户数据类型。</typeparam>
+    /// <param name="handle">接收数据包时要运行的 <see cref="Action"/>。</param>
     void RegisterNetReusable<T, TUserData>(Action<T, TUserData> handle) where T : class, INetReusable, new();
 
     /// <summary>
-    /// Registers a custom type to the <see cref="NetPacketProcessor"/> so that it can handle serializing the type.
+    /// 向 <see cref="NetPacketProcessor"/> 注册自定义类型，以便其能够对该类型进行序列化。
     /// </summary>
-    /// <typeparam name="T">The type to register.</typeparam>
-    /// <param name="writeDelegate">The serialize method.</param>
-    /// <param name="readDelegate">The deserialize method.</param>
+    /// <typeparam name="T">要注册的类型。</typeparam>
+    /// <param name="writeDelegate">序列化方法。</param>
+    /// <param name="readDelegate">反序列化方法。</param>
     void RegisterCustomType<T>(Action<NetDataWriter, T> writeDelegate, Func<NetDataReader, T> readDelegate);
 
     /// <summary>
-    /// Unregisters <typeparamref name="T"/> from the packet manager
+    /// 从数据包管理器中注销 <typeparamref name="T"/>
     /// </summary>
-    /// <typeparam name="T">The <see cref="INetSerializable"/> to unregister</typeparam>
+    /// <typeparam name="T">要注销的 <see cref="INetSerializable"/></typeparam>
     void UnregisterPacket<T>() where T : INetSerializable;
 
     /// <summary>
-    /// Unregisters <typeparamref name="T"/> from the packet manager
+    /// 从数据包管理器中注销 <typeparamref name="T"/>
     /// </summary>
-    /// <typeparam name="T">The <see cref="INetReusable"/> to unregister</typeparam>
+    /// <typeparam name="T">要注销的 <see cref="INetReusable"/></typeparam>
     void UnregisterNetReusable<T>() where T : INetReusable;
 
     /// <summary>
-    /// Initializes the VOIP system asynchronously.
+    /// 异步初始化 VOIP 系统。
     /// </summary>
-    /// <returns>A <see cref="Task"/> representing the asynchronous operation.</returns>
+    /// <returns>表示异步操作的 <see cref="Task"/>。</returns>
     Task InitializeVOIP();
 
     /// <summary>
-    /// Prints network statistics to the output (internal use only).
+    /// 将网络统计信息输出到日志（仅供内部使用）。
     /// </summary>
     internal void PrintStatistics();
 
     /// <summary>
-    /// Returns a <see cref="NetPeer"/> from an id
+    /// 根据 id 返回 <see cref="NetPeer"/>
     /// </summary>
-    /// <param name="id">The id to look for</param>
-    /// <returns>A <see cref="NetPeer"/> if found; otherwise <see langword="null"/></returns>
+    /// <param name="id">要查找的 id</param>
+    /// <returns>如果找到则返回 <see cref="NetPeer"/>；否则返回 <see langword="null"/></returns>
     public NetPeer GetPeerById(int id);
 
     /// <summary>
-    /// Represents the send rate options for the <see cref="IFikaNetworkManager"/>.
+    /// 表示 <see cref="IFikaNetworkManager"/> 的发送速率选项。
     /// </summary>
     public enum ESendRate : byte
     {
         /// <summary>
-        /// Low send rate (10/s).
+        /// 低发送速率（每秒 10 次）。
         /// </summary>
         Low,
         /// <summary>
-        /// Medium send rate (20/s).
+        /// 中等发送速率（每秒 20 次）。
         /// </summary>
         Medium,
         /// <summary>
-        /// High send rate (30/s).
+        /// 高发送速率（每秒 30 次）。
         /// </summary>
         High
     }

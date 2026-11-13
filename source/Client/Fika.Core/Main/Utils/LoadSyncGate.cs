@@ -3,57 +3,57 @@ using System;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// The thresholds of the loading screen / session wait path as *static fields*, so a config entry can be
-/// bound to them without another edit here (the same pattern as TransitStartGate: FikaConfig assigns the
-/// fields at startup and on every SettingChanged, the call sites only read them).
+/// 加载界面 / 会话等待路径的阈值，作为 *静态字段*，这样配置项就能绑定到它们，
+/// 而无需在此处再改一次（与 TransitStartGate 相同的模式：FikaConfig 在启动时
+/// 以及每次 SettingChanged 时给这些字段赋值，调用点只读取它们）。
 ///
-/// Every value is a backstop, never the normal path: a wait ends when the condition it waits for is met,
-/// and these numbers only decide when a wait that cannot be satisfied is given up and *reported as such*
-/// (one [LoadSync] line, see LoadSync).
+/// 每个值都是兜底，而非正常路径：等待会在其所等条件满足时结束，
+/// 这些数字只决定一个无法被满足的等待何时放弃，以及何时 *如实地报告这一点*
+/// （一行 [LoadSync]，见 LoadSync）。
 ///
-/// Why they have to be adjustable in the field: the whole class exists because a fixed value was wrong -
-/// the client used to give up on the host's location acknowledgement after a fixed 40 s
-/// (TarkovApplication_LocalGameCreator_Patch, 2026-10-11 18:58 round: the host needed 145 s to load
-/// TarkovStreets), and the host's pre-raid barrier had no bound at all, so it waited minutes for a peer
-/// that had already given up. Both are machine- and map-dependent, i.e. exactly the kind of number that
-/// must be tunable without a rebuild.
+/// 为什么它们必须能在现场调整：整个类的存在就是因为一个写死的值是错的 ——
+/// 客户端过去会在固定的 40 s 之后就放弃等待主机的地点确认
+/// （TarkovApplication_LocalGameCreator_Patch，2026-10-11 18:58 那一轮：主机需要 145 s 才能加载
+/// TarkovStreets），而主机的 raid 前屏障完全没有上限，于是它会为一台早已放弃的对端
+/// 等上好几分钟。两者都取决于机器与地图，也就是说正是那种
+/// 必须能在不重新构建的前提下调整的数字。
 /// </summary>
 public static class LoadSyncGate
 {
     /// <summary>
-    /// Host side: how long the pre-raid barrier (<c>HostGameController.WaitForOtherPlayersToLoad</c>)
-    /// waits for a peer that is still connected but has not announced its character. A peer that
-    /// disconnects does not consume this budget - <c>FikaServer.OnPeerDisconnected</c> decrements
-    /// PlayerAmount and the barrier shrinks immediately. Default 300 s.
+    /// 主机侧：raid 前屏障（<c>HostGameController.WaitForOtherPlayersToLoad</c>）
+    /// 要为一台仍处于连接但尚未宣告角色的对端等待多久。已断开的对端
+    /// 不消耗这份预算 —— <c>FikaServer.OnPeerDisconnected</c> 会递减
+    /// PlayerAmount，屏障随之立即收缩。默认 300 s。
     /// </summary>
     public static int HostPeerLoadTimeoutSeconds = 300;
 
     /// <summary>
-    /// Client side: how long the client waits for the host's handshake steps (the location
-    /// acknowledgement and the host's own raid initialisation) in a normal raid start. The wait is
-    /// additionally bounded by the transport: as soon as the connection to the host is not Connected
-    /// any more, it fails immediately instead of using this budget. Default 600 s.
+    /// 客户端侧：在一次正常 raid 启动中，客户端等待主机握手步骤（地点确认
+    /// 以及主机自身的 raid 初始化）的时长。这个等待
+    /// 还额外受传输层约束：一旦与主机的连接不再是 Connected，
+    /// 它就立即失败，而不会用掉这份预算。默认 600 s。
     /// </summary>
     public static int ClientHostWaitCeilingSeconds = 600;
 
     /// <summary>
-    /// Client side: the same ceiling inside a transit reload window (<c>FikaBackendUtils.IsTransit</c>).
-    /// This is the window in which both machines have just torn their world down and are loading the next
-    /// map, so the host can be minutes away from answering, on a slower disk alone. Kept separate from
-    /// the normal ceiling because the transit reload is exactly the case the fixed 40 s cap got wrong.
-    /// Default 900 s.
+    /// 客户端侧：中转重载窗口（<c>FikaBackendUtils.IsTransit</c>）内的同一个上限。
+    /// 这个窗口里两台机器都刚拆掉各自的世界、正在加载下一张
+    /// 地图，因此仅凭更慢的磁盘，主机就可能要几分钟才会作答。它与
+    /// 常规上限分开，因为中转重载恰恰就是固定 40 s 上限搞错的那一情形。
+    /// 默认 900 s。
     /// </summary>
     public static int ClientTransitReloadCeilingSeconds = 900;
 
     /// <summary>
-    /// Client side: after this many seconds without an application-level response from the host the
-    /// [LoadSync] line escalates to a warning. It never ends the wait by itself (the transport decides
-    /// that), it only makes the state visible: a host whose main thread is busy (its own map load) stops
-    /// answering while its socket thread keeps the connection alive. Default 30 s.
+    /// 客户端侧：在与主机之间连续这么多秒没有应用层响应之后，
+    /// [LoadSync] 行会升级为警告。它本身从不结束等待（那由传输层决定），
+    /// 它只是让状态可见：一个主线程忙碌（忙于自己的地图加载）的主机会停止
+    /// 作答，而它的 socket 线程仍在维持连接存活。默认 30 s。
     /// </summary>
     public static int ClientSilentWarnSeconds = 30;
 
-    /// <summary>The client's wait ceiling for the state this machine is in.</summary>
+    /// <summary>客户端在当前机器所处状态下的等待上限。</summary>
     public static int ClientCeilingSeconds(bool transit)
     {
         var ceiling = transit
@@ -62,7 +62,7 @@ public static class LoadSyncGate
         return Math.Max(30, ceiling);
     }
 
-    /// <summary>The values in force, for the [LoadSync] header line of a run.</summary>
+    /// <summary>当前生效的值，用于一次运行的 [LoadSync] 头部行。</summary>
     public static string Describe()
     {
         return "hostPeerLoadTimeout=" + HostPeerLoadTimeoutSeconds + "s, clientHostWaitCeiling="

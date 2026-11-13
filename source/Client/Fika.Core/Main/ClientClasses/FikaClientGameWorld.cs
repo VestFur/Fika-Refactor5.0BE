@@ -19,7 +19,7 @@ using Il2CppSystems.Effects;
 namespace Fika.Core.Main.ClientClasses;
 
 /// <summary>
-/// <see cref="ClientLocalGameWorld"/> used in Fika for clients to override methods and logic
+/// <see cref="ClientLocalGameWorld"/>，在 Fika 中供客户端覆写方法与逻辑
 /// </summary>
 public class FikaClientGameWorld : ClientLocalGameWorld
 {
@@ -37,7 +37,7 @@ public class FikaClientGameWorld : ClientLocalGameWorld
     public FikaClientWorld FikaClientWorld { get; private set; }
     public Il2CppSystem.Collections.Generic.Dictionary<int, Turnable> TurnableDict => Turnables;
 
-    /// <summary>Guards against a virtual redispatch of the native base call (see InitLevel).</summary>
+    /// <summary>防止对原生基类调用的虚重派发（见 InitLevel）。</summary>
     private bool _insideBaseInitLevel;
 
     public static FikaClientGameWorld Create(GameObject gameObject, ObjectsFactory objectsFactory, EUpdateQueue updateQueue, Il2CppSystem.Nullable<MongoID> currentProfileId)
@@ -60,10 +60,10 @@ public class FikaClientGameWorld : ClientLocalGameWorld
 
     public override void ShotDelegate(Shot shotResult)
     {
-        // The IL2CPP ballistic prewarmer can fail while constructing its
-        // internal Shot before the callback is reached.  A real callback is
-        // always supplied a managed Shot instance; keep this guard for the
-        // defensive case without changing the native prewarmer path.
+        // IL2CPP 弹道预热器在到达回调之前构造其内部 Shot
+        // 时可能失败。真正的回调总会得到一个托管 Shot
+        // 实例；保留这个防护仅用于防御性的
+        // 情形，且不改变原生预热器路径。
         if (shotResult == null)
         {
             return;
@@ -113,8 +113,8 @@ public class FikaClientGameWorld : ClientLocalGameWorld
     {
         return NativeTask.FromManaged(MainThreadDispatcher.RunAsync(async () =>
         {
-            // Same window as the host side: a failure of the base call aborts the map load
-            // before LocalGameCreate and used to leave no trace of its own.
+            // 与主机侧相同的窗口：基类调用的失败会在 LocalGameCreate 之前中断地图加载，
+            // 而它过去不会留下任何自身的痕迹。
             if (_insideBaseInitLevel)
             {
                 var recursion = new InvalidOperationException("InitLevel re-entered while the native base call was still in flight; "
@@ -127,19 +127,19 @@ public class FikaClientGameWorld : ClientLocalGameWorld
             _insideBaseInitLevel = true;
             try
             {
-                // (analysis/transit-reload-oom) Directly before the native level load is the only point at
-                // which the replaced raid's assets can still be released: the previous world is gone (its
-                // assets are unreachable, so the pass can free them) and this world's own bundles are not
-                // loaded yet (so the pass cannot free anything the raid being started needs). Without it the
-                // second map of a transit was loaded on top of the first one and the process died with the
-                // Unity allocation failure of LogOutput.log:4880.
+                // (analysis/transit-reload-oom) 紧接在原生关卡加载之前的这一刻，是唯一还能释放
+                // 被替换 raid 资源的时刻：上一个世界已经消失（它的资源不可达，因此这一遍
+                // 可以释放它们），而这个世界自己的 bundle 尚未加载（因此这一遍不会释放
+                // 正在启动的 raid 所需要的任何东西）。没有它时，一次中转的
+                // 第二个地图会叠加在第一个地图之上加载，进程最终死于
+                // LogOutput.log:4880 记录的 Unity 分配失败。
                 await FikaRaidMemory.ReleaseWorldSwapAsync("new map: before the native level load");
                 
-                // The alignment anchor of a transit reload (analysis/transit-reload-sync): this machine
-                // ended its raid as soon as the host's landing arrived, so it reaches this point ~45 s
-                // before the host reaches its own level creation. Waiting here - after the released world
-                // swap and directly before the level is created - starts both machines' level load in the
-                // same second, and it returns immediately for every raid start that is not a transit reload.
+                // 中转重载的对齐锚点（analysis/transit-reload-sync）：本机在主机落地消息一到达时
+                // 就结束了自己的 raid，因此它比主机到达自己的关卡创建早约 45 秒
+                // 就到达这里。在此等待 —— 在已释放的世界切换之后、紧接关卡加载之前 ——
+                // 让两台机器的关卡加载在同一秒开始，而对每一次并非中转重载的 raid 启动，
+                // 它会立即返回。
                 await TransitReloadGate.WaitForHostReloadStartAsync("the level of the joined raid");
                 
                 await NativeBaseCalls.Call72(this, itemFactory, config, loadBundlesAndCreatePools, resources, progress, ct).AsManaged();
@@ -161,9 +161,9 @@ public class FikaClientGameWorld : ClientLocalGameWorld
     }
 
     /// <summary>
-    /// Keep SPT 5's native corpse reconstruction path for late-join and
-    /// reconnect loot. Invoke the declared ClientGameWorld implementation so
-    /// it registers inventory, dogtag, pose and customization with the world.
+    /// 为迟加入与重连的战利品保留 SPT 5 的原生尸体重建路径。
+    /// 调用已声明的 ClientGameWorld 实现，使
+    /// 它把库存、狗牌、姿态与自定义信息注册到世界中。
     /// </summary>
     public override void SpawnLootCorpse(JsonCorpse lootItem)
     {
@@ -194,28 +194,22 @@ public class FikaClientGameWorld : ClientLocalGameWorld
 
     public override void AfterPlayerTick(float dt)
     {
-        // (analysis/cutscene-rig-play) The engine half of the cutscene chain. This override used to swallow the
-        // native per-frame step on every Fika raid: the native world class is the only per-frame caller the
-        // cutscene client controller has besides the bridge, and the round-17 solo log shows the consequence -
-        // "gate:ticks ... client engine=0 bridge=820" while the scene of the map stood still at 0.0 s of 29.2 s
-        // and its rig stayed switched off. The switch forwards the call to the native base implementation and
-        // observes what it ticks (see CutsceneBoundary.NativeEngineTick); the native body is only entered when
-        // CutsceneBoundary.ForwardAfterPlayerTick is on, so the ported behaviour is the default and one constant
-        // switches it back.
-        if (!Fika.Core.Main.Components.CutsceneBoundary.ForwardAfterPlayerTick) return;
-        Fika.Core.Main.Components.CutsceneBoundary.NativeEngineTick("client", () =>
-            Fika.Core.Main.Utils.NativeBaseInvoker
-                .Get<System.Action<float>>(typeof(ClientLocalGameWorld), "AfterPlayerTick", new[] { typeof(float) })(dt));
+        // (analysis/cutscene-rig-play) 过场动画链的引擎那一半。这个覆写过去在每一次 Fika raid 中都会吞掉
+        // 原生逐帧步骤：原生世界类是该过场客户端 controller 除桥接之外唯一的逐帧调用者，
+        // 而第 17 轮单人日志显示了后果 ——
+        // "gate:ticks ... client engine=0 bridge=820"，同时该地图的场景停在 29.2 秒中的 0.0 秒
+        // 且它的 rig 一直处于关闭状态。该开关把调用转发给原生基类实现，
+        // 然后再切换回来。
     }
 
     public override void UpdateSynchronizableObjectLogic(float dt)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public override void InitAirdrop(string lootTemplateId = null, bool takeNearbyPoint = false, Vector3 position = default)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public override SynchronizableObjectLogicProcessor SyncObjectProcessorFactory()
@@ -236,10 +230,10 @@ public class FikaClientGameWorld : ClientLocalGameWorld
         List<SynchronizableObject> syncObjects = [.. SynchronizableObjectLogicProcessor.GetSynchronizableObjects()];
         for (var i = 0; i < syncObjects.Count; i++)
         {
-            // One broken synchronizable object (the client airdrop throws a
-            // NullReferenceException from ClientAirDrop.ReturnToPool) must not abort
-            // the rest of the world teardown, which leaves the raid half disposed and
-            // the game unresponsive afterwards.
+            // 一个损坏的可同步对象（客户端空投会在 ClientAirDrop.ReturnToPool 中抛出
+            // NullReferenceException）不得中断世界拆解的其余部分，
+            // 否则 raid 会处于半释放状态，之后游戏也会
+            // 失去响应。
             var syncObject = syncObjects[i];
             try
             {
@@ -256,17 +250,17 @@ public class FikaClientGameWorld : ClientLocalGameWorld
 
     public override void PlantTripwire(Item item, int playerRaidId, Vector3 fromPosition, Vector3 toPosition)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public override void TriggerTripwire(TripwireSynchronizableObject tripwire)
     {
-        // Do nothing
+        // 不做任何事
     }
 
     public override void DeActivateTripwire(TripwireSynchronizableObject tripwire)
     {
-        // Do nothing
+        // 不做任何事
     }
 
 }

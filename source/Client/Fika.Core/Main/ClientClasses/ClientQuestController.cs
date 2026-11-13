@@ -27,11 +27,11 @@ public class ClientQuestController(Profile profile, InventoryController inventor
     private bool _sendQuestSync = true;
 
     /// <summary>
-    /// Used to prevent errors when subscribing to the event
+    /// 用于在订阅事件时避免报错
     /// </summary>
     private bool _eventsSubscribed;
-    // Profile.OnItemZoneDropped, Player.OnSpecialPlaceVisited and
-    // InventoryController.AddItemEvent are managed events in 47888.
+    // Profile.OnItemZoneDropped、Player.OnSpecialPlaceVisited 与
+    // InventoryController.AddItemEvent 在 47888 中都是托管事件。
     private System.Action<string, string> _itemZoneDropped;
     private System.Action<string, int> _specialPlaceVisited;
     private System.Action<AddItemEventArgs> _itemAdded;

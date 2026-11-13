@@ -63,9 +63,9 @@ public abstract class BaseGameController
 
         Logger = BepInEx.Logging.Logger.CreateLogSource(GetType().Name);
 
-        // (analysis/session-log-archive) This source is where the game-mode classes write their judge lines
-        // ([ZoneDiag], [BossDiag] from the host controller). Offering it to the mirror puts them into
-        // Fika-diagnostics.log too, which is the file that survives the next start; 
+        // （analysis/session-log-archive）游戏模式类写出它们的判断行（主机控制器的
+        // [ZoneDiag]、[BossDiag]）时用的就是这个源。把它提供给镜像会让这些行也进入
+        // Fika-diagnostics.log，而那是下一次启动后仍然存在的文件；
     }
 
     public ManualLogSource Logger { get; set; }
@@ -85,7 +85,7 @@ public abstract class BaseGameController
     public bool RaidStarted { get; internal set; }
     public FikaTimeManager TimeManager { get; set; }
 
-    // Weather
+    // 天气
     public ESeason Season
     {
         get
@@ -104,7 +104,7 @@ public abstract class BaseGameController
     public SeasonsSettings SeasonsSettings { get; set; }
     public FikaExfilManager ExfilManager { get; set; }
 
-    // Raid data
+    // 突袭数据
     public List<ThrowWeap> ThrownGrenades { get; set; }
     public RaidSettings RaidSettings { get; set; }
     public LootData LootItems { get; set; } = new LootData();
@@ -128,7 +128,7 @@ public abstract class BaseGameController
     }
     protected List<string> _localTriggerZones = [];
 
-    // Spawns
+    // 生成点
     public Vector3 ClientSpawnPosition { get; set; }
     public Quaternion ClientSpawnRotation { get; set; }
     public ISpawnSystem SpawnSystem { get; set; }
@@ -149,8 +149,8 @@ public abstract class BaseGameController
     protected SpawnPointsCollection _spawnPoints;
     protected ISpawnPoint _spawnPoint;
     protected Il2CppSystem.Action _btrSpawn;
-    // SPT 5's SubscribeOnEvent returns an Action that unregisters the callback.
-    // Keep the unsubscribe handle separately from the typed callback itself.
+    // SPT 5 的 SubscribeOnEvent 返回一个取消注册回调的
+    // Action。把退订句柄与类型化回调本身分开保存。
     protected Il2CppSystem.Action _btrServicePurchase;
     protected CoopHandler _coopHandler;
     protected FikaPlayer _localPlayer;
@@ -158,16 +158,16 @@ public abstract class BaseGameController
     protected GameWorld _gameWorld;
     protected IEftSession _backendSession;
     protected Coroutine _extractRoutine;
-    // The VOIP fix used to be an engine coroutine. It is started from inside the countdown routine, i.e. from
-    // inside another coroutine's MoveNext - the shape that faulted (analysis/host-raid-coroutine) - so it runs
-    // on the Update driven pump now and is stopped through the pump handle.
+    // VOIP 修复过去是一个引擎协程。它从倒计时例程内部启动，也就是从另一个协程的 MoveNext
+    // 内部启动——正是那种出错的形状（analysis/host-raid-coroutine）
+    // ——所以现在它跑在由 Update 驱动的泵上，并通过泵句柄停止。
     private FikaRoutinePump.RoutineHandle _voipAudioFixRoutine;
-    // In-raid HUD restore (analysis/inraid-ui): the pump handle of the routine that switches the HUD
-    // hierarchy back on after a skipped countdown body. Kept so a second call cannot stack a second copy.
+    // 突袭内 HUD 恢复（analysis/inraid-ui）：在倒计时主体被跳过之后把
+    // HUD 层级重新打开的例程的泵句柄。保留它是为了让第二次调用无法叠加出第二份。
     private FikaRoutinePump.RoutineHandle _inRaidHudRestoreRoutine;
-    // Opening countdown (analysis/countdown-restore): the pump handle of the post-processing re-assert routine
-    // (step 4/4), i.e. the body of statement 5/8 started by the countdown restore path. Kept so a second call
-    // cannot stack a second copy and so CleanUp can stop it.
+    // 开场倒计时（analysis/countdown-restore）：后处理重申例程（第
+    // 4/4 步）的泵句柄，也就是由倒计时恢复路径启动的第 5/8 条语句的主体。
+    // 保留它是为了让第二次调用无法叠加出第二份，也让 CleanUp 能停掉它。
     private FikaRoutinePump.RoutineHandle _countdownReassertRoutine;
     private readonly List<GameObject> _mutedVoiceSources = [];
 
@@ -178,7 +178,7 @@ public abstract class BaseGameController
     }
 
     /// <summary>
-    /// <see cref="Task"/> used to wait for host to start the raid
+    /// <see cref="Task"/> 过去用于等待主机启动突袭
     /// </summary>
     /// <returns></returns>
     public virtual Task WaitForHostToStart()
@@ -190,7 +190,7 @@ public abstract class BaseGameController
     }
 
     /// <summary>
-    /// This creates a "custom" Back button so that we can back out if we get stuck
+    /// 这会创建一个 "custom" 返回按钮，以便在卡住时能退出来
     /// </summary>
     protected GameObject CreateStartButton()
     {
@@ -330,52 +330,41 @@ public abstract class BaseGameController
     }
 
     /// <summary>
-    /// This task ensures that all players are joined and loaded before continuing
+    /// 这个 task 确保所有玩家都已加入并加载完成，然后再继续
     /// </summary>
     public abstract Task WaitForOtherPlayersToLoad();
 
     /// <summary>
-    /// Runs a few last changes to the raid setup
+    /// 对突袭设置做最后几处修改
     /// </summary>
     public virtual IEnumerator FinishRaidSetup()
     {
-        // Round 3 (analysis/countdown-bisect-round3): the 13:45 run froze Time.frameCount at 17849 for
-        // 3.1 s inside this step - the pump wrote its tick label and then the main thread wrote nothing at
-        // all until the frame after - and no label named the statement. Every statement of this routine
-        // that can take real time therefore writes its own label before it runs and a RETURNED label after
-        // it. Diagnostics only: no switch, no behaviour change, two writes per raid per statement.
-        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishSetup);
+        // 第 3 轮（analysis/countdown-bisect-round3）：13:45
+        // 那次运行在这一步里把 Time.frameCount 冻结在 17849 达 3.1 秒——泵写下了它的
+        // tick 标签，然后主线程在那一帧之后什么也没写——而且没有任何标签指明是哪条语句。
+        // 因此这个例程里每条可能真正耗时的语句，都在运行之前写下自己的标签，并在运行之后写下
+        // RETURNED 标签。仅用于诊断：没有开关，不改变行为，每条语句每次突袭写两次。
 
-        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishLoading90);
         if (!FikaBackendUtils.IsHeadless)
             LoadingScreenUI.Instance.UpdateAndBroadcast(90f);
 
-        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishLoading90);
 
         _abstractGame.SetMatchmakerStatus(LocaleUtils.UI_FINISHING_RAID_INIT.Localized());
 
         WaitForEndOfFrame endOfFrame = new();
         if (!FikaBackendUtils.IsHeadless)
         {
-            FikaBoundaries.Mark(CountdownBisect.BoundaryFinishMusicWait);
             var musicTask = Singleton<GUISounds>.Instance.FadeBackgroundMusicAsync(false, Il2CppSystem.Threading.CancellationToken.None);
             while (!musicTask.IsCompleted)
                 yield return endOfFrame;
 
-            FikaBoundaries.Returned(CountdownBisect.BoundaryFinishMusicWait);
         }
 
-        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishAudioBuffer);
         AudioUtils.ResetAudioBuffer();
-        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishAudioBuffer);
 
-        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishTriggers);
         _gameWorld.TriggersModule = _abstractGame.gameObject.AddComponent<LocalFikaTriggersModule>();
-        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishTriggers);
 
-        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishLamps);
         _gameWorld.FillLampControllers();
-        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishLamps);
         if (Location.Id == "laboratory")
         {
             Season = ESeason.Summer;
@@ -392,25 +381,20 @@ public abstract class BaseGameController
 #if DEBUG
         Logger.LogWarning($"Running season handler for season: {Season}");
 #endif
-        // The season statement includes its own per-frame wait, so the RETURNED label follows the loop: a
-        // trail that ends on the label above is a routine that was inside the season work.
-        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishSeasonRun);
+        // season 语句自带逐帧等待，所以 RETURNED 标签跟在循环之后：
+        // 一条停在上一个标签上的轨迹，说明该例程当时正在 season 的工作内部。
         var runSeason = seasonController.Run(Season, SeasonsSettings, FikaBackendUtils.IsHeadless);
         while (!runSeason.IsCompleted)
         {
             yield return endOfFrame;
         }
 
-        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishSeasonRun);
 
-        FikaBoundaries.Mark(CountdownBisect.BoundaryFinishBroadcast);
         if (MonoBehaviourSingleton<RadioBroadcastController>.Instantiated)
         {
             MonoBehaviourSingleton<RadioBroadcastController>.Instance.StartBroadcast();
         }
 
-        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishBroadcast);
-        FikaBoundaries.Returned(CountdownBisect.BoundaryFinishSetup);
     }
 
     public abstract Task GenerateWeathers();
@@ -428,201 +412,157 @@ public abstract class BaseGameController
         NetManagerUtils.DisableLoadingScreenUI();
 
         // ---------------------------------------------------------------------------------------
-        // Bisect surface (round 1: analysis/countdown-bisect, round 2: analysis/countdown-bisect-round2).
-        // Round 1 put the three cosmetic statements behind a switch and shipped them off; the 11:17 run
-        // still died inside this body with all three off, and the trail did not name a statement because
-        // its persistor had stopped 14 s earlier. Round 2 therefore bisects the *kept* statements too:
-        // every one of them has its own label and its own switch (all shipped ON), the label is written to
-        // the crash trail immediately - one WriteFile on this thread, through the label handle - and the
-        // master switch 'Skip Countdown Body' (shipped ON) skips them all and jumps straight to the deploy
-        // wait, which is the raid that starts no matter which statement is the aborter.
+        // 二分测试面（第 1 轮：analysis/countdown-bisect，
+        // 第 2 轮：analysis/countdown-bisect-round2）。
+        // 第 1 轮把三条装饰性语句放到一个开关之后并关闭发货；11:17
+        // 那次运行在这三条全关的情况下仍死在这个主体里，而轨迹没有指明语句，因为它的持久化器 14
+        // 秒前就停了。因此第 2 轮连*保留*的语句也一并二分：它们每一条都有自己的标签和自己的
+        // 开关（全部以开启状态发货），标签立即写入崩溃轨迹——本线程上一次 WriteFile，
+        // 经标签句柄——而总开关 'Skip Countdown Body'（以开启状态发货）
+        // 会跳过它们全部并直接跳到部署等待，那才是无论哪条语句是元凶都能开始的突袭。
         // ---------------------------------------------------------------------------------------
-        FikaBoundaries.Enter(CountdownBisect.BoundaryBody);
-        FikaBoundaries.Mark(CountdownBisect.BoundaryBody);
 
         var dateTime = DateTimeExtensions.Now.AddSeconds(timeBeforeDeployLocal);
         var bisect = CountdownBisect.Read();
-        // The opening countdown (analysis/countdown-restore) is an independent read: it decides whether the
-        // countdown the player sees is put back below, while the master switch keeps skipping the body. It is
-        // reported on its own line so the next crash is read against the switches that were really in force.
+        // 开场倒计时（analysis/countdown-restore）
+        // 是一次独立的读取：它决定下面是否把玩家看到的倒计时放回去，而总开关仍然在跳过主体。
+        // 它单独写在自己的一行上，这样下一次崩溃就可以对照当时真正生效的开关来读。
         var restore = CountdownRestore.Read();
-        // Set by the master-switch branch below when the restore path really put the overlay up: only then does
-        // the teardown after the deploy wait have anything to take down.
+        // 当恢复路径确实把叠层放上去时，由下面的总开关分支置位：
+        // 只有那时，部署等待之后的收尾才有东西可以撤下。
         var countdownOverlayShown = false;
         
         
 
-        // Line 389 - cosmetic, switch 'Show Final Countdown Screen' (default off).
-        // The interop does expose what this call needs: the controller's ctor
-        // (EFT.Profile, Il2CppSystem.DateTime) and ShowScreen(EFT.UI.Screens.EScreenState) on its
-        // generic ScreenController base, with EScreenState.Root = 2. The call is therefore well formed and is
-        // kept exactly as upstream wrote it - it is off by default only because it is the first managed
-        // call site in the body and its call target is a doubly nested generic interop type, which is the
-        // shape a JIT/call-site decision dies on.
-        FikaBoundaries.Enter(CountdownBisect.BoundaryScreen);
+        // 第 389 行——装饰性，开关 'Show Final Countdown Screen'（默认关闭）。
+        // interop 确实暴露了这次调用所需的东西：控制器的构造函数 (EFT.Profile,
+        // Il2CppSystem.DateTime)，以及其泛型基类 ScreenController
+        // 上的 ShowScreen(EFT.UI.Screens.EScreenState)，
+        // 其中 EScreenState.Root = 2。因此这次调用形式上是完整的，
+        // 并完全按上游所写保留——它默认关闭只是因为它是该主体里的第一个托管调用点，
+        // 而它的调用目标是一个双重嵌套的泛型 interop 类型，正是那种会让 JIT/调用点决策出错的形状。
         if (!bisect.SkipBody && bisect.Screen)
         {
-            FikaBoundaries.Run(CountdownBisect.BoundaryScreen, () =>
-            {
-                new MatchmakerFinalCountdown.FinalCountdownScreenController(profile, dateTime).ShowScreen(EScreenState.Root);
-            });
+            new MatchmakerFinalCountdown.FinalCountdownScreenController(profile, dateTime).ShowScreen(EScreenState.Root);
         }
 
-        // Lines 390-394: the raid start audio fade. NOT cosmetic, despite what the bisect round called it.
-        // While the master switch skipped this body, BetterAudio never faded back in, so every sound except
-        // the player's own stayed at the menu's faded-out volume (reported 2026-10-10: "everything is quiet
-        // except the player"). It runs unconditionally now; neither bisect switch gates it any more.
-        FikaBoundaries.Enter(CountdownBisect.BoundaryAudioFades);
-        FikaBoundaries.Run(CountdownBisect.BoundaryAudioFades, () =>
+        // 第 390-394 行：突袭开始的音频淡入。尽管二分测试曾把它称为装饰性，
+        // 它并不是。在总开关跳过这个主体期间，BetterAudio 从未淡回来，
+        // 于是除玩家自身之外的一切声音都停留在菜单的已淡出音量（2026-10-10 报告：
+        // "除了玩家，一切都是安静的"）。它现在无条件运行；两个二分开关都不再控制它。
+        if (MonoBehaviourSingleton<AmbientAudioSystem>.Instantiated)
         {
-            if (MonoBehaviourSingleton<AmbientAudioSystem>.Instantiated)
-            {
-                MonoBehaviourSingleton<AmbientAudioSystem>.Instance.Initialize();
-            }
+            MonoBehaviourSingleton<AmbientAudioSystem>.Instance.Initialize();
+        }
 
-            MonoBehaviourSingleton<BetterAudio>.Instance.FadeInVolumeBeforeRaid(timeBeforeDeployLocal);
-        });
+        MonoBehaviourSingleton<BetterAudio>.Instance.FadeInVolumeBeforeRaid(timeBeforeDeployLocal);
 
-        // Lines 395-396 - cosmetic, switch 'Raid Start Menu Music' (default off).
-        FikaBoundaries.Enter(CountdownBisect.BoundaryMenuMusic);
+        // 第 395-396 行——装饰性，开关 'Raid Start Menu Music'（默认关闭）。
         if (!bisect.SkipBody && bisect.MenuMusic)
         {
-            FikaBoundaries.Run(CountdownBisect.BoundaryMenuMusic, () =>
-            {
-                Singleton<GUISounds>.Instance.BackgroundMusicActive = false;
-                Singleton<GUISounds>.Instance.StopMenuBackgroundMusicWithDelay(timeBeforeDeployLocal);
-            });
+            Singleton<GUISounds>.Instance.BackgroundMusicActive = false;
+            Singleton<GUISounds>.Instance.StopMenuBackgroundMusicWithDelay(timeBeforeDeployLocal);
         }
 
-        // The master switch: not one native object is touched in this body. If the trail's last label is
-        // the SKIP line below, the aborter is not in this body at all - the next candidates are the deploy
-        // wait and whatever else runs while it is pending.
+        // 总开关：这个主体里不碰任何原生对象。如果轨迹的最后一个标签是下面的
+        // SKIP 行，那么元凶根本不在这个主体里——接下
+        // 来的候选是部署等待，以及它挂起期间运行的其它东西。
         if (bisect.SkipBody)
         {
-            FikaBoundaries.Enter(CountdownBisect.BoundarySkipBody);
-            FikaBoundaries.Mark(CountdownBisect.BoundarySkipBody);
             
 
             // ---------------------------------------------------------------------------------------
-            // The opening countdown (analysis/countdown-restore).
+            // 开场倒计时（analysis/countdown-restore）。
             //
-            // The master switch is what removes the countdown the player sees: with it ON this routine jumps
-            // straight to the deploy wait, so the wait happens with no countdown screen up and the player
-            // deploys out of a screen that never counted anything down. This block puts the countdown back
-            // *without* turning the master switch off: it runs statement 389 (the vanilla
-            // FinalCountdownScreenController overlay), the deploy wait below is that overlay's clock, and the
-            // teardown after the wait closes it again and restores what it left behind.
+            // 总开关正是移除玩家所见倒计时的原因：它开启时，
+            // 这个例程直接跳到部署等待，于是等待发生时没有任何倒计时画面，
+            // 玩家从一个从未倒数过任何东西的界面里部署出去。这个块把倒计时放回去，
+            // 而*不*关闭总开关：它运行第 389 条语句（原版
+            // FinalCountdownScreenController 叠层），
+            // 下面的部署等待就是那个叠层的时钟，等待之后的收尾再把它关闭并恢复它留下的东西。
             //
-            // Why it can run at all: the routine is no longer the suspect. The trail of the last raids shows
-            // the whole flow - body entered, master switch, the wait, body done - and the fail fast that made
-            // the master switch necessary was raised *while this routine was parked in the wait*, by a native
-            // -> managed callout into Fika's own observed-player override (analysis/countdown-bisect-round3
-            // section 1.2), not by a statement of this body. Everything this block runs obeys the three rules
-            // the port's crashes produced: no managed read of an engine WaitForSeconds (the wait is the
-            // managed WaitSeconds), no engine coroutine started from managed code, no engine reflection into an
-            // injected method - both call sites of this path are managed -> native on a *native* object (the
-            // countdown screen controller, the EFT screen manager).
+            // 为什么它可以运行：这个例程已不再是嫌疑对象。最近几次突袭的轨迹显示了整个流程——进入主体、
+            // 总开关、等待、主体完成——而让总开关变得必要的那个 fail fast，
+            // 是在*本例行停在等待中*时由一个从原生到托管的回调进入 Fika
+            // 自己的已观察玩家覆写而抛出的（analysis/countdown-bisect-round3
+            // 第 1.2 节），不是由这个主体的某条语句抛出的。这个块运行的一切都遵
+            // 守移植版崩溃所带来的三条规则：不对引擎的 WaitForSeconds
+            // 做托管读取（等待用的是托管的 WaitSeconds），不从托管代码启动引擎协程，
+            // 不对注入方法做引擎反射——这条路径的两个调用点都是托管 → 原生，
+            // 作用在*原生*对象上（倒计时画面控制器、EFT 画面管理器）。
             //
-            // Nothing here runs while the body runs: with the master switch OFF the statements above show the
-            // countdown themselves under their own switches, and this path stays out of the way.
+            // 主体运行时这里什么都不跑：总开关关闭时，
+            // 上面的语句在各自开关下自行显示倒计时，而这条路径不碍事。
             // ---------------------------------------------------------------------------------------
             countdownOverlayShown = CountdownRestore.ShowIfEnabled(restore, profile, dateTime);
         }
         else
         {
-            // Kept statement 1/8: the raid needs the game UI (native hierarchy activation).
-            FikaBoundaries.Enter(CountdownBisect.BoundaryGameUi);
-            FikaBoundaries.Mark(CountdownBisect.BoundaryGameUi);
+            // 保留语句 1/8：突袭需要游戏 UI（原生层级激活）。
             if (bisect.GameUi)
             {
-                FikaBoundaries.Run(CountdownBisect.BoundaryGameUi, () =>
-                {
-                    _abstractGame.GameUi.gameObject.SetActive(true);
-                });
-                FikaBoundaries.Returned(CountdownBisect.BoundaryGameUi);
+                _abstractGame.GameUi.gameObject.SetActive(true);
             }
             else
             {
-                FikaBoundaries.Skipped(CountdownBisect.BoundaryGameUi);
             }
 
-            // Kept statement 2/8: the extraction timer's profile binding - a managed call into a native
-            // MonoBehaviour setter, the same panel the port had to guard in analysis/ui-log-noise.
-            FikaBoundaries.Enter(CountdownBisect.BoundaryTimerPanel);
-            FikaBoundaries.Mark(CountdownBisect.BoundaryTimerPanel);
+            // 保留语句 2/8：撤离计时的档案绑定——一次对原生 MonoBehaviour setter
+            // 的托管调用，也就是移植版在 analysis/ui-log-noise 里不得不保护的那个面板。
             if (bisect.TimerPanel)
             {
-                FikaBoundaries.Run(CountdownBisect.BoundaryTimerPanel, () =>
-                {
-                    _abstractGame.GameUi.TimerPanel.ProfileId = profileId;
-                });
-                FikaBoundaries.Returned(CountdownBisect.BoundaryTimerPanel);
+                _abstractGame.GameUi.TimerPanel.ProfileId = profileId;
             }
             else
             {
-                FikaBoundaries.Skipped(CountdownBisect.BoundaryTimerPanel);
             }
         }
 
-        // Kept statement 3/8: the deploy wait. Its completion is what writes 'step 2/3 done'.
-        // It runs with the master switch on and off: the skip path keeps the deploy timing, so the session
-        // sequence, the native session coroutine and everything downstream keep the same schedule.
-        FikaBoundaries.Enter(CountdownBisect.BoundaryDeployWait);
-        FikaBoundaries.Mark(CountdownBisect.BoundaryDeployWait);
+        // 保留语句 3/8：部署等待。正是它的完成写出了 'step 2/3
+        // done'。它在总开关开启和关闭时都运行：跳过路径保留部署时序，
+        // 因此会话序列、原生会话协程以及下游的一切都保持同样的进度安排。
         if (bisect.DeployWait)
         {
-            // Round 3: the wait is bracketed at both ends. The 13:45 trail ended on the line above and
-            // nothing in it said whether the process died while this routine was parked or in the first
-            // statement after the wait - these two labels make that readable, and the pump writes its own
-            // 'pump wait: ...' pair around the same wait (FikaRoutinePump.Routine.TraceWaitEntered/Returned).
-            FikaBoundaries.Mark(CountdownBisect.BoundaryDeployWaitYield);
+            // 第 3 轮：这个等待两端都被括起来。13:45 的轨迹停在上面的那行，
+            // 其中没有任何东西说明进程是在本例行停在等待中时死的，还是在等待之后的第一条语句里死的——这
+            // 两个标签让这一点变得可读，而泵也围绕同一个等待写下自己的 'pump wait: ...'
+            // 对（FikaRoutinePump.Routine.TraceWaitEntered/Returned）。
             yield return new WaitSeconds(timeBeforeDeployLocal);
-            FikaBoundaries.Mark(CountdownBisect.BoundaryDeployWaitResumed);
         }
 
-        FikaBoundaries.Returned(CountdownBisect.BoundaryDeployWait);
-        FikaBoundaries.Mark(CountdownBisect.BoundaryBodyDone);
 
         // ---------------------------------------------------------------------------------------------
-        // The countdown's teardown (analysis/countdown-restore), steps 2/4-4/4.
+        // 倒计时的收尾（analysis/countdown-restore），第 2/4-4/4 步。
         //
-        // It runs only when the restore path above really put the overlay up: a raid with the master switch
-        // off ran the upstream statements instead, and a raid whose overlay switch is off has nothing to take
-        // down - the trail writes which of the two it was instead of leaving a silent gap. Every step is its
-        // own label and its own switch, so a trail that ends here names the step that died, and the switch of
-        // that step is the one line that takes it out again.
+        // 只有当上面的恢复路径确实把叠层放上去时它才运行：
+        // 总开关关闭的突袭改为运行上游语句，而叠层开关关闭的突袭
+        // 没有东西可以撤下——轨迹会写出是这两种情况中的哪一种，
+        // 而不是留下一个沉默的空洞。每一步都有自己的标签和自己的开关，
+        // 所以停在这里的轨迹就指明了是哪一步死的，而那一步的开关就是把它再去掉的那一行。
         // ---------------------------------------------------------------------------------------------
         if (countdownOverlayShown)
         {
-            FikaBoundaries.Enter(CountdownRestore.BoundaryTeardown);
-            FikaBoundaries.Mark(CountdownRestore.BoundaryTeardown);
 
-            // Step 2/4 - take the overlay down again. On its own switch: "the overlay could not be closed" and
-            // "the raid view was not restored" are different faults and must not share a label.
+            // 第 2/4 步——再次把叠层撤下。它有单独的开关："叠层关不掉"
+            // 和 "突袭视图没有恢复" 是两种不同的故障，绝不能共用同一个标签。
             CountdownRestore.CloseIfEnabled(restore);
 
-            // Step 3/4 - the raid view the countdown left behind: the same statement 4/8 the vanilla tail
-            // runs, with its owner re-ready, reused rather than re-derived. It runs after the close on
-            // purpose: closing the screen is what the restore then has to clean up after.
-            FikaBoundaries.Enter(CountdownRestore.BoundaryViewRestore);
-            FikaBoundaries.Mark(CountdownRestore.BoundaryViewRestore);
+            // 第 3/4 步——倒计时留下的那个突袭视图：就是原版尾部运行的同一条第
+            // 4/8 条语句，其所有者已重新就绪，这里复用它而不是重新推导。
+            // 它故意在关闭之后运行：关闭画面正是恢复随后必须善后的那件事。
             if (restore.ViewRestore)
             {
                 if (FikaBoundaries.Run(CountdownRestore.BoundaryViewRestore, () => RestoreRaidViewAfterCountdown()))
                 {
-                    FikaBoundaries.Returned(CountdownRestore.BoundaryViewRestore);
                 }
             }
             else
             {
-                FikaBoundaries.Skipped(CountdownRestore.BoundaryViewRestore, "its switch ('Countdown: Opening Countdown View Restore') is OFF - the countdown's blur, effects and menu camera can stay on the raid view");
             }
 
-            // Step 4/4 - the native screen can apply its post-processing one frame after it closed (the reason
-            // statement 5/8 exists). Started on the Update pump: a managed enumerator handed to the engine
-            // from inside this routine is the shape that faulted (analysis/host-raid-coroutine).
-            FikaBoundaries.Enter(CountdownRestore.BoundaryReassert);
-            FikaBoundaries.Mark(CountdownRestore.BoundaryReassert);
+            // 第 4/4 步——原生画面在关闭后的一帧仍可能施加它的后处理（第 5/8
+            // 条语句存在的原因）。它启动在 Update 泵上：从本例行内部把一个托管枚举器交给引擎，
+            // 正是那种出错的形状（analysis/host-raid-coroutine）。
             if (restore.Reassert)
             {
                 if (FikaBoundaries.Run(CountdownRestore.BoundaryReassert, () =>
@@ -631,115 +571,83 @@ public abstract class BaseGameController
                         "RestoreRaidViewAfterCountdown (countdown restore)");
                 }))
                 {
-                    FikaBoundaries.Returned(CountdownRestore.BoundaryReassert);
                 }
             }
             else
             {
-                FikaBoundaries.Skipped(CountdownRestore.BoundaryReassert, "its switch ('Countdown: Opening Countdown Reassert') is OFF; a late blur application can survive the teardown");
             }
 
-            FikaBoundaries.Returned(CountdownRestore.BoundaryTeardown);
-            FikaBoundaries.Mark(CountdownRestore.BoundaryDone);
         }
         else
         {
-            FikaBoundaries.Enter(CountdownRestore.BoundaryTeardown);
-            FikaBoundaries.Skipped(CountdownRestore.BoundaryTeardown, bisect.SkipBody
-                ? "the countdown restore path did not put an overlay up in this raid (its 0/4 and 1/4 labels above say which switch decided that), so there is nothing to take down"
-                : "the countdown body ran (master switch OFF): its own statements 389/4/8/5/8 and their switches decided the countdown");
         }
 
-        // Round 3 gate: the post-wait block (statements 4/8-8/8) has its own master switch now, so the
-        // shipped default reaches the session sequence with the whole countdown tail short-circuited. It is
-        // skipped when 'Skip Post Wait Block' is on (the shipped default) or when 'Skip Countdown Body' is
-        // on; the trail writes which of the two did it, so a raid that starts is never mistaken for a raid
-        // in which a tail statement ran.
+        // 第 3 轮闸门：等待之后的块（第 4/8-8/8 条语句）现在有了自己的总开关，
+        // 因此发货默认值在进入会话序列时把整条倒计时尾巴都短路掉了。当 'Skip
+        // Post Wait Block' 开启（发货默认值）或 'Skip
+        // Countdown Body' 开启时它被跳过；轨迹会写出是哪一个做的，
+        // 这样一次成功开始的突袭绝不会被误认为是一次尾巴语句运行过的突袭。
         var runPostWait = !bisect.SkipBody && !bisect.SkipPostWait;
         if (!runPostWait)
         {
-            FikaBoundaries.Enter(CountdownBisect.BoundaryPostWait);
-            FikaBoundaries.Skipped(CountdownBisect.BoundaryPostWait, bisect.SkipBody
-                ? "the master switch 'Skip Countdown Body' is ON, so the body never reached this block"
-                : "'Skip Post Wait Block' is ON");
         }
         else
         {
-            FikaBoundaries.Enter(CountdownBisect.BoundaryPostWait);
-            FikaBoundaries.Mark(CountdownBisect.BoundaryPostWait);
         }
 
         if (runPostWait)
         {
-            // Kept statement 4/8: SPT 5 can leave the final-countdown post-processing/screen state active
-            // when Fika bypasses the native LocalGame startup coroutine - a live raid with a permanently
-            // blurred background. Restore the raid view after the countdown has elapsed, without touching
-            // gameplay effects such as damage/death blur later in raid.
-            FikaBoundaries.Enter(CountdownBisect.BoundaryRestoreRaidView);
-            FikaBoundaries.Mark(CountdownBisect.BoundaryRestoreRaidView);
+            // 保留语句 4/8：当 Fika 绕过原生的 LocalGame
+            // 启动协程时，SPT 5 可能让最终倒计时的后处理/画面状态保持
+            // 激活——一次实时突袭，背景永久模糊。在倒计时结束后恢复突袭视图，
+            // 但不触碰之后突袭中的伤害/死亡模糊之类的玩法效果。
             if (bisect.RestoreRaidView)
             {
-                FikaBoundaries.Run(CountdownBisect.BoundaryRestoreRaidView, () => RestoreRaidViewAfterCountdown());
-                FikaBoundaries.Returned(CountdownBisect.BoundaryRestoreRaidView);
+                RestoreRaidViewAfterCountdown();
             }
             else
             {
-                FikaBoundaries.Skipped(CountdownBisect.BoundaryRestoreRaidView);
             }
 
-            // Kept statement 5/8: the native countdown screen can apply its camera post-processing one
-            // frame after the screen is closed. Re-assert the clear state for a few frames so the
-            // first-person view cannot remain permanently blurred. Driven by the Update pump instead of the
-            // engine: a managed enumerator handed to the engine from inside this routine is the shape that
-            // faulted during the host raid start (analysis/host-raid-coroutine).
-            FikaBoundaries.Enter(CountdownBisect.BoundaryRestoreRoutine);
-            FikaBoundaries.Mark(CountdownBisect.BoundaryRestoreRoutine);
+            // 保留语句 5/8：原生倒计时画面在关闭后的一帧仍可能施加它的摄像机后处理。
+            // 重新主张清除状态若干帧，使第一人称视图无法永久保持模糊。由
+            // Update 泵驱动而非引擎：从本例行内部把一个托管枚举器交给引擎，
+            // 正是主机突袭开始期间出错的那种形状（
+            // analysis/host-raid-coroutine）。
             if (bisect.RestoreRoutine)
             {
                 FikaBoundaries.Run(CountdownBisect.BoundaryRestoreRoutine, () =>
                 {
                     FikaRoutinePump.Instance.Start(RestoreRaidViewAfterCountdownRoutine(), "RestoreRaidViewAfterCountdown");
                 });
-                FikaBoundaries.Returned(CountdownBisect.BoundaryRestoreRoutine);
             }
             else
             {
-                FikaBoundaries.Skipped(CountdownBisect.BoundaryRestoreRoutine);
             }
 
-            // Kept statement 6/8: the transit controllers.
-            FikaBoundaries.Enter(CountdownBisect.BoundarySyncTransits);
-            FikaBoundaries.Mark(CountdownBisect.BoundarySyncTransits);
+            // 保留语句 6/8：转场控制器。
             if (bisect.SyncTransits)
             {
-                FikaBoundaries.Run(CountdownBisect.BoundarySyncTransits, () => SyncTransitControllers(profileId));
-                FikaBoundaries.Returned(CountdownBisect.BoundarySyncTransits);
+                SyncTransitControllers(profileId);
             }
             else
             {
-                FikaBoundaries.Skipped(CountdownBisect.BoundarySyncTransits);
             }
 
-            // Kept statement 7/8: the raid-started event. Inside a boundary of its own: a subscriber that
-            // throws must not unwind into the pump (it is reported as a [Boundary] failure instead).
-            FikaBoundaries.Enter(CountdownBisect.BoundaryRaidStartedEvent);
-            FikaBoundaries.Mark(CountdownBisect.BoundaryRaidStartedEvent);
+            // 保留语句 7/8：突袭已开始事件。放在它自己的边界内：
+            // 抛异常的订阅者绝不能展开回泵里（它会被报告为一次 [Boundary] 失败）。
             if (bisect.RaidStartedEvent)
             {
                 FikaBoundaries.Run(CountdownBisect.BoundaryRaidStartedEvent, () =>
                 {
                     FikaEventDispatcher.DispatchEvent(new FikaRaidStartedEvent(FikaBackendUtils.IsServer));
                 });
-                FikaBoundaries.Returned(CountdownBisect.BoundaryRaidStartedEvent);
             }
             else
             {
-                FikaBoundaries.Skipped(CountdownBisect.BoundaryRaidStartedEvent);
             }
 
-            // Kept statement 8/8: the VOIP device fix (Dissonance natives), started on the pump.
-            FikaBoundaries.Enter(CountdownBisect.BoundaryVoipFix);
-            FikaBoundaries.Mark(CountdownBisect.BoundaryVoipFix);
+            // 保留语句 8/8：VOIP 设备修复（Dissonance 原生代码），在泵上启动。
             if (bisect.VoipFix)
             {
                 FikaBoundaries.Run(CountdownBisect.BoundaryVoipFix, () =>
@@ -749,51 +657,45 @@ public abstract class BaseGameController
                         _voipAudioFixRoutine = FikaRoutinePump.Instance.Start(FixVOIPAudioDevice(), "FixVOIPAudioDevice");
                     }
                 });
-                FikaBoundaries.Returned(CountdownBisect.BoundaryVoipFix);
             }
             else
             {
-                FikaBoundaries.Skipped(CountdownBisect.BoundaryVoipFix);
             }
 
-            FikaBoundaries.Returned(CountdownBisect.BoundaryPostWait);
         }
 
         // ---------------------------------------------------------------------------------------------
-        // In-raid HUD restore (analysis/inraid-ui).
+        // 突袭内 HUD 恢复（analysis/inraid-ui）。
         //
-        // Statements 1/8 and 2/8 are the two statements that switch the raid HUD hierarchy on. While a
-        // master switch is ON they do not run, and the HUD then never appears in the raid at all: the
-        // GameUI root stays inactive, so the extraction timer panel (EFT.UI.ExtractionTimersPanel, whose
-        // GameObject is 'TimerPanel') and the battle-UI screen (EFT.UI.BattleUIScreen, created by
-        // CoopGame.EnsurePlayerOwnerReady) stay inactive with it. The symptom is the one reported on
-        // 2026-10-10: the timer key does nothing - no extraction point list, no remaining time, no
-        // extraction countdown.
+        // 第 1/8 和 2/8 条语句正是把突袭 HUD 层级打开的那两条语句。
+        // 总开关开启时它们不运行，于是 HUD 在突袭里根本不会出现：GameUI 根保持非激活，
+        // 撤离计时面板（EFT.UI.ExtractionTimersPanel，其 GameObject
+        // 为 'TimerPanel'）和战斗 UI 画面（EFT.UI.BattleUIScreen，
+        // 由 CoopGame.EnsurePlayerOwnerReady
+        // 创建）也随之保持非激活。症状正是 2026-10-10 报告的那个：
+        // 计时键什么也不做——没有撤离点列表、没有剩余时间、没有撤离倒计时。
         //
-        // This block restores the HUD without re-enabling either skipped statement:
-        //   * it runs only when the body really was skipped (bisect.SkipBody), so a raid with the master
-        //     switch OFF keeps the upstream behaviour exactly as it is;
-        //   * it runs as a pump routine, i.e. its first step executes a frame later and off the back of
-        //     the session sequence, on the same Update tick the countdown itself used;
-        //   * every engine call in it sits in its own FikaBoundaries.Run/try-catch, so a step that fails
-        //     is named in the journal and the raid continues;
-        //   * it reuses the two calls the skipped statements make and nothing else - it does not run the
-        //     cosmetic statements, the post-wait statements or the VOIP fix.
+        // 这个块在不重新启用任何一条被跳过语句的情况下恢复 HUD：
+        //   * 它只在主体确实被跳过时运行（bisect.SkipBody），所以总开关关闭的
+        //     突袭完全保持上游行为；
+        //   * 它作为泵例程运行，即它的第一步在一帧之后执行，在会话序列之后，
+        //     用的是倒计时本身所用的同一个 Update tick；
+        //   * 它里面的每个引擎调用都在各自的 FikaBoundaries.Run/try-catch 内，所以
+        //     失败的步骤会在日志里被指明，突袭继续；
+        //   * 它复用被跳过语句所做的那两次调用，此外别无其它——它不运行装饰性
+        //     语句、等待之后的语句或 VOIP 修复。
         //
-        // The one behaviour it adds on top of a plain re-run of 1/8 and 2/8 is the SetTime re-push: the
-        // panel's extraction list is filled at spawn, and that drive is skipped while the panel is closed
-        // (HostGameController.cs:991, 4 [PanelGuard] lines in the 21:35 raid), so activating the hierarchy
-        // alone would show an empty panel. SetTime is the same call the spawn path makes.
+        // 它在简单重跑 1/8 和 2/8 之上新增的唯一行为是 SetTime 重推：面板的撤离列表在生成时填充，
+        // 而面板关闭期间那次驱动会被跳过（HostGameController.cs:991，
+        // 21:35 那次突袭里有 4 行 [PanelGuard]），
+        // 所以只激活层级会显示一个空面板。SetTime 与生成路径所做的是同一次调用。
         // ---------------------------------------------------------------------------------------------
         if (bisect.SkipBody && ReadRestoreHudFlag())
         {
             try
             {
-                FikaBoundaries.Enter(CountdownBisect.BoundaryHudRestore);
-                FikaBoundaries.Mark(CountdownBisect.BoundaryHudRestore);
                 _inRaidHudRestoreRoutine = FikaRoutinePump.Instance.Start(RestoreInRaidHudRoutine(),
                     "RestoreInRaidHud");
-                FikaBoundaries.Returned(CountdownBisect.BoundaryHudRestore);
                 
             }
             catch (Exception exception)
@@ -834,11 +736,11 @@ public abstract class BaseGameController
                 cameraManager.Blur(false, 0f);
                 cameraManager.SetZBlur(false);
 
-                // In SPT 5 the countdown uses CameraManager's InventoryBlur
-                // component. Calling Blur(false) starts a native transition,
-                // which is not reliable when Fika bypasses LocalGame's normal
-                // startup coroutine. Disable the component and clear its value
-                // directly as well.
+                // 在 SPT 5 中，倒计时使用的是 CameraManager
+                // 的 InventoryBlur 组件。调用
+                // Blur(false) 会启动一次原生过渡，
+                // 而在 Fika 绕过 LocalGame
+                // 正常启动协程的情况下这并不可靠。还要直接禁用该组件并清除它的值。
                 var inventoryBlur = cameraManager._blur;
                 if (inventoryBlur != null)
                 {
@@ -852,17 +754,17 @@ public abstract class BaseGameController
                 {
                     camera.enabled = true;
                     camera.gameObject.SetActive(true);
-                    // CoopGame disables CameraManager while constructing the
-                    // local player.  The stock LocalGame path turns it back on
-                    // before the final countdown, but Fika reaches the
-                    // countdown through a different path.  Re-enable both
-                    // the manager and its camera here so Unity actually
-                    // submits the world render.
+                    // CoopGame 在构造本地玩家时会禁用
+                    // CameraManager。原版 LocalGame
+                    // 路径会在最终倒计时之前把它重新打开，但
+                    // Fika 是经由另一条路径抵达倒计时的。
+                    // 在这里把该管理器及其摄像机一并重新启用，
+                    // 好让 Unity 真正提交世界渲染。
 
-                    // The native countdown can leave the player camera in a
-                    // temporary LockCameraState.  Fika has already spawned
-                    // the local player at this point, so explicitly restore
-                    // the normal first-person state before the next render.
+                    // 原生倒计时可能把玩家摄像机留在临时的
+                    // LockCameraState 里。
+                    // 此时 Fika 已经生成了本地玩家，
+                    // 所以在下一次渲染之前显式恢复正常的第一人称状态。
                     var mainPlayer = Singleton<GameWorld>.Instance?.MainPlayer;
                     if (mainPlayer != null)
                     {
@@ -873,11 +775,11 @@ public abstract class BaseGameController
                         }
                     }
 
-                    // SPT 5 may leave the native death/fade component in its
-                    // enabled state when the Fika countdown replaces the
-                    // stock LocalGame startup coroutine.  Clear it together
-                    // with FastBlur so the first-person render is restored,
-                    // while leaving later in-raid damage effects untouched.
+                    // 当 Fika 的倒计时取代原版
+                    // LocalGame 启动协程时，SPT 5
+                    // 可能让原生死亡/淡出组件停留在启用状态。
+                    // 把它连同 FastBlur 一起清除，
+                    // 以便恢复第一人称渲染，同时不触碰之后突袭中的伤害效果。
                     var deathFade = camera.GetComponent<DeathFade>();
                     if (deathFade != null)
                     {
@@ -894,11 +796,11 @@ public abstract class BaseGameController
                         fastBlur.enabled = false;
                     }
 
-                    // Clear effect accumulators populated by the final
-                    // countdown (grayscale, desaturation, radial blur, etc.)
-                    // without disabling gameplay effects permanently.  The
-                    // native controller will re-enable these components when
-                    // a real health/equipment effect starts during the raid.
+                    // 清除由最终倒计时填充的效果累加器（灰度、
+                    // 去饱和、径向模糊等），
+                    // 同时不永久禁用玩法效果。
+                    // 突袭中真正开始一个生命/装备效果时，
+                    // 原生控制器会重新启用这些组件。
                     cameraManager.EffectsController?.ResetEffectsInstant();
 
                     var grayscale = camera.GetComponent<PostprocessGrayscale>();
@@ -913,16 +815,16 @@ public abstract class BaseGameController
                         distort.Distortion = 0f;
                     }
 
-                    // [NvgDiag] Night and thermal vision are rendered by the camera
-                    // effects themselves: BSG.CameraEffects.NightVision /
-                    // ThermalVision blit their material in OnPreCull and clear it,
-                    // their command buffer and the _NightVisionOn shader global in
-                    // OnDisable. Pressing the device key only calls Switch(bool) on
-                    // the already running component, and nothing inside the effect
-                    // ever re-enables it. Disabling them here therefore killed night
-                    // vision for the rest of the raid: the key and the headwear state
-                    // still reacted, the picture never changed. Force them into a
-                    // clean "off" state instead of switching the components off.
+                    // [NvgDiag] 夜视与热成像是由摄像机效果本身渲染的：
+                    // BSG.CameraEffects.NightVision
+                    // / ThermalVision 在 OnPreCull
+                    // 里 blit 它们的材质并清除它，在 OnDisable
+                    // 里清除它们的命令缓冲区和 _NightVisionOn
+                    // 着色器全局量。按下设备键只会对已经在运行的组件调用
+                    // Switch(bool)，而效果内部没有任何东西会把它重新启用。
+                    // 因此在这里禁用它们就杀掉了余下整个突袭的夜视：
+                    // 按键和头戴状态仍有反应，画面却再也没变。
+                    // 请把它们强制置入干净的 "off" 状态，而不是把组件关掉。
                     ResetVisionEffect(cameraManager.NightVision, "NightVision");
                     ResetVisionEffect(cameraManager.ThermalVision, "ThermalVision");
 
@@ -936,25 +838,25 @@ public abstract class BaseGameController
 
                         if (!zBlur.enabled)
                         {
-                            // The night vision effect drives this blur through its
-                            // Construct(NightVisionZBlur) field; a disabled component
-                            // would silently drop it once the device is switched on.
+                            // 夜视效果通过它的 Construct(NightVisionZBlur)
+                            // 字段驱动这个模糊；一旦设备被打开，
+                            // 被禁用的组件会静默地把它丢掉。
                             zBlur.enabled = true;
                             Logger.LogWarning($"[NvgRepair] NightVisionZBlur was disabled at raid start; re-enabled it");
                         }
                     }
 
-                    // A few SPT 5 post-process components can remain enabled
-                    // after the menu/countdown camera is torn down.  In an
-                    // IL2CPP Fika raid their native materials are not always
-                    // initialized, and the component then writes a solid
-                    // black frame even though the FPS camera itself is active.
-                    // These are menu/countdown presentation effects.  The night
-                    // and thermal vision effects are NOT in this list any more:
-                    // they are gameplay effects that EFT only ever re-applies by
-                    // calling Switch(bool) on the component it created, so
-                    // switching them off disabled them for the whole raid - see
-                    // analysis/night-vision/REPORT.md.
+                    // 菜单/倒计时摄像机被拆除之后，少数
+                    // SPT 5 后处理组件仍可能保持启用。
+                    // 在 IL2CPP 的 Fika 突袭里，
+                    // 它们的原生材质并不总是已初始化，于是即便 FPS
+                    // 摄像机本身是激活的，该组件仍会写入一整帧纯黑。
+                    // 这些是菜单/倒计时的呈现效果。
+                    // 夜视与热成像效果已经不在这个列表里：它们是玩法效果，
+                    // EFT 只会对它自己创建的那个组件调用
+                    // Switch(bool) 来重新施加，
+                    // 所以把它们关掉就等于整个突袭都禁用了它们——见
+                    // analysis/night-vision/REPORT.md。
                     foreach (var effect in camera.GetComponents<MonoBehaviour>())
                     {
                         if (effect == null)
@@ -963,9 +865,9 @@ public abstract class BaseGameController
                         }
 
                         var effectName = effect.GetType().Name;
-                        // The vision effects (NightVision / ThermalVision /
-                        // NightVisionZBlur) are deliberately absent: they must stay
-                        // enabled for the whole raid, see ResetVisionEffect below.
+                        // 视觉效果（NightVision / ThermalVision
+                        // / NightVisionZBlur）被刻意排除在外：
+                        // 它们必须在整个突袭期间保持启用，见下面的 ResetVisionEffect。
                         if (effectName is "CC_Vintage" or "DesaturateEffect" or
                             "PostprocessGrayscale" or "DistortCameraFX")
                         {
@@ -973,9 +875,9 @@ public abstract class BaseGameController
                         }
                     }
 
-                    // GetComponents<MonoBehaviour>() is incomplete for some
-                    // IL2CPP proxy components.  Resolve the same effects by
-                    // Unity component name as a fallback.
+                    // 对某些 IL2CPP 代理组件来说
+                    // GetComponents<MonoBehaviour>()
+                    // 并不完整。作为兜底，按 Unity 组件名解析同样的效果。
                     foreach (var effectName in new[]
                     {
                         "CC_Vintage", "DesaturateEffect",
@@ -990,8 +892,8 @@ public abstract class BaseGameController
                     }
                 }
 
-                // Clear any duplicate post-processing components left on the
-                // camera by the native countdown prefab.
+                // 清除原生倒计时预制体留在摄
+                // 像机上的任何重复后处理组件。
                 if (cameraManager.Camera != null)
                 {
                     foreach (var blur in cameraManager.Camera.GetComponents<InventoryBlur>())
@@ -1025,12 +927,12 @@ public abstract class BaseGameController
                 }
             }
 
-            // The SPT 5 menu scene can remain alive after the native final
-            // countdown closes.  Its MainMenuCamera has a much higher depth
-            // than the FPS camera and clears the frame after the raid camera
-            // renders, resulting in a completely black raid view.  Fika does
-            // not need any menu camera once the local player has spawned, so
-            // disable every leftover instance here (and on each retry frame).
+            // 原生最终倒计时关闭之后，SPT 5 的菜单场景仍可能存活。
+            // 它的 MainMenuCamera 深度远高于
+            // FPS 摄像机，会在突袭摄像机渲染之后清空帧，
+            // 导致完全黑屏的突袭视图。本地玩家生成之后
+            // Fika 不再需要任何菜单摄像机，
+            // 所以在这里禁用每一个残留实例（并且在每一个重试帧上也这么做）。
             foreach (var menuCamera in UnityEngine.Object.FindObjectsOfType<Camera>())
             {
                 if (menuCamera == null || !menuCamera.name.Contains("MainMenuCamera", StringComparison.OrdinalIgnoreCase))
@@ -1066,19 +968,19 @@ public abstract class BaseGameController
     }
 
     /// <summary>
-    /// Puts a native vision camera effect (<c>BSG.CameraEffects.NightVision</c> or
-    /// <c>ThermalVision</c>) into a clean "off" state <b>without</b> disabling the
-    /// component.
+    /// 把一个原生视觉摄像机效果（<c>BSG.CameraEffects.NightVision</c>
+    /// 或 <c>ThermalVision</c>）置入干净的
+    /// "off" 状态，<b>而不</b>禁用该组件。
     /// <para>
-    /// Both effects render from <c>OnPreCull</c>, which Unity only calls while the
-    /// behaviour is enabled. Their <c>OnDisable</c> clears the night vision material
-    /// and the <c>_NightVisionOn</c> shader global, and neither effect ever enables
-    /// itself again - the device key only calls <c>Switch(bool)</c> on the running
-    /// component. Turning the components off here (as the countdown cleanup used to
-    /// do) is therefore what made night vision unusable for the rest of the raid.
-    /// An effect that is enabled and has <c>On == false</c> draws nothing: its
-    /// OnPreCull returns after writing 0 to the shader global, so the leftover-menu
-    /// black frame this cleanup was written for cannot come back through this path.
+    /// 两个效果都在 <c>OnPreCull</c> 中渲染，而 Unity
+    /// 只在行为启用时才调用它。它们的 <c>OnDisable</c>
+    /// 会清除夜视材质与 <c>_NightVisionOn</c> 着色器全局量，
+    /// 而两个效果都不会再把自己重新启用——设备键只对运行中的组件调用
+    /// <c>Switch(bool)</c>。因此在这里把组件关掉（就像
+    /// 倒计时清理以前所做的那样）正是让夜视在余下整个突袭中不可用的原因。
+    /// 一个已启用且 <c>On == false</c> 的效果什么也不绘制：
+    /// 它的 OnPreCull 在把 0 写入着色器全局量之后便返回，
+    /// 所以这次清理当初针对的残留菜单黑帧无法再通过这条路径回来。
     /// </para>
     /// </summary>
     private void ResetVisionEffect(Behaviour effect, string label)
@@ -1097,9 +999,9 @@ public abstract class BaseGameController
                     "so the headwear device key can drive it");
             }
 
-            // The camera effects live in BSG.CameraEffects (night vision) and the
-            // global namespace (thermal vision); this file's EFT.InventoryLogic
-            // import would otherwise resolve these names to the item classes.
+            // 摄像机效果位于 BSG.CameraEffects（夜视）
+            // 和全局命名空间（热成像）中；否则本文件的
+            // EFT.InventoryLogic 导入会把这些名字解析成物品类。
             if (effect.TryCast<BSG.CameraEffects.NightVision>() is { } nightVision)
             {
                 if (nightVision.InProcessSwitching)
@@ -1107,8 +1009,8 @@ public abstract class BaseGameController
                     nightVision.FastForwardSwitch();
                 }
 
-                // (2026-10-17) A player wearing the device with it switched on keeps it: forcing the
-                // effect off here made the headwear and the picture disagree for the rest of the raid.
+                // （2026-10-17）戴着该设备且已把它打开的玩家会保持开启：
+                // 在这里强行关闭效果会让头戴设备与画面在余下整个突袭中互相矛盾。
                 if (IsDeviceSwitchedOn(nightVision: true))
                 {
                     return;
@@ -1147,9 +1049,9 @@ public abstract class BaseGameController
     }
 
     /// <summary>
-    /// Whether the local player's night-vision (or thermal) headwear device is switched on. Read through
-    /// the observer of the player, the same source the device key writes. Any failure answers false, i.e.
-    /// the cleanup keeps the behaviour it had before this guard existed.
+    /// 本地玩家的夜视（或热成像）头戴设备是否已打开。
+    /// 通过玩家自身的观察者读取，也就是设备键写入的同一个来源。
+    /// 任何失败都回答 false，即这次清理保持这道守卫出现之前的行为。
     /// </summary>
     private static bool IsDeviceSwitchedOn(bool nightVision)
     {
@@ -1178,17 +1080,17 @@ public abstract class BaseGameController
 
     private IEnumerator RestoreRaidViewAfterCountdownRoutine()
     {
-        // Run after the native screen's close/LateUpdate callbacks too.
-        // SPT 5 may finish the player-owner setup one or more frames after
-        // the countdown screen closes.  Keep reasserting the local owner,
-        // first-person visuals and camera for a short bounded window so late
-        // native callbacks cannot leave the player unbound.
+        // 在原生画面的 close/LateUpdate
+        // 回调之后也要运行。SPT 5 可能在倒计时画面关闭
+        // 之后一帧或多帧才完成玩家所有者的设置。在一个短的、
+        // 有界的窗口内持续重申请本地所有者、第一人称视觉与摄像机，
+        // 使迟到的原生回调无法把玩家留在未绑定状态。
         for (var i = 0; i < 120; i++)
         {
             yield return null;
-            // Once a menu opens or the player leaves first-person gameplay,
-            // its input and camera state belongs to the native UI. Do not
-            // close it, reshow BattleUI, or undo its blur/cursor state.
+            // 一旦某个菜单打开，或者玩家离开了第一人称玩法，
+            // 它的输入与摄像机状态就归原生 UI 所有。不要关闭它、
+            // 不要重新显示 BattleUI、也不要撤销它的模糊/光标状态。
             if (EftScreenManager.Instance?.CheckCurrentScreen(EEftScreenType.BattleUI) != true ||
                 _localPlayer?.HealthController?.IsAlive != true ||
                 (FikaSingleton<FreeCameraController>.Instantiated &&
@@ -1199,8 +1101,8 @@ public abstract class BaseGameController
     }
 
     /// <summary>
-    /// The 'Countdown: Restore In-Raid HUD' switch (config, default ON). A missing entry means ON: the raid
-    /// HUD is what the player sees, and the element itself reports and continues.
+    /// 'Countdown: Restore In-Raid HUD' 开关（配置项，
+    /// 默认开启）。缺少条目即视为开启：突袭 HUD 是玩家看到的东西，而该元素自身会报告并继续。
     /// </summary>
     private static bool ReadRestoreHudFlag()
     {
@@ -1222,19 +1124,19 @@ public abstract class BaseGameController
     }
 
     /// <summary>
-    /// Restores the in-raid HUD after a countdown body that a master switch skipped (analysis/inraid-ui).
+    /// 在总开关跳过了倒计时主体之后恢复突袭内 HUD（analysis/inraid-ui）。
     ///
-    /// The two statements that switch the HUD hierarchy on - 1/8 <c>GameUi.gameObject.SetActive(true)</c> and
-    /// 2/8 <c>GameUi.TimerPanel.ProfileId = profileId</c> - are skipped while 'Skip Countdown Body' is ON, and
-    /// the whole hierarchy (the GameUI root, <c>EFT.UI.ExtractionTimersPanel</c> and the
-    /// <c>EFT.UI.BattleUIScreen</c> created by <see cref="CoopGame.EnsurePlayerOwnerReady"/>) then stays
-    /// inactive for the entire raid: the timer key shows nothing and no engine coroutine may run on those
-    /// panels.
+    /// 把 HUD 层级打开的那两条语句——1/8 <c>GameUi.gameObject.SetActive(true)</c>
+    /// 与 2/8 <c>GameUi.TimerPanel.ProfileId =
+    /// profileId</c>——在 'Skip Countdown Body' 开启时被跳过，
+    /// 于是整个层级（GameUI 根、<c>EFT.UI.ExtractionTimersPanel</c>，
+    /// 以及由 <see cref="CoopGame.EnsurePlayerOwnerReady"/> 创建的
+    /// <c>EFT.UI.BattleUIScreen</c>）在整个突袭期间都保持非激活：计时键什么也不显示，且任何引擎协程都不许在这些面板上运行。
     ///
-    /// This routine repeats those two statements and the panel's spawn-time <c>SetTime</c> drive, on the
-    /// Update pump, one step per frame, every step inside <see cref="FikaBoundaries.Run"/> so a failure is
-    /// named in the journal instead of unwinding into the session sequence. Nothing else of the countdown
-    /// body runs.
+    /// 这个例程在 Update 泵上重复那两条语句以及面板生成时的
+    /// <c>SetTime</c> 驱动，每帧一步，每一步都在
+    /// <see cref="FikaBoundaries.Run"/> 内，
+    /// 这样失败会在日志里被指明，而不是展开回会话序列。倒计时主体的其它部分都不运行。
     /// </summary>
     private IEnumerator RestoreInRaidHudRoutine()
     {
@@ -1247,14 +1149,14 @@ public abstract class BaseGameController
                 yield break;
             }
 
-            // Let the deploy frame settle before the hierarchy is switched on. A skipped body means this
-            // routine was started in the frame the countdown body returned, which is also the frame the
-            // session sequence moves into its last step; two frames keep the hierarchy activation out of
-            // that step's window.
+            // 先让部署帧落定，再打开层级。
+            // 主体被跳过意味着这个例程是在倒计时主体返回的那一帧启动的，
+            // 而那也正是会话序列进入它最后一步的同一帧；
+            // 两帧可以让层级激活避开那一步的时间窗口。
             yield return null;
             yield return null;
 
-            // ---- 1/8 (equivalent): activate the HUD hierarchy -------------------------------------------------
+            // ---- 1/8（等价）：激活 HUD 层级 -------------------------------------------------
             var gameUiObject = FikaUiPanels.DescribeObject(gameUi, "the game UI reference could not be read");
             try
             {
@@ -1264,9 +1166,9 @@ public abstract class BaseGameController
                 }
                 else
                 {
-                    // This is statement 1/8 of the countdown, the one call that switches the whole HUD on.
-                    // Its five guarded siblings in the game code are only added when it can run: see
-                    // FikaBoundaries.Run.
+                    // 这就是倒计时的第 1/8 条语句，那一次把整个 HUD 打开的调用。
+                    // 游戏代码里它那五个受保护的兄弟调用只有在它能够运行时才会被加上：
+                    // 见 FikaBoundaries.Run。
                     gameUi.gameObject.SetActive(true);
                     
                 }
@@ -1276,7 +1178,7 @@ public abstract class BaseGameController
                 
             }
 
-            // ---- 2/8 (equivalent): bind the extraction timer panel and fill it -------------------------------
+            // ---- 2/8（等价）：绑定撤离计时面板并填充它 ------------------------------------------
             var timerPanel = gameUi.TimerPanel;
             if (timerPanel == null)
             {
@@ -1291,18 +1193,18 @@ public abstract class BaseGameController
                     () => timerPanel.ProfileId = profileId);
             }
 
-            // The panel's extraction list is filled at spawn, and that drive is skipped while the panel is
-            // closed (HostGameController.Spawn -> FikaUiPanels.CanDrive). Activating the hierarchy alone
-            // would therefore show an empty panel, so the same SetTime the spawn path makes is repeated here
-            // - now that the panel is live.
+            // 面板的撤离列表在生成时填充，而面板关闭期间那次驱动会被跳
+            // 过（HostGameController.Spawn ->
+            // FikaUiPanels.CanDrive）。因此只激活层级会显示一个空面板，
+            // 所以这里重复生成路径所做的那次 SetTime——现在面板已经活了。
             if (_abstractGame is CoopGame coopGame && !FikaBackendUtils.IsHeadless)
             {
                 FikaBoundaries.Run("HudRestore: re-push the extraction list into the panel (SetTime, as at spawn)",
                     () =>
                     {
-                        // The list this profile is entitled to, resolved exactly as the spawn path does it
-                        // (HostGameController.Spawn): the scav sets come from the scav claim, everyone else
-                        // from the profile's eligible points.
+                        // 该档案有权使用的列表，解析方式与生成路径完全一致（
+                        // HostGameController.Spawn）：scav
+                        // 集合来自 scav 声明，其余人来自档案的可用点位。
                         var exfilController = ExfiltrationController.Instance;
                         if (exfilController == null)
                         {
@@ -1327,22 +1229,22 @@ public abstract class BaseGameController
                             secretExfilPoints = exfilController.SecretEligiblePoints();
                         }
 
-                        // Same call, same arguments as HostGameController.Spawn - the panel is live now, so
-                        // the slide/colour coroutines it starts from inside SetTime are allowed to run.
+                        // 与 HostGameController.Spawn 相同的调用、
+                        // 相同的参数——面板现在活了，所以它在 SetTime 内部启动的滑动/颜色协程可以运行。
                         timerPanel.SetTime(DateTimeExtensions.UtcNow, coopGame.Profile.Info.Side,
                             coopGame.GameTimer.EscapeTimeSeconds(), exfilPoints, secretExfilPoints);
                     });
             }
 
-            // ---- the panel that shows the raid time: it is revealed by the battle-UI screen, the same call
-            // the vanilla owner path makes. Idempotent when the screen is already current. -------------------
+            // ---- 显示突袭时间的那块面板：它由战斗 UI 画面揭示，也就是原版所有者路径所做的那次调用。
+            // 当画面已是当前画面时是幂等的。 -------------------
             if (_localPlayer?.HealthController?.IsAlive == true)
             {
                 FikaBoundaries.Run("HudRestore: re-assert the extraction timer panel (Reveal)",
                     () => timerPanel.Reveal());
             }
 
-            // ---- read the result back: the HUD is either live now or the journal says why not ----------------
+            // ---- 回读结果：HUD 现在要么已经生效，要么日志写明了为什么没有 ----------------
             yield return null;
 
             var gameUiLive = false;
@@ -1363,19 +1265,18 @@ public abstract class BaseGameController
             {
             }
 
-            FikaBoundaries.Mark(CountdownBisect.BoundaryHudRestoreDone);
             
         }
         finally
         {
-            // The handle is cleared whether the routine finished or died: the next raid starts a new one.
+            // 无论例程是完成还是死掉，句柄都会被清除：下一次突袭会启动一个新的。
             _inRaidHudRestoreRoutine = null;
         }
     }
 
     private IEnumerator FixVOIPAudioDevice()
     {
-        // Todo: Find root causes and fix elegantly...
+        // Todo: 找出根本原因并优雅地修复...
         var comms = DissonanceComms.Instance;
         if (comms == null)
         {
@@ -1384,8 +1285,8 @@ public abstract class BaseGameController
         }
         comms.IsMuted = false;
         yield return new WaitSeconds(1f);
-        // The user can start push-to-talk during this delay. Do not mute the
-        // native capture after the VOIP controller has entered Talking.
+        // 玩家可能在这段延迟期间开始按键通话。不要在 VOIP
+        // 控制器已进入 Talking 之后静音原生采集。
         if (comms != null && !(_localPlayer?.IsVoipTalking ?? false))
             comms.IsMuted = true;
 
@@ -1471,12 +1372,12 @@ public abstract class BaseGameController
     }
 
     /// <summary>
-    /// (analysis/cutscene-native-registration) The cutscene pair of the world controllers, created and
-    /// registered where the native <c>BaseLocalGame&lt;TPlayerOwner&gt;.method_4</c> creates this whole family:
-    /// the raid start coroutine of this port (<c>CoopGame.InitPlayer</c>). The creation itself lives in
-    /// <see cref="Fika.Core.Main.Components.CutsceneBoundary.CreateCutsceneControllers"/> - the same method the
-    /// rollback path (world-factory creation) calls - so only one place ever creates them; the registration on
-    /// the native per-frame hook happens in the same call and is idempotent.
+    /// （analysis/cutscene-native-registration）世界控制器的过场对，
+    /// 在原生 <c>BaseLocalGame&lt;TPlayerOwner&gt;.method_4</c>
+    /// 创建这整个家族的地方创建并注册：也就是本移植版的突袭启动协程（<c>CoopGame.InitPlayer</c>）。创建本身位于
+    /// <see cref="Fika.Core.Main.Components.CutsceneBoundary.CreateCutsceneControllers"/>
+    /// ——回滚路径（world-factory 创建）调用的同一个方法——因此始终
+    /// 只有一个地方创建它们；原生逐帧钩子上的注册在同一次调用里完成，并且是幂等的。
     /// </summary>
     public void InitCutsceneControllers(GameWorld gameWorld) =>
         Fika.Core.Main.Components.CutsceneBoundary.InitCutsceneControllers(gameWorld);
@@ -1529,8 +1430,8 @@ public abstract class BaseGameController
                     gameWorld.BtrController = new BtrController(gameWorld);
                     if (IsServer)
                     {
-                        // The IL2CPP wrapper does not implicitly convert a managed method
-                        // group to System.Action<T>; create the bridge explicitly.
+                        // IL2CPP 包装不会隐式把托管方法组转换成
+                        // System.Action<T>；请显式创建桥接。
                         Action<BtrSpawnOnThePathEvent> spawnManaged = OnBtrSpawn;
                         Il2CppSystem.Action<BtrSpawnOnThePathEvent> spawn = spawnManaged;
                         Action<BtrServicePurchaseEvent> purchaseManaged = OnBtrServicePurchase;
@@ -1567,7 +1468,7 @@ public abstract class BaseGameController
     }
 
     /// <summary>
-    /// Initializes the transit system TODO: Add headless variant
+    /// 初始化转场系统 TODO: 添加无头变体
     /// </summary>
     /// <param name="gameWorld"></param>
     /// <param name="instance"></param>
@@ -1668,9 +1569,9 @@ public abstract class BaseGameController
     public abstract void Extract(FikaPlayer player, ExfiltrationPoint exfiltrationPoint, TransitPoint transitPoint = null);
 
     /// <summary>
-    /// Used to make sure no stims or mods reset the DamageCoeff
+    /// 用于确保没有任何兴奋剂或 mod 重置 DamageCoeff
     /// </summary>
-    /// <param name="player">The <see cref="FikaPlayer"/> to run the coroutine on</param>
+    /// <param name="player">要在其上运行协程的 <see cref="FikaPlayer"/></param>
     /// <returns></returns>
     protected IEnumerator ExtractRoutine(FikaPlayer player, CoopGame coopGame)
     {
@@ -1693,7 +1594,7 @@ public abstract class BaseGameController
     }
 
     /// <summary>
-    /// Toggles the <see cref="DebugUI"/> menu
+    /// 切换 <see cref="DebugUI"/> 菜单
     /// </summary>
     /// <param name="enabled"></param>
     public void ToggleDebug(bool enabled)
@@ -1722,17 +1623,17 @@ public abstract class BaseGameController
             _voipAudioFixRoutine = null;
         }
 
-        // The HUD restore only runs in the first frames after the countdown; stopping it here covers the
-        // raid that ends inside that window. It clears its own handle when it finishes.
+        // HUD 恢复只在倒计时之后的头几帧运行；在这里停掉它，
+        // 可以覆盖在那段窗口内就结束的突袭。它完成时会清除自己的句柄。
         if (_inRaidHudRestoreRoutine != null)
         {
             FikaRoutinePump.Instance.Stop(_inRaidHudRestoreRoutine, "the game controller is being cleaned up");
             _inRaidHudRestoreRoutine = null;
         }
 
-        // The countdown's re-assert runs for a bounded number of frames right after the deploy wait; stopping it
-        // here covers a raid that ends inside that window. The routine is removed from the pump when it finishes,
-        // and Stop() on a handle whose routine is no longer running is a documented no-op.
+        // 倒计时的重申请在部署等待之后只运行有界帧数；在这里停掉它，
+        // 可以覆盖在那段窗口内就结束的突袭。例程完成时会从泵中移除，
+        // 而对一个例程已不再运行的句柄调用 Stop() 是文档化的空操作。
         if (_countdownReassertRoutine != null)
         {
             FikaRoutinePump.Instance.Stop(_countdownReassertRoutine, "the game controller is being cleaned up");

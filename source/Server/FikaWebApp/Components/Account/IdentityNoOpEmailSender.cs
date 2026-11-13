@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Identity.UI.Services;
 
 namespace FikaWebApp.Components.Account;
 
-// Remove the "else if (EmailSender is IdentityNoOpEmailSender)" block from RegisterConfirmation.razor after updating with a real implementation.
+// 用真实实现更新后，从 RegisterConfirmation.razor 中移除 "else if (EmailSender is IdentityNoOpEmailSender)" 代码块。
 internal sealed class IdentityNoOpEmailSender : IEmailSender<ApplicationUser>
 {
     private readonly IEmailSender emailSender = new NoOpEmailSender();

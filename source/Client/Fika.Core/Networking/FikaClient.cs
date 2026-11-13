@@ -42,7 +42,7 @@ using static Fika.Core.Networking.NetworkUtils;
 namespace Fika.Core.Networking;
 
 /// <summary>
-/// Client used to communicate with the <see cref="FikaServer"/>
+/// 用于与 <see cref="FikaServer"/> 通信的客户端
 /// </summary>
 public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFikaNetworkManager
 {
@@ -132,46 +132,46 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
     private NetDataWriter _dataWriter;
     private FikaChatUIScript _fikaChat;
     private string _myProfileId;
-    // Bounds how long the client keeps polling for the host's raid loot
-    // descriptor before it accepts an empty world.
+    // 限制客户端为主机的 raid 战利品描述符持续轮询的时长上限，
+    // 超过之后它就接受一个空 world。
     private const int MaxEmptyLootDescriptors = 30;
     private int _emptyLootDescriptors;
     private Queue<EFT.InventoryLogic.Operations.AbstractOperation> _inventoryOperations;
     /// <summary>
-    /// Transit events that arrived while this machine had no world to apply them to.
+    /// 在本机没有可用于施加的 world 期间到达的 transit 事件。
     /// <para>
-    /// Each entry carries the map-state generation it was queued in (FikaClient.MapState), because the
-    /// queue now survives a world swap instead of being wiped by <c>ClearMapState</c>: a transit reload
-    /// tears the world down long before the next one exists, and an event that arrives in that window
-    /// belongs to the raid that is being created. Entries of an older generation are dropped at the swap
-    /// and at every flush (analysis/transit-reload-sync), so nothing from a previous raid is replayed.
+    /// 每个条目都携带它入队时所属的地图状态代次（FikaClient.MapState），因为该
+    /// 队列现在会在 world 换挡中存活，而不再被 <c>ClearMapState</c> 清空：一次 transit 重载
+    /// 会在下一个 world 存在之前很久就把 world 拆掉，而在该窗口内到达的事件
+    /// 属于正在被创建的那场 raid。更早代次的条目会在换挡时以及每次 flush 时被丢弃
+    /// （analysis/transit-reload-sync），因此上一场 raid 的任何东西都不会被重放。
     /// </para>
     /// </summary>
     private readonly Queue<(TransitEventPacket Packet, int Generation)> _pendingTransitEvents = new();
 
-    // ------------------------------------------------------------------ world packet queue
+    // ------------------------------------------------------------------ world 报文队列
     // (analysis/loading-screen-sync)
     //
-    // The world state packets (WorldPacket: ragdolls, grenades, artillery, sync objects, loot sync)
-    // are applied to Singleton<GameWorld>.Instance. A transit replaces that world: between the swap
-    // and the new world's creation the instance is null, and every such packet was dropped with one
-    // error line per packet (36 of them in the 2026-10-11 18:58 client run, right after the transit).
-    // The queue below holds the packets of that window as *bytes* - the receive path hands the same
-    // WorldPacket instance to every receive (NetPacketProcessor.SubscribeReusable keeps one reference),
-    // so the packet object itself can never be retained - and replays them through the same packet
-    // processor once the world exists.
+    // world 状态报文（WorldPacket：布娃娃、手雷、火炮、同步对象、战利品同步）
+    // 会被施加到 Singleton<GameWorld>.Instance 上。transit 会替换那个 world：在换挡
+    // 与新 world 创建之间该实例为 null，而每个这样的报文都会被丢弃，并每个报文
+    // 一条错误行（2026-10-11 18:58 那次客户端运行中有 36 条，就在 transit 之后）。
+    // 下面的队列把该窗口内的报文以*字节*形式保存 —— 接收路径每次接收都交给它同一个
+    // WorldPacket 实例（NetPacketProcessor.SubscribeReusable 只保留一个引用），
+    // 所以报文对象本身绝不可能被保留 —— 并在 world 存在之后，通过同一个报文
+    // 处理器重放它们。
     //
-    // Bounded on purpose, in three ways:
-    //   * armed only for the world swap after a transit (ArmWorldPacketQueue); outside that window the
-    //     old behaviour (drop + aggregated error) stays, because a world packet that arrives while no
-    //     raid is being loaded belongs to the previous raid and must never be applied to the next one;
-    //   * at most MaxPendingWorldPackets entries - a longer burst is truncated, oldest first;
-    //   * every entry expires after WorldPacketQueueMaxAgeSeconds; an expired entry is dropped, not
-    //     replayed, so stale world objects cannot be resurrected into a fresh world.
+    // 刻意从三个方面加了上限：
+    //   * 只在 transit 之后的那次 world 换挡中布防（ArmWorldPacketQueue）；在该窗口之外
+    //     仍保留旧行为（丢弃 + 聚合错误），因为在没有 raid 正在加载时到达的 world 报文
+    //     属于上一场 raid，绝不能被施加到下一场上；
+    //   * 最多 MaxPendingWorldPackets 个条目 —— 更长的突发会被截断，先丢最旧的；
+    //   * 每个条目在 WorldPacketQueueMaxAgeSeconds 后过期；过期条目会被丢弃，而不是
+    //     被重放，因此陈旧的 world 对象无法被复活到新的 world 里。
     internal const int MaxPendingWorldPackets = 256;
     private const float WorldPacketQueueMaxAgeSeconds = 15f;
 
-    /// <summary>Cap of the transit startup event queue below (same bound as the world packet queue).</summary>
+    /// <summary>下面 transit 启动事件队列的上限（与 world 报文队列相同的上限）。</summary>
     internal const int MaxPendingTransitEvents = 256;
 
     private sealed class PendingWorldPacket
@@ -186,58 +186,54 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
     private int _worldPacketsDropped;
     private float _worldPacketDropReportedAt;
 
-    /// <summary>How many InformationPacket responses the host has sent for this session (see OnInformationPacketReceived).</summary>
+    /// <summary>本会话中主机已发送了多少个 InformationPacket 应答（见 OnInformationPacketReceived）。</summary>
     public int HostResponseCount { get; private set; }
 
-    // ------------------------------------------------------------------ transit retention counters
+    // ------------------------------------------------------------------ transit 保留计数
     // (analysis/transit-reload-oom)
     //
-    // This object survives a transit on purpose (see NetManagerUtils.DestroyNetManager), so every list,
-    // queue and cache it owns survives with it. These four counters are what the [MemDiag] line prints,
-    // so the next run shows whether a swap left old-raid state behind:
-    //   * observedPlayers must be 0 right after the swap (the players of the replaced world are gone and
-    //     the list is cleared in CoopHandler.CleanUpForTransit);
-    //   * worldQueue is capped at MaxPendingWorldPackets entries of raw bytes, each 15 s old at most;
-    //   * transitQueue is capped at MaxPendingTransitEvents entries;
-    //   * inventoryOps must drain within a frame - a non-zero value across the swap would mean an
-    //     operation of the old raid is about to be executed against the new one.
+    // 本对象会有意地在 transit 中存活下来（见 NetManagerUtils.DestroyNetManager），因此它拥有的每个列表、
+    // 队列与缓存都随之存活。这四项计数器就是 [MemDiag] 行所打印的内容，
+    // 因此下一次运行能显示一次换挡是否留下了旧 raid 的状态：
+    //   * 换挡刚结束时 observedPlayers 必须为 0（被替换 world 的玩家都已不在，
+    //     该列表在 CoopHandler.CleanUpForTransit 中被清空）；
+    //   * worldQueue 上限为 MaxPendingWorldPackets 个原始字节条目，每个至多已存在 15 秒；
+    //   * transitQueue 上限为 MaxPendingTransitEvents 个条目；
+    //   * inventoryOps 必须在一帧内排空 —— 跨越换挡仍非零就意味着一个
+    //     旧 raid 的操作即将被施加到新 raid 上。
 
-    /// <summary>Number of players the spawning code currently keeps for network state updates.</summary>
+    /// <summary>生成代码当前为网络状态更新而保留的玩家数量。</summary>
     internal int ObservedPlayerCount => ObservedPlayers?.Count ?? 0;
 
-    /// <summary>Entries the world packet queue of a transit swap holds right now.</summary>
+    /// <summary>一次 transit 换挡的 world 报文队列此刻持有的条目数。</summary>
     internal int PendingWorldPacketCount => _pendingWorldPackets.Count;
 
-    /// <summary>Transit startup events waiting for a native transit controller.</summary>
+    /// <summary>正在等待本机 transit 控制器的 transit 启动事件数。</summary>
     internal int PendingTransitEventCount => _pendingTransitEvents.Count;
 
-    /// <summary>Queued inventory operations of the raid that is still running.</summary>
+    /// <summary>仍在运行的那场 raid 中已排队的库存操作数。</summary>
     internal int PendingInventoryOperationCount => _inventoryOperations?.Count ?? 0;
 
-    /// <summary>Counts one host response; the loading wait uses the delta to tell a slow host from a dead one.</summary>
+    /// <summary>计一次主机应答；加载等待用其增量来区分慢主机与死掉的主机。</summary>
     internal void NoteHostResponse()
     {
         HostResponseCount++;
     }
 
     /// <summary>
-    /// Opens the world packet queue for the world swap that follows a transit. Called from
-    /// NetManagerUtils.DestroyNetManager on the transit path, i.e. at the moment this client's world
-    /// is torn down and the next one is about to be created.
+    /// 为 transit 之后的那次 world 换挡打开 world 报文队列。调用点位于
+    /// transit 路径上的 NetManagerUtils.DestroyNetManager，也就是本客户端的 world
+    /// 被拆除、下一个 world 即将被创建的那一刻。
     /// </summary>
     internal void ArmWorldPacketQueue(string reason)
     {
         _pendingWorldPackets.Clear();
         _worldPacketQueueArmed = true;
-        LoadSync.Report("FikaClient.ArmWorldPacketQueue",
-            "world packet queue armed (" + reason + "); at most " + MaxPendingWorldPackets
-            + " packet(s), each expires after " + WorldPacketQueueMaxAgeSeconds + "s => "
-            + "world packets of the swap window are replayed once the new world exists instead of being dropped");
     }
 
     /// <summary>
-    /// Keeps one world packet for the next world. Returns false when the queue is not armed (or the
-    /// packet does not fit), in which case the caller keeps its current behaviour.
+    /// 为下一个 world 保存一个 world 报文。当队列未布防（或该报文放不下）时返回 false，
+    /// 此时调用方保持它当前的行为。
     /// </summary>
     internal bool TryQueueWorldPacket(ref WorldPacket packet, string origin)
     {
@@ -286,8 +282,8 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
     }
 
     /// <summary>
-    /// Replays the queued world packets once a world exists, drops the expired ones, and says so in one
-    /// line. Driven from Update, i.e. once per frame on the main thread.
+    /// 在 world 存在之后重放已排队的 world 报文，丢弃已过期的条目，并用一行日志
+    /// 说明此事。由 Update 驱动，即主线程每帧一次。
     /// </summary>
     private void FlushPendingWorldPackets()
     {
@@ -301,9 +297,6 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
             if (_worldPacketQueueArmed)
             {
                 _worldPacketQueueArmed = false;
-                LoadSync.Report("FikaClient.FlushPendingWorldPackets",
-                    "the world packet queue is closed (the world is up, nothing had to be replayed) => "
-                    + "the world swap did not lose any world packet");
             }
 
             return;
@@ -313,7 +306,7 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
         var worldReady = LoadSync.WorldReady;
         if (!worldReady && now - _pendingWorldPackets.Peek().QueuedAt < WorldPacketQueueMaxAgeSeconds)
         {
-            // Still inside the swap window: keep the entries until the world exists or they expire.
+            // 仍在换挡窗口内：保留这些条目，直到 world 存在或它们过期。
             return;
         }
 
@@ -340,15 +333,11 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
         }
 
         _worldPacketQueueArmed = false;
-        LoadSync.Report("FikaClient.FlushPendingWorldPackets",
-            "world packet queue drained: replayed " + replayed + ", dropped " + expired
-            + " (world=" + (worldReady ? "up" : "still missing") + ", maxAge=" + WorldPacketQueueMaxAgeSeconds
-            + "s) => the replayed packets are applied to this world only, the dropped ones belonged to an older one");
     }
 
     /// <summary>
-    /// The aggregated replacement for the per-packet "GameWorld was null!" error: one line per second
-    /// with the count, so a burst stays visible without flooding the game log.
+    /// 对逐报文 "GameWorld was null!" 错误的聚合替代：每秒一行，
+    /// 带上计数，这样突发仍然可见，又不会刷爆游戏日志。
     /// </summary>
     internal void ReportDroppedWorldPacket(string origin)
     {
@@ -390,8 +379,8 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
             UseNativeSockets = NativeSocket.IsSupported
         };
 
-        // (analysis/stutter-frame-skip) The budget is read when a client starts: 0 keeps the unbounded drain
-        // of every arrived event, a positive value bounds how many of them this frame delivers.
+        // (analysis/stutter-frame-skip) 预算在客户端启动时读取：0 表示保持无上限地排空
+        // 每个已到达事件，正值则表示本帧最多投递多少个。
         _netClient.MaxEventsPerPoll = FikaPlugin.Instance.Settings.NetPollBudget.Value;
         _packetProcessor = new();
         _dataWriter = new();
@@ -437,12 +426,12 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
         var endPoint = FikaBackendUtils.RemoteEndPoint;
         var connectString = FikaProtocol.ConnectionKey(FikaBackendUtils.IsScavLateJoin);
 
-        // The host endpoint is committed by the ping handshake (FikaPingingClient.CommitEndpoint).
-        // It is the only thing that sets it, so a null here means the handshake never finished.
-        // Reading endPoint.Address on that null used to surface as the generic
-        // "Object reference not set to an instance of an object." error box, and letting the
-        // method continue left the raid starting with a client that was never connected (which
-        // is what leaves the Fika loading screen at 0 %). Fail with a reason instead.
+        // 主机端点由 ping 握手提交（FikaPingingClient.CommitEndpoint）。
+        // 它是唯一设置该端点的地方，因此这里为 null 就意味着握手从未完成。
+        // 在那个 null 上读 endPoint.Address 以前会表现为那个通用的
+        // "Object reference not set to an instance of an object." 错误对话框，而让该方法
+        // 继续执行会让 raid 在一个从未连接上的客户端下启动（这正是
+        // 让 Fika 加载界面停在 0 % 的原因）。改为带原因地失败。
         if (endPoint == null)
         {
             
@@ -590,17 +579,17 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
         FlushPendingWorldPackets();
         
 
-        // (analysis/loading-screen-peer-state) The bounded re-announcement of this machine's loading row and
-        // progress (see LoadingScreenUI.ArmPeerStateHeartbeat); 
+        // (analysis/loading-screen-peer-state) 本机加载行与进度的有界重新宣告
+        // （见 LoadingScreenUI.ArmPeerStateHeartbeat）；
         LoadingScreenUI.TickPeerStateHeartbeat();
         
 
         var networkTime = NetworkTimeSync.NetworkTime;
-        // (analysis/perf-multiplayer) The co-op-only half of this frame gets its own slot plus the player
-        // count that paid for it. This walk exists only on a client: a host iterates its own ObservedPlayers
-        // (other clients, one or two) and a solo raid has none at all, so the slot reads 0 there - which is
-        // exactly the "what does multiplayer add per frame" number this probe is asked for. The list is
-        // taken once into a local: nothing in the walk replaces it, and the loop body is unchanged.
+        // (analysis/perf-multiplayer) 本帧仅合作模式才有的那一半拥有自己的槽位，外加为其付账的
+        // 玩家数量。这段遍历只存在于客户端上：主机遍历它自己的 ObservedPlayers
+        // （其他客户端，一两个），而单人 raid 一个都没有，因此那里的槽位显示 0 —— 这正是
+        // 本探针所要回答的"多人到底每帧多花了多少"那个数字。该列表
+        // 只取一次到本地变量里：遍历过程中没有任何东西替换它，循环体也保持不变。
         var observed = ObservedPlayers;
         var observedCount = observed.Count;
         
@@ -628,12 +617,12 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
     }
 
     /// <summary>
-    /// (analysis/stutter-frame-skip) A frame that delivered a burst of network events is named once per two
-    /// seconds. The delivery of every arrived event of every peer happens inside this frame's
-    /// <c>PollEvents</c> call - packet parse and callback included, because this manager has no logic thread
-    /// (see <c>LiteNetManager.PollEvents</c>) - and the 2026-10-13 20:01 raid measured the step that contains
-    /// it at 76-306 ms in 101 of its 103 in-raid windows. The line turns "a big frame" into "this frame
-    /// delivered N events, the worst so far is M". Never throws.
+    /// (analysis/stutter-frame-skip) 投递了一波网络事件的帧会每两秒被点名一次。
+    /// 每个 peer 的每个已到达事件的投递都发生在本帧的
+    /// <c>PollEvents</c> 调用内 —— 包含报文解析与回调，因为本管理器没有逻辑线程
+    /// （见 <c>LiteNetManager.PollEvents</c>）—— 而 2026-10-13 20:01 那场 raid 测得包含它的
+    /// 那一步在其 103 个 raid 内窗口中的 101 个里为 76-306 ms。该行把"一个大帧"变成"本帧
+    /// 投递了 N 个事件，迄今最差为 M"。绝不抛异常。
     /// </summary>
     private void ReportPollBurst()
     {
@@ -670,7 +659,7 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
         }
     }
 
-    /// <summary>Events one frame may deliver before the burst is worth a line (see <see cref="ReportPollBurst"/>).</summary>
+    /// <summary>一帧可以投递多少个事件之后这波突发就值得记一行（见 <see cref="ReportPollBurst"/>）。</summary>
     private const int PollBurstReportThreshold = 48;
 
     private float _nextPollBurstReport;
@@ -685,9 +674,9 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
             return;
         }
 
-        // Keep an independent packet shell while the native controller is
-        // being created. The event payload itself is a freshly deserialized
-        // IL2CPP object and is consumed exactly once by the controller.
+        // 在本机控制器被创建期间，保留一个独立的报文外壳。
+        // 事件载荷本身是一个刚被反序列化出来的
+        // IL2CPP 对象，并被控制器恰好消费一次。
         NoteTransitEventQueued(packet.EventType);
         _pendingTransitEvents.Enqueue((new TransitEventPacket
         {
@@ -723,7 +712,7 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
     }
 
     /// <summary>
-    /// Processes queued <see cref="EFT.InventoryLogic.Operations.AbstractOperation"/>
+    /// 处理已排队的 <see cref="EFT.InventoryLogic.Operations.AbstractOperation"/>
     /// </summary>
     private void HandleInventoryOperations()
     {
@@ -840,13 +829,13 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
     }
 
     /// <summary>
-    /// Sends a reusable packet
+    /// 发送一个可复用报文
     /// </summary>
-    /// <typeparam name="T">The <see cref="IReusable"/> to send</typeparam>
-    /// <param name="packet">The <see cref="INetSerializable"/> to send</param>
-    /// <param name="deliveryMethod">The deliverymethod</param>
+    /// <typeparam name="T">要发送的 <see cref="IReusable"/></typeparam>
+    /// <param name="packet">要发送的 <see cref="INetSerializable"/></param>
+    /// <param name="deliveryMethod">投递方式</param>
     /// <remarks>
-    /// Reusable will always be of type broadcast when sent from a client
+    /// 从客户端发送时，Reusable 的类型始终是 broadcast
     /// </remarks>
     public void SendReusable<T>(T packet, DeliveryMethod deliveryMethod) where T : class, IReusable, new()
     {
@@ -901,8 +890,8 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
 
     public void OnNetworkReceive(NetPeer peer, NetPacketReader reader, byte channelNumber, DeliveryMethod deliveryMethod)
     {
-        // One stamp per inbound packet, for the [LoadSync] lines ("sinceLastInbound"): on the client this
-        // separates "the host's main thread is busy" (transport alive, no packets) from "the host answers".
+        // 每个入站报文一个时间戳，供 [LoadSync] 行使用（"sinceLastInbound"）：在客户端上它
+        // 把"主机主线程正忙"（传输层存活、没有报文）与"主机在应答"区分开来。
         LoadSync.NotePeerPacket("client receive");
 
         switch (reader.GetEnum<EPacketType>())
@@ -944,11 +933,11 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
         if (messageType == UnconnectedMessageType.BasicMessage && _netClient.ConnectedPeersCount == 0 && reader.GetInt() == 1)
         {
             _logger.LogInfo("[CLIENT] Received discovery response. Connecting to: " + remoteEndPoint);
-            // This is the normal LAN path. The peer has to be cached as well:
-            // SendData only targets ServerConnection and silently drops every
-            // client packet (exfiltration requests, inventory operations, pickups)
-            // while it is null, which strands the client on the loading screen and
-            // freezes it as soon as it interacts with loot.
+            // 这是正常的 LAN 路径。peer 同样必须被缓存：
+            // SendData 只面向 ServerConnection，并会在它为 null 时静默丢弃每个
+            // 客户端报文（撤离请求、库存操作、拾取），
+            // 这会把客户端困在加载界面上，并在它
+            // 一旦与战利品交互时卡死。
             ServerConnection = _netClient.Connect(remoteEndPoint, NetDataWriter.FromString(
                 FikaProtocol.ConnectionKey(FikaBackendUtils.IsScavLateJoin)).AsReadOnlySpan());
         }
@@ -973,8 +962,8 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
         {
             NotificationManager.DisplayWarningNotification(LocaleUtils.LOST_CONNECTION.Localized());
             
-            // The host can time out while the local player is still loading. Release the transport even
-            // when no player/packet sender has been created yet.
+            // 主机可能在本地玩家仍在加载时超时。即使还没有创建任何玩家/报文发送器，
+            // 也要释放传输层。
             try
             {
                 MyPlayer?.PacketSender?.DestroyThis();
@@ -990,8 +979,8 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
                 {
                     _logger.LogError($"Could not destroy the timed-out client: {exception}");
                 }
-                // A new client can be created while an old peer's timeout
-                // callback is still running. Do not clear that replacement.
+                // 在旧 peer 的超时回调仍在运行时，可能已经创建了一个
+                // 新客户端。不要清掉那个替代者。
                 try { FikaSingleton<FikaClient>.TryRelease(this); }
                 catch (Exception exception)
                 {
@@ -1100,8 +1089,8 @@ public sealed partial class FikaClient : MonoBehaviour, INetEventListener, IFika
                     var result = networkController.CreateOperationFromDescriptor(packet.Descriptor);
                     if (!result.Succeeded)
                     {
-                        // Interpolating the wrapper as System.Object loses the native
-                        // error's overridden ToString and only prints its CLR type.
+                        // 把该包装器按 System.Object 插值会丢掉本机
+                        // 错误被重写的 ToString，只打印出它的 CLR 类型。
                         _logger.LogError($"HandleInventoryPacket::Unable to process descriptor from netId {packet.NetId}, " +
                             $"operation: {packet.Descriptor.GetIl2CppType().FullName} #{packet.Descriptor.OperationId}, " +
                             $"descriptor: {packet.Descriptor.ToString()}, error: {result.Error?.ToString()}");

@@ -7,50 +7,50 @@ using Fika.Core.Main.Players;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// (analysis/plant-client-host-crash) The host-side guard for the one relayed operation shape that
-/// makes the host run native inventory work on a *remote* player's item graph:
-/// <c>EFT.RemoveOperationDescriptor</c>.
+/// (analysis/plant-client-host-crash)主机侧针对唯一一种被转发的操作形态的守卫,该形态
+/// 会让主机在*远端*玩家的物品图上运行原生库存操作:
+/// <c>EFT.RemoveOperationDescriptor</c>。
 ///
-/// What the host does with a client's descriptor today
-/// (<c>FikaServer.Callbacks.OnInventoryPacketReceived</c> -> the sender's
-/// <c>ObservedInventoryController.CreateOperationFromDescriptor</c>, ObservedInventoryController.cs:320-324)
-/// is hand it to the native rebuild: <c>RemoveOperationDescriptor.ToInventoryOperation(IPlayer)</c> =
+/// 主机目前对客户端 descriptor 所做的处理
+/// (<c>FikaServer.Callbacks.OnInventoryPacketReceived</c> -> 发送者的
+/// <c>ObservedInventoryController.CreateOperationFromDescriptor</c>,ObservedInventoryController.cs:320-324)
+/// 就是把它交给原生重建:<c>RemoveOperationDescriptor.ToInventoryOperation(IPlayer)</c> =
 /// <c>Player.FindItemById</c> + <c>ItemManipulator.Discard(item, controller, simulate: true)</c> +
-/// <c>new RemoveOperation(operationId, controller, discardResult)</c>, and the result is then executed
-/// natively (4.0 decompile <c>eft40-decompiled/GClass1977.cs:24-37</c>). That chain had never run on a
-/// remote player in this install before the first relayed plant (the whole of
-/// logs-coop2-20261013-110333/LogOutput.log contains exactly two removal-shaped sends, both from the
-/// plant, and one of them was answered with "Could not find item with id").
+/// <c>new RemoveOperation(operationId, controller, discardResult)</c>,随后结果被
+/// 以原生方式执行(4.0 反编译 <c>eft40-decompiled/GClass1977.cs:24-37</c>)。在第一次被转发的种植之前,
+/// 这条链从未在本安装中对远端玩家运行过(
+/// logs-coop2-20261013-110333/LogOutput.log 恰好只包含两次移除形态的发送,都来自该
+/// 种植,且其中一次得到的回答是 "Could not find item with id")。
 ///
-/// This guard is the defensive early exit the relay was missing: a removal the host can already tell it
-/// cannot complete - a duplicate of one it just accepted (the plant gate fires twice per plant, see
-/// PlantItemConsumptionPatch), a malformed descriptor, or anything the pre-flight cannot read - is
-/// refused in managed code, before the native rebuild, with exactly one [PlantGuard] warning line and
-/// the same answer every other rejection already gives (Failed + authoritative resync + id resync), so
-/// the client is never left waiting and the native path never sees it.
+/// 本守卫就是该转发所缺失的防御性提前退出:一次主机已经能判断自己
+/// 无法完成的移除——一次刚刚接受过的移除的重复(种植门对每次种植会触发两次,见
+/// PlantItemConsumptionPatch)、格式错误的 descriptor,或预检读不到的任何东西——都会在
+/// 原生重建之前于托管代码中被拒绝,只留下恰好一行 [PlantGuard] 警告,并给出
+/// 与其他所有拒绝相同的回答(Failed + 权威重同步 + id 重同步),因此
+/// 客户端永远不会干等,原生路径也永远看不到它。
 ///
-/// Cost when nothing is refused: one null test, one il2cpp type test and (only for
-/// RemoveOperationDescriptor) one dictionary lookup. Switch: Fika.cfg -> [Gameplay] ->
-/// "Plant Relay Guard" (default on).
+/// 没有任何拒绝时,代价是一次 null 判断、一次 il2cpp 类型判断以及(仅对
+/// RemoveOperationDescriptor)一次字典查找。开关:Fika.cfg -> [Gameplay] ->
+/// "Plant Relay Guard"(默认开启)。
 /// </summary>
 internal static class PlantRelayGuard
 {
     /// <summary>
-    /// How long a removal this host accepted stays in the ledger. Long enough to catch the native
-    /// double dispatch of one plant (same frame), short enough that the same charge can be removed
-    /// again in a later raid without ever being refused.
+    /// 主机已接受的移除在账本中保留多久。长到足以捕获一次种植的原生
+    /// 双重派发(同一帧),又短到同一份电荷可以在之后的 raid 中
+    /// 再次被移除而不会被拒绝。
     /// </summary>
     private const float LedgerTtlSeconds = 60f;
 
-    /// <summary>Hard cap so a pathological peer cannot grow the ledger without bound.</summary>
+    /// <summary>硬性上限,使病态对端无法让账本无界增长。</summary>
     private const int LedgerLimit = 128;
 
-    /// <summary>Removals this host has already committed to execute, keyed by netId + item id.</summary>
+    /// <summary>本主机已承诺执行的移除,以 netId + item id 为键。</summary>
     private static readonly Dictionary<string, float> _accepted = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// The behaviour switch. On (default) the pre-flight above runs. Off: the descriptor goes to the
-    /// native rebuild exactly as it did before this build (the one-flip rollback).
+    /// 行为开关。开启(默认)时执行上面的预检。关闭时:descriptor 会像在本构建
+    /// 之前那样直接进入原生重建(一键回滚)。
     /// </summary>
     internal static bool Enabled
     {
@@ -63,16 +63,16 @@ internal static class PlantRelayGuard
             }
             catch
             {
-                // Only a guard that can refuse work is being switched: keep it on when the settings
-                // object cannot be read.
+                // 这里切换的是一个真能拒绝工作的守卫:读不到设置对象时
+                // 保持开启。
                 return true;
             }
         }
     }
 
     /// <summary>
-    /// Whether this operation must be refused instead of rebuilt. False means "hand it to the relay
-    /// exactly as before"; true means the caller must answer Failed + resync and return.
+    /// 该操作是否必须被拒绝而不是被重建。False 表示「像以前那样
+    /// 原样交给转发」;true 表示调用方必须回应 Failed + 重同步然后返回。
     /// </summary>
     internal static bool TryRefuse(FikaPlayer sender, InventoryOperationDescriptor descriptor, out string reason)
     {
@@ -90,8 +90,8 @@ internal static class PlantRelayGuard
                 return true;
             }
 
-            // Only the destroy-shaped descriptor is pre-flighted. Every other operation keeps the
-            // pre-guard path, so ordinary traffic pays one type test and nothing else.
+            // 只有摧毁形态的 descriptor 会走预检。其他每个操作都保持
+            // 守卫之前的老路径,因此普通流量只付一次类型判断的代价。
             if (descriptor.TryCast<RemoveOperationDescriptor>() is not { } removal)
             {
                 return false;
@@ -106,8 +106,8 @@ internal static class PlantRelayGuard
             var itemKey = Key(sender, removal);
             if (itemKey == null)
             {
-                // A removal without an item id cannot be rebuilt by the native side either; refusing
-                // it here is the same answer with one line of evidence.
+                // 没有 item id 的移除在原生侧同样无法重建;在此拒绝
+                // 就是同样的回答,外加一行证据。
                 reason = "empty-item-id";
                 return true;
             }
@@ -120,24 +120,24 @@ internal static class PlantRelayGuard
                 return true;
             }
 
-            // The host is about to commit to this removal. Note it before the native rebuild so a
-            // second copy of the same removal (the same plant, the same tick) is refused above.
+            // 主机即将承诺执行这次移除。在原生重建之前先记下它,以便同一
+            // 次移除的第二份副本(同一次种植、同一个 tick)会在上面被拒绝。
             _accepted[itemKey] = Time.time;
             ReportAccepted(sender.NetId, removal, itemKey);
             return false;
         }
         catch (Exception exception)
         {
-            // A guard that throws must not decide the outcome: refuse, so the native path stays closed.
+            // 会抛异常的守卫不得决定结果:拒绝,这样原生路径保持关闭。
             reason = "preflight-threw: " + exception.Message;
             return true;
         }
     }
 
     /// <summary>
-    /// The one line the host writes when it refuses an operation it will not rebuild. Deliberately not
-    /// behind the probe switch: a refusal is rare and it is the host-side half of the evidence
-    /// ("the client sent something this host would not execute").
+    /// 主机拒绝一个自己不会重建的操作时写下的那一行。它刻意不放在
+    /// 探针开关之后:拒绝很少发生,而且它是证据的主机侧那一半
+    /// (「客户端发来了本主机不会执行的东西」)。
     /// </summary>
     internal static void ReportRefusal(int netId, ushort callbackId, InventoryOperationDescriptor descriptor, string reason)
     {
@@ -149,13 +149,13 @@ internal static class PlantRelayGuard
         }
         catch
         {
-            // Reporting must never take the packet handler down.
+            // 上报绝不能把数据包处理器弄崩。
         }
     }
 
     /// <summary>
-    /// The host-side counterpart of the client's "Sending inventory operation ... (RemoveOperation)"
-    /// line: which removal this host accepted for which peer. Probe-gated (zero cost by default).
+    /// 客户端那行 "Sending inventory operation ... (RemoveOperation)" 的主机侧对应物:
+    /// 本主机为哪个对端接受了哪一次移除。受探针开关控制(默认零开销)。
     /// </summary>
     private static void ReportAccepted(int netId, RemoveOperationDescriptor removal, string itemKey)
     {
@@ -168,7 +168,7 @@ internal static class PlantRelayGuard
         }
         catch
         {
-            // Diagnostics must never change the outcome.
+            // 诊断绝不能改变结果。
         }
     }
 
@@ -197,7 +197,7 @@ internal static class PlantRelayGuard
         }
     }
 
-    /// <summary>Drops the ledger's stale entries, and the oldest ones when it is at its cap.</summary>
+    /// <summary>丢弃账本中的过期条目,以及在达到上限时丢弃最旧的条目。</summary>
     private static void Prune()
     {
         var now = Time.time;
@@ -223,8 +223,8 @@ internal static class PlantRelayGuard
             return;
         }
 
-        // The cap can only be reached by a peer that removed more items than a raid can hold: keep the
-        // newest entries and let the oldest go rather than growing without bound.
+        // 只有移除了超过一场 raid 所能容纳物品数的对端才可能触到该上限:保留
+        // 最新的条目、放走最旧的条目,而不是无界增长。
         List<KeyValuePair<string, float>> ordered = [.. _accepted];
         ordered.Sort((left, right) => left.Value.CompareTo(right.Value));
         var excess = _accepted.Count - LedgerLimit;

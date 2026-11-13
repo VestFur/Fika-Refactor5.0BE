@@ -25,9 +25,9 @@ public class SendItemController(ISptLogger<SendItemController> logger, EventOutp
 
     public async ValueTask<ItemEventRouterResponse> SendItem(SendItemRequestData body, MongoId sessionId)
     {
-        // Serialize requests from the same sender before reading inventory. A
-        // second request must see the item removed by the first one, otherwise
-        // both requests can create mail for the same inventory root.
+        // 在读库存之前先把同一发送方的请求串行化。第二个
+        // 请求必须看到第一个请求已移除的物品，否则两个请求
+        // 都会为同一个库存根创建邮件。
         var gate = SenderGates.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync();
         ItemEventRouterResponse output;
@@ -77,9 +77,9 @@ public class SendItemController(ISptLogger<SendItemController> logger, EventOutp
                 return httpResponseUtil.AppendErrorToOutput(output, "Invalid item id");
             var requestedItemIds = requestedIdStrings.Select(id => new MongoId(id)).ToArray();
 
-            // A client may retry when its previous HTTP response was lost. The
-            // sender's inventory is already empty by then; use the journal to
-            // complete the same transfer and repeat its deletion response.
+            // 客户端可能在上一次 HTTP 响应丢失后重试。此时发送方的
+            // 库存已经为空；用日志来完成同一次转移，并
+            // 重复它当时的删除响应。
             if (transferService.HasTransferRecord(sessionId, requestedItemIds))
             {
                 await transferService.CompleteOrCreateAsync(sessionId, body.Target, senderPmc.Info?.Nickname ?? "Unknown",
@@ -93,9 +93,9 @@ public class SendItemController(ISptLogger<SendItemController> logger, EventOutp
                 return httpResponseUtil.AppendErrorToOutput(output, "One or more items were not found in inventory");
             }
 
-            // RemoveItem deletes descendants with the selected root. Sending both
-            // a container and a selected child would otherwise create two mail
-            // roots while reporting only one deletion to the client.
+            // RemoveItem 会连所选根的后代一起删除。否则同时发送
+            // 容器和其中被选中的子项会创建两个邮件根，
+            // 却只向客户端报告一次删除。
             var requestedIds = requestedItemIds.ToHashSet();
             foreach (var itemId in requestedItemIds)
             {
@@ -108,8 +108,8 @@ public class SendItemController(ISptLogger<SendItemController> logger, EventOutp
 
             logger.Info($"{requestedItemIds.Length} items are going to sessionID: {body.Target}");
 
-            // MailSendService adopts orphaned roots and may alter ParentId/SlotId.
-            // Keep the live inventory untouched until RemoveItem creates the response.
+            // MailSendService 会收养孤立的根，并可能改动 ParentId/SlotId。
+            // 在 RemoveItem 生成响应之前，不要触碰正在使用的库存。
             var itemsToSend = cloner.Clone(requestedItemIds
                 .SelectMany(id => senderItems.GetItemWithChildren(id))
                 .DistinctBy(item => item.Id)
@@ -120,10 +120,10 @@ public class SendItemController(ISptLogger<SendItemController> logger, EventOutp
                 return httpResponseUtil.AppendErrorToOutput(output, "Item not found in inventory");
             }
 
-            // The client checks this before opening the recipient picker, but
-            // item-event requests can be sent directly. Check the complete
-            // inventory snapshot so a selected container cannot hide a banned
-            // attachment or one of several selected items.
+            // 客户端在打开收件人选择器之前会检查这一点，但
+            // 物品事件请求也可以直接发送。检查完整的库存
+            // 快照，这样被选中的容器就无法藏住被禁的
+            // 配件，也无法藏住多个选中物品中的某一个。
             var blacklistedItems = fikaServerConfig.Client.BlacklistedItems;
             if (blacklistedItems is { Length: > 0 } && itemsToSend.Any(item =>
                     blacklistedItems.Contains(item.Template.ToString(), StringComparer.OrdinalIgnoreCase)))
@@ -168,8 +168,8 @@ public class SendItemController(ISptLogger<SendItemController> logger, EventOutp
         }
         catch (Exception ex)
         {
-            // The mail and inventory change already succeeded; a stale websocket
-            // must not make the item event appear to have failed to the sender.
+            // 邮件和库存变更已经成功；过期的 websocket 不得
+            // 让发送方以为该物品事件失败。
             logger.Warning($"Unable to notify {body.Target} of the sent item: {ex.Message}");
         }
 
@@ -189,13 +189,13 @@ public class SendItemController(ISptLogger<SendItemController> logger, EventOutp
         {
             var profile = profileKvP.Value;
 
-            // Skip freshly created profiles as they would cause an error
+            // 跳过刚创建的 profile，它们会引发错误
             if (profile.CharacterData?.PmcData?.Info is null)
             {
                 continue;
             }
 
-            // Skip headless clients
+            // 跳过 headless 客户端
             if (profile.IsHeadlessProfile())
             {
                 continue;
@@ -210,7 +210,7 @@ public class SendItemController(ISptLogger<SendItemController> logger, EventOutp
                 continue;
             }
 
-            // Skip if the same user already exists in the results
+            // 若结果中已存在同一用户则跳过
             if (result.ContainsKey(nickname))
             {
                 continue;

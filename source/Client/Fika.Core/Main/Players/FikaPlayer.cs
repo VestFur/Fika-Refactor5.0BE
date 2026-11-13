@@ -57,7 +57,7 @@ using MountingPacket = Fika.Core.Networking.Packets.Player.Common.SubPackets.Mou
 namespace Fika.Core.Main.Players;
 
 /// <summary>
-/// <see cref="FikaPlayer"/> is the <see cref="LocalPlayer"/>, there can only be one <see cref="FikaPlayer"/> in every game and that is always yourself.
+/// <see cref="FikaPlayer"/> 就是 <see cref="LocalPlayer"/>，每局游戏中只能有一个 <see cref="FikaPlayer"/>，而且永远是玩家自己。
 /// </summary>
 public class FikaPlayer : LocalPlayer
 {
@@ -85,7 +85,7 @@ public class FikaPlayer : LocalPlayer
     public virtual bool LeftStanceDisabled { get; internal set; }
     public DateTime TalkDateTime { get; internal set; }
     /// <summary>
-    /// If this player is waiting for callbacks from the host
+    /// 该玩家是否正在等待主机的回调
     /// </summary>
     public bool WaitingForCallback
     {
@@ -186,11 +186,11 @@ public class FikaPlayer : LocalPlayer
     private readonly Dictionary<uint, Callback> _proceedCallbacks = [];
 
     /// <summary>
-    /// When each proceed callback was registered.  An answer from the host
-    /// that never arrives otherwise keeps <see cref="WaitingForCallback"/>
-    /// true for the rest of the raid, and that flag forces
-    /// CanPressTrigger/CanStartReload to false even with a working firearm
-    /// in hands.
+    /// 每个 proceed 回调的注册时间。否则，一个永远不来的主机回答
+    /// 会让 <see cref="WaitingForCallback"/> 在突袭余下的时间里
+    /// 一直为 true，而该标志会迫使
+    /// CanPressTrigger/CanStartReload 变为 false，即使手里拿的是
+    /// 一把能用的枪。
     /// </summary>
     private readonly Dictionary<uint, float> _proceedCallbackTimes = [];
     protected BaseInventoryController _baseInventoryController;
@@ -206,19 +206,19 @@ public class FikaPlayer : LocalPlayer
     #endregion
 
     /// <summary>
-    /// Invoked when a player spawns and is ready
+    /// 当玩家生成并准备就绪时调用
     /// </summary>
     public static Action<FikaPlayer> OnPlayerSpawned { get; set; }
     /// <summary>
-    /// Invoked when a player is destroyed with <see cref="OnDestroy"/>
+    /// 当玩家随 <see cref="OnDestroy"/> 被销毁时调用
     /// </summary>
     public static Action<FikaPlayer> OnPlayerDestroyed { get; set; }
     /// <summary>
-    /// Invoked when a player is killed
+    /// 当玩家被击杀时调用
     /// </summary>
     public static Action<FikaPlayer> OnPlayerDeath { get; set; }
     /// <summary>
-    /// Invoked when a player down state changes
+    /// 当玩家的倒地状态发生变化时调用
     /// </summary>
     public static Action<FikaPlayer, bool> OnPlayerDownedChanged { get; set; }
 
@@ -293,8 +293,8 @@ public class FikaPlayer : LocalPlayer
 
         var questLocationObjects = new QuestLocationObjectsController(player, questController.Native, new Il2CppSystem.Collections.Generic.List<QuestLocationObject>());
         FikaPlugin.Instance.FikaLogger.LogDebug($"Player.Init entry: thread={System.Environment.CurrentManagedThreadId}, nativeContext={Il2CppSystem.Threading.SynchronizationContext.Current?.GetIl2CppType().FullName}");
-        // SPT 5 assigns RaidId during Init, not the generic component factory.
-        // Reuse the server-assigned Fika ID so native lookups agree on all peers.
+        // SPT 5 在 Init 期间分配 RaidId，而不是由通用组件工厂分配。
+        // 复用服务器分配的 Fika ID，好让原生查表在所有对等端上得到一致结果。
         await player.Init(rotation, layerName, pointOfView, netId, profile, inventoryController,
             new ClientHealthController(profile.Health, player, inventoryController, profile.Skills, aiControl),
             statisticsManager, questController.Native, questLocationObjects, achievementsController, prestigeController, dialogController, filter,
@@ -326,7 +326,7 @@ public class FikaPlayer : LocalPlayer
         var radioTransmitterRecodableComponent = player.FindRadioTransmitter();
         if (radioTransmitterRecodableComponent != null)
         {
-            //Todo: (Archangel) method_131 refers to 'singlePlayerInventoryController_0' which is null in our case
+            //Todo: (Archangel) method_131 指向 'singlePlayerInventoryController_0'，而在我们的情况下它是 null
             //radioTransmitterRecodableComponent.OnRadioTransmitterStatusChanged += player.method_131;
 
             if (player.Profile.GetTraderStanding("638f541a29ffd1183d187f57").IsZero())
@@ -376,8 +376,8 @@ public class FikaPlayer : LocalPlayer
 
         if (!_proceedCallbacks.TryGetValue(callbackId, out var callback))
         {
-            // The callback is gone when the hands watchdog expired a proceed
-            // the host answered far too late.
+            // 当双手看门狗把某个 proceed 判定为超时时，该回调就不存在了——
+            // 因为主机回答得太晚了。
             FikaGlobals.LogError($"Could not get callback with id {callbackId}");
             return;
         }
@@ -400,18 +400,18 @@ public class FikaPlayer : LocalPlayer
     }
 
     /// <summary>
-    /// How many hands switches are still waiting for an answer from the host.
+    /// 还有多少次双手切换仍在等待主机的回答。
     /// </summary>
     internal int PendingProceedCallbacks => _proceedCallbacks.Count;
 
     /// <summary>
-    /// Drops the proceed callbacks whose answer never arrived.  While any of
-    /// them is registered <see cref="WaitingForCallback"/> stays true and
-    /// FikaClientFirearmController refuses to press the trigger or start a
-    /// reload, so a lost packet during a fast hands switch would otherwise
-    /// leave the client unable to fire for the rest of the raid.  This is
-    /// only called by the hands watchdog, after the switch it belongs to has
-    /// already been given up on.
+    /// 丢弃那些回答始终没到的 proceed 回调。只要其中任何一个仍处于注册状态，
+    /// <see cref="WaitingForCallback"/> 就会保持为 true，而
+    /// FikaClientFirearmController 就会拒绝扣动扳机或开始
+    /// 装填，因此一次快速双手切换中丢失的包，否则会让
+    /// 该客户端在突袭余下的时间里都无法射击。本方法
+    /// 只由双手看门狗调用，而且是在它所属的那次切换
+    /// 已经被放弃之后。
     /// </summary>
     internal int ExpireStaleProceedCallbacks(float maxAgeSeconds)
     {
@@ -690,14 +690,14 @@ public class FikaPlayer : LocalPlayer
             var slot = Inventory.Equipment.GetSlot(slotType);
 
             _armorUnsubcribes[i] = slot.ReactiveContainedItem
-                .Subscribe((System.Action<Item>)RecalculateEquippedArmorComponents); // Subscribe does not invoke on registration.
+                .Subscribe((System.Action<Item>)RecalculateEquippedArmorComponents); // Subscribe 在注册时不会调用。
         }
     }
 
     /// <summary>
-    /// Recalculates all equipped <see cref="ArmorComponent"/>s when an armor slot changes
+    /// 当某个护甲槽位发生变化时，重新计算所有已装备的 <see cref="ArmorComponent"/>
     /// </summary>
-    /// <param name="item">The item changed</param>
+    /// <param name="item">发生变化的物品</param>
     protected void RecalculateEquippedArmorComponents(Item item)
     {
         _preAllocatedArmorComponents.Clear();
@@ -782,9 +782,9 @@ public class FikaPlayer : LocalPlayer
             MovementContext.IsAxesIgnored = false;
             clientHealthController.EnableMetabolism();
             clientHealthController.Revive();
-            // (2026-10-17) A death switched quest sharing off (CoopGame.HandleLocalPlayerDeath) and nothing
-            // ever switched it back on, so a revived player neither sent nor received shared quest progress
-            // for the rest of the raid. The machine is alive again here, so the same channel is re-armed.
+            // (2026-10-17) 一次死亡关闭了任务共享（CoopGame.HandleLocalPlayerDeath），而没有任何东西
+            // 再把它重新打开，于是被救起的玩家在突袭余下的时间里既发不出也收不到共享的任务进度。
+            // 此时本机已重新存活，因此同一条通道重新启用。
             if (FikaQuests is ClientSharedQuestController revivedQuests)
             {
                 revivedQuests.ToggleQuestSharing(true);
@@ -1157,8 +1157,8 @@ public class FikaPlayer : LocalPlayer
 
     internal static bool CanFastSwitchWeapon(AbstractHandsController hands, Weapon weapon)
     {
-        // Native fields can return an AbstractHandsController wrapper even when
-        // the object is a firearm. CLR type tests do not inspect its native class.
+        // 即使对象是枪械，原生字段也可能返回一个 AbstractHandsController 包装器。
+        // CLR 类型检查不会去检查它的原生类。
         return hands?.TryCast<FirearmController>()?.CheckForFastWeaponSwitch(weapon) == true;
     }
 
@@ -1187,9 +1187,9 @@ public class FikaPlayer : LocalPlayer
         CommonPacket.Type = ECommonSubPacketType.Drop;
         CommonPacket.SubPacket = DropPacket.FromValue(fastDrop);
         PacketSender.NetworkManager.SendNetReusable(ref CommonPacket, DeliveryMethod.ReliableOrdered, true);
-        // The interop parameter is Il2CppSystem.Action: the native base implementation expects the
-        // native delegate object, so the native callback is forwarded unchanged (a managed closure
-        // could not be marshalled into it).
+        // interop 参数是 Il2CppSystem.Action：原生基类实现期望得到那个原生委托
+        // 对象，因此原生回调被原样转发（托管闭包无法被
+        // marshal 进它里面）。
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call96(this, callback ?? FikaGlobals.EmptyNativeAction, fastDrop, nextControllerItem);
     }
 
@@ -1197,7 +1197,7 @@ public class FikaPlayer : LocalPlayer
     {
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call97(this, aggressor, damageInfo, bodyPart, lethalDamageType);
 
-        // Handle 'Help Scav' rep gains
+        // 处理 'Help Scav' 声望收益
         if (aggressor?.TryCast<FikaPlayer>() is { } fikaPlayer)
         {
             if (fikaPlayer.Side == EPlayerSide.Savage)
@@ -1377,9 +1377,9 @@ public class FikaPlayer : LocalPlayer
 
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call98(this, opened);
 
-        // Native UI can close inventory after the raid transport has already
-        // timed out and disposed its packet sender. Keep the local UI state,
-        // but do not send through that ended connection.
+        // 原生 UI 可能在突袭传输层已经
+        // 超时并销毁了它的包发送器之后才关闭物品栏。保留本地 UI 状态，
+        // 但不要通过那条已经结束的连接发送。
         var networkManager = PacketSender?.NetworkManager;
         if (networkManager == null) return;
 
@@ -1443,10 +1443,10 @@ public class FikaPlayer : LocalPlayer
     public override Corpse CreateCorpse()
     {
         var corpse = CreateCorpseInternal();
-        // [CorpseSync] The native Player.OnDead reaches this method exactly once, after the
-        // hands are frozen and before the corpse is put in charge of the body. The line proves
-        // whether the authoritative machine produced a corpse and its loot container for this
-        // victim; 
+        // [CorpseSync] 原生 Player.OnDead 恰好调用本方法一次，时机是在双手被冻结
+        // 之后、尸体接管身体之前。这一行证明
+        // 权威机器是否为本名
+        // 受害者生成了尸体及其战利品容器； 
         return corpse;
     }
 
@@ -1455,13 +1455,13 @@ public class FikaPlayer : LocalPlayer
         if (FikaBackendUtils.IsServer)
         {
             var corpse = global::Fika.Core.Main.Utils.NativeBaseCalls.Call100(this);
-            // SPT 5 corpse no longer exposes IsZombieCorpse; the prefab already carries the skeleton mode.
+            // SPT 5 的尸体不再暴露 IsZombieCorpse；预制体本身已经携带骨骼模式。
             CorpsePositionSyncer.Create(corpse.gameObject, corpse, NetId);
             return corpse;
         }
 
         var observedCorpse = CreateCorpse<ObservedCorpse>(Velocity);
-        // SPT 5 corpse no longer exposes IsZombieCorpse; the prefab already carries the skeleton mode.
+        // SPT 5 的尸体不再暴露 IsZombieCorpse；预制体本身已经携带骨骼模式。
         observedCorpse.SetSpecificSettings(PlayerBones.RightPalm);
         Singleton<GameWorld>.Instance.ObservedPlayersCorpses.Add(NetId, observedCorpse);
         return observedCorpse;
@@ -1503,7 +1503,7 @@ public class FikaPlayer : LocalPlayer
         }
     }
 
-    // Start
+    // 开始
     public override void StartInteraction(WorldInteractiveObject interactiveObject, InteractionResult interactionResult, Il2CppSystem.Action callback, bool enterDoorState = true)
     {
         CommonPacket.Type = ECommonSubPacketType.WorldInteraction;
@@ -1513,7 +1513,7 @@ public class FikaPlayer : LocalPlayer
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call102(this, interactiveObject, interactionResult, callback ?? FikaGlobals.EmptyNativeAction, enterDoorState);
     }
 
-    // Execute
+    // 执行
     public override void ExecuteInteraction(WorldInteractiveObject door, InteractionResult interactionResult)
     {
         global::Fika.Core.Main.Utils.NativeBaseCalls.Call103(this, door, interactionResult);
@@ -1589,11 +1589,11 @@ public class FikaPlayer : LocalPlayer
         }
         else
         {
-            // The interaction itself proves that this player is standing at the point, but the
-            // host's "is everyone in the zone" gate can already run for another player before
-            // it sees this request. Announce the zone first (same reliable-ordered stream, so
-            // it arrives before the interact packet) and let FikaHostTransitController
-            // register the player even if the native zone trigger never did.
+            // 交互本身已证明该玩家就站在点位处，但主机的
+            // "是否所有人都在区域内" 闸门可能在看到这个请求之前就已经为另一名玩家跑了
+            // 一遍。先公布区域（走同一条可靠有序的流，因此它会
+            // 在交互包之前到达），并让 FikaHostTransitController
+            // 登记该玩家，即使原生区域触发器从未这样做过。
             if (FikaWorldControllers.Find<ClientClasses.ClientTransitController>(
                     Singleton<GameWorld>.Instance?.TransitController) is { } localTransit)
             {
@@ -1670,12 +1670,12 @@ public class FikaPlayer : LocalPlayer
 
         if (FikaBackendUtils.IsServer || IsYourPlayer)
         {
-            // Native parity (EFT.Player.SetDogtagInfo, decompiled below from EFT 4.0
-            // Player.cs:30237): the side a dog tag carries comes from the ROLE, never from the
-            // profile. SPT 5.0 rewrites every PMC bot's Profile.Info.Side to Savage after
-            // generating it, so a gate on "Side is not Savage" skipped the dog tag of every AI
-            // PMC and left it without the victim and without the kill information.
-            // GenerateDogtagDetails itself skips real Savage victims (scavs).
+            // 与原生保持一致（EFT.Player.SetDogtagInfo，下面从 EFT 4.0 反编译而来：
+            // Player.cs:30237）：军牌所带的阵营来自 ROLE，而绝不来自
+            // 档案。SPT 5.0 在生成每个 PMC bot 的 Profile.Info.Side 之后把它改写成 Savage，
+            // 因此以 "Side 不是 Savage" 作为闸门会跳过每一个 AI
+            // PMC 的军牌，让它既没有受害者信息也没有击杀信息。
+            // GenerateDogtagDetails 本身会跳过真正的 Savage 受害者（scav）。
             GenerateDogtagDetails();
         }
 
@@ -1785,8 +1785,8 @@ public class FikaPlayer : LocalPlayer
 #endif
         }
 
-        // The side on the tag is the faction of the role (native SetDogtagInfo switches on
-        // WildSpawnType.pmcUSEC/pmcBEAR); a real Savage victim has no dog tag data at all.
+        // 军牌上的阵营来自角色的派系（原生 SetDogtagInfo 依据
+        // WildSpawnType.pmcUSEC/pmcBEAR 分支）；真正的 Savage 受害者根本没有军牌数据。
         var role = Profile.Info.Settings.Role;
         var faction = FikaGlobals.GetFactionSide(role, Side);
         var item = Equipment.GetSlot(EquipmentSlot.Dogtag).ContainedItem;
@@ -1795,8 +1795,8 @@ public class FikaPlayer : LocalPlayer
         {
             if (faction == EPlayerSide.Savage)
             {
-                // Scavs (and any bot the server did not give a dog tag to) are supposed to have
-                // no tag data; 
+                // Scav（以及服务器没有给予军牌的任何 bot）本应
+                // 没有军牌数据； 
                 return;
             }
 
@@ -1907,7 +1907,7 @@ public class FikaPlayer : LocalPlayer
         }
         catch
         {
-            // Do nothing
+            // 不执行任何操作
         }
     }
 
@@ -2194,8 +2194,8 @@ public class FikaPlayer : LocalPlayer
 
     public override void Dispose()
     {
-        // SPT 5's native Player.OnDestroy calls the virtual Dispose again when
-        // ReturnToPool follows explicit raid cleanup. Release each lifetime once.
+        // 当 ReturnToPool 跟在显式的突袭清理之后时，SPT 5 的原生 Player.OnDestroy
+        // 会再次调用虚 Dispose。每次生命周期只释放一次。
         if (_fikaDisposed || _fikaDisposing) return;
         _fikaDisposing = true;
         try
@@ -2249,9 +2249,9 @@ public class FikaPlayer : LocalPlayer
 
     protected void UnregisterNetworkPlayer()
     {
-        // Native assets are released immediately; Unity OnDestroy may run much
-        // later, while UDP polling still continues (also during transit).
-        // Detach this lifetime before any callback can find a disposed player.
+        // 原生资源会立即释放；而 Unity OnDestroy 可能晚得多才执行，
+        // 那时 UDP 轮询仍在继续（中转期间也是如此）。
+        // 在任何回调可能找到已处置的玩家之前，先把这次生命周期解绑。
         var network = FikaSingleton<IFikaNetworkManager>.Instance;
         var handler = network?.CoopHandler;
         if (handler != null)

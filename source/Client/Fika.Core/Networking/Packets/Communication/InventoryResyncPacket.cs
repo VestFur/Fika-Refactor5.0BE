@@ -4,8 +4,8 @@ using Fika.Core.Main.Utils;
 namespace Fika.Core.Networking.Packets.Communication;
 
 /// <summary>
-/// Authoritative inventory snapshot sent after the server rejects an inventory
-/// operation. The callback id associates it with the local operation.
+/// 服务器拒绝一次库存操作后发送的权威库存快照。回调 id 将它
+/// 与本地操作关联起来。
 /// </summary>
 public struct InventoryResyncPacket : INetSerializable
 {

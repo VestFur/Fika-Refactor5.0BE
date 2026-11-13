@@ -9,7 +9,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Patches.PlayerPatches;
 
 /// <summary>
-/// This patch stops BSGs dogtag handling as it is poorly executed
+/// 此补丁停用 BSG 的狗牌处理，因为它的实现质量很差
 /// </summary>
 public class Player_ManageAggressor_Patch : ModulePatch
 {

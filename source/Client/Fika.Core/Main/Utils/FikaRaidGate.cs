@@ -7,48 +7,48 @@ using Fika.Core.Main.GameMode;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// AP (analysis/nonfika-raid-inertness): the one question every in-raid hook of this port has to ask
-/// before it touches anything - "is the raid that is running right now one of ours?".
+/// AP (analysis/nonfika-raid-inertness)：本移植每个 raid 内钩子在动手之前都必须问的唯一问题 ——
+/// 「此刻正在运行的 raid 是我们自己的吗？」。
 ///
-/// Why a new gate and not <see cref="FikaBackendUtils.ClientType"/>: that field is set when a Fika match
-/// is created or joined and is *not* reset when a raid ends, so a single Fika raid in a session left it
-/// at Host/Client for the rest of the process. Every "is this a Fika raid" test written as
-/// <c>ClientType != None</c> was therefore true inside the next native single-player raid as well - and
-/// that is the state the 2026-10-12 23:52 crash was played in: the raid was started from the map
-/// selection screen without Fika (the port's own line says <c>side=single</c>), the engine ran the native
-/// local game, and our in-raid hooks still acted on it.
+/// 为什么新立一道门禁而不用 <see cref="FikaBackendUtils.ClientType"/>：那个字段在创建或加入
+/// 一场 Fika 对局时被设置，且在 raid 结束时*不*被重置，所以会话中仅一场 Fika raid 就会
+/// 让它在此后整个进程里一直停在 Host/Client。因此每一处写成
+/// <c>ClientType != None</c> 的「这是不是一场 Fika raid」判断，在下一场原生单人 raid 内部
+/// 同样为真 —— 而 2026-10-12 23:52 的崩溃正是在那种状态下发生的：raid 是从地图
+/// 选择界面在没有 Fika 的情况下启动的（本移植自己的行写着 <c>side=single</c>），引擎运行的是原生
+/// 本地游戏，而我们的 raid 内钩子仍然在它上面生效。
 ///
-/// Three rules, in this order:
-///   1. the gate is armed by the *creation of our own game object*, not by the plugin being loaded and
-///      not by a field a raid can leave behind;
-///   2. it is disarmed the moment a raid that is not ours starts, and when our raid ends;
-///   3. it self-corrects: while it is armed, a throttled look at the game the engine is really running
-///      demotes it as soon as that game is provably not a <see cref="CoopGame"/>. A stale "yes" is the
-///      one answer that can get us killed, so it is the one answer that is re-checked.
+/// 三条规则，按此顺序：
+///   1. 门禁由*我们自己游戏对象的创建*来武装，而不是由插件被加载，
+///      也不是由一个 raid 可能遗留的字段；
+///   2. 一场不属于我们的 raid 一开始，以及我们的 raid 结束时，它立即解除武装；
+///   3. 它会自我纠正：在武装状态下，对引擎真正正在运行的游戏做一次限流的查看，
+///      一旦能证明该游戏不是 <see cref="CoopGame"/>，就把它降级。一个过期的「是」
+///      是唯一能害死我们的答案，所以它也是唯一会被反复复核的答案。
 ///
-/// The switch <see cref="InertOutsideFikaRaids"/> (config "Coop / Inert Outside Fika Raids", default
-/// true) turns the whole behaviour off in one line: with it off <see cref="Skip"/> always returns false
-/// and every caller behaves exactly as it did before this class existed.
+/// 开关 <see cref="InertOutsideFikaRaids"/>（配置 "Coop / Inert Outside Fika Raids"，
+/// 默认 true）用一行就能关掉整套行为：关闭后 <see cref="Skip"/> 始终返回 false，
+/// 每个调用方的行为都与本类存在之前完全一致。
 /// </summary>
 internal static class FikaRaidGate
 {
     /// <summary>
-    /// Master switch of the repair. On (default): outside a Fika raid every caller of
-    /// <see cref="Skip"/> keeps its hands off. Off: the pre-fix behaviour, one line to revert.
+    /// 这套修复的总开关。开启（默认）：在 Fika raid 之外，每个
+    /// <see cref="Skip"/> 调用方都收手不干。关闭：修复之前的行为，一行即可回退。
     /// </summary>
     internal static bool InertOutsideFikaRaids = true;
 
     /// <summary>
-    /// How long a game that is not ours may be the running one before this gate believes it. Our own
-    /// game object is created *after* the gate is armed (CoopGame.Create -> Singleton&lt;AbstractGame&gt;.Create),
-    /// and a transit reload replaces it, so a single sighting of "not ours" is not a verdict.
+    /// 一个不属于我们的游戏可以成为当前运行游戏多久，本门禁才会相信它。我们自己的
+    /// 游戏对象是在门禁被武装*之后*才创建的（CoopGame.Create -> Singleton&lt;AbstractGame&gt;.Create），
+    /// 而且一次中转重载会替换它，所以单次「不是我们的」观察并不构成判决。
     /// </summary>
     private const int MismatchGraceMillis = 3000;
 
-    /// <summary>Throttle of the verifying look at the running game.</summary>
+    /// <summary>对运行中游戏做校验查看的限流间隔。</summary>
     private const int VerifyIntervalMillis = 500;
 
-    /// <summary>Seconds between two "we are still skipping" summaries.</summary>
+    /// <summary>两次「我们仍在跳过」汇总之间的秒数。</summary>
     private const int SummarySeconds = 60;
 
     private static readonly object Gate = new();
@@ -64,7 +64,7 @@ internal static class FikaRaidGate
     private static int _demotions;
     private static int _skipsSinceSummary;
 
-    /// <summary>The judgement of this class: true while this process runs a raid Fika created.</summary>
+    /// <summary>本类的判决：当本进程运行着一场由 Fika 创建的 raid 时为 true。</summary>
     internal static bool InFikaRaid
     {
         get
@@ -74,9 +74,9 @@ internal static class FikaRaidGate
     }
 
     /// <summary>
-    /// True when the caller must not act. A caller writes
+    /// 调用方不得行动时为 true。调用方只需按下面这样写，
     /// <c>if (FikaRaidGate.Skip("Owner.Method")) return true; // native</c>
-    /// and gets the whole diagnostic for free.
+    /// 就免费获得整套诊断。
     /// </summary>
     internal static bool Inert
     {
@@ -87,11 +87,11 @@ internal static class FikaRaidGate
     }
 
     /// <summary>
-    /// The line every hook of this port uses. Returns true when the caller has to stay out; the first
-    /// call per member writes<br/>
+    /// 本移植每个钩子都用的这一行。调用方必须退出时返回 true；每个成员的第一
+    /// 次调用会写出<br/>
     /// <c>[Inert] skip=&lt;member&gt; reason=not-a-fika-raid side=single</c><br/>
-    /// (once to the game log and once to the diagnostics file, then only counts, plus a summary per
-    /// minute), so one grep answers "did anything of ours act in a raid that was not ours".
+    /// （一次写入游戏日志、一次写入诊断文件，之后只记计数，另加每分钟一次
+    /// 汇总），因此一次 grep 就能回答「我们的任何东西有没有在一场不属于我们的 raid 里动过」。
     /// </summary>
     internal static bool Skip(string member)
     {
@@ -100,8 +100,8 @@ internal static class FikaRaidGate
             return false;
         }
 
-        // The verifying look runs before the report: an armed gate that is really looking at someone
-        // else's raid has to demote itself here, not after a line was written about it.
+        // 校验查看在报告之前运行：一道武装中的门禁如果真的在看别人的
+        // raid，就必须在这里给自己降级，而不是在一行关于它的日志写完之后。
         VerifyArmed();
         if (InFikaRaid)
         {
@@ -112,8 +112,8 @@ internal static class FikaRaidGate
     }
 
     /// <summary>
-    /// Called by the one method that creates a Fika game (<c>CreateFikaGameCore</c>). This is the only
-    /// place that knows a raid of ours really starts.
+    /// 由唯一创建 Fika 游戏的方法（<c>CreateFikaGameCore</c>）调用。这是唯一
+    /// 知道我们的一场 raid 真正开始的地方。
     /// </summary>
     internal static void Arm(string source)
     {
@@ -123,16 +123,16 @@ internal static class FikaRaidGate
         _mismatchSince = 0;
         _nextVerify = 0;
         _demotions = 0;
-        // The first summary of a raid comes one minute in, not after the second skipped hook: the first
-        // line of every member is the evidence, the summary is only there to keep a long raid readable.
+        // 一场 raid 的第一次汇总在一分钟时到来，而不是在第二个被跳过的钩子之后：每个成员的
+        // 第一行才是证据，汇总只是为了让一场漫长的 raid 仍可读。
         _nextSummary = Environment.TickCount64 + SummarySeconds * 1000L;
     }
 
     /// <summary>
-    /// Called by the raid-start patch when it hands the raid to the *native* local game
-    /// (<c>clientType=None</c>, i.e. the map selection screen without Fika). This is the decisive
-    /// moment for everything that follows: from here on the port must not act until it creates a game
-    /// of its own again.
+    /// 由 raid 启动补丁在把 raid 交给*原生*本地游戏时调用
+    /// （<c>clientType=None</c>，即没有 Fika 的地图选择界面）。这是此后
+    /// 一切的决定性时刻：从这里起，本移植在再次创建自己
+    /// 的游戏之前不得行动。
     /// </summary>
     internal static void NativeRaidStarted(string source)
     {
@@ -141,15 +141,15 @@ internal static class FikaRaidGate
         _mismatchSince = 0;
         if (!wasArmed && _nativeStartReported)
         {
-            // One line per transition, plus one for the first native raid of the session: a session with
-            // five solo raids must not write five identical lines, and the *first* one is the evidence.
+            // 每次状态转移一行，另加会话中第一场原生 raid 的一行：一个有
+            // 五场单人 raid 的会话不能写出五行相同的内容，而*第一*行才是证据。
             return;
         }
 
         _nativeStartReported = true;
     }
 
-    /// <summary>Called when a raid of ours ends (a failed start, or the game's own clean-up).</summary>
+    /// <summary>我们的一场 raid 结束时调用（启动失败，或游戏自身的清理）。</summary>
     internal static void Disarm(string reason)
     {
         if (!_armed)
@@ -162,8 +162,8 @@ internal static class FikaRaidGate
     }
 
     /// <summary>
-    /// The role this process believes it has, exactly as the diagnostics of the rally gate spell it, so
-    /// every line of this port uses one vocabulary.
+    /// 本进程认为自己拥有的角色，写法与集结门禁的诊断完全一致，这样
+    /// 本移植的每一行日志都使用同一套词汇。
     /// </summary>
     internal static string Side
     {
@@ -197,14 +197,14 @@ internal static class FikaRaidGate
     private static bool _nativeStartReported;
 
     /// <summary>
-    /// The throttled verification, callable by the per-frame driver (the plugin's Update) so the gate
-    /// demotes itself even in a frame in which no hook asked anything. Never throws.
+    /// 限流的校验，可由每帧驱动器（插件的 Update）调用，这样即使某一帧
+    /// 没有任何钩子发问，门禁也会给自己降级。永不抛出异常。
     /// </summary>
     internal static void Verify() => VerifyArmed();
 
     /// <summary>
-    /// The verifying look described in rule 3. Cheap by construction: one throttle check, and inside the
-    /// throttle one singleton read. Never throws, never blocks.
+    /// 规则 3 中描述的校验查看。构造上就很廉价：一次限流检查，且在
+    /// 限流之内只有一次单例读取。永不抛出异常，永不阻塞。
     /// </summary>
     private static void VerifyArmed()
     {
@@ -225,7 +225,7 @@ internal static class FikaRaidGate
             var game = Singleton<AbstractGame>.Instantiated ? Singleton<AbstractGame>.Instance : null;
             if (game == null)
             {
-                // Between two raids there is nothing to judge; the next raid start arms or disarms us.
+                // 两场 raid 之间没有什么可判决的；下一次 raid 启动会武装或解除我们。
                 return;
             }
 
@@ -252,7 +252,7 @@ internal static class FikaRaidGate
         }
         catch (Exception)
         {
-            // A verification must never be the reason a boundary fails.
+            // 校验绝不能成为某个边界失败的原因。
         }
     }
 

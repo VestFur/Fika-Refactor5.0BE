@@ -1,4 +1,4 @@
-﻿using FikaServer.Models.Enums;
+using FikaServer.Models.Enums;
 using FikaServer.Models.Fika;
 using FikaServer.Models.Fika.Config;
 using FikaServer.Models.Fika.Headless;
@@ -24,9 +24,9 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
     public ConcurrentDictionary<MongoId, HeadlessClientInfo> HeadlessClients { get; } = [];
 
     /// <summary>
-    /// Begin setting up a raid for a headless client
+    /// 开始为某个 headless 客户端设置战局
     /// </summary>
-    /// <returns>returns the SessionID of the headless client that is starting this raid, returns null if no client could be found or there was an error.</returns>
+    /// <returns>返回正在启动此战局的 headless 客户端的 SessionID；若找不到客户端或发生错误则返回 null。</returns>
     public async Task<string?> StartHeadlessRaid(string headlessSessionID, string requesterSessionID, StartHeadlessRequest info)
     {
         if (!HeadlessClients.TryGetValue(headlessSessionID, out var headlessClientInfo))
@@ -43,10 +43,10 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
             string reservationToken;
             lock (headlessClientInfo)
             {
-                // The available-headless response is only a snapshot. Verify
-                // that this object is still the registered connection after
-                // acquiring the lifecycle gate, then reserve and send while
-                // the gate prevents a reconnect/close from replacing it.
+                // available-headless 的响应只是一个快照。在获取
+                // 生命周期闸门之后，需确认该对象仍是已注册的
+                // 连接，然后在闸门阻止重连/关闭替换它的情况下
+                // 完成预留并发送。
                 if (!HeadlessClients.TryGetValue(headlessSessionID, out var current) ||
                     !ReferenceEquals(current, headlessClientInfo) ||
                     headlessClientInfo.State != EHeadlessStatus.READY ||
@@ -67,8 +67,8 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
 
             try
             {
-                // The caller cannot select this token. It belongs to the
-                // reservation we just made for this exact connection.
+                // 调用方无法选择该 token。它属于我们刚刚为
+                // 这一确切连接所做的预留。
                 StartHeadlessRaid startHeadlessRequest = new(info with
                 {
                     ReservationToken = reservationToken
@@ -88,10 +88,10 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
                         headlessClientInfo.State == EHeadlessStatus.READY &&
                         headlessClientInfo.RequesterSessionID == requesterSessionID)
                     {
-                        // A failed SendAsync does not prove the remote peer
-                        // missed the message. Quarantine this connection so
-                        // a second requester cannot reserve it while the
-                        // first peer is still able to issue /raid/create.
+                        // SendAsync 失败并不能证明远端对端
+                        // 没有收到消息。隔离该连接，使第二个
+                        // 请求方无法在其仍能发出 /raid/create
+                        // 时预留它。
                         headlessClientInfo.IsReconnecting = true;
                     }
                 }
@@ -112,7 +112,7 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
     }
 
     /// <summary>
-    /// Sends a join message to the requester of a headless client
+    /// 向某个 headless 客户端的请求方发送加入消息
     /// </summary>
     public async Task SendJoinMessageToRequester(MongoId headlessClientId, FikaMatch expectedMatch,
         Func<bool> isCurrentMatch)
@@ -126,14 +126,14 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
         await headlessClientInfo.LifecycleGate.WaitAsync();
         try
         {
-            // The status request can wait behind reconnect/close. Do not
-            // notify a new reservation using the old match's COMPLETE event.
+            // 状态请求可能排在重连/关闭之后等待。不要用旧战局的
+            // COMPLETE 事件去通知新的预留。
             string requesterSessionId;
             lock (expectedMatch)
             {
-                // SetMatchStatus holds matchGate through this send, so an
-                // EndMatch cannot remove this room or reset its reservation
-                // before notification finishes. Verify the exact owner here.
+                // 在这次发送期间 SetMatchStatus 一直持有 matchGate，因此
+                // EndMatch 无法在通知完成之前移除该房间或重置其
+                // 预留。此处需确认确切的所有者。
                 if (!HeadlessClients.TryGetValue(headlessClientId, out var currentClient) ||
                     !ReferenceEquals(currentClient, headlessClientInfo) ||
                     !ReferenceEquals(expectedMatch.HeadlessReservationOwner, headlessClientInfo) ||
@@ -142,8 +142,8 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
 
                 lock (headlessClientInfo)
                 {
-                    // SetMatchStatus(COMPLETE) can be repeated. Only the first transition
-                    // may send the requester into the raid.
+                    // SetMatchStatus(COMPLETE) 可能被重复调用。只有第一次状态转换
+                    // 可以把请求方送入战局。
                     if (headlessClientInfo.State != EHeadlessStatus.READY ||
                         headlessClientInfo.IsReconnecting ||
                         headlessClientInfo.HasNotifiedRequester != false ||
@@ -164,10 +164,10 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
     }
 
     /// <summary>
-    /// Adds a player to the given headless client id
+    /// 将玩家添加到指定的 headless 客户端 id
     /// </summary>
-    /// <param name="headlessClientId">The id of the headless client</param>
-    /// <param name="sessionID">The id of the player</param>
+    /// <param name="headlessClientId">headless 客户端的 id</param>
+    /// <param name="sessionID">玩家的 id</param>
     /// <exception cref="NullReferenceException"></exception>
     public void AddPlayerToHeadlessMatch(MongoId headlessClientId, MongoId sessionID)
     {
@@ -181,9 +181,9 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
             string? requesterSessionId;
             lock (headlessClientInfo)
             {
-                // A reconnect/transit can register the same profile more
-                // than once. Keep the lobby roster a set so level averaging
-                // and the web UI never count a player twice.
+                // 重连/中转可能将同一个 profile 注册多次。
+                // 让大厅名单保持为集合，这样等级平均
+                // 和 web UI 就不会把同一玩家计算两次。
                 if (!headlessClientInfo.Players.Contains(sessionID))
                     headlessClientInfo.Players.Add(sessionID);
                 requesterSessionId = headlessClientInfo.RequesterSessionID;
@@ -191,7 +191,7 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
 
             if (!fikaServerConfig.Headless.SetLevelToAverageOfLobby)
             {
-                // Doing this everytime is unecessary if we're not setting the average level so only set it once the original requester of the headless joins.
+                // 如果不设置平均等级，每次执行此操作并无必要，因此只在 headless 的最初请求方加入时设置一次。
                 if (requesterSessionId == sessionID)
                 {
                     CalculateAndSetHeadlessLevel(headlessClientId);
@@ -205,10 +205,10 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
     }
 
     /// <summary>
-    /// Removes a non-headless player from the current host roster when the
-    /// player leaves before the raid ends. The full roster is cleared by
-    /// EndHeadlessRaid, but retaining departed players would corrupt lobby
-    /// counts and average-level calculation during a long raid or transit.
+    /// 当非 headless 玩家在战局结束前离开时，将其从当前主机名单中
+    /// 移除。整份名单会在 EndHeadlessRaid 时清空，但在长时间战局或
+    /// 中转期间保留已离开的玩家会破坏大厅
+    /// 人数统计与平均等级计算。
     /// </summary>
     public void RemovePlayerFromHeadlessMatch(MongoId headlessClientId, MongoId sessionID)
     {
@@ -220,10 +220,10 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
     }
 
     /// <summary>
-    /// Sets the headless client to a specific level
+    /// 将 headless 客户端设置为指定等级
     /// </summary>
-    /// <remarks>Mainly used for transits</remarks>
-    /// <param name="headlessClientId">The id of the client</param>
+    /// <remarks>主要用于中转</remarks>
+    /// <param name="headlessClientId">客户端的 id</param>
     /// <exception cref="NullReferenceException"></exception>
     public void SetHeadlessLevel(MongoId headlessClientId)
     {
@@ -235,9 +235,9 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
         var headlessProfile = saveServer.GetProfile(headlessClientId)
                 ?? throw new NullReferenceException($"Could not find headlessProfile {headlessClientId}");
 
-        // A transit start can overlap socket replacement/room teardown. Do
-        // not apply the old room's level to a fresh reservation that reused
-        // the same headless profile id.
+        // 中转开始可能与 socket 替换/房间拆除重叠。不要将
+        // 旧房间的等级应用到复用了同一 headless profile id 的
+        // 新预留上。
         lock (clientInfo)
         {
             if (!HeadlessClients.TryGetValue(headlessClientId, out var current) ||
@@ -250,9 +250,9 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
     }
 
     /// <summary>
-    /// Calculates the level of the headless client for the raid
+    /// 计算 headless 客户端在此战局中的等级
     /// </summary>
-    /// <param name="headlessClientId">The id of the client</param>
+    /// <param name="headlessClientId">客户端的 id</param>
     /// <exception cref="NullReferenceException"></exception>
     public void CalculateAndSetHeadlessLevel(MongoId headlessClientId)
     {
@@ -278,7 +278,7 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
             ?? throw new NullReferenceException($"Could not find headlessProfile {headlessClientId}");
 
         var baseHeadlessLevel = 0;
-        var countedPlayers = 0; // count only valid, non-headless players
+        var countedPlayers = 0; // 只统计有效的、非 headless 玩家
 
         foreach (var profileId in players)
         {
@@ -292,7 +292,7 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
             countedPlayers++;
         }
 
-        // avoid division by zero
+        // 避免除以零
         if (countedPlayers > 0)
         {
             baseHeadlessLevel = Math.Max(1, baseHeadlessLevel / countedPlayers);
@@ -308,9 +308,9 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
                 $"[{headlessClientId}] Settings headless level to: {baseHeadlessLevel} | Players: {countedPlayers}");
         }
 
-        // Profile lookup and level averaging can take long enough for the
-        // room to end and the same profile to be reserved again. Verify the
-        // exact client object and reservation generation before publishing.
+        // profile 查找与等级平均的耗时可能足以让房间结束，
+        // 并使同一 profile 被再次预留。发布之前需确认
+        // 确切的客户端对象与预留代数。
         lock (headlessClientInfo)
         {
             if (!HeadlessClients.TryGetValue(headlessClientId, out var current) ||
@@ -331,8 +331,8 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
     }
 
     /// <summary>
-    /// Confirms that an in-flight room creation still belongs to the same
-    /// headless connection and requester reservation after location generation.
+    /// 确认正在进行的房间创建在位置生成之后仍属于同一个
+    /// headless 连接与请求方预留。
     /// </summary>
     public bool IsCurrentReservation(string headlessClientId, HeadlessClientInfo owner,
         long reservationVersion, string? reservationToken)
@@ -353,8 +353,8 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
     }
 
     /// <summary>
-    /// Reports why a rejected create failed without logging the full secret token.
-    /// Call only after IsCurrentReservation rejects a request.
+    /// 报告被拒绝的创建为何失败，同时不记录完整的 secret token。
+    /// 仅应在 IsCurrentReservation 拒绝某个请求之后调用。
     /// </summary>
     public string DescribeReservationRejection(string headlessClientId, HeadlessClientInfo owner,
         long reservationVersion, string? reservationToken)
@@ -387,12 +387,12 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
         string.IsNullOrEmpty(token) ? "missing" : token[..Math.Min(token.Length, 6)];
 
     /// <summary>
-    /// Accept readiness only from the currently registered socket and the
-    /// just-ended reservation. A report sent while EndMatch is still
-    /// finalizing is queued until Reset; it never makes an active room
-    /// available to a second requester. The owner gate prevents reconnect
-    /// replacement while the report is validated. This path never acquires
-    /// MatchService's match gate, avoiding an inverse lock order with CreateMatch.
+    /// 只接受来自当前已注册 socket 以及刚刚结束的预留的就绪
+    /// 上报。在 EndMatch 仍在收尾时发送的上报会排队至 Reset，
+    /// 它绝不会让活跃房间对第二个
+    /// 请求方可用。所有者闸门在校验上报期间阻止重连
+    /// 替换。该路径从不获取
+    /// MatchService 的 match gate，从而避免与 CreateMatch 形成反向的加锁顺序。
     /// </summary>
     public async Task MarkClientReadyAsync(string headlessClientId, WebSocket socket,
         string? reservationToken)
@@ -420,8 +420,8 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
     }
 
     /// <summary>
-    /// End the raid for the specified headless client. The host remains
-    /// unavailable until its matching post-raid readiness report arrives.
+    /// 结束指定 headless 客户端的战局。该主机将保持
+    /// 不可用，直到其对应的战局后就绪上报到达。
     /// </summary>
     public void EndHeadlessRaid(string headlessClientId, HeadlessClientInfo expectedClient,
         long? expectedReservationVersion)
@@ -434,10 +434,10 @@ public class HeadlessService(ISptLogger<HeadlessService> logger,
 
         lock (headlessClientInfo)
         {
-            // A new request can reserve this host while the previous match's
-            // webhook is still being sent, or reconnect can replace the entire
-            // connection with a fresh version counter. The older end must not
-            // cancel either new reservation.
+            // 在上一场战局的 webhook 仍在发送时，新的请求就可能预留
+            // 该主机；重连也可能用新的版本计数器替换整个
+            // 连接。较早的那次结束操作不得取消
+            // 任何一个新的预留。
             if (!HeadlessClients.TryGetValue(headlessClientId, out var currentClient) ||
                 !ReferenceEquals(currentClient, headlessClientInfo) ||
                 !ReferenceEquals(expectedClient, headlessClientInfo) ||

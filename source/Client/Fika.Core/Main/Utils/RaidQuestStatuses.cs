@@ -16,15 +16,15 @@ internal static class RaidQuestStatuses
             var quest = find(template.Id);
             if (quest == null)
             {
-                // SPT stores Scav repeatables in the shared PMC quest data, while
-                // the raid quest book intentionally excludes the other side.
+                // SPT 把 Scav 的可重复任务存储共享的 PMC 任务数据里，而
+                // 战局任务簿会有意排除对立阵营的那部分。
                 var otherSide = (side is EPlayerSide.Bear or EPlayerSide.Usec && template.PlayerGroup == EPlayerGroup.Scav) ||
                     (side == EPlayerSide.Savage && template.PlayerGroup == EPlayerGroup.Pmc);
                 if (!otherSide) missing($"Quest with id {template.Id} wasn't found! Side = {template.PlayerGroup}");
                 continue;
             }
-            // Preserve the native end-of-raid failure transition. Do not remove
-            // shared statuses or modify the live collection during enumeration.
+            // 保留原生的战局结束失败转换。不要在枚举过程中移除
+            // 共享状态或修改这个正在使用的集合。
             if (quest.StatusHasBeenChangedInPveOffline && quest.QuestStatus is EQuestStatus.Fail or EQuestStatus.FailRestartable)
                 status.Status = EQuestStatus.MarkedAsFailed;
         }

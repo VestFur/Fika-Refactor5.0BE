@@ -26,7 +26,7 @@ using static Fika.Core.UI.FikaUIGlobals;
 namespace Fika.Core.Main.Players;
 
 /// <summary>
-/// Used to simulate bots for the host.
+/// 用于为主机模拟 bot。
 /// </summary>
 public sealed class FikaBot : FikaPlayer
 {
@@ -91,9 +91,9 @@ public sealed class FikaBot : FikaPlayer
         player._handsController = EmptyHandsController.CreateController<EmptyHandsController>(player);
         player._handsController.Spawn(1f, (System.Action)FikaGlobals.EmptyAction);
 
-        // SPT 5's native BotOwner setter establishes IsAI when the owner is
-        // attached. Marking it early makes EmitStepNoise dereference a missing
-        // BotOwner while the asynchronous factory result is being delivered.
+        // SPT 5 的原生 BotOwner setter 会在所有者被挂接时建立
+        // IsAI。过早标记它会让 EmitStepNoise 在异步工厂结果正在
+        // 交付期间去解引一个缺失的 BotOwner。
         player.AIData = new AIData(null, player);
         player.botPlayerCulling = new();
         player.botPlayerCulling.Initialize(player, player.PlayerBones);
@@ -109,10 +109,10 @@ public sealed class FikaBot : FikaPlayer
         player.SubscribeToArmorChangeEvent();
         player.RecalculateEquippedArmorComponents(null);
 
-        // SPT 5.0 gives every PMC bot Profile.Info.Side = Savage (the server rewrites the side
-        // after the dog tag template was chosen). Present the faction the role says instead, after
-        // the spawn-time "spawned in session" handling above, so side-based consumers such as
-        // "SPT Dynamic Maps" see a PMC as a PMC. Scav and boss roles are untouched.
+        // SPT 5.0 给每个 PMC bot 都设 Profile.Info.Side = Savage（服务器在选定狗牌模板
+        // 之后会重写阵营）。这里改为呈现角色所声明的阵营，位置在上面对出生时
+        // “已在会话中生成”的处理之后，好让按阵营工作的消费者（例如
+        // "SPT Dynamic Maps"）把 PMC 看作 PMC。Scav 和 boss 角色不受影响。
         FikaGlobals.ApplyFactionSide(player, "bot");
 
         
@@ -124,27 +124,27 @@ public sealed class FikaBot : FikaPlayer
 
     public override void InitVoip(EVoipState voipState)
     {
-        // Do nothing
+        // 不做任何操作
     }
 
     public override void OnVaulting()
     {
-        // Do nothing
+        // 不做任何操作
     }
 
     public override void OnSkillLevelChanged(BaseSkill skill)
     {
-        // Do nothing
+        // 不做任何操作
     }
 
     public override void OnWeaponMastered(Mastering masterSkill)
     {
-        // Do nothing
+        // 不做任何操作
     }
 
     public override void ConnectSkillManager()
     {
-        // Do nothing
+        // 不做任何操作
     }
 
     public override void InitAudioController()
@@ -332,7 +332,7 @@ public sealed class FikaBot : FikaPlayer
 
     public override void ShowHelloNotification(string sender)
     {
-        // Do nothing
+        // 不做任何操作
     }
 
     private void OnEnable()

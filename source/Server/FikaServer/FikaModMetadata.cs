@@ -16,8 +16,8 @@ public sealed record FikaModMetadata : IModMetadata, IModBlazorMetadata
     public string License { get; init; } = "CC-BY-NC-SA-4.0";
     public string ModGuid { get; init; } = "Fika";
     public SemanticVersioning.Version Version { get; init; } = new(FikaVersion);
-    // SPT 5.0 receives patch releases under the same 5.0 line. Keep the
-    // server mod compatible with every 5.0.x build while still excluding 5.1.
+    // SPT 5.0 在同一条 5.0 版本线下接收补丁版本。让本服务端
+    // mod 兼容每一个 5.0.x 构建，同时仍然排除 5.1。
     public SemanticVersioning.Range SptVersion { get; init; } = new(">=5.0.0-0 <5.1.0", true);
     public bool HasPrepatcher { get; init; } = false;
     public string? WWWRootUrl { get; init; } = null;

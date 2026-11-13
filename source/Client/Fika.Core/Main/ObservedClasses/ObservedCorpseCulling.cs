@@ -63,9 +63,9 @@ public sealed class ObservedCorpseCulling : IDisposable
         }
         _renderers.Clear();
         var isVisible = IsVisible;
-        // The player body is already torn down when the corpse outlives its owner (the game
-        // destroys the body before OnDestroy reaches this object). Without the guard the
-        // exception aborts the rest of ObservedPlayer.OnDestroy.
+        // 当尸体比其所有者存活更久时，玩家躯体已经被拆除（游戏会在 OnDestroy
+        // 到达本对象之前销毁该躯体）。若没有这层保护，
+        // 该异常会中断 ObservedPlayer.OnDestroy 的剩余流程。
         var playerBody = _observedPlayer != null ? _observedPlayer.PlayerBody : null;
         if (playerBody == null)
         {

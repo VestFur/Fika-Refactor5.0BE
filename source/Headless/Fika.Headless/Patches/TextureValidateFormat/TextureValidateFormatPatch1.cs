@@ -4,9 +4,9 @@ using System.Reflection;
 namespace Fika.Headless.Patches.TextureValidateFormat;
 
 /// <summary>
-/// The RenderTextureFormat overload of Texture.ValidateFormat is a managed
-/// wrapper in this Unity build. Patch its native support query instead so
-/// native callers receive the same headless-compatible result.
+/// 在本 Unity 构建中，Texture.ValidateFormat 的 RenderTextureFormat 重载是一个托管
+/// 包装器。改为补丁它原生的支持性查询，这样
+/// 原生调用方也能得到同样的、headless 兼容的结果。
 /// </summary>
 public class ValidateFormatPatch1 : ModulePatch
 {

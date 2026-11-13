@@ -39,16 +39,16 @@ public sealed partial class FikaServer
     }
 
     /// <summary>
-    /// Hands a peer that joined a running raid the world state it cannot have seen: transit history and
-    /// points, the event generators, Kolotun and the BTR. Sent when a peer reports its transit
-    /// controllers, i.e. once per late join.
+    /// 把一个加入进行中 raid 的对端不可能看到过的 world 状态交给它：中转历史与
+    /// 点位、事件生成器、Kolotun 以及 BTR。在对端上报它的中转
+    /// 控制器时发送，即每次迟到加入只发一次。
     /// </summary>
     private void SendMapStateSnapshot(Player player, NetPeer peer)
     {
         var world = Singleton<GameWorld>.Instance;
-        // The optional Headless plugin supplies its own TransitController
-        // subclass. Read the shared native state so these snapshots work
-        // for both the playable host and Headless host.
+        // 可选的 Headless 插件提供自己的 TransitController
+        // 子类。读取共享的原生状态，使这些快照对
+        // 可玩主机和 Headless 主机都成立。
         var transit = world?.TransitController;
         if (transit != null)
         {
@@ -61,10 +61,10 @@ public sealed partial class FikaServer
                 };
                 SendDataToPeer(ref historyPacket, DeliveryMethod.ReliableOrdered, peer);
             }
-            // CreateInitialization (the Fika transit controller) needs a host side history
-            // entry for that profile. The native fallback below builds the snapshot without
-            // one, so a peer that connects while the raid is already running is served either
-            // way and never stays without transit points.
+            // CreateInitialization（Fika 中转控制器）需要该 profile 在主机侧有一个
+            // 历史条目。下面的原生回退会在没有它的情况下构建快照，
+            // 因此一个在 raid 已运行期间连接的对端无论走哪条路径都能得到服务，
+            // 永远不会没有中转点位。
             var init = FikaWorldControllers.Find<FikaHostTransitController>(transit)?.CreateInitialization(player)
                 ?? CreateNativeTransitInitialization(transit, player,
                     FikaSingleton<Main.GameMode.IFikaGame>.Instance?.GameController?.RaidSettings?.SelectedDateTime ?? default);
@@ -98,9 +98,9 @@ public sealed partial class FikaServer
         {
             var state = events.CreateSnapshot();
             SendDataToPeer(ref state, DeliveryMethod.ReliableOrdered, peer);
-            // Generator state alone does not say whether the event has already
-            // started: a running generator can subsequently break or finish.
-            // Re-send the transit lock after the state snapshot to late peers.
+            // 仅凭生成器状态无法说明该事件是否已经
+            // 开始：一个正在运行的生成器之后可能会损坏或完成。
+            // 在状态快照之后向迟到对端重发一次中转锁。
             if (events.EventStarted)
             {
                 var started = new EventControllerEventPacket
@@ -134,12 +134,12 @@ public sealed partial class FikaServer
     }
 
     /// <summary>
-    /// Builds the transit initialization snapshot for a player whose state this server can
-    /// describe. It deliberately does not require a host side transit history: a peer reports
-    /// one through BaseGameController.SyncTransitControllers, and that report only runs from
-    /// countdown statement 6/8, which the cooperative settings can skip. Without the history
-    /// fallback a peer that connected mid raid received no initialization at all and its
-    /// transit points stayed unusable.
+    /// 为一个本服务器能描述其状态的玩家构建中转初始化快照。
+    /// 它刻意不要求主机侧的中转历史：对端会通过
+    /// BaseGameController.SyncTransitControllers 上报一条，而该上报只会从
+    /// 倒计时语句 6/8 运行，而合作设置可以跳过它。没有历史
+    /// 回退时，一个在 raid 中途连接的对端完全收不到初始化，它的
+    /// 中转点位也一直不可用。
     /// </summary>
     private TransitEventPacket CreateNativeTransitInitialization(TransitController transit, Player player,
         EDateTime fallbackTime)
@@ -158,9 +158,9 @@ public sealed partial class FikaServer
         }
         else
         {
-            // The peer keeps the count it built from the raid settings it received, so report
-            // the same raid wide transition state (the object the local raid settings point
-            // at) instead of a zeroed history, which would take its transit points away.
+            // 对端保留它依据所收到的 raid 设置算出的计数，所以上报
+            // 同一份 raid 级转移状态（本地 raid 设置所指向的
+            // 那个对象），而不是一份清零的历史，后者会夺走它的中转点位。
             var transitData = FikaBackendUtils.TransitData;
             transitionCount = (ushort)System.Math.Clamp(transitData?.transitionCount ?? 0, 0, ushort.MaxValue);
             eventPlayer = transitData != null && transitData.transitionType.HasFlagNoBox(ELocationTransition.Event);
@@ -175,11 +175,11 @@ public sealed partial class FikaServer
         {
             var point = entry.Value;
             if (point.parameters.active) points.Add(entry.Key, point.parameters);
-            // This is the initializer the clients actually read (logged as [Init] Host
-            // transit Init). Reporting the raw requirement disabled the point in every
-            // client UI, exactly like the other initializer did, so it is reported as
-            // met here too; per-player validation stays with the client that shows the
-            // interaction prompt and with HasMetEntryRequirements on the host.
+            // 这是客户端真正读取的初始化器（日志中记作 [Init] Host
+            // transit Init）。上报原始的需求值会在每个客户端 UI 中禁用该点位，
+            // 与另一个初始化器完全一样，所以这里同样上报为
+            // 已满足；逐玩家的校验留给显示交互提示的客户端，
+            // 以及主机上的 HasMetEntryRequirements。
             requirements.Add(entry.Key, true);
             if (point.Enabled) enabled.Add(entry.Key);
             if (transit.transitPlayers.ContainsKey(player.ProfileId) &&

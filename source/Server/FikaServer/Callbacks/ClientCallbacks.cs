@@ -1,4 +1,4 @@
-﻿using FikaServer.Controllers;
+﻿﻿using FikaServer.Controllers;
 using FikaServer.Models.Fika.Routes.Client.Check;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.Models.Common;
@@ -11,7 +11,7 @@ namespace FikaServer.Callbacks;
 public class ClientCallbacks(HttpResponseUtil httpResponseUtil, ClientController fikaClientController)
 {
     /// <summary>
-    /// Handle /fika/client/config
+    /// 处理 /fika/client/config
     /// </summary>
     public ValueTask<string> HandleClientConfig(string url, IRequestData info, MongoId sessionID)
     {
@@ -20,7 +20,7 @@ public class ClientCallbacks(HttpResponseUtil httpResponseUtil, ClientController
     }
 
     /// <summary>
-    /// Handle /fika/natpunchserver/config
+    /// 处理 /fika/natpunchserver/config
     /// </summary>
     public ValueTask<string> HandleNatPunchConfig(string url, IRequestData info, MongoId sessionID)
     {
@@ -28,7 +28,7 @@ public class ClientCallbacks(HttpResponseUtil httpResponseUtil, ClientController
     }
 
     /// <summary>
-    /// Handle /fika/client/check/mods
+    /// 处理 /fika/client/check/mods
     /// </summary>
     public ValueTask<string> HandleCheckMods(string url, FikaCheckModRequestData info, MongoId sessionID)
     {
@@ -36,7 +36,7 @@ public class ClientCallbacks(HttpResponseUtil httpResponseUtil, ClientController
     }
 
     /// <summary>
-    /// Handle /fika/profile/download
+    /// 处理 /fika/profile/download
     /// </summary>
     public ValueTask<string> HandleProfileDownload(string url, IRequestData info, MongoId sessionID)
     {
@@ -44,7 +44,7 @@ public class ClientCallbacks(HttpResponseUtil httpResponseUtil, ClientController
     }
 
     /// <summary>
-    /// Handle /fika/client/check/version
+    /// 处理 /fika/client/check/version
     /// </summary>
     public ValueTask<string> HandleVersionCheck(string url, IRequestData info, MongoId sessionID)
     {

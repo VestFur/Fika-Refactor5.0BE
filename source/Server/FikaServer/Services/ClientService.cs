@@ -32,8 +32,8 @@ public class ClientService(ISptLogger<ClientService> logger, SaveServer saveServ
             _allowedMods.Add(mod);
         }
 
-        // Built-in requirements must also be allowed when an optional/required
-        // list enables enforcement, otherwise valid SPT plugins are forbidden.
+        // 当可选/必需列表启用强制校验时，内置的必需项也必须被允许，
+        // 否则合法的 SPT 插件会被禁止。
         _allowedMods.UnionWith(_requiredMods);
         _allowedMods.UnionWith(sanitizedOptionalMods);
     }
@@ -82,13 +82,13 @@ public class ClientService(ISptLogger<ClientService> logger, SaveServer saveServ
             logger.Info($"{username} ({sessionId}) connected with {request.Count} client mods: {string.Join(", ", request.Keys)}");
         }
 
-        // if no configuration was made, allow all mods
+        // 若未做任何配置，则允许所有 mod
         if (!_hasRequiredOrOptionalMods)
         {
             return mismatchedMods;
         }
 
-        // check for missing required mods first
+        // 先检查缺失的必需 mod
         foreach (var pluginId in _requiredMods)
         {
             if (!request.ContainsKey(pluginId))
@@ -97,7 +97,7 @@ public class ClientService(ISptLogger<ClientService> logger, SaveServer saveServ
             }
         }
 
-        // no need to check anything else since it's missing required mods
+        // 已缺失必需 mod，无需再检查其他内容
         if (mismatchedMods.MissingRequired.Count > 0)
         {
             return mismatchedMods;
@@ -107,14 +107,14 @@ public class ClientService(ISptLogger<ClientService> logger, SaveServer saveServ
         {
             var hash = request[pluginId];
 
-            // check if the mod isn't allowed
+            // 检查该 mod 是否不被允许
             if (!_allowedMods.Contains(pluginId))
             {
                 mismatchedMods.Forbidden.Add(pluginId);
                 continue;
             }
 
-            // first request made will fill in at the very least all the required mods hashes, following requests made by different clients will add any optional mod not added by the first request, otherwise will check against the first request data
+            // 首个请求至少会填入所有必需 mod 的哈希；随后来自不同客户端的请求会补充首个请求未添加的可选 mod，否则将基于首个请求的数据进行校验
             if (!fikaClientModHashesService.MatchesOrAdd(pluginId, hash))
             {
                 mismatchedMods.HashMismatch.Add(pluginId);

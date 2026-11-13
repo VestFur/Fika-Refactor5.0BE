@@ -10,7 +10,7 @@ using Fika.Core.Main.Utils;
 
 namespace Fika.Core.Networking.Serialization;
 
-/// <summary>Separates managed Fika DTOs from native game objects at the JSON boundary.</summary>
+/// <summary>在 JSON 边界上把托管 Fika DTO 与原生游戏对象区分开。</summary>
 internal static class FikaJson
 {
     internal static readonly JsonSerializerOptions Options = CreateOptions();
@@ -49,8 +49,8 @@ internal static class FikaJson
 
     private sealed class NativeObjectConverter<T> : JsonConverter<T> where T : Il2CppObjectBase
     {
-        // Set once the managed Newtonsoft.Json that shadows the IL2CPP proxy has
-        // been detected; every later call then goes through IL2CPP directly.
+        // 一旦检测到遮蔽 IL2CPP 代理的托管 Newtonsoft.Json
+        // 就设置该标志；之后每次调用都直接走 IL2CPP。
         private static bool _throughIl2Cpp;
 
         public override T Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
@@ -79,15 +79,15 @@ internal static class FikaJson
         }
 
         /// <summary>
-        /// Kept in its own non-inlined method: a linkage failure against a
-        /// shadowing Newtonsoft.Json surfaces while this method is compiled, and a
-        /// try/catch inside the same method could never observe it.
+        /// 单独放在不内联的方法里：针对遮蔽 IL2CPP 的
+        /// Newtonsoft.Json 的链接失败会在编译该方法时暴露，而同一方法内的
+        /// try/catch 永远无法观察到它。
         /// </summary>
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static T DeserializeThroughInterop(string json, Type type)
         {
-            // Use the non-generic native overload. A managed generic DTO has no
-            // AOT instantiation in the game and must never reach JsonConvert<T>.
+            // 使用非泛型的原生重载。托管的泛型 DTO 在游戏中没有
+            // AOT 实例化，绝不能走到 JsonConvert<T>。
             var native = Newtonsoft.Json.JsonConvert.DeserializeObject(json, Il2CppType.From(type));
             return native == null ? null : native.Cast<T>();
         }
@@ -124,11 +124,11 @@ internal static class FikaJson
             Newtonsoft.Json.JsonConvert.SerializeObject(value.Cast<Il2CppSystem.Object>());
 
         /// <summary>
-        /// A managed Newtonsoft.Json in BepInEx/plugins wins assembly resolution
-        /// over the IL2CPP interop proxy and lacks the IL2CPP overloads. Both
-        /// helpers live in <see cref="ShadowedAssemblyReporter"/>, which also
-        /// names the assembly file that won and doubles as the preflight a start
-        /// path can run before it depends on those overloads.
+        /// BepInEx/plugins 中的托管 Newtonsoft.Json 会在程序集解析中胜过
+        /// IL2CPP interop 代理，并且缺少 IL2CPP 重载。两个
+        /// 辅助方法都位于 <see cref="ShadowedAssemblyReporter"/>，它还
+        /// 会指出胜出的程序集文件，并兼作启动路径在依赖这些
+        /// 重载之前可以运行的预检。
         /// </summary>
         private static bool IsShadowedInterop(Exception exception) =>
             ShadowedAssemblyReporter.IsShadowedInterop(exception);

@@ -46,7 +46,7 @@ public sealed class ObservedInventoryController : Player.PlayerInventoryControll
 
     public override void AddDiscardLimits(Item rootItem, Il2CppSystem.Collections.Generic.IEnumerable<ItemsCount> destroyedItems)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override Il2CppSystem.Collections.Generic.IEnumerable<ItemsCount> GetItemsOverDiscardLimit(Item item)
@@ -87,7 +87,7 @@ public sealed class ObservedInventoryController : Player.PlayerInventoryControll
             {
                 foreach (var geventArgs in ActiveEvents)
                 {
-                    // this block is redundant during this check and isn't really meant to be used as it triggers a deny if player drags currently equipped item out of a slot
+                    // 这段代码在该检查中是多余的，本就不打算启用：若玩家把当前装备的物品拖出槽位，它会触发拒绝
                     /*if (item2 == geventArgs.Item)
                     {
                         FikaGlobals.LogError($"{item2.LocalizedShortName()} was same as queued process: {geventArgs.Item.LocalizedShortName()}");
@@ -219,22 +219,22 @@ public sealed class ObservedInventoryController : Player.PlayerInventoryControll
 
     public override void StrictCheckMagazine(Magazine magazine, bool status, int skill = 0, bool notify = false, bool useOperation = true)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void OnAmmoLoadedCall(int count)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void OnAmmoUnloadedCall(int count)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override void OnMagazineCheckCall()
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public override bool IsInventoryBlocked()
@@ -249,10 +249,10 @@ public sealed class ObservedInventoryController : Player.PlayerInventoryControll
 
     public override SearchContentOperation CreateSearchOperation(SearchableItem item)
     {
-        // Observed corpses and remote loot use the same native search
-        // operation as local/host inventories. Returning null here leaves the
-        // IL2CPP operation pipeline without a descriptor, so opening a remote
-        // corpse cannot progress to search results or subsequent loot moves.
+        // 观测尸体与远程战利品使用与本地/主机库存相同的原生搜索
+        // 操作。在此返回 null 会让 IL2CPP 操作流水线
+        // 拿不到描述符，于是打开远程尸体无法推进到
+        // 搜索结果或后续的战利品移动。
         return new SinglePlayerSearchContentOperation(GetAndIncrementNextOperationId(), this,
             PlayerSearchController, Profile, item);
     }
@@ -307,13 +307,13 @@ public sealed class ObservedInventoryController : Player.PlayerInventoryControll
 
     public override void GetTraderServicesDataFromServer(string traderId)
     {
-        // Do nothing
+        // 不做任何处理
     }
 
     public void SetNewID(MongoID newId)
     {
-        // SPT 5's CurrentId/IDatabaseIdGenerator use native IdSource. A CLR
-        // shadow of the old _currentId field never updates that sequence.
+        // SPT 5 的 CurrentId/IDatabaseIdGenerator 使用原生 IdSource。对旧 _currentId 字段的
+        // CLR 影子永远不会更新该序列。
         IdSource = newId;
     }
 

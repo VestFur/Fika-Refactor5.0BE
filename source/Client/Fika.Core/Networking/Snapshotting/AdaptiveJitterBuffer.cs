@@ -3,29 +3,29 @@
 namespace Fika.Core.Networking.Snapshotting;
 
 /// <summary>
-/// Dynamically calculates the required interpolation delay based on network jitter. <br/>
-/// Aims to minimize latency during stable connections and expand the buffer during spikes to prevent stutter.
+/// 根据网络抖动动态计算所需的插值延迟。 <br/>
+/// 旨在稳定连接时尽量降低延迟，在抖动尖峰时扩大缓冲区以避免卡顿。
 /// </summary>
 /// <remarks>
-/// This follows an asymmetric EMA approach: it expands rapidly to absorb lag spikes but contracts slowly 
-/// to maintain visual stability during recovery.
+/// 采用非对称 EMA 策略：快速扩张以吸收延迟尖峰，但收缩缓慢 
+/// 以在恢复期间保持视觉稳定。
 /// </remarks>
 public struct AdaptiveJitterBuffer
 {
-    /// <summary> The minimum interpolation delay (50ms). Even on a perfect connection, we need a small buffer to interpolate between two frames. </summary>
+    /// <summary> 最小插值延迟（50ms）。即使在完美连接下，我们也需要一个小缓冲区来在两帧之间插值。 </summary>
     private const double _baseDelay = 0.05d;
 
-    /// <summary> The maximum allowed interpolation delay (250ms). Caps latency to prevent the player from falling too far behind reality. </summary>
+    /// <summary> 允许的最大插值延迟（250ms）。用于限制延迟，避免玩家落后于真实状态太远。 </summary>
     private const double _maxDelay = 0.25d;
 
-    /// <summary> The smoothed variance in packet arrival times. </summary>
+    /// <summary> 数据包到达时间的平滑方差。 </summary>
     private double _currentJitter;
 
     /// <summary>
-    /// Gets the calculated delay to be used in the Snapshotter.
+    /// 获取用于 Snapshotter 的计算延迟。
     /// </summary>
     /// <remarks>
-    /// (<see cref="_baseDelay"/> + <see cref="_currentJitter"/>), clamped between <see cref="_baseDelay"/> and <see cref="_maxDelay"/>.
+    /// （<see cref="_baseDelay"/> + <see cref="_currentJitter"/>），并钳制在 <see cref="_baseDelay"/> 与 <see cref="_maxDelay"/> 之间。
     /// </remarks>
     public readonly double CurrentDelay
     {
@@ -36,19 +36,19 @@ public struct AdaptiveJitterBuffer
     }
 
     /// <summary>
-    /// Updates the jitter estimation based on the delta between packet arrivals.
+    /// 根据数据包到达之间的差值更新抖动估计。
     /// </summary>
-    /// <param name="packetArrivalDeltaTime">The actual local time elapsed since the last packet arrived.</param>
-    /// <param name="expectedTickDelta">The intended time elapsed between server snapshots (e.g., 0.05 for 20Hz).</param>
+    /// <param name="packetArrivalDeltaTime">自上一个数据包到达以来实际经过的本地时间。</param>
+    /// <param name="expectedTickDelta">服务器快照之间的预期时间（例如 20Hz 时为 0.05）。</param>
     public void Update(double packetArrivalDeltaTime, double expectedTickDelta)
     {
-        // calculate the absolute deviation from the expected arrival interval
-        // high variance indicates an unstable network path (jitter)
+        // 计算与预期到达间隔的绝对偏差
+        // 方差高说明网络路径不稳定（抖动）
         var variance = Math.Abs(packetArrivalDeltaTime - expectedTickDelta);
 
-        // asymmetric exponential moving average
-        // if variance is increasing (spike), use a high alpha (0.2) to expand the buffer quickly
-        // if variance is decreasing (recovery), use a low alpha (0.01) to shrink the buffer slowly
+        // 非对称指数移动平均
+        // 若方差在增大（尖峰），使用较高的 alpha（0.2）快速扩大缓冲区
+        // 若方差在减小（恢复），使用较低的 alpha（0.01）缓慢收缩缓冲区
         var alpha = variance > _currentJitter ? 0.2d : 0.01d;
 
         _currentJitter = (alpha * variance) + ((1d - alpha) * _currentJitter);

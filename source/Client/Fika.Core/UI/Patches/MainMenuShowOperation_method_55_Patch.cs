@@ -5,7 +5,7 @@ using EFT;
 namespace Fika.Core.UI.Patches;
 
 /// <summary>
-/// This allows all game editions to edit the <see cref="RaidSettings"/>
+/// 这允许所有游戏版本编辑 <see cref="RaidSettings"/>
 /// </summary>
 public class MainMenuShowOperation_method_55_Patch : ModulePatch
 {

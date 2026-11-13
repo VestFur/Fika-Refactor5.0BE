@@ -22,8 +22,8 @@ internal static class NativeValueTuple<T1, T2> where T1 : unmanaged where T2 : u
         ArgumentNullException.ThrowIfNull(value);
         T1 first = default;
         T2 second = default;
-        // Generated generic getters double-box primitive/enum fields in this
-        // interop runtime, reading the box header as a value. Read native fields.
+        // 在此互操作运行时中，生成的泛型 getter 会对基元/枚举字段重复装箱，
+        // 并把装箱头部当作值读取。请直接读取原生字段。
         IL2CPP.il2cpp_field_get_value(value.Pointer, First, &first);
         IL2CPP.il2cpp_field_get_value(value.Pointer, Second, &second);
         GC.KeepAlive(value);

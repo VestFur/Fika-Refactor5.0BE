@@ -58,7 +58,7 @@ public sealed class HealthSyncPacket : IPoolSubPacket
                         observedPlayer.TriggerZones.Add(zone);
                     }
                 }
-                if (!observedPlayer.NetworkHealthController.IsAlive) // prevent downed players from not fully dying
+                if (!observedPlayer.NetworkHealthController.IsAlive) // 防止已倒地的玩家没有真正死亡
                 {
                     observedPlayer.NetworkHealthController.IsAlive = true;
                 }
@@ -94,8 +94,8 @@ public sealed class HealthSyncPacket : IPoolSubPacket
                     addEffect.Strength = reader.GetPackedFloat(-100f, 100f, EFloatCompression.High);
                     addEffect.ExtraDataType = reader.GetEnum<EExtraDataType>();
 
-                    // Nested native value getters return boxed copies. Write
-                    // each level back so the effect can resolve its actual item.
+                    // 嵌套的原生取值器返回的是装箱副本。请把每一层
+                    // 都写回，这样效果才能解析到它真正的物品。
                     var extraData = addEffect.ExtraData;
                     switch (addEffect.ExtraDataType)
                     {
@@ -364,8 +364,8 @@ public sealed class HealthSyncPacket : IPoolSubPacket
                 {
                     var emr = packet.EffectMedResource;
                     writer.Put(emr.EffectId);
-                    // This value becomes inventory state, including zero on
-                    // exhaustion. Quantization permanently changes kit resources.
+                    // 这个值会成为背包状态，包括耗尽时的零值。
+                    // 量化会永久改变套装资源。
                     writer.Put(emr.Resource);
                     break;
                 }

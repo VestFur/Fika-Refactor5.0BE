@@ -14,43 +14,43 @@ using UnityEngine;
 namespace Fika.Core.Main.Components;
 
 /// <summary>
-/// The local player's extraction, reported per attempt, plus the release of a transit's exfiltration
-/// guard that no longer has a transit to belong to.
+/// 本地玩家的撤离情况，按每次尝试分别上报；此外还释放不再有中转
+/// 可归属的中转撤离封禁。
 /// <para>
-/// What this file answers, and nothing else does:
+/// 本文件负责回答的问题（除此之外没有别处回答）：
 /// </para>
 /// <list type="bullet">
-/// <item><b>Who refused him.</b> One line per distinct attempt state names the point, its status,
-/// whether the native point entered the player, whether an extraction handler exists for him,
-/// whether the flare gate allows him, the unmet requirement types, the countdown position and the
-/// guard state (<c>ExfiltrationController.BannedPlayers</c>, <c>TransitController.transitPlayers</c>).
-/// The two gates in <see cref="FikaExfilManager.Update"/> refuse silently today: a flare refusal is
-/// deduplicated to one line per raid, and an unmet requirement says nothing at all.</item>
-/// <item><b>Whether the raid stop was asked for.</b> Every call into <c>CoopGame.Extract</c> this
-/// manager makes is bracketed, so a call that returns without registering the local player (the
-/// early return in <c>HostGameController.Extract</c> / <c>ClientGameController.Extract</c>) is
-/// visible instead of looking like nothing happened.</item>
-/// <item><b>That the guard is released.</b> Committing to a transit bans the player from
-/// exfiltration and disables the exit interaction
-/// (<c>FikaHostTransitController.InteractWithTransit</c>, the host half and the remote half).
-/// The native controller releases that pair when the transfer ends or is cancelled
-/// (<c>TransitController.EnableExits(Player)</c>, which calls
-/// <c>ExfiltrationController.EnableExitsInteraction()</c>); this port has no such release, so a
-/// transfer that does not take the player - and any state that survives into the next location -
-/// leaves him unable to extract. This class releases exactly those entries that no live
-/// registration owns.</item>
+/// <item><b>是谁拒绝了他。</b> 每个不同的尝试状态一行，写明点位、它的状态、
+/// 原生点位是否接纳了玩家、是否存在可供他的撤离处理器、
+/// 信号弹门禁是否放行他、未满足的需求类型、倒计时位置以及
+/// 守卫状态 (<c>ExfiltrationController.BannedPlayers</c>, <c>TransitController.transitPlayers</c>)。
+/// <see cref="FikaExfilManager.Update"/> 中的两道门禁目前是静默拒绝的：信号弹拒绝
+/// 会去重成每场 raid 一行，而未满足的需求则什么都不说。</item>
+/// <item><b>停止 raid 是否被请求过。</b> 本管理器对 <c>CoopGame.Extract</c> 的每次
+/// 调用都被加了括号，因此一次未注册本地玩家就返回的调用（即
+/// <c>HostGameController.Extract</c> / <c>ClientGameController.Extract</c> 中的提前返回）会
+/// 变得可见，而不是看起来什么都没发生。</item>
+/// <item><b>守卫确实被释放了。</b> 提交进入中转会把玩家封禁出撤离，
+/// 并禁用撤离点交互
+/// (<c>FikaHostTransitController.InteractWithTransit</c>，主机侧和远程侧两半）。
+/// 原生控制器会在转移结束或被取消时释放这一对状态
+/// (<c>TransitController.EnableExits(Player)</c>，它会调用
+/// <c>ExfiltrationController.EnableExitsInteraction()</c>)；本移植没有这样的释放，因此一次
+/// 没有把玩家带走的转移 —— 以及任何残留到下一个地点的状态 ——
+/// 都会让他无法撤离。本类只释放那些没有活注册
+/// 所拥有的条目。</item>
 /// </list>
 /// <para>
-/// A ban entry is considered live only while it still owns a player who is in this raid, alive and
-/// not marked as extracted. That is the same bookkeeping the raid itself uses, so a release can
-/// never fire while a transfer is really in flight.
+/// 一个封禁条目只有仍然拥有一个处于本场 raid、活着且
+/// 未被标记为已撤离的玩家时，才被视为活的。这与 raid 自身使用的是同一套记账，
+/// 因此当转移真的在进行中时，释放永远不会触发。
 /// </para>
 /// </summary>
 internal static class FikaExtractDiag
 {
     /// <summary>
-    /// A committed transit hands the player over within seconds. A registration that is still live
-    /// this long after it was applied is a transfer that will not happen.
+    /// 已提交的中转会在这段时间内把玩家交接过去。一条在应用之后
+    /// 过了这么久仍然活着的注册，就是一次不会发生的转移。
     /// </summary>
     private const float StaleGuardSeconds = 120f;
 
@@ -58,7 +58,7 @@ internal static class FikaExtractDiag
     private static int _guardRaidId = int.MinValue;
     private static float _guardSince = -1f;
 
-    /// <summary>1 Hz gate for <see cref="Sample"/>.</summary>
+    /// <summary>1 Hz 门禁，用于 <see cref="Sample"/>。</summary>
     internal static bool ShouldSample()
     {
         var now = Time.time;
@@ -72,9 +72,9 @@ internal static class FikaExtractDiag
     }
 
     /// <summary>
-    /// Runs at raid start, right after the manager bound this raid's exits: reports what was bound
-    /// and releases a guard pair left behind by an earlier location before the player can even walk
-    /// to an exit.
+    /// 在 raid 开始时运行，紧接管理器绑定本场 raid 的撤离点之后：报告绑定
+    /// 了什么，并释放更早地点遗留的一对守卫状态，这一切都发生在玩家
+    /// 走到撤离点之前。
     /// </summary>
     internal static void OnRaidBound(CoopGame game, int regularCount, int secretCount)
     {
@@ -97,9 +97,9 @@ internal static class FikaExtractDiag
     }
 
     /// <summary>
-    /// Per second: the exfiltration guard check of this machine. It releases a transit exfiltration ban
-    /// that no longer has a transit to belong to, which is what keeps a transfer that never took the
-    /// player from stranding him at every exit of the raid.
+    /// 每秒执行：本机的撤离守卫检查。它释放不再有中转可归属的
+    /// 中转撤离封禁，正因如此，一次从未把玩家带走的转移才不会让他
+    /// 困在 raid 的每一个撤离点上。
     /// </summary>
     internal static void Sample(CoopGame game, ExfiltrationPoint[] points, List<string> handlerPoints, int countdownCount)
     {
@@ -122,42 +122,11 @@ internal static class FikaExtractDiag
         }
     }
 
-    /// <summary>About to call into <c>CoopGame.Extract</c> for the local player.</summary>
-    internal static void ExtractCall(CoopGame game, string pointName, Player player, string source)
-    {
-        try
-        {
-            var netId = NetIdOf(player);
-            var already = IsMarkedExtracted(game, player);
-            FikaGlobals.LogWarning($"[ExtractDiag] extract call point='{pointName}' source={source} profile={player.ProfileId} raidId={player.RaidId} netId={netId} alreadyExtracted={already}{DescribeGuardState(player)} - {(already ? "the game's Extract returns immediately for an already extracted player" : "the raid stop routine is expected to start now")}");
-        }
-        catch (Exception exception)
-        {
-            FikaGlobals.LogError($"[ExtractDiag] extract call diagnostics failed: {exception}");
-        }
-    }
 
-    /// <summary>The <c>CoopGame.Extract</c> call returned: did it take the local player?</summary>
-    internal static void ExtractReturned(CoopGame game, string pointName, Player player)
-    {
-        try
-        {
-            var netId = NetIdOf(player);
-            var extracted = IsMarkedExtracted(game, player);
-            var tail = extracted
-                ? "the player is registered as extracted, the raid stop routine is running"
-                : "the player is still not registered as extracted: the call was refused or lost, so nothing will happen at this exit (compare HostGameController.Extract / ClientGameController.Extract)";
-            FikaGlobals.LogWarning($"[ExtractDiag] extract call returned point='{pointName}' netId={netId} registeredAsExtracted={extracted} - {tail}");
-        }
-        catch (Exception exception)
-        {
-            FikaGlobals.LogError($"[ExtractDiag] extract result diagnostics failed: {exception}");
-        }
-    }
 
     /// <summary>
-    /// Releases the exfiltration guard entry of every player this machine can see whose transit is
-    /// no longer real, and re-enables the exit interaction when nothing is left to wait for.
+    /// 释放本机可见的、其中转已不再真实的每个玩家的撤离守卫条目，
+    /// 并在已没有需要等待的对象时重新启用撤离点交互。
     /// </summary>
     private static void GuardTick(Player player, string context)
     {
@@ -205,8 +174,8 @@ internal static class FikaExtractDiag
 
             if (!anyLive)
             {
-                // Not one entry of the set still owns a player who is in this raid, alive and not
-                // extracted: nothing is waiting for a transfer, so the whole pair is a leftover.
+                // 集合中没有任何一个条目仍然拥有一个处于本场 raid、活着且
+                // 未撤离的玩家：没有任何东西在等待转移，所以这一对整体都是残留。
                 var count = banned.Count;
                 banned.Clear();
                 controller.EnableExitsInteraction();
@@ -217,7 +186,7 @@ internal static class FikaExtractDiag
 
             if (localLive)
             {
-                // His own registration is live: still a transfer in flight. Only the window decides.
+                // 他自己的注册是活的：仍有转移在进行中。只有时间窗口能决定。
                 if (_guardRaidId != player.RaidId || _guardSince < 0f)
                 {
                     _guardRaidId = player.RaidId;
@@ -276,8 +245,8 @@ internal static class FikaExtractDiag
     }
 
     /// <summary>
-    /// Raid ids of every transit registration that still owns a player of this raid: the player has
-    /// to be present, alive and not already marked as extracted, or the registration is dead.
+    /// 仍然拥有本场 raid 玩家的每个中转注册的 raid id：该玩家必须
+    /// 在场、活着且尚未被标记为已撤离，否则该注册就是死的。
     /// </summary>
     private static List<int> CollectLiveRegistrations()
     {
@@ -355,7 +324,7 @@ internal static class FikaExtractDiag
             && string.Equals(player.ProfileId, profileId, StringComparison.Ordinal);
     }
 
-    /// <summary>The raid ids that belong to the local player, in the two keys the game uses for bans.</summary>
+    /// <summary>属于本地玩家的 raid id，按游戏用于封禁的两个键分别给出。</summary>
     private static List<int> LocalRaidIds(Player player)
     {
         var ids = new List<int>();
@@ -364,7 +333,7 @@ internal static class FikaExtractDiag
         return ids;
     }
 
-    /// <summary>The raid ids of the other human players of this raid.</summary>
+    /// <summary>本场 raid 其他人类玩家的 raid id。</summary>
     private static List<int> OtherRaidIds(Player local)
     {
         var ids = new List<int>();
@@ -400,8 +369,8 @@ internal static class FikaExtractDiag
     }
 
     /// <summary>
-    /// <c>Player.Id</c> is the second key the exfiltration ban is written with natively; the port
-    /// writes <c>RaidId</c>. Both are removed, so a set written by either path is released.
+    /// <c>Player.Id</c> 是原生写撤离封禁时使用的第二个键；本移植
+    /// 写的是 <c>RaidId</c>。两者都会被移除，因此无论由哪条路径写入的集合都会被释放。
     /// </summary>
     private static int SafeId(Player player)
     {
@@ -415,24 +384,6 @@ internal static class FikaExtractDiag
         }
     }
 
-    private static bool IsMarkedExtracted(CoopGame game, Player player)
-    {
-        try
-        {
-            var netId = NetIdOf(player);
-            if (game != null && game.ExtractedPlayers != null && game.ExtractedPlayers.Contains(netId))
-            {
-                return true;
-            }
-
-            var extracted = FikaSingleton<IFikaGame>.Instance?.ExtractedPlayers;
-            return extracted != null && extracted.Contains(netId);
-        }
-        catch (Exception)
-        {
-            return false;
-        }
-    }
 
     private static int NetIdOf(Player player)
     {
@@ -445,7 +396,7 @@ internal static class FikaExtractDiag
         }
         catch (Exception)
         {
-            // Reported as -1.
+            // 按 -1 上报。
         }
 
         return -1;
@@ -463,130 +414,20 @@ internal static class FikaExtractDiag
         }
     }
 
-    private static bool IsEntered(ExfiltrationPoint point, Player player)
-    {
-        try
-        {
-            var entered = point.Entered;
-            if (entered == null)
-            {
-                return false;
-            }
 
-            foreach (var other in entered)
-            {
-                if (other == null)
-                {
-                    continue;
-                }
 
-                if (ReferenceEquals(other, player) || Matches(other, player.ProfileId))
-                {
-                    return true;
-                }
-            }
-        }
-        catch (Exception)
-        {
-            // A destroyed point reports nothing.
-        }
 
-        return false;
-    }
-
-    private static float DistanceTo(ExfiltrationPoint point, Vector3 position)
-    {
-        try
-        {
-            return Vector3.Distance(point.transform.position, position);
-        }
-        catch (Exception)
-        {
-            return -1f;
-        }
-    }
-
-    private static string PointName(ExfiltrationPoint point)
-    {
-        try
-        {
-            if (point == null)
-            {
-                return null;
-            }
-
-            var name = point.Settings?.Name;
-            return string.IsNullOrEmpty(name) ? null : name;
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
-
-    private static float ExfiltrationTime(ExfiltrationPoint point)
-    {
-        try
-        {
-            return point.Settings.ExfiltrationTime;
-        }
-        catch (Exception)
-        {
-            return -1f;
-        }
-    }
 
     /// <summary>
-    /// The state of the signal-flare exit chain on this machine, for the raid start and attempt lines:
-    /// <c>triggers=N</c> is the number of scene <c>TriggerFlareSuccess</c> components this map carries
-    /// (0 = the map drives flares through detector zones only), <c>gated=[names]</c> are the exits the
-    /// classification marked as flare gated, and <c>pending=N</c> counts exit-visual replays still waiting
-    /// for the shooter's flare object. A machine that shows <c>triggers=0 gated=[]</c> cannot react to a
-    /// flare at all, which is what a map without detector zones and without the trigger chain looks like.
+    /// 本机信号弹撤离链的状态，供 raid 启动行与尝试行使用：
+    /// <c>triggers=N</c> 是本地图携带的场景 <c>TriggerFlareSuccess</c> 组件数量
+    /// （0 = 该地图只通过侦测区域驱动信号弹），<c>gated=[names]</c> 是被
+    /// 分类标记为信号弹门禁的撤离点，而 <c>pending=N</c> 统计仍在等待
+    /// 射击者信号弹对象的撤离点视觉重放次数。显示 <c>triggers=0 gated=[]</c> 的机器
+    /// 完全无法对信号弹作出反应，而这正是缺少侦测区域和缺少触发链的地图的样子。
     /// </summary>
-    private static string DescribeHeliChain()
-    {
-        try
-        {
-            return "triggers=" + FikaFlareExfil.SceneFlareTriggerCount()
-                + " pending=" + FikaFlareExfil.PendingVisualCount()
-                + " gated=[" + string.Join(",", FikaFlareExfil.GatedPointNames()) + "]";
-        }
-        catch (Exception exception)
-        {
-            return "unavailable (" + exception.Message + ")";
-        }
-    }
 
-    private static string CountdownStart(ExfiltrationPoint point)
-    {
-        try
-        {
-            return point.ExfiltrationStartTime.ToString("F1");
-        }
-        catch (Exception)
-        {
-            return "unknown";
-        }
-    }
 
-    private static string DescribeInteraction(ExfiltrationPoint point)
-    {
-        try
-        {
-            var collider = point.ExtendedCollider;
-            if (collider == null)
-            {
-                return "unknown";
-            }
-
-            return collider.enabled ? "on" : "off";
-        }
-        catch (Exception)
-        {
-            return "unknown";
-        }
-    }
 
     private static bool Contains(List<string> names, string name)
     {
@@ -606,126 +447,10 @@ internal static class FikaExtractDiag
         return false;
     }
 
-    /// <summary>The requirement types the game still counts as unmet for this player.</summary>
-    private static string DescribeUnmet(ExfiltrationPoint point, Player player)
-    {
-        try
-        {
-            var unmet = point.UnmetRequirements(player);
-            if (unmet == null)
-            {
-                return string.Empty;
-            }
+    /// <summary>游戏认为对这名玩家仍未满足的需求类型。</summary>
 
-            var builder = new StringBuilder();
-            foreach (var requirement in unmet.AsManaged())
-            {
-                if (requirement == null)
-                {
-                    continue;
-                }
 
-                if (builder.Length > 0)
-                {
-                    builder.Append(',');
-                }
+    /// <summary>尝试仍有机会时为 null；否则为使它被拒的那道门禁。</summary>
 
-                builder.Append(RequirementName(requirement));
-            }
-
-            return builder.ToString();
-        }
-        catch (Exception exception)
-        {
-            return "unreadable:" + exception.GetType().Name;
-        }
-    }
-
-    private static string RequirementName(ExfiltrationRequirement requirement)
-    {
-        try
-        {
-            return requirement.GetIl2CppType().Name;
-        }
-        catch (Exception)
-        {
-            try
-            {
-                return requirement.GetType().Name;
-            }
-            catch (Exception)
-            {
-                return "requirement";
-            }
-        }
-    }
-
-    /// <summary>Null while the attempt still has every chance; otherwise the gate that refused it.</summary>
-    private static string RefusalReason(bool entered, bool near, bool handled, string mayExtract, string unmet)
-    {
-        if (!entered && near)
-        {
-            return "the point never entered the local player (its trigger or its interaction is off, or its status is not usable for him)";
-        }
-
-        if (entered && !handled)
-        {
-            return "the native point entered the player but started no extraction for him (status or requirement gate inside ExfiltrationPoint)";
-        }
-
-        if (handled && string.Equals(mayExtract, "False", StringComparison.Ordinal))
-        {
-            return "the flare gate refused this profile: no activation covers it for this point (FikaFlareExfil.MayExtract)";
-        }
-
-        if (handled && !string.IsNullOrEmpty(unmet) && unmet.StartsWith("unreadable", StringComparison.Ordinal) == false && unmet.Length > 0)
-        {
-            return "unmet requirement(s) kept the countdown path from extracting: " + unmet;
-        }
-
-        return null;
-    }
-
-    private static string DescribeGuardState(Player player)
-    {
-        try
-        {
-            var controller = global::CommonAssets.Scripts.Game.ExfiltrationController.Instance;
-            var banned = controller?.BannedPlayers;
-            var raidId = 0;
-            var alt = 0;
-            try
-            {
-                raidId = player.RaidId;
-                alt = SafeId(player);
-            }
-            catch (Exception)
-            {
-                // Both stay 0.
-            }
-
-            var isBanned = banned != null && (banned.Contains(raidId) || (alt != 0 && alt != raidId && banned.Contains(alt)));
-            var registered = "no";
-            try
-            {
-                var transit = Singleton<GameWorld>.Instance?.TransitController;
-                var registrations = transit?.transitPlayers;
-                if (registrations != null && !string.IsNullOrEmpty(player.ProfileId) && registrations.TryGetValue(player.ProfileId, out var registeredRaidId))
-                {
-                    registered = registeredRaidId.ToString();
-                }
-            }
-            catch (Exception)
-            {
-                registered = "unreadable";
-            }
-
-            return $" ban={isBanned} bannedCount={banned?.Count ?? -1} transitRegistration={registered}";
-        }
-        catch (Exception)
-        {
-            return " ban=unreadable";
-        }
-    }
 
 }

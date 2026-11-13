@@ -18,7 +18,7 @@ using SPTushonka.Reflection.Patching;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Class used to verify and handle other SPT mods
+/// 用于校验并处理其他 SPT 模组的类
 /// </summary>
 public class FikaModHandler
 {
@@ -32,10 +32,10 @@ public class FikaModHandler
 
     public FikaModHandler()
     {
-        // SPTushonka 5.0.0 registers its plugins under the com.sptushonka.* GUIDs, older
-        // builds used the bare sptushonka.* names. Accept both and never dereference a
-        // null PluginInfo: a single lookup miss used to throw out of this constructor
-        // and the chainloader then discarded the whole plugin.
+        // SPTushonka 5.0.0 用 com.sptushonka.* 形式的 GUID 注册其插件，较早的
+        // 构建使用裸的 sptushonka.* 名称。两种都接受，并且绝不解引用
+        // 为 null 的 PluginInfo：一次查找失败过去会从这个构造函数抛出，
+        // 然后链式加载器就丢弃了整个插件。
         var plugins = IL2CPPChainloader.Instance.Plugins;
         var present = plugins.TryGetValue("com.sptushonka.core", out var pluginInfo)
             || plugins.TryGetValue("sptushonka.core", out pluginInfo);
@@ -46,7 +46,7 @@ public class FikaModHandler
     {
         PluginInfo[] pluginInfos = [.. IL2CPPChainloader.Instance.Plugins.Values];
 
-        // Set capacity to avoid unnecessarily resizing for people who have a lot of mods loaded
+        // 设置容量，避免为加载了大量模组的用户做不必要的扩容
         Dictionary<string, uint> loadedMods = new(pluginInfos.Length);
 
         foreach (var pluginInfo in pluginInfos)
@@ -79,7 +79,7 @@ public class FikaModHandler
             return;
         }
 
-        // If any errors were detected we will print what has happened
+        // 若检测到任何错误，我们会打印出发生了什么
         var installationError =
             validationResult.Forbidden.Length > 0 ||
             validationResult.MissingRequired.Length > 0 ||
@@ -112,7 +112,7 @@ public class FikaModHandler
 
     private Task HandleModSpecificPatches(PatchManager manager)
     {
-        // We only want to load this if UI Fixes is not loaded
+        // 只有在 UI Fixes 未加载时我们才想加载这个
         if (!UIFixesLoaded)
         {
             _logger.LogInfo("UI Fixes is not loaded, enabling PartyInfoPanel fix");
@@ -136,7 +136,7 @@ public class FikaModHandler
     {
         const string message = "Your client doesn't meet server requirements, check logs for more details";
 
-        // -1f time makes the message permanent
+        // -1f 的时间让这条消息永久显示
         var errorScreen = Singleton<PreloaderUI>.Instance.ShowCriticalErrorScreen("INSTALLATION ERROR", message,
             ErrorScreen.EButtonType.QuitButton, -1f);
 

@@ -27,7 +27,7 @@ public partial class FilesManagerPage
 
     private bool _uploading;
     private string? _uploadingText;
-    private readonly long _maxSize = 200 * 1024 * 1024; // ~200mb
+    private readonly long _maxSize = 200 * 1024 * 1024; // 约 200mb
 
     protected override void OnInitialized()
     {
@@ -47,13 +47,13 @@ public partial class FilesManagerPage
 
         TreeItems = [];
 
-        // Add subdirectories
+        // 添加子目录
         foreach (var dir in rootDir.GetDirectories())
         {
             TreeItems.Add(BuildTreeFromDirectory(basePath, dir));
         }
 
-        // Add files directly under ProtectedFiles
+        // 添加 ProtectedFiles 下的直接文件
         foreach (var file in rootDir.GetFiles())
         {
             TreeItems.Add(new TreeItemPresenter(file.Name, ExtensionToIcon(file.Extension))
@@ -85,14 +85,14 @@ public partial class FilesManagerPage
             Value = Path.GetRelativePath(basePath, dir.FullName),
         };
 
-        // Add subdirectories recursively
+        // 递归添加子目录
         foreach (var subDir in dir.GetDirectories())
         {
             folderItem.Children ??= new List<TreeItemData<string>>();
             folderItem.Children.Add(BuildTreeFromDirectory(basePath, subDir));
         }
 
-        // Add files in this directory
+        // 添加本目录中的文件
         foreach (var file in dir.GetFiles())
         {
             folderItem.Children ??= [];
@@ -195,7 +195,7 @@ public partial class FilesManagerPage
                     continue;
                 }
 
-                var safeFileName = Path.GetFileName(file.Name); // prevent directory traversal
+                var safeFileName = Path.GetFileName(file.Name); // 防止目录遍历
                 var filePath = Path.Combine(uploadPath, safeFileName);
 
                 if (File.Exists(filePath))
@@ -259,10 +259,10 @@ public partial class FilesManagerPage
             return;
         }
 
-        // Root directory where secure files are stored
+        // 安全文件存储的根目录
         var rootPath = WebAppConfig.ProtectedFilesPath;
 
-        // Combine root path with requested filename
+        // 把根路径与请求的文件名组合起来
         var fullPath = Path.GetFullPath(Path.Combine(rootPath, SelectedValue));
 
         if (File.Exists(fullPath))

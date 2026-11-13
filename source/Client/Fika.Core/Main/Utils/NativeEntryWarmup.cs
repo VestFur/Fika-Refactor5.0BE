@@ -13,58 +13,58 @@ using Il2CppInterop.Runtime.Runtime;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Validates every generated native entry point of the injected Fika types at registration time.
+/// 在注册时校验注入的 Fika 类型所生成的每一个原生入口点。
 ///
-/// Il2CppInterop gives each method of an injected type two reverse-P/Invoke entries, built from the
-/// method's own signature by hand written IL:
-///   * an invoker behind its own <c>InvokerDelegateMetadataV29</c> (five arguments, independent of
-///     the method: methodPointer, methodInfo, obj, args, returnValue) whose body unpacks <c>args</c>
-///     and <c>calli</c>s the method pointer, and
-///   * a "Trampoline_&lt;signature&gt;" method behind the method pointer slot.
-/// Both bodies are produced by Il2CppInterop (this port already transpiles two of its emitters,
-/// see <see cref="NativeInjectionScope"/>), but they are only ever *validated by the JIT*, and the
-/// JIT runs for the first time inside the native callout that first reaches the method - where a
-/// rejected body is the runtime's fatal 0x80131506 fail fast instead of a managed exception
-/// (analysis/adjust-shot-vectors/REPORT.md, analysis/crash-clr/REPORT.md).
+/// Il2CppInterop 为注入类型的每个方法提供两个反向 P/Invoke 入口，二者都由该方法自身的签名
+/// 通过手写 IL 构建而成：
+///   * 一个位于自身 <c>InvokerDelegateMetadataV29</c> 之后的 invoker（五个参数，与方法无关：
+///     methodPointer、methodInfo、obj、args、returnValue），其方法体解包 <c>args</c>
+///     并对方法指针执行 <c>calli</c>；以及
+///   * 一个位于方法指针槽之后的 "Trampoline_&lt;signature&gt;" 方法。
+/// 这两个方法体均由 Il2CppInterop 生成（本移植版已转译了它的两个 emitter，
+/// 见 <see cref="NativeInjectionScope"/>），但它们始终只是*由 JIT 校验*，而 JIT
+/// 第一次运行就在首次到达该方法的原生回调内部——在那里，被拒绝的方法体会变成
+/// 运行时致命的 0x80131506 快速失败（fail fast），而不是一个托管异常
+/// （analysis/adjust-shot-vectors/REPORT.md、analysis/crash-clr/REPORT.md）。
 ///
-/// The first version of this class never validated anything, and the reason is worth keeping here.
-/// It asked the injector for the invoker delegate, turned it into a pointer with
-/// <c>Marshal.GetFunctionPointerForDelegate</c> and back into a delegate with
-/// <c>Marshal.GetDelegateForFunctionPointer&lt;InvokerDelegateMetadataV29&gt;</c>. The pointer
-/// belongs to a reverse-P/Invoke thunk over a *managed* method, so the reverse call returns the very
-/// delegate instance the injector cached - whose type is the interop's own, runtime created
-/// <c>InvokerDelegateMetadataV29</c>, never Fika's declaration of the same name - and the cast threw
-/// <c>InvalidCastException</c> before any body was entered. That is why every run logged the same
-/// number of signatures as "rejected": 915 of 915, with nothing warmed at all
-/// (analysis/warmup-probe-fix/REPORT.md, EntryProbe/A: the round trip into Fika's type always throws,
-/// the round trip into the delegate's own type returns the same instance).
+/// 这个类的第一个版本从未校验过任何东西，原因值得在此保留下来。
+/// 它向注入器索取 invoker 委托，用
+/// <c>Marshal.GetFunctionPointerForDelegate</c> 把它转成指针，再用
+/// <c>Marshal.GetDelegateForFunctionPointer&lt;InvokerDelegateMetadataV29&gt;</c> 把它转回委托。该指针
+/// 属于对*托管*方法的反向 P/Invoke thunk，因此那次反向调用返回的正是
+/// 注入器缓存的那个委托实例——它的类型是 interop 自己运行时创建的
+/// <c>InvokerDelegateMetadataV29</c>，从来不是 Fika 中同名的声明——于是这次强转抛出
+/// <c>InvalidCastException</c>，任何方法体都尚未进入。这就是为什么每次运行都记录了相同
+/// 数量的签名被 "rejected"：915 个中的 915 个，完全没有被预热
+/// （analysis/warmup-probe-fix/REPORT.md、EntryProbe/A：转换到 Fika 的类型总是抛出异常，
+/// 而转换到委托自身的类型则返回同一个实例）。
 ///
-/// The invoker is therefore reached through the method the injector bound it to - the generated body
-/// is a <see cref="DynamicMethod"/> and <c>delegate.Method</c> is that body - and bound to Fika's
-/// declaration of the ABI with <see cref="DynamicMethod.CreateDelegate(Type)"/>. The body is then
-/// entered once from managed code with a real native no-op as the method pointer. That target is
-/// written by <see cref="EnsureNoOpTarget"/> into executable memory: genuine machine code with no
-/// managed frame, so the invoker's <c>calli</c> can never be read as managed code calling an
-/// <c>UnmanagedCallersOnly</c> method - the shape that fail fasts instead of throwing. The stub
-/// bumps its own hit counter and publishes a marker, so "warmed" in the log means the body really
-/// ran and reached it, not that a delegate object was created.
+/// 因此 invoker 是通过注入器绑定它时所用的方法来访问的——生成的方法体
+/// 是一个 <see cref="DynamicMethod"/>，而 <c>delegate.Method</c> 就是该方法体——随后用
+/// <see cref="DynamicMethod.CreateDelegate(Type)"/> 绑定到 Fika 对该 ABI 的声明上。之后该方法体
+/// 从托管代码中被进入一次，并以一个真正的原生空操作作为方法指针。该目标由
+/// <see cref="EnsureNoOpTarget"/> 写入可执行内存：真正的机器码，没有
+/// 托管帧，因此 invoker 的 <c>calli</c> 永远不会被判定为托管代码调用一个
+/// <c>UnmanagedCallersOnly</c> 方法——那正是会快速失败而不是抛出异常的形状。该存根
+/// 会累加自己的命中计数并发布一个标记，因此日志中的 "warmed" 意味着方法体真正
+/// 运行并到达了它，而不是仅仅创建了一个委托对象。
 ///
-/// The verdicts are three way, and only the first two are interesting:
-///   * <b>warmed</b> - the body JIT compiled and executed. This is the entry that will also work
-///     when the native side reaches it.
-///   * <b>rejected</b> - the runtime refuses the generated body (<c>InvalidProgramException</c>).
-///     This is exactly the class that dies as the uncatchable 0x80131506 when a callout reaches it
-///     first, so it is logged per method as an error. The port's invoker transpiler is what keeps
-///     by-ref shapes out of this bucket (EntryProbe: stock by-ref bodies are rejected, the port's
-///     patched ones run).
-///   * <b>not warmed</b> - the body could not be exercised here (no native target, or an invoker
-///     shape this runtime does not use), which is a gap in this instrument, not a verdict.
+/// 判定结果分三种，只有前两种值得关注：
+///   * <b>warmed</b>——方法体经 JIT 编译并执行。这也是当原生侧
+///     到达它时会同样正常工作的入口。
+///   * <b>rejected</b>——运行时拒绝生成的方法体（<c>InvalidProgramException</c>）。
+///     这正是当回调先到达时以无法捕获的 0x80131506 死掉的那一类，
+///     因此它按方法记录为错误。本移植版的 invoker 转译器正是把按引用
+///     形状挡在这个桶之外的东西（EntryProbe：原版按引用方法体被拒绝，而本移植版
+///     打过补丁的可以运行）。
+///   * <b>not warmed</b>——方法体无法在此处被实际执行（没有原生目标，或某个此运行时
+///     不使用的 invoker 形状），这是该插桩工具的覆盖缺口，而不是一条判定结论。
 ///
-/// What stays uncovered, said plainly: the per method trampoline body (entering that one always runs
-/// the managed method, so it cannot be exercised from here) and anything behind a body the JIT
-/// accepts in managed context but would reject as an unmanaged entry point. The probe could not
-/// produce that case - the by-ref bodies of the round trip were rejected in both entries, the plain
-/// ones ran in both - so the two contexts have agreed so far.
+/// 坦率说明仍未覆盖的部分：每个方法的 trampoline 方法体（进入它总是会运行
+/// 托管方法，因此无法从这里被实际执行），以及那些 JIT 在托管上下文中接受、但作为
+/// 非托管入口点却会拒绝的方法体之后的一切。该探针无法
+/// 制造出那种情况——往返过程中的按引用方法体在两个入口都被拒绝，而普通
+/// 方法体在两个入口都能运行——所以到目前为止两种上下文是一致的。
 /// </summary>
 internal static class NativeEntryWarmup
 {
@@ -72,27 +72,27 @@ internal static class NativeEntryWarmup
     private unsafe delegate void InvokerDelegateMetadataV29(nint methodPointer, Il2CppMethodInfo* methodInfo, nint obj, nint* args, nint* returnValue);
 
     /// <summary>
-    /// Bytes reserved per argument. The generated body dereferences each slot to load the value a
-    /// by-value parameter carries, so the slot has to hold the widest struct any injected method
-    /// takes. 256 is far above the widest shape in this port (Vector3 is 12, DamageInfo ~28) and
-    /// reading zeroed scratch is harmless.
+    /// 每个参数预留的字节数。生成的方法体会解引用每个槽位，以加载
+    /// 按值参数所携带的值，因此该槽位必须能容纳任何注入方法所取用的
+    /// 最宽结构体。256 远大于本移植版中最宽的形状（Vector3 为 12，DamageInfo 约 28），
+    /// 而且读取已清零的暂存区是无害的。
     /// </summary>
     private const int ArgumentSlotSize = 256;
 
-    /// <summary>Bytes reserved for the value the generated body copies a non-void return into.</summary>
+    /// <summary>为生成的方法体把非 void 返回值复制进去所预留的字节数。</summary>
     private const int ReturnBufferSize = 4096;
     private const int MaxReportedNames = 12;
 
-    /// <summary>Marker the native no-op publishes, so "the body ran" is observable from managed code.</summary>
+    /// <summary>原生空操作发布的标记，使"方法体已运行"可以从托管代码观察到。</summary>
     private const long StubMarker = 0x53445257; // "WRDS"
 
     private enum Verdict
     {
-        /// <summary>The generated body compiled and ran, and it reached the method pointer.</summary>
+        /// <summary>生成的方法体已编译并运行，且到达了方法指针。</summary>
         Warmed,
-        /// <summary>The runtime rejects the generated body: the shape that fail fasts in a callout.</summary>
+        /// <summary>运行时拒绝生成的方法体：这种形状在回调中会快速失败。</summary>
         Rejected,
-        /// <summary>Not exercised here (no native target, or an invoker shape this runtime does not use).</summary>
+        /// <summary>此处未被实际执行（没有原生目标，或此运行时不使用的 invoker 形状）。</summary>
         NotWarmed,
     }
 
@@ -181,11 +181,11 @@ internal static class NativeEntryWarmup
         
         if (rejected.Count > 0)
         {
-            // One line in the game log. The per-entry
-            // "[NativeEntryWarmup] (expected) the runtime rejects the generated entry point of ..." lines
-            // were 691 of the 411 KB of LogOutput.log of the 2026-10-10 run, written on every registration
-            // (analysis/log-noise-cleanup). The summary line above keeps its exact shape on purpose: the
-            // run checker greps "warmed for .*; 0 rejected" (test-debug/tools/Check-FikaRun.ps1:30).
+            // 游戏日志中只写一行。逐条目的
+            // "[NativeEntryWarmup] (expected) the runtime rejects the generated entry point of ..." 行
+            // 在 2026-10-10 那次运行 411 KB 的 LogOutput.log 中占了 691 行，每次注册都会写入
+            // （analysis/log-noise-cleanup）。上面那行汇总有意保持它的精确形状：
+            // 运行检查器会 grep "warmed for .*; 0 rejected"（test-debug/tools/Check-FikaRun.ps1:30）。
             logger?.LogInfo($"[NativeEntryWarmup] {rejected.Count} injected entry point(s) were rejected by the runtime "
                 + "(expected: these are the shapes that die as a 0x80131506 fail fast when the native side reaches them "
                 + "first, and the managed shim serves them)");
@@ -197,8 +197,8 @@ internal static class NativeEntryWarmup
         }
         if (notWarmed > 0)
         {
-            // A gap in this instrument is worth naming: it says which shapes were not exercised,
-            // never that they are wrong.
+            // 这个插桩工具的缺口值得点名：它说明哪些形状没有被实际执行，
+            // 而绝不说明它们是错的。
             var summary = string.Join("; ", notWarmedReasons.Select(pair => pair.Value + "x " + pair.Key));
             logger?.LogWarning($"[NativeEntryWarmup] {notWarmed} signature(s) could not be exercised here: {summary}");
             
@@ -207,25 +207,10 @@ internal static class NativeEntryWarmup
     }
 
     /// <summary>
-    /// "count x declaring type" for the rejected entries, most frequent first. The complete per-entry list
-    /// stays below it: this is the line a human reads first, and it is what the single game-log line points
-    /// at.
+    /// 被拒绝条目的 "count x declaring type" 计数，出现最频繁的在前。完整的逐条目
+    /// 列表保留在它下方：这是人最先读到的一行，也正是那一行游戏日志所指向的
+    /// 内容。
     /// </summary>
-    private static string Aggregate(List<string> rejected)
-    {
-        var perType = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var entry in rejected)
-        {
-            var separator = entry.IndexOf(':');
-            var owner = separator <= 0 ? entry : entry.Substring(0, separator);
-            var lastDot = owner.LastIndexOf('.');
-            var type = lastDot <= 0 ? owner : owner.Substring(0, lastDot);
-            perType[type] = perType.TryGetValue(type, out var seen) ? seen + 1 : 1;
-        }
-
-        return string.Join("; ", perType.OrderByDescending(pair => pair.Value)
-            .Select(pair => pair.Value + "x " + pair.Key));
-    }
 
     private static string Names(List<string> shapes)
     {
@@ -241,14 +226,14 @@ internal static class NativeEntryWarmup
         method.Name + "|" + string.Join(",", method.GetParameters().Select(parameter => parameter.ParameterType.AssemblyQualifiedName));
 
     /// <summary>
-    /// Runs one invoker once, with a real native no-op as its method pointer.
+    /// 用一个真正的原生空操作作为方法指针，把某个 invoker 运行一次。
     ///
-    /// The delegate comes from the injector, and the body is reached through its own
-    /// <see cref="MethodInfo"/> - the Marshal round trip cannot be used, see the type comment.
-    /// A body the runtime rejects surfaces here as a catchable <c>InvalidProgramException</c>
-    /// instead of the fail fast the same rejection causes inside a callout, and a body that runs
-    /// is proven by the native stub's hit counter and marker, not by the absence of an exception.
-    /// The injected method itself is never entered: the stub ignores every argument.
+    /// 委托来自注入器，而方法体是通过它自己的
+    /// <see cref="MethodInfo"/> 访问的——不能用 Marshal 往返，详见类型注释。
+    /// 运行时拒绝的方法体在这里表现为可捕获的 <c>InvalidProgramException</c>，
+    /// 而不是同一种拒绝在回调内部造成的快速失败；而方法体是否运行
+    /// 由原生存根的命中计数与标记来证明，而不是由没有异常来证明。
+    /// 注入的方法本身永远不会被进入：该存根忽略每一个参数。
     /// </summary>
     private static unsafe Verdict WarmInvoker(MethodInfo method, nint target, out string reason)
     {
@@ -279,8 +264,8 @@ internal static class NativeEntryWarmup
         InvokerDelegateMetadataV29 typed;
         try
         {
-            // The body is the five argument metadata v29 shape; a runtime that uses the older
-            // four argument invoker simply cannot be driven from here.
+            // 方法体是五参数 metadata v29 形状；使用更早的四参数 invoker 的
+            // 运行时根本无法从这里驱动。
             typed = body.CreateDelegate<InvokerDelegateMetadataV29>();
         }
         catch (Exception exception)
@@ -344,13 +329,13 @@ internal static class NativeEntryWarmup
         _noOpCounter == 0 ? 0 : Marshal.ReadInt64(_noOpCounter);
 
     /// <summary>
-    /// Allocates the method pointer every warm invocation uses: ordinary executable memory holding a
-    /// stub that writes <see cref="StubMarker"/> through its result slot, bumps its own hit counter
-    /// and returns the marker in rax. It never dereferences an argument, so it is safe for every
-    /// signature, and because it is not a managed thunk the invoker's <c>calli</c> can never be read
-    /// as managed code calling an <c>UnmanagedCallersOnly</c> method - the shape that fail fasts
-    /// instead of throwing. Returns zero when the stub cannot be allocated, and the caller then only
-    /// records the inventory.
+    /// 分配每次预热调用都会用到的方法指针：一块普通的可执行内存，其中存放一个
+    /// 存根，该存根通过其结果槽写入 <see cref="StubMarker"/>，累加自己的命中计数
+    /// 并在 rax 中返回该标记。它从不解引用任何参数，因此对每一种签名都安全，
+    /// 并且由于它不是托管 thunk，invoker 的 <c>calli</c> 永远不会被判定为
+    /// 托管代码调用一个 <c>UnmanagedCallersOnly</c> 方法——那正是会快速失败
+    /// 而不是抛出异常的形状。无法分配存根时返回零，此时调用方只
+    /// 记录清点结果。
     /// </summary>
     private static nint EnsureNoOpTarget(ManualLogSource logger)
     {
@@ -361,8 +346,8 @@ internal static class NativeEntryWarmup
             _noOpCounter = Marshal.AllocHGlobal(64);
             Marshal.WriteInt64(_noOpResult, 0);
             Marshal.WriteInt64(_noOpCounter, 0);
-            // Win64: rax = marker, store it through the result slot, inc the counter, return rax.
-            // The two immediates are patched in below; the second one starts at byte 25.
+            // Win64：rax = marker，通过结果槽存储它，递增计数器，返回 rax。
+            // 两个立即数在下方被写入；第二个从字节 25 开始。
             var code = new byte[]
             {
                 0x48, 0xB8, 0x57, 0x52, 0x44, 0x53, 0x00, 0x00, 0x00, 0x00, // mov rax, StubMarker
@@ -374,7 +359,7 @@ internal static class NativeEntryWarmup
             };
             BitConverter.GetBytes(_noOpResult.ToInt64()).CopyTo(code, 12);
             BitConverter.GetBytes(_noOpCounter.ToInt64()).CopyTo(code, 25);
-            // reserve | commit, page execute read write
+            // reserve | commit，页面标记为 execute read write
             var stub = VirtualAlloc(0, (nuint)code.Length, 0x1000 | 0x2000, 0x40);
             if (stub == 0) throw new InvalidOperationException("VirtualAlloc returned nothing");
             Marshal.Copy(code, 0, stub, code.Length);

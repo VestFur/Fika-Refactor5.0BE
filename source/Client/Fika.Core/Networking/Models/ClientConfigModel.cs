@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Runtime.Serialization;
 using Fika.Core.Main.Utils;
 
@@ -102,26 +102,37 @@ public struct ClientConfigModel
 
 public struct ClientReviveConfig
 {
+
+    /// <summary>
+    /// (2026-10-26 W31) 显式无参构造：C# 要求带字段初始值的 struct 必须有它。
+    /// </summary>
+    public ClientReviveConfig()
+    {
+    }
     [DataMember(Name = "enabled")]
-    public bool Enabled { get; set; }
+    // (2026-10-26 W33) 保持关闭：本机已装独立的「Bring Me To Life / 复活模组」（BepInEx\plugins\RevivalMod.dll +
+    // user\mods\RevivalModServer，其服务端配置 enabledTeamRevival=true 且注释写明支持 Fika 队友互救）。
+    // 两套系统都会拦 ActiveHealthController.Kill 并各自广播倒地状态，同时开启只会互相打断。
+    // 想改用 Fika 自带复活：把 fika-server 配置里的 reviveConfig.enabled 显式设为 true，并停用 RevivalMod。
+    public bool Enabled { get; set; } = false;
 
     [DataMember(Name = "headshotKills")]
-    public bool HeadshotKills { get; set; }
+    public bool HeadshotKills { get; set; } = true;
 
     [DataMember(Name = "grenadesKills")]
-    public bool GrenadesKills { get; set; }
+    public bool GrenadesKills { get; set; } = true;
 
     [DataMember(Name = "allowLooting")]
     public bool AllowLooting { get; set; }
 
     [DataMember(Name = "maxRevives")]
-    public int MaxRevives { get; set; }
+    public int MaxRevives { get; set; } = 2;
 
     [DataMember(Name = "bleedoutTime")]
-    public float BleedoutTime { get; set; }
+    public float BleedoutTime { get; set; } = 60f;
 
     [DataMember(Name = "reviveTime")]
-    public float ReviveTime { get; set; }
+    public float ReviveTime { get; set; } = 5f;
 
     public readonly void LogValues()
     {

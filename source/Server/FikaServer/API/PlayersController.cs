@@ -36,8 +36,8 @@ public class PlayersController(SaveServer saveServer, PresenceService presenceSe
     [HttpGet]
     public IActionResult HandleRequest()
     {
-        // Presence is keyed by the session's profile ID. Nicknames may be
-        // duplicated or changed, so they cannot identify an online profile.
+        // 在线状态以会话的 profile ID 为键。昵称可能
+        // 重复或被更改，因此它们无法标识一个在线 profile。
         var presences = presenceService.AllPlayersPresenceById;
         var profiles = saveServer.GetProfiles();
         var onlinePlayers = new List<OnlinePlayer>(presences.Count);

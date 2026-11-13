@@ -15,86 +15,86 @@ using Il2CppInterop.Runtime.Runtime.VersionSpecific.MethodInfo;
 namespace Fika.Core.Main.Utils;
 
 /// <summary>
-/// Replaces the invoker Il2CppInterop generates for an injected method with a pure managed shim.
+/// 用一个纯托管的 shim 替换 Il2CppInterop 为某个注入方法生成的 invoker。
 ///
-/// Why: the generated invoker body ends in an indirect call (<c>calli</c>, ClassInjector.decompiled.cs:1469)
-/// into the method's own trampoline thunk. CoreCLR treats exactly that combination -- managed code
-/// calling a reverse P/Invoke / UnmanagedCallersOnly entry -- as an uncatchable fail fast
-/// (0x80131506, "Invalid Program: attempted to call a UnmanagedCallersOnly method from managed code",
-/// coreclr+0x2C7085 behind JIT_ReversePInvokeEnterRare, coreclr+0x19BBD6), which killed the
-/// 2026-10-10 host raids (analysis/crash-clr, analysis/injected-invoker-fix, analysis/managed-invoker).
-/// The calli cannot be repaired from inside the body (the rewrite provably produced byte-identical
-/// code), so this class replaces the *entry*: <c>Il2CppMethodInfo::InvokerMethod</c> is pointed at
-/// <see cref="Shim"/>, a managed static method over the same five argument ABI -- the construction the
-/// injector already trusts for constructors (StaticVoidIntPtrInvoker_MetadataV29,
-/// ClassInjector.decompiled.cs:1541-1544).
+/// 起因：生成的 invoker 方法体以一次间接调用（<c>calli</c>，ClassInjector.decompiled.cs:1469）结束，
+/// 目标是该方法自身的 trampoline thunk。CoreCLR 恰好把这种组合——托管代码
+/// 调用 reverse P/Invoke / UnmanagedCallersOnly 入口——视为不可捕获的 fail fast
+/// （0x80131506，“Invalid Program: attempted to call a UnmanagedCallersOnly method from managed code”，
+/// coreclr+0x2C7085 位于 JIT_ReversePInvokeEnterRare 之后，coreclr+0x19BBD6），它杀掉了
+/// 2026-10-10 的主机突袭（analysis/crash-clr、analysis/injected-invoker-fix、analysis/managed-invoker）。
+/// 该 calli 无法在方法体内部修复（改写已被证明产生字节完全相同的
+/// 代码），所以本类改为替换 *入口*：把 <c>Il2CppMethodInfo::InvokerMethod</c> 指向
+/// <see cref="Shim"/>，即使用同一五参数 ABI 的托管静态方法——这正是
+/// 注入器对构造函数已经信任的构造（StaticVoidIntPtrInvoker_MetadataV29，
+/// ClassInjector.decompiled.cs:1541-1544）。
 ///
-/// Coverage: the shim reproduces the generated invoker's conversion for an arbitrary parameter count
-/// (references, pointers, primitives, enums, by-value structs, by-ref/out of all of those) and for
-/// void / reference / pointer / primitive / enum / struct returns. Everything it cannot convert keeps
-/// the injector's own invoker (the status quo) and is named once in the diagnostics with the reason.
+/// 覆盖面：shim 能为任意参数个数复现生成 invoker 的转换（引用、
+/// 指针、基元、枚举、按值结构体，以及以上所有类型的 by-ref/out），也能复现
+/// void / 引用 / 指针 / 基元 / 枚举 / 结构体返回值的转换。凡是无法转换的，都保留
+/// 注入器自己的 invoker（现状），并在诊断中以一条带原因的记录点名。
 ///
-/// Scope: the shim covers *Fika's own injected types only* - the "every method info of every injected
-/// class" invariant of round 10 was withdrawn, because it also rewrote other plugins' types (see the
-/// scope region below). Within that scope the invariant holds: every method info of every Fika class the
-/// shim can serve is served by it, whichever path found the method info. Registration alone cannot
-/// deliver that - the injector also converts methods from its own native generic hook at runtime, and
-/// the coroutine wrapper this port's own coroutine helper needs is registered after the port's
-/// registration scope is gone. The sweep, the registration hook and the runtime guard that close those
-/// paths are described in NativeManagedInvoker.Sweep.cs.
+/// 范围：shim 只覆盖 *Fika 自己注入的类型*——第 10 轮那条“每个注入类的每个
+/// method info”不变量已被撤回，因为它同时也改写了其他插件的类型（见下面的
+/// 范围区域）。在该范围内该不变量成立：shim 能服务的每个 Fika 类的每个
+/// method info 都由它服务，不论那条路径如何找到该 method info。仅靠注册无法
+/// 做到这点——注入器在运行时还会从它自己的原生泛型钩子转换方法，而
+/// 本端口自身协程辅助所需的那层协程包装器，是在端口的
+/// 注册作用域消失之后才注册的。堵住这些路径的扫描、注册钩子与运行时守卫
+/// 在 NativeManagedInvoker.Sweep.cs 中描述。
 ///
-/// Three hard rules, in this order:
-///   1. registration must never fail because of this class (every entry point is wrapped);
-///   2. a callout must always return normally -- an exception may never cross back into il2cpp;
-///   3. a shape that cannot be reproduced exactly is not rewritten (and says so).
+/// 三条硬性规则，按此顺序：
+///   1. 注册绝不能因为本类而失败（每个入口点都被包裹）；
+///   2. callout 必须始终正常返回——异常绝不能穿回 il2cpp；
+///   3. 无法精确复现的形状不改写（并且会说明）。
 ///
-/// The argument ABI is not inferred: it was read out of the interop wrappers of the installed build
-/// (analysis/managed-invoker/arg-abi.txt), which are the callers of <c>il2cpp_runtime_invoke</c>:
-///   * reference type (string / Il2CppObjectBase / interface):
+/// 参数 ABI 不是推断出来的：它是从所安装构建的 interop 包装器中读出的
+/// （analysis/managed-invoker/arg-abi.txt），这些包装器就是 <c>il2cpp_runtime_invoke</c> 的调用者：
+///   * 引用类型（string / Il2CppObjectBase / 接口）：
 ///     <c>ldloc args; ldarg.n; call Il2CppObjectBaseToPtr|ManagedStringToIl2Cpp; stind.i</c>
-///     -> the slot holds the object pointer itself (EFT.BaseLocalGame`1::SessionRun at IL_0013);
-///   * pointer type (<c>T*</c>): <c>ldloc args; ldarg.n; stind.i</c>
-///     -> the slot holds the pointer itself (AreaLight::FillShadowCubePlanes at IL_001F);
-///   * by-ref (<c>ref</c>/<c>out</c>): <c>ldloc args; ldarg.n; conv.i; stind.i</c>
-///     -> the slot holds the ADDRESS of the storage (EFT.MovementContext::Flash at IL_0014);
-///   * by-value value type (primitive / enum / struct): <c>ldloc args; ldarga.s p; stind.i</c>
-///     -> the slot holds the ADDRESS of the storage (AmplifyMotionEffectBase::CreateRenderTexture at IL_0026);
-/// and the injector's own invoker dereferences a slot exactly when the native type is not <c>nint</c>
-/// (ClassInjector.decompiled.cs:1451-1459, TrampolineHelpers.NativeType), which is the same split.
+///     -> 槽位持有对象指针本身（EFT.BaseLocalGame`1::SessionRun 的 IL_0013 处）；
+///   * 指针类型（<c>T*</c>）：<c>ldloc args; ldarg.n; stind.i</c>
+///     -> 槽位持有指针本身（AreaLight::FillShadowCubePlanes 的 IL_001F 处）；
+///   * by-ref（<c>ref</c>/<c>out</c>）：<c>ldloc args; ldarg.n; conv.i; stind.i</c>
+///     -> 槽位持有该存储的地址（EFT.MovementContext::Flash 的 IL_0014 处）；
+///   * 按值 value type（基元 / 枚举 / 结构体）：<c>ldloc args; ldarga.s p; stind.i</c>
+///     -> 槽位持有该存储的地址（AmplifyMotionEffectBase::CreateRenderTexture 的 IL_0026 处）；
+/// 而注入器自己的 invoker 恰好在原生类型不是 <c>nint</c> 时对槽位解引用
+/// （ClassInjector.decompiled.cs:1451-1459，TrampolineHelpers.NativeType），这与上面的划分一致。
 /// </summary>
 internal static unsafe partial class NativeManagedInvoker
 {
     /// <summary>
-    /// The Harmony instance that owns this class's hooks. Deliberately *not* the instance of
-    /// <see cref="NativeInjectionScope"/>: that one unpatchs its targets one by one when its scope is
-    /// disposed (<c>NativeInjectionScope.Dispose</c>), which silently removed the
-    /// <c>ConvertMethodInfo</c> postfix while the injector kept converting the methods registered
-    /// afterwards - the gap this class closes (analysis/managed-invoker/REPORT-sweep.md).
-    /// A separate owner id cannot be unpatched by another scope's dispose.
+    /// 持有本类各个钩子的 Harmony 实例。有意 *不* 使用
+    /// <see cref="NativeInjectionScope"/> 的实例：那个实例在其作用域被释放时会逐个
+    /// 反补丁它的目标（<c>NativeInjectionScope.Dispose</c>），从而悄悄移除了
+    /// <c>ConvertMethodInfo</c> 后置补丁，而注入器仍在转换此后注册的
+    /// 方法——这正是本类要补上的缺口（analysis/managed-invoker/REPORT-sweep.md）。
+    /// 独立的 owner id 不会被另一个作用域的 dispose 反补丁。
     /// </summary>
     internal const string OwnHarmonyId = "com.fika.core.managed-invoker";
 
     private static Harmony _hooks;
 
     /// <summary>
-    /// Method infos that need no second look: the engine's own (never ours to touch), and the ones with
-    /// no invoker bound (abstract methods, generic definitions). Only the runtime guard reads it, so an
-    /// invoke never pays for a resolution twice.
+    /// 无需再看第二眼的 method info：引擎自身的（永远不归我们处理），以及没有绑定
+    /// invoker 的（抽象方法、泛型定义）。只有运行时守卫读取它，因此一次
+    /// invoke 绝不会为解析付出两次代价。
     /// </summary>
     private static readonly ConcurrentDictionary<nint, byte> NotOurs = new();
 
     /// <summary>
-    /// The entry shape il2cpp calls with for every injected method in metadata v29+
-    /// (<c>InvokerDelegateMetadataV29</c>, ClassInjector.decompiled.cs:31).
+    /// 在 metadata v29+ 下 il2cpp 调用每个注入方法时使用的入口形状
+    /// （<c>InvokerDelegateMetadataV29</c>，ClassInjector.decompiled.cs:31）。
     /// </summary>
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     internal delegate void InvokerShim(nint methodPointer, Il2CppMethodInfo* methodInfo, nint obj, nint* args,
         nint* returnValue);
 
-    /// <summary>A static field is a GC root: the delegate behind the exported pointer stays alive.</summary>
+    /// <summary>静态字段就是 GC 根：导出指针背后的委托得以存活。</summary>
     private static readonly InvokerShim ShimDelegate = Shim;
 
-    /// <summary>Bytes reserved for struct round trips while a codec is validated.</summary>
+    /// <summary>在校验 codec 期间为结构体往返预留的字节数。</summary>
     private const int ScratchBytes = 256;
 
     private static nint _shimPointer;
@@ -106,23 +106,23 @@ internal static unsafe partial class NativeManagedInvoker
     private static int _summaryReported;
     private static MethodInfo _reportTrampolineException;
 
-    /// <summary>Il2CppMethodInfo* -> what the shim needs to run the managed method.</summary>
+    /// <summary>Il2CppMethodInfo* -> shim 运行该托管方法所需的一切。</summary>
     private static readonly ConcurrentDictionary<nint, Plan> Plans = new();
 
     /// <summary>
-    /// Safety net for a callout whose MethodInfo is not the struct this class filled: il2cpp may hand a
-    /// *copy* of it around. The method pointer (one thunk per injected method) identifies the same plan.
-    /// Only pointers that were rewritten are in here.
+    /// 针对“callout 拿到的 MethodInfo 不是本类填充的那个结构体”的安全网：il2cpp 可能会传递它的
+    /// *副本*。方法指针（每个注入方法一个 thunk）标识的是同一个 plan。
+    /// 这里只包含被改写过的指针。
     /// </summary>
     private static readonly ConcurrentDictionary<nint, Plan> PlansByMethodPointer = new();
 
-    /// <summary>Pointers already written to the warm table, so the log holds one line per method.</summary>
+    /// <summary>已写入 warm 表的指针，好让日志中每个方法只留一行。</summary>
     private static readonly ConcurrentDictionary<nint, byte> Reported = new();
 
-    /// <summary>Diagnostics that must not repeat per call (they run on the engine's thread).</summary>
+    /// <summary>不可在每次调用时重复的诊断（它们运行在引擎线程上）。</summary>
     private static readonly ConcurrentDictionary<nint, byte> ReportedAtRuntime = new();
 
-    /// <summary>Conversion codecs per managed type (a null <see cref="Codec.Read"/> marks "unsupported").</summary>
+    /// <summary>每个托管类型的转换 codec（<see cref="Codec.Read"/> 为 null 表示“不支持”）。</summary>
     private static readonly ConcurrentDictionary<Type, Codec> Codecs = new();
 
     private static readonly Codec Unsupported = new Codec { Kind = "unsupported" };
@@ -135,7 +135,7 @@ internal static unsafe partial class NativeManagedInvoker
         ByRef,
     }
 
-    /// <summary>How one argument is read from its slot (and, for by-ref, written back).</summary>
+    /// <summary>一个参数如何从其槽位读取（对 by-ref 而言，还包括写回）。</summary>
     private sealed class ArgumentPlan
     {
         internal string Name;
@@ -163,7 +163,7 @@ internal static unsafe partial class NativeManagedInvoker
             Arguments.Length == 0 ? Array.Empty<object>() : new object[Arguments.Length];
     }
 
-    /// <summary>Reads a managed value from an address and writes it back there.</summary>
+    /// <summary>从某个地址读取托管值，并将其写回该地址。</summary>
     private sealed class Codec
     {
         internal string Kind;
@@ -172,70 +172,70 @@ internal static unsafe partial class NativeManagedInvoker
         internal object Default;
     }
 
-    // ------------------------------------------------------------------ scope of the shim
+    // ------------------------------------------------------------------ shim 的作用域
     //
-    // The shim replaces the entry the engine reaches reflectively (Il2CppMethodInfo::InvokerMethod) of
-    // every injected method the injector serves. Before this round that was *every* injected method of
-    // *every* plugin: the registration hook fires for whatever the injector converts, and the sweep
-    // enumerates every injected class it can name. A tester's log of round 10 showed what that costs -
-    // the sweep covered ArmorClassIcon.RefreshBehaviour, and the engine reached
-    // AmandsGraphics.AmandsGraphicsClass.Awake/.Start/.Update through Fika's managed shim, i.e. a third
-    // party mod's engine callbacks were routed through this port's reflection path. That is a
-    // compatibility surface this port introduced and never needed: another plugin's injected method is
-    // entered by *its* code path, and the invoker the injector generated for it is the entry its author
-    // wrote and tested against (analysis/managed-invoker/REPORT-sweep.md is the round-10 document that
-    // widened the net; this region narrows it again).
+    // shim 替换引擎通过反射到达的入口（Il2CppMethodInfo::InvokerMethod），适用于
+    // 注入器所服务的每个注入方法。在本轮之前，那是 *每个插件* 的 *每个* 注入
+    // 方法：注册钩子对注入器转换的任何对象都会触发，而扫描
+    // 会枚举它能叫出名字的每个注入类。第 10 轮某测试者的日志显示了这样做的代价——
+    // 扫描覆盖了 ArmorClassIcon.RefreshBehaviour，而引擎通过 Fika 的托管
+    // shim 到达了 AmandsGraphics.AmandsGraphicsClass.Awake/.Start/.Update，即某个第三方
+    // 模组的引擎回调被导流进了本端口的反射路径。这是本端口引入却从未
+    // 需要过的兼容面：另一个插件的注入方法由 *它自己* 的代码路径进入，
+    // 而注入器为它生成的 invoker 正是其作者编写并测试过的入口
+    // （analysis/managed-invoker/REPORT-sweep.md 是第 10 轮扩大了覆盖面的那份
+    // 文档；本区域把它重新收窄）。
     //
-    // The rule is therefore a scope, checked at every door into the shim (TryAdopt is the authoritative
-    // one; the registration hook, the sweep and the runtime guard all pass through it or check it
-    // first). Three tiers, in this order:
+    // 因此规则是一道作用域，在进入 shim 的每一道门口都会检查（TryAdopt 是权威
+    // 的那一个；注册钩子、扫描与运行时守卫都会经过它，或先检查
+    // 它）。三个层级，按此顺序：
     //
-    //   1. own ............ the type is one of Fika's: a "Fika.*" assembly, the "Fika.Core" namespace, or
-    //                       one of the global-namespace Fika UI types in OwnGlobalNamespaceTypes (every
-    //                       entry names why it is there);
-    //   2. port-reached ... a non-Fika type that Fika's *own* runtime path reaches reflectively and for
-    //                       which the injector's invoker was measured to be fatal (PortReachedTypes, one
-    //                       measured case per entry). Switch: ScopePortReachedKey, default on;
-    //   3. out of scope ... everything else. Its methods and its vtable slots are left exactly as the
-    //                       injector built them, and the type is named once in the diagnostics.
+    //   1. own ............ 该类型属于 Fika：以 "Fika.*" 开头的程序集、"Fika.Core" 命名空间，或
+    //                       OwnGlobalNamespaceTypes 中的一个全局命名空间 Fika UI 类型（每一项
+    //                       都写明了它为何在此）；
+    //   2. port-reached ... 一个非 Fika 类型，Fika *自己* 的运行时路径会通过反射到达它，且
+    //                       注入器的 invoker 经实测对该类型是致命的（PortReachedTypes，每一项
+    //                       对应一个实测用例）。开关：ScopePortReachedKey，默认开启；
+    //   3. out of scope ... 其他所有类型。它们的方法与其 vtable 槽位完全按
+    //                       注入器构建的样子保留，且该类型会在诊断中被点名一次。
     //
-    // Two switches widen the scope for a tester who needs the old behaviour, both needing a restart
-    // (what the shim rewrote is decided once per process and cannot be un-rewritten):
-    // ScopeEverythingKey restores the round-10 net wholesale, ScopeExtraNamesKey adds single types by
-    // name so a specific mod can be covered without covering all of them.
+    // 两个开关可为需要旧行为的测试者扩大作用域，两者都需要重启
+    // （shim 改写了什么每个进程只决定一次，且无法撤销改写）：
+    // ScopeEverythingKey 整体恢复第 10 轮的覆盖面，ScopeExtraNamesKey 按名字添加
+    // 单个类型，这样某个特定模组可以被覆盖而不必覆盖全部。
     //
-    // Fika's own types are unaffected by all of this: 135 of the 141 types a local run registers are
-    // declared in Fika.Core.dll (analysis/shim-scope/injected-types-by-assembly.txt), and the six that
-    // are not are the third-party types listed in PortReachedTypes or reported as kept.
+    // Fika 自身的类型完全不受这一切影响：本地一次运行所注册的 141 个类型中有 135 个
+    // 声明在 Fika.Core.dll 中（analysis/shim-scope/injected-types-by-assembly.txt），而
+    // 不在其中的那六个，就是 PortReachedTypes 中列出或被报告为保留的第三方类型。
 
-    /// <summary>Section of the scope switches; they live next to the diagnostics switches.</summary>
+    /// <summary>作用域开关所属的配置节；它们与诊断开关放在一起。</summary>
     internal const string ScopeConfigSection = "Diagnostics";
 
     /// <summary>
-    /// Wholesale switch. True restores the round-10 behaviour (every injected type the injector serves is
-    /// rewritten, whichever plugin registered it). False - the default - keeps third-party types on the
-    /// invoker the injector generated for them.
+    /// 全量开关。为 true 时恢复第 10 轮的行为（注入器所服务的每个注入类型都会被
+    /// 改写，不论由哪个插件注册）。false——默认值——则让第三方类型继续使用
+    /// 注入器为它们生成的 invoker。
     /// </summary>
     internal const string ScopeEverythingKey = "Compat: Shim Third-Party Injected Types";
 
-    /// <summary>Switch of the <see cref="PortReachedTypes"/> compatibility list (default on).</summary>
+    /// <summary><see cref="PortReachedTypes"/> 兼容列表的开关（默认开启）。</summary>
     internal const string ScopePortReachedKey = "Compat: Shim Port-Reached Third-Party Types";
 
-    /// <summary>Operator escape hatch: additional type full names to rewrite, comma separated (default empty).</summary>
+    /// <summary>运维逃生口：要额外改写的类型全名，以逗号分隔（默认为空）。</summary>
     internal const string ScopeExtraNamesKey = "Compat: Additional Shimmed Type Names";
 
-    /// <summary>The assembly name prefix of Fika's own assemblies (Fika.Core, Fika.Headless, ...).</summary>
+    /// <summary>Fika 自身各程序集的程序集名前缀（Fika.Core、Fika.Headless、……）。</summary>
     private const string OwnAssemblyPrefix = "Fika.";
 
-    /// <summary>The namespace of every Fika type that is not declared in the global namespace.</summary>
+    /// <summary>所有未声明在全局命名空间中的 Fika 类型所用的命名空间。</summary>
     private const string OwnNamespace = "Fika.Core";
 
     /// <summary>
-    /// Fika's own injected types that live in the *global* namespace, where neither the assembly rule nor
-    /// the namespace rule can name them by shape alone. Every entry carries why it is listed. Declared in
-    /// Fika.Core.dll - verified against the installed build with
-    /// analysis/shim-scope/scan-injected-types.ps1 (see analysis/shim-scope/injected-types-by-assembly.txt).
-    /// A type that is neither in this table nor a Fika.Core type keeps the injector's invoker.
+    /// Fika 自身那些位于 *全局* 命名空间的注入类型——在那里，程序集规则与命名空间规则都无法
+    /// 仅凭形状叫出它们的名字。每一项都写明了它被列出的原因。它们声明于
+    /// Fika.Core.dll——已用 analysis/shim-scope/scan-injected-types.ps1 对所安装的构建
+    /// 做过核对（见 analysis/shim-scope/injected-types-by-assembly.txt）。
+    /// 既不在此表中、又不是 Fika.Core 类型的类型，保留注入器的 invoker。
     /// </summary>
     private static readonly Dictionary<string, string> OwnGlobalNamespaceTypes = new(StringComparer.Ordinal)
     {
@@ -258,10 +258,10 @@ internal static unsafe partial class NativeManagedInvoker
     };
 
     /// <summary>
-    /// The non-Fika types Fika's *own* runtime path reaches reflectively, for which the injector's invoker
-    /// was measured to be fatal. One entry is one measured case, never a blanket "this mod looks useful":
-    /// an entry may only be added with an observation that names the Fika frame that reaches it.
-    /// The switch <see cref="ScopePortReachedKey"/> turns the whole table off.
+    /// Fika *自己* 的运行时路径通过反射到达的非 Fika 类型，且注入器的 invoker
+    /// 经实测对它们是致命的。一项就是一个实测用例，绝不是笼统的“这个模组看起来有用”：
+    /// 只有在观察结果点明了到达它的那个 Fika 帧时，才允许新增一项。
+    /// <see cref="ScopePortReachedKey"/> 开关可整表关闭。
     /// </summary>
     private static readonly Dictionary<string, string> PortReachedTypes = new(StringComparer.Ordinal)
     {
@@ -275,19 +275,19 @@ internal static unsafe partial class NativeManagedInvoker
         },
     };
 
-    /// <summary>Resolved scope policy, bound once while the injector installs (see <see cref="ConfigureScope"/>).</summary>
+    /// <summary>解析后的作用域策略，在注入器安装期间绑定一次（见 <see cref="ConfigureScope"/>）。</summary>
     private static bool _scopeEverything;
     private static bool _scopePortReached = true;
     private static string[] _scopeExtraNames = Array.Empty<string>();
 
-    /// <summary>Types whose "kept out of scope" line was already written (one line per type, never per method).</summary>
+    /// <summary>“保留在作用域外”一行已写出的类型（每个类型一行，绝不按方法）。</summary>
     private static readonly ConcurrentDictionary<string, byte> ReportedOutOfScope = new();
 
     /// <summary>
-    /// Binds the three scope switches into the plugin's config file and records the resolved policy.
-    /// Called while the injector installs, i.e. before the first type is registered: what the shim rewrites
-    /// is decided once per process, so a flipped switch needs a restart (an already adopted invoker cannot
-    /// be un-adopted). Never throws - a failure leaves the built-in narrow rule in force.
+    /// 把三个作用域开关绑定到插件的配置文件中，并记录解析后的策略。
+    /// 在注入器安装期间调用，即在对第一个类型注册之前：shim 改写什么
+    /// 每个进程只决定一次，因此改动开关需要重启（已经采纳的 invoker 无法
+    /// 被取消采纳）。绝不抛出——失败时内置的收窄规则继续生效。
     /// </summary>
     private static void ConfigureScope()
     {
@@ -340,7 +340,7 @@ internal static unsafe partial class NativeManagedInvoker
         }
     }
 
-    /// <summary>The resolved policy as one line, for the diagnostics header.</summary>
+    /// <summary>以单行形式表示的解析后策略，用于诊断头部。</summary>
     private static string DescribeScope() =>
         (_scopeEverything
             ? "every injected type is rewritten (the third-party switch is ON: the round-10 behaviour)"
@@ -354,9 +354,9 @@ internal static unsafe partial class NativeManagedInvoker
             : "; extra type names: " + string.Join(", ", _scopeExtraNames));
 
     /// <summary>
-    /// True when this injected type is inside the shim's scope, i.e. when the shim may replace its invoker.
-    /// Everything else keeps the invoker the injector generated, which is what those types had before this
-    /// class existed. Never throws: a type that cannot be inspected is out of scope.
+    /// 当该注入类型位于 shim 的作用域内（即 shim 可以替换它的 invoker）时为 true。
+    /// 其他类型都保留注入器生成的 invoker，也就是这些类型在本类存在之前所拥有的
+    /// 那个。绝不抛出：无法检视的类型视为在作用域外。
     /// </summary>
     internal static bool IsShimScope(Type type)
     {
@@ -383,9 +383,9 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// One line per type that stays on the injector's invoker because of the scope - deliberately per type
-    /// and never per method: the point of the narrowing is that a tester can read the list of what was left
-    /// alone. Deduplicated for the lifetime of the process.
+    /// 因作用域而保留在注入器 invoker 上的类型各写一行——有意按类型
+    /// 而非按方法：收窄的意义就在于测试者能读到哪些被放过
+    /// 了。进程生命周期内去重。
     /// </summary>
     private static bool ReportOutOfScope(Type owner, string origin)
     {
@@ -411,12 +411,12 @@ internal static unsafe partial class NativeManagedInvoker
         }
     }
 
-    // ------------------------------------------------------------------ installation
+    // ------------------------------------------------------------------ 安装
 
     /// <summary>
-    /// Adds the postfix that rewrites the invoker of every injected method. Called from
-    /// <see cref="NativeInjectionScope"/> while it installs its own hooks, i.e. before the first type is
-    /// registered. Never throws: a failure here means "no rewrite at all", never "a broken load".
+    /// 添加那个改写每个注入方法 invoker 的后置补丁。由
+    /// <see cref="NativeInjectionScope"/> 在安装自己的钩子时调用，即在对第一个类型
+    /// 注册之前。绝不抛出：此处失败意味着“完全不改写”，绝不是“加载失败”。
     /// </summary>
     internal static void Install()
     {
@@ -433,14 +433,14 @@ internal static unsafe partial class NativeManagedInvoker
             }
 
             _scratch = Marshal.AllocHGlobal(ScratchBytes);
-            // The scope switches decide what this class rewrites at all, so they are bound before any
-            // hook can adopt a method info (never throws; see ConfigureScope).
+            // 作用域开关决定本类到底改写什么，因此它们在任何钩子能够采纳一个
+            // method info 之前就完成绑定（绝不抛出；见 ConfigureScope）。
             ConfigureScope();
             if (!SelfTest())
             {
-                // A body the JIT refuses to validate must not be published as an entry point: whatever
-                // raised the failure would be raised again inside a native callout, where no managed
-                // frame can handle it. "No rewrite at all" is the safe answer (hard rule 2).
+                // JIT 拒绝校验的方法体不可作为入口点发布：引发该失败的东西
+                // 会在原生 callout 内部再次引发，而在那里没有任何托管
+                // 帧能处理它。“完全不改写”才是安全的答案（硬性规则 2）。
                 _unavailable = true;
                 return;
             }
@@ -461,12 +461,12 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// Postfix on <c>ClassInjector.RegisterTypeInIl2CppInternal</c>: when a type registration returns,
-    /// its method infos exist and can be replaced. This is the net for every *in-scope* type registered
-    /// while this port's own registration scope is long gone - above all the coroutine carrier
-    /// <c>Il2CppManagedEnumerator</c> (PortReachedTypes), which BepInEx registers lazily inside the first
-    /// <c>WrapToIl2Cpp()</c> of this port's coroutine helper. A type outside the scope is named once in
-    /// the diagnostics and keeps the invoker the injector generated (see the scope region).
+    /// <c>ClassInjector.RegisterTypeInIl2CppInternal</c> 上的后置补丁：当类型注册返回时，
+    /// 它的 method info 已经存在，可以替换。这是为“本端口自己的注册作用域早已消失之后”注册的
+    /// 每个 *作用域内* 类型所设的网——尤其是协程载体
+    /// <c>Il2CppManagedEnumerator</c>（PortReachedTypes），BepInEx 会在本端口协程辅助的第一次
+    /// <c>WrapToIl2Cpp()</c> 内部懒加载注册它。作用域外的类型会在诊断中被
+    /// 点名一次，并保留注入器生成的 invoker（见作用域区域）。
     /// </summary>
     private static void InstallRegistrationHook()
     {
@@ -502,11 +502,11 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// Prefix on the managed entry points of the engine's reflection invoke: the last moment before the
-    /// native side dereferences <c>Il2CppMethodInfo::InvokerMethod</c>. A method info that still carries
-    /// a stock invoker (converted while no hook was installed, or created by the injector for a generic
-    /// instantiation at runtime) is repaired here instead of being entered. The prefix only observes and
-    /// repairs and always lets the original invoke run, so it cannot change a call's meaning.
+    /// 引擎反射 invoke 的托管入口点上的前缀补丁：这是原生侧对
+    /// <c>Il2CppMethodInfo::InvokerMethod</c> 解引用之前的最后时刻。仍然带着
+    /// 原装 invoker 的 method info（在没有安装任何钩子时被转换，或由注入器在运行时为某个泛型
+    /// 实例化创建）会在此被修复，而不是被直接进入。该前缀只观察与
+    /// 修复，并始终让原 invoke 执行，因此不会改变一次调用的语义。
     /// </summary>
     private static void InstallInvokeGuard()
     {
@@ -545,9 +545,9 @@ internal static unsafe partial class NativeManagedInvoker
             if (method == 0) return true;
             if (Plans.ContainsKey(method)) return true;
             if (NotOurs.ContainsKey(method)) return true;
-            // The first method info the guard does not know is the moment to look at everything the
-            // injector has registered with one sweep - a type can only appear once, and the sweep is
-            // the only place that sees the types whose registration nobody hooked.
+            // 守卫遇到的第一个未知 method info，就是用一次扫描看清注入器已注册的
+            // 一切的时刻——一个类型只会出现一次，而扫描是唯一能看到那些
+            // 注册过程没人钩住的类型的地方。
             SweepOnce(origin);
             if (Plans.ContainsKey(method)) return true;
             EnsureAdopted((Il2CppMethodInfo*)method, origin, null);
@@ -557,18 +557,18 @@ internal static unsafe partial class NativeManagedInvoker
             
         }
 
-        // Always run the original invoke.
+        // 始终执行原来的 invoke。
         return true;
     }
 
     /// <summary>
-    /// Touches the native class the instance fast path compares against, once, while this port is still in
-    /// managed context. The lookup is a static field of the interop's class-pointer store, so without this
-    /// the first callout would run its initializer on the engine's thread - inside a native callout, where
-    /// nothing may escape. The value it resolved is recorded: a zero there is the one case in which the
-    /// fast path keeps the interop's own lookup for every zero handle instead of skipping it.
+    /// 在本端口仍处于托管上下文时，触碰一次实例快路径所要比较的那个原生类。
+    /// 该查找是 interop 类指针存储中的一个静态字段，因此若不这样做，
+    /// 第一次 callout 就会在引擎线程上运行它的初始化器——也就是在原生 callout 内部，那里
+    /// 任何东西都不允许逃逸。它解析到的值会被记录下来：那里为 0 是唯一一种
+    /// 让快路径对所有零句柄都退回 interop 自身查找、而不是跳过它们的情况。
     ///
-    /// Never throws (Installing must not fail because of a diagnostic).
+    /// 绝不抛出（Installing 不能因为一个诊断而失败）。
     /// </summary>
     private static void WarmInstanceFastPath()
     {
@@ -584,8 +584,8 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// Enters the shim once from managed context with an empty call, so the body (and the failure path)
-    /// is JIT validated at load instead of inside the first native callout.
+    /// 在托管上下文中用一次空调用进入 shim 一次，好让方法体（以及失败路径）
+    /// 在加载时就被 JIT 校验，而不是等到第一次原生 callout 内部。
     /// </summary>
     private static bool SelfTest()
     {
@@ -603,11 +603,11 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// Harmony postfix on <c>ClassInjector.ConvertMethodInfo</c>: runs for every method of an injected
-    /// type, right after the injector filled its method info - including the inflated generic methods
-    /// the injector converts from its own native hook at runtime. The work itself lives in
-    /// <see cref="TryAdopt"/>, which the sweep and the runtime guard call with the same rules, so all
-    /// three paths publish the same kind of entry.
+    /// <c>ClassInjector.ConvertMethodInfo</c> 上的 Harmony 后置补丁：对注入类型的每个
+    /// 方法执行，恰好发生在注入器填好其 method info 之后——包括注入器在运行时从它自己的
+    /// 原生钩子转换出来的那些已膨胀的泛型方法。实际工作位于
+    /// <see cref="TryAdopt"/>，扫描与运行时守卫以相同规则调用它，因此这三条路径
+    /// 发布的都是同一种入口。
     /// </summary>
     private static void CaptureMethodInfo(MethodInfo monoMethod, Il2CppMethodInfo* __result)
     {
@@ -622,24 +622,24 @@ internal static unsafe partial class NativeManagedInvoker
         }
     }
 
-    // ------------------------------------------------------------------ the one adoption path
+    // ------------------------------------------------------------------ 唯一的采纳路径
 
     /// <summary>
-    /// Points the invoker of one method info at the managed shim, or says why it cannot.
+    /// 把一个 method info 的 invoker 指向托管 shim，或说明为何做不到。
     ///
-    /// The three callers - the registration postfix, the sweep and the runtime guard - differ only in how
-    /// they found the method info; the rule they apply is the one registration always applied:
-    ///   * the shape has to be reproducible (<see cref="BuildPlan"/>), otherwise the injector's invoker
-    ///     stays and the reason is written once;
-    ///   * the method pointer is registered as a second key, because the engine can hand the shim a
-    ///     *copy* of a method info;
-    ///   * one <c>[WarmTable]</c> line per method info, in the format the earlier rounds parse: the
-    ///     pointer triple, the method name, and either <c>[shim]</c> with the replaced stock pointer or
-    ///     <c>[stock: reason]</c>.
+    /// 三个调用者——注册后置补丁、扫描与运行时守卫——唯一的差别在于它们如何
+    /// 找到该 method info；它们所适用的规则就是注册一贯适用的那条：
+    ///   * 形状必须可复现（<see cref="BuildPlan"/>），否则保留注入器的 invoker
+    ///     并把原因写一次；
+    ///   * 方法指针被注册为第二个键，因为引擎可能把 method info 的 *副本*
+    ///     交给 shim；
+    ///   * 每个 method info 一行 <c>[WarmTable]</c>，格式与此前各轮解析时所用的一致：
+    ///     指针三元组、方法名，以及 <c>[shim]</c> 加被替换的原装指针，
+    ///     或者 <c>[stock: reason]</c>。
     ///
-    /// Behaviour after the rewrite is the call the injector's own invoker would have made: the plan reads
-    /// a reference slot as the object pointer itself, a value/by-ref slot as an address, and writes the
-    /// return back at its own width (NativeManagedInvoker, class comment).
+    /// 改写之后的行为与注入器自身 invoker 会做的那次调用相同：plan 把引用
+    /// 槽位读作对象指针本身，把按值/by-ref 槽位读作地址，并按返回值自身的宽度
+    /// 把它写回（NativeManagedInvoker 的类注释）。
     /// </summary>
     internal static bool TryAdopt(Il2CppMethodInfo* methodInfo, MethodInfo monoMethod, string origin, string detail, out string reason)
     {
@@ -649,10 +649,10 @@ internal static unsafe partial class NativeManagedInvoker
         var name = Describe(monoMethod);
         try
         {
-            // The authoritative scope gate (class comment, "scope of the shim"): registration, sweep and
-            // runtime guard all land here, so a third-party method info is never adopted even if some
-            // other caller finds it. A null declaring type is *not* a scope verdict - the plan builder
-            // below still names the real reason for it.
+            // 权威的作用域门槛（类注释“shim 的作用域”）：注册、扫描与
+            // 运行时守卫都会落在这里，因此第三方 method info 永远不会被采纳，即使
+            // 某个其他调用者找到了它。声明类型为 null *不是* 作用域判定结论——下面的
+            // plan 构建器仍会为它写出真正的原因。
             var owner = monoMethod?.DeclaringType;
             if (owner != null && !IsShimScope(owner))
             {
@@ -727,11 +727,11 @@ internal static unsafe partial class NativeManagedInvoker
         }
     }
 
-    // ------------------------------------------------------------------ plan building
+    // ------------------------------------------------------------------ plan 构建
 
     /// <summary>
-    /// Decides whether the shim can reproduce this method exactly. Returns null (never throws) with a
-    /// reason for every shape that stays with the injector's own invoker.
+    /// 判定 shim 能否精确复现该方法。对每个留在注入器自身 invoker 上的形状，
+    /// 都返回 null（绝不抛出）并给出原因。
     /// </summary>
     private static Plan BuildPlan(MethodInfo method, out string reason)
     {
@@ -839,7 +839,7 @@ internal static unsafe partial class NativeManagedInvoker
                 Name = parameter.Name,
                 Type = type.Name,
                 Slot = SlotKind.Pointer,
-                // A pointer slot holds the pointer itself (arg-abi.txt, pointer category).
+                // 指针槽位持有指针本身（arg-abi.txt，指针类别）。
                 Read = slot => Pointer.Box((void*)slot, element),
                 WriteBack = null,
             };
@@ -854,7 +854,7 @@ internal static unsafe partial class NativeManagedInvoker
                 Name = parameter.Name,
                 Type = type.Name,
                 Slot = SlotKind.Reference,
-                // A reference slot holds the object pointer itself: do NOT dereference it.
+                // 引用槽位持有对象指针本身：不要对它解引用。
                 Read = slot => slot == 0 ? null : wrap(slot),
                 WriteBack = null,
             };
@@ -867,7 +867,7 @@ internal static unsafe partial class NativeManagedInvoker
             Name = parameter.Name,
             Type = type.Name,
             Slot = SlotKind.Value,
-            // A value-type slot holds the address of the storage.
+            // value type 槽位持有该存储的地址。
             Read = value.Read,
             WriteBack = null,
         };
@@ -895,11 +895,11 @@ internal static unsafe partial class NativeManagedInvoker
     private static bool IsNativeReference(Type type) =>
         type == typeof(string) || typeof(Il2CppObjectBase).IsAssignableFrom(type) || type.IsInterface;
 
-    // ------------------------------------------------------------------ codecs
+    // ------------------------------------------------------------------ codec
 
     /// <summary>
-    /// The conversion of one managed type at an *address*: <c>Read(address)</c> gives the boxed managed
-    /// value, <c>Write(address, value)</c> stores one back. Null when the type cannot be converted.
+    /// 一个托管类型在某个 *地址* 上的转换：<c>Read(address)</c> 取得装箱后的托管
+    /// 值，<c>Write(address, value)</c> 把它存回。无法转换该类型时为 null。
     /// </summary>
     private static Codec ResolveCodec(Type type)
     {
@@ -995,9 +995,9 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// Structs are moved as raw bytes through generated methods: <c>ldobj T; box T</c> to read,
-    /// <c>unbox T; cpblk min(managed size, il2cpp value size)</c> to write. Both are executed once here,
-    /// in managed context, so a JIT problem shows up at registration instead of inside a callout.
+    /// 结构体通过生成的方法以原始字节搬运：读取用 <c>ldobj T; box T</c>，
+    /// 写入用 <c>unbox T; cpblk min(managed size, il2cpp value size)</c>。两者都在此执行一次，
+    /// 且处于托管上下文中，因此 JIT 问题会在注册时暴露，而不是在 callout 内部。
     /// </summary>
     private static Codec BuildStructCodec(Type type)
     {
@@ -1025,7 +1025,7 @@ internal static unsafe partial class NativeManagedInvoker
         writeBody.Emit(OpCodes.Ret);
         var write = (Action<nint, object>)writeMethod.CreateDelegate(typeof(Action<nint, object>));
 
-        // Execute both once against scratch memory: JIT validation plus a default instance for 'out'.
+        // 针对暂存内存各执行一次：完成 JIT 校验，并为 'out' 准备一个默认实例。
         var defaultValue = read(_scratch);
         write(_scratch, defaultValue);
         return new Codec { Kind = type.Name, Read = read, Write = write, Default = defaultValue };
@@ -1057,7 +1057,7 @@ internal static unsafe partial class NativeManagedInvoker
         return fallback;
     }
 
-    /// <summary>The native pointer of a boxed managed value (object, string, or null).</summary>
+    /// <summary>装箱托管值（对象、字符串或 null）的原生指针。</summary>
     private static nint NativePointer(object value)
     {
         if (value == null) return 0;
@@ -1067,8 +1067,8 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// <c>pointer -> Il2CppObjectPool.Get&lt;T&gt;(pointer)</c> bound once per type, so the hot path is a
-    /// delegate call. Null when the wrapper cannot be bound (the shape then keeps the stock invoker).
+    /// <c>pointer -> Il2CppObjectPool.Get&lt;T&gt;(pointer)</c> 每个类型绑定一次，因此热路径只是一次
+    /// 委托调用。无法绑定该包装器时为 null（此时该形状保留原装 invoker）。
     /// </summary>
     private static Func<nint, object> ReferenceWrapper(Type type)
     {
@@ -1108,11 +1108,11 @@ internal static unsafe partial class NativeManagedInvoker
         }
     }
 
-    // ------------------------------------------------------------------ the entry
+    // ------------------------------------------------------------------ 入口
 
     /// <summary>
-    /// The managed entry the engine now reaches instead of the generated invoker. Runs on the engine's
-    /// thread inside a native callout: it must return normally under every circumstance.
+    /// 引擎现在到达的托管入口，取代生成的 invoker。它运行在引擎线程上、
+    /// 处于原生 callout 之内：在任何情况下都必须正常返回。
     /// </summary>
     private static void Shim(nint methodPointer, Il2CppMethodInfo* methodInfo, nint obj, nint* args, nint* returnValue)
     {
@@ -1124,7 +1124,7 @@ internal static unsafe partial class NativeManagedInvoker
             {
                 if (methodPointer != 0 && PlansByMethodPointer.TryGetValue(methodPointer, out plan))
                 {
-                    // The engine handed a copy of the method info; its thunk identified it.
+                    // 引擎传来的是 method info 的副本；由它的 thunk 完成了识别。
                 }
                 else if (methodInfo != null && EnsureAdopted(methodInfo, "callout", null)
                                                && Plans.TryGetValue(key, out plan))
@@ -1140,9 +1140,9 @@ internal static unsafe partial class NativeManagedInvoker
             object instance = null;
             if (!plan.Static)
             {
-                // Resolved before the entry trace on purpose: a callout that has nothing to run never
-                // enters managed code, so it must not publish the "entered" half of the pair whose
-                // unmatched half is what names the method the process died inside (TraceEntered/TraceLeft).
+                // 有意在写入口追踪之前先解析：没有任何东西可运行的 callout 永远不会
+                // 进入托管代码，因此它不能发布那一对中的“已进入”那一半——正是
+                // 缺失的另一半点出进程死于哪个方法（TraceEntered/TraceLeft）。
                 if (!TryResolveInstance(key, obj, plan, out instance))
                 {
                     return;
@@ -1158,8 +1158,8 @@ internal static unsafe partial class NativeManagedInvoker
 
             var result = plan.Target.Invoke(instance, arguments);
 
-            // By-ref/out: the callee wrote into the argument slots of the array; hand those values back to
-            // the addresses the engine gave us.
+            // By-ref/out：被调用方写入了该数组的参数槽位；把这些值交回
+            // 引擎给我们的那些地址。
             for (var i = 0; i < arguments.Length; i++)
             {
                 var write = plan.Arguments[i].WriteBack;
@@ -1169,9 +1169,9 @@ internal static unsafe partial class NativeManagedInvoker
             var writeReturn = plan.Return.Write;
             if (writeReturn != null && returnValue != null) writeReturn(result, (nint)returnValue);
 
-            // The entry line is written before the call, so "entered" without a matching "left" names the
-            // method the process died inside. A fail fast kills the process mid-call, which is exactly the
-            // signal: the diagnostic tail is the last thing written before the fatal.
+            // 入口行写在调用之前，因此只有“entered”而没有匹配的“left”就点出了
+            // 进程死于哪个方法。fail fast 会在调用中途杀掉进程，而这正是那个
+            // 信号：诊断尾部就是致命错误之前最后写下的内容。
         }
         catch (Exception exception)
         {
@@ -1180,19 +1180,19 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// Resolves the managed instance of one callout without ever letting the interop's lookup throw.
+    /// 解析某个 callout 的托管实例，同时绝不让 interop 的查找抛出异常。
     ///
-    /// <c>ClassInjectorBase.GetMonoObjectFromIl2CppPointer</c> ends in
-    /// <c>GCHandle.FromIntPtr(handle).Target</c> (ildump of the installed Il2CppInterop.Runtime.dll:
-    /// <c>GetGcHandlePtrFromIl2CppObject</c>, then the delegate fallback, then <c>GCHandle.FromIntPtr</c>).
-    /// For an object whose managed side is already gone that handle is zero, and the call throws
-    /// <c>InvalidOperationException: "Handle is not initialized."</c> - measured, not assumed: it is the
-    /// exception behind the seventeen finalizer entries of the 2026-10-10 raid
-    /// (analysis/log-noise-cleanup/REPORT.md). The handle pointer itself can be read without throwing, so
-    /// the condition is decided *before* the throwing call: a zero handle means "this callout has nothing
-    /// to run", which is a normal end of the callout and not a failure.
+    /// <c>ClassInjectorBase.GetMonoObjectFromIl2CppPointer</c> 最终落到
+    /// <c>GCHandle.FromIntPtr(handle).Target</c>（所安装 Il2CppInterop.Runtime.dll 的 ildump：
+    /// 先 <c>GetGcHandlePtrFromIl2CppObject</c>，再委托兜底，再 <c>GCHandle.FromIntPtr</c>）。
+    /// 对于托管侧已经消失的对象，该句柄为零，调用便会抛出
+    /// <c>InvalidOperationException: "Handle is not initialized."</c>——这是实测而非假定：它正是
+    /// 2026-10-10 那次突袭中十七条终结器日志背后的异常
+    /// （analysis/log-noise-cleanup/REPORT.md）。句柄指针本身可以无异常地读出，因此
+    /// 判定在会抛出的调用 *之前* 就完成：零句柄意味着“这个 callout 没有东西
+    /// 可运行”，那是 callout 的正常结束，而不是失败。
     ///
-    /// Returns false when there is nothing to run (reported once per method). Never throws.
+    /// 没有东西可运行时返回 false（每个方法只报告一次）。绝不抛出。
     /// </summary>
     private static bool TryResolveInstance(nint key, nint obj, Plan plan, out object instance)
     {
@@ -1203,10 +1203,10 @@ internal static unsafe partial class NativeManagedInvoker
             return false;
         }
 
-        // The interop has a second source for the handle - a delegate keeps the one of its target, see
-        // ClassInjectorBase.FallbackGetGcHandlePtrFromIl2CppDelegateMTarget - and that shape is handed to
-        // the interop lookup unchanged. Every other object with a zero handle has no managed side at all,
-        // and asking for it would only produce the exception the first-chance probe has to report.
+        // interop 对该句柄还有第二个来源——委托保留其目标的那个句柄，见
+        // ClassInjectorBase.FallbackGetGcHandlePtrFromIl2CppDelegateMTarget——那种形状会被原样交给
+        // interop 的查找。其他所有零句柄的对象根本没有托管侧，
+        // 去索取它只会产生 first-chance 探测必须报告的那个异常。
         if (ClassInjectorBase.GetGcHandlePtrFromIl2CppObject(obj) == 0 && !IsMulticastDelegate(obj))
         {
             ReportNothingToRun(plan, "Handle is not initialized.");
@@ -1219,7 +1219,7 @@ internal static unsafe partial class NativeManagedInvoker
         }
         catch (Exception exception) when (IsNothingToRun(exception))
         {
-            // The same verdict through the interop's own path: nothing to run, never a failure.
+            // 经由 interop 自身路径得到的同一结论：没有东西可运行，绝不是失败。
             ReportNothingToRun(plan, exception.Message);
             return false;
         }
@@ -1233,11 +1233,11 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// True when the object is - or may be - an <c>Il2CppSystem.MulticastDelegate</c>, the one shape whose
-    /// managed handle lives on its target instead of on itself. Deliberately true whenever the check cannot
-    /// be made (no native class, or the interop's class pointer is not materialized yet): the caller then
-    /// keeps the interop's own lookup, i.e. exactly the behaviour this port had before the fast path
-    /// existed, instead of silently skipping a callout it cannot classify.
+    /// 当该对象是——或可能是——<c>Il2CppSystem.MulticastDelegate</c> 时为 true，那是唯一一种
+    /// 托管句柄位于其目标上而非其自身上的形状。凡是无法完成检查时都故意返回 true
+    /// （没有原生类，或 interop 的类指针尚未具现化）：此时调用者
+    /// 保留 interop 自身的查找，也就是本端口在快路径存在之前就有的行为，
+    /// 而不是静默跳过一个它无法归类的 callout。
     /// </summary>
     private static bool IsMulticastDelegate(nint obj)
     {
@@ -1255,12 +1255,12 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// The one line the shim writes for a callout that has nothing to run. This is the finalizer path:
-    /// il2cpp collects the native side of an injected object and then calls <c>Finalize</c> once more,
-    /// while the managed side - and with it the GC handle the instance is resolved through - is already
-    /// gone. Deduplicated per method and reached without throwing anything: the same condition used to be
-    /// discovered by letting the interop's lookup throw, which turned every collection into one
-    /// first-chance exception and one detailed probe entry (17 of them in a single raid).
+    /// shim 为“没有东西可运行”的 callout 写下的那一行。这就是终结器路径：
+    /// il2cpp 回收某个注入对象的原生侧，然后再调用一次 <c>Finalize</c>，
+    /// 而此时托管侧——以及用来解析该实例的 GC 句柄——已经
+    /// 消失。按方法去重，且到达时不抛出任何东西：过去是靠让 interop 的查找抛出异常
+    /// 才发现同样的情形，那使每一次回收都变成一次
+    /// first-chance 异常和一条详细探测记录（单次突袭中有 17 条）。
     /// </summary>
     private static void ReportNothingToRun(Plan plan, string reason)
     {
@@ -1275,11 +1275,11 @@ internal static unsafe partial class NativeManagedInvoker
         }
     }
 
-    // ------------------------------------------------------------------ diagnostics
+    // ------------------------------------------------------------------ 诊断
 
     /// <summary>
-    /// One line per injected method: the pointer triple that turns a dump's calli target or invoker stub
-    /// back into a method name. The 2026-10-10 host raid needed a loader record to do this by hand.
+    /// 每个注入方法一行：这组指针三元组能把 dump 里的 calli 目标或 invoker stub
+    /// 还原成方法名。2026-10-10 的主机突袭需要一份加载器记录来手工完成这件事。
     /// </summary>
     private static bool Report(nint key, string line)
     {
@@ -1301,8 +1301,8 @@ internal static unsafe partial class NativeManagedInvoker
         {
             var name = plan == null ? "<unknown>" : plan.Name;
 
-            // One line per method. The finalizer path used to print the same failure seventeen times per
-            // collection (see IsNothingToRun below), which buried every other diagnostic.
+            // 每个方法一行。终结器路径过去每次回收都打印同一条失败十七次
+            // （见下面的 IsNothingToRun），把其他所有诊断都埋掉了。
             if (!_reportedFailures.TryAdd(name, 0)) return;
 
             if (IsNothingToRun(exception))
@@ -1321,9 +1321,9 @@ internal static unsafe partial class NativeManagedInvoker
     }
 
     /// <summary>
-    /// True when the failure means "this callout has nothing to run" rather than "the shim is broken": the
-    /// object no longer has a managed instance, which is what the finalizer path looks like (il2cpp collects
-    /// the il2cpp side and then calls Finalize once more).
+    /// 当该失败意味着“这个 callout 没有东西可运行”而不是“shim 坏了”时为 true：该
+    /// 对象已不再拥有托管实例，这正是终结器路径的样子（il2cpp 回收
+    /// il2cpp 侧，然后再调用一次 Finalize）。
     /// </summary>
     private static bool IsNothingToRun(Exception exception) =>
         exception is InvalidOperationException
@@ -1332,9 +1332,9 @@ internal static unsafe partial class NativeManagedInvoker
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _reportedFailures = new();
 
     /// <summary>
-    /// Methods whose "nothing to run" end (the finalizer path, see ReportNothingToRun) was already written.
-    /// A separate table from <see cref="_reportedFailures"/> on purpose: a method can legitimately end both
-    /// ways in one session, and one must not silence the other.
+    /// “没有东西可运行”的结束（终结器路径，见 ReportNothingToRun）已写出的方法。
+    /// 有意与 <see cref="_reportedFailures"/> 分成两张表：一个方法在一次会话中可能合法地以两种
+    /// 方式结束，而其中一种不应让另一种沉默。
     /// </summary>
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _reportedNothingToRun = new();
 

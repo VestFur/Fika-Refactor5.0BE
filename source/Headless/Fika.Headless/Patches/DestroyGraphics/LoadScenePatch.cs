@@ -20,10 +20,10 @@ public class LoadScenePatch : ModulePatch
     }
 
     /// <summary>
-    /// Destroys every renderer and material of a freshly loaded scene. This is
-    /// the patch that made the main menu of a playing install unreadable, so it
-    /// is guarded twice: the plugin must be armed for a dedicated host, and the
-    /// "Destroy Renderers" config entry must still be enabled.
+    /// 销毁刚加载场景中的每个渲染器和材质。正是这个
+    /// 补丁让一个正在游玩的安装的主菜单变得不可读，所以它
+    /// 被双重保护：插件必须是为专用主机而启用的，并且
+    /// "Destroy Renderers" 配置项必须仍然处于启用状态。
     /// </summary>
     [PatchPostfix]
     static void Postfix(string sceneName, AsyncOperation __result)
@@ -56,13 +56,13 @@ public class SceneModificationHandler : MonoBehaviour
 
     public IEnumerator WaitForSceneLoad(string sceneName, AsyncOperation operation)
     {
-        // Wait for the scene to finish loading
+        // 等待场景加载完成
         while (!operation.isDone)
         {
             yield return null;
         }
 
-        // The gate may have been closed again (forced mode + normal profile).
+        // 门闸可能已被重新关闭（强制模式 + 普通档案）。
         if (!FikaHeadlessPlugin.IsArmed)
         {
             Destroy(gameObject);
@@ -124,7 +124,7 @@ public class SceneModificationHandler : MonoBehaviour
                 continue;
             }
 
-            // Check for protected components we absolutely cannot unload, these would break the game someway or another.
+            // 检查我们绝对不能卸载的受保护组件，这些东西无论如何都会把游戏搞坏。
             bool hasProtectedRenderer = false;
             foreach (Type componentType in _protectedComponents)
             {
@@ -135,7 +135,7 @@ public class SceneModificationHandler : MonoBehaviour
                 }
             }
 
-            // Unload materials and textures.
+            // 卸载材质和纹理。
             foreach (Material material in renderer.sharedMaterials)
             {
                 if (material != null)
@@ -159,7 +159,7 @@ public class SceneModificationHandler : MonoBehaviour
                 continue;
             }
 
-            // Destroy the renderer itself, note: This should not remove any colliders and such.
+            // 销毁渲染器本身，注意：这不应移除任何碰撞体之类的东西。
 #if DEBUG
             FikaHeadlessPlugin.FikaHeadlessLogger.LogDebug($"Removing Renderer: {renderer.gameObject.name}");
 #endif
