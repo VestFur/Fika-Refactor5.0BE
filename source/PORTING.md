@@ -61,3 +61,17 @@ dotnet build source\Server\FikaServer\FikaServer.csproj          -c Release -p:G
 - 旧 `tests/Fika.PatchChecks/bin/Release/net6.0/` 下有 47242 的 `Assembly-CSharp.dll`（54.8 MB），可作为 interop 来源线索。
 - 该时代用 **net6.0** 测试工程，主项目若仍是 net10.0 需确认 SDK 与目标框架一致。
 - 移植顺序建议：先 N5（IK 批次，改动最小）→ W51（拾取回调）→ W48/W49（过场）→ W42（转移形状）→ W41（物品链）→ W46/W47（补丁与无头）。
+## 2026-11-13 编译探测结果（实测）
+
+用「47965 的 `BepInEx/core` + `SPT_Runtime` + 本分支的 47242 `Assembly-CSharp`(54.8 MB)」组装 GameDir 试编 `Fika.Core`：
+
+**失败：CS1705** —— `BepInEx.Unity.IL2CPP` / `Il2CppInterop.Runtime` / `SPTushonka.Reflection` / `MonoMod.Utils` 都是以 **System.Runtime 10.0.0.0** 编译的，而本分支 `Fika.Core.csproj` 是 **`net6.0`**，引用了 System.Runtime 6.0.0.0。
+
+结论：**47242 时代需要 net6.0 的 BepInEx 6 程序集**，不能直接套用 47965 的 net10 版。
+
+两条路线：
+
+1. **保持 `net6.0`（推荐，贴合 47242 真机）**：需要 47242 那个时代的 `BepInEx/core`（net6.0 的 `BepInEx.Unity.IL2CPP`、`Il2CppInterop.Runtime`）与对应 `SPTushonka`/`SPT` 客户端程序集；拿到后 `-p:GameDir=<47242 安装>` 即可验证。
+2. **提到 `net10.0`**：改 csproj 后能用 47965 的 BepInEx 编过，但产物要求 net10 运行时，与 47242 的实际安装可能不匹配 —— 除非确认 47242 的 SPT 也跑 net10 版 BepInEx。
+
+对比：**47888 分支已实测能编过**（`net10.0` + 47888 的 `Assembly-CSharp` 62.7 MB + 47965 的 BepInEx/SPT，`Fika.Core` **0 error**），因为 47888 时代与 47965 同属 net10 世代。
